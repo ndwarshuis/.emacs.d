@@ -542,7 +542,7 @@ TODO: add meeting template as scheduled+action item thing
                                                                     (if nd/hide-scheduled-and-waiting-next-tasks
                                                                         ""
                                                                       " (including WAITING and SCHEDULED tasks)")))
-                              (org-agenda-skip-function 'nd/skip-project-tasks)
+                              (org-agenda-skip-function 'nd/skip-non-atomic-tasks)
                               (org-agenda-todo-ignore-with-date 'all)
                               (org-agenda-sorting-strategy
                                '(category-keep))))
@@ -595,23 +595,9 @@ TODO: add meeting template as scheduled+action item thing
 #+END_SRC
 *** filtering functions
 #+BEGIN_SRC emacs-lisp
-  (defun nd/find-project-task ()
-    "Move point to the parent (project) task if any"
-    (save-restriction
-      (widen)
-      (let ((parent-task (save-excursion (org-back-to-heading 'invisible-ok) (point))))
-        ;; go up to parent heading (no error)
-        (while (org-up-heading-safe)
-          ;; in case the parent has no todo keyword, keep going
-          (when (member (nth 2 (org-heading-components)) org-todo-keywords-1)
-            (setq parent-task (point))))
-        ;; when parent found, go there and return its position
-        (goto-char parent-task)
-        parent-task)))
-
-  ;; keep
+  ;; functions to define headlings relative to project structure (or lack thereof)
   (defun nd/is-project-p ()
-    "Any task with a todo keyword subtask"
+    "todo heading with a todo subheadings"
     (save-restriction
       (widen)
       (let ((has-subtask)
@@ -626,63 +612,18 @@ TODO: add meeting template as scheduled+action item thing
               (setq has-subtask t))))
         (and is-a-task has-subtask))))
 
-  ;; old version
-  ;; (defun nd/is-subtask-p ()
-  ;;   "Any task with a todo keyword that is in a project subtree.
-  ;; Callers of this function already widen the buffer view."
-  ;;   ;; go back up to heading
-  ;;   (let ((task (save-excursion (org-back-to-heading 'invisible-ok)
-  ;;                               (point))))
-
-  ;;     (save-excursion
-  ;;       (nd/find-project-task)
-  ;;       ;; go up to parent heading
-  ;;       (if (equal (point) task)
-  ;;           nil
-  ;;         t))))
-
-
-  ;; (defun nd/is-subproject-p ()
-  ;;   "Any task which is a subtask of another project"
-  ;;   (let ((is-subproject)
-  ;;         ;; is-a-task is true if it has a valid TODO keyword
-  ;;         (is-a-task (member (nth 2 (org-heading-components)) org-todo-keywords-1)))
-  ;;     (save-excursion
-  ;;       ;; loop up through headings until we encounter a task or the top level
-  ;;       (while (and (not is-subproject) (org-up-heading-safe))
-  ;;         (when (member (nth 2 (org-heading-components)) org-todo-keywords-1)
-  ;;           (setq is-subproject t))))
-  ;;     (and is-a-task is-subproject)))
-
   (defun nd/is-subtask-p ()
-    "Any task with a todo keyword that is in a project subtree.
-  Callers of this function already widen the buffer view."
-    ;; go back up to heading
-    (let ((task (save-excursion (org-back-to-heading 'invisible-ok)
-                                (point))))
+    "todo heading that is part of a project"
+    (if (member (nth 2 (org-heading-components)) org-todo-keywords-1)
+        (let ((is-subproject))
+          (save-excursion
+            (while (and (not is-subproject) (org-up-heading-safe))
+              (when (member (nth 2 (org-heading-components)) org-todo-keywords-1)
+                (setq is-subproject t))))
+          is-subproject)))
 
-      (save-excursion
-        (nd/find-project-task)
-        ;; go up to parent heading
-        (if (equal (point) task)
-            nil
-          t))))
-  ;; (defun nd/find-project-task ()
-  ;;   "Move point to the parent (project) task if any"
-  ;;   (save-restriction
-  ;;     (widen)
-  ;;     (let ((parent-task (save-excursion (org-back-to-heading 'invisible-ok) (point))))
-  ;;       ;; go up to parent heading (no error)
-  ;;       (while (org-up-heading-safe)
-  ;;         ;; in case the parent has no todo keyword, keep going
-  ;;         (when (member (nth 2 (org-heading-components)) org-todo-keywords-1)
-  ;;           (setq parent-task (point))))
-  ;;       ;; when parent found, go there and return its position
-  ;;       (goto-char parent-task)
-  ;;       parent-task)))
-
-  (defun nd/is-atomic-task-p ()
-    "Any task with a todo keyword and no subtask"
+  (defun nd/is-atomic-p ()
+    "todo heading with no todo subheadings"
     (save-restriction
       (widen)
       (let ((has-subtask)
@@ -696,21 +637,18 @@ TODO: add meeting template as scheduled+action item thing
             (when (member (org-get-todo-state) org-todo-keywords-1)
               (setq has-subtask t))))
         (and is-a-task (not has-subtask)))))
-  ;; (defun nd/list-sublevels-for-projects-indented ()
-  ;;   "Set org-tags-match-list-sublevels so when restricted to a subtree we list all subtasks.
-  ;;   This is normally used by skipping functions where this variable is already local to the agenda."
-  ;;   (if (marker-buffer org-agenda-restrict-begin)
-  ;;       (setq org-tags-match-list-sublevels 'indented)
-  ;;     (setq org-tags-match-list-sublevels nil))
-  ;;   nil)
 
-  ;; (defun nd/list-sublevels-for-projects ()
-  ;;   "Set org-tags-match-list-sublevels so when restricted to a subtree we list all subtasks.
-  ;;   This is normally used by skipping functions where this variable is already local to the agenda."
-  ;;   (if (marker-buffer org-agenda-restrict-begin)
-  ;;       (setq org-tags-match-list-sublevels t)
-  ;;     (setq org-tags-match-list-sublevels nil))
-  ;;   nil)
+  ;; functions to test tasks (which are "atomic")
+  ;; (defun nd/is-scheduled-p ()
+  ;;   "task with scheduled property"
+  ;;   ((org-entry-get nil "SCHEDULED")))
+
+  ;; task skip functions
+  (defun nd/skip-non-atomic-tasks ()
+    (save-restriction
+      (widen)
+      (if (not (and ((nd/is-atomic-p) (not (nd/is-subtask-p)))))
+          (save-excursion (or (outline-next-heading) (point-max))))))
 
   (defvar nd/hide-scheduled-and-waiting-next-tasks t)
 
@@ -825,7 +763,7 @@ TODO: add meeting template as scheduled+action item thing
             (cond
              ((nd/is-project-p)
               nil)
-             ((and (nd/is-subtask-p) (not (nd/is-atomic-task-p)))
+             ((and (nd/is-subtask-p) (not (nd/is-atomic-p)))
               nil)
              (t
               subtree-end))))
@@ -838,7 +776,7 @@ TODO: add meeting template as scheduled+action item thing
       (widen)
       (let ((next-headline (save-excursion (or (outline-next-heading) (point-max)))))
         (cond
-         ((nd/is-atomic-task-p)
+         ((nd/is-atomic-p)
           nil)
          (t
           next-headline)))))
@@ -869,7 +807,7 @@ TODO: add meeting template as scheduled+action item thing
           next-headline)
          ((nd/is-project-p)
           next-headline)
-         ((and (nd/is-atomic-task-p) (not (nd/is-subtask-p)))
+         ((and (nd/is-atomic-p) (not (nd/is-subtask-p)))
           next-headline)
          (t
           nil)))))
