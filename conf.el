@@ -226,7 +226,7 @@
 (load "ess-site")
 (setq ess-history-file "session.Rhistory")
 (setq ess-history-directory
-      (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+          (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
 (setq org-log-done t)
 (setq org-src-window-setup 'current-window)
