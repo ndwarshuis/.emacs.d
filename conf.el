@@ -226,7 +226,7 @@
 (load "ess-site")
 (setq ess-history-file "session.Rhistory")
 (setq ess-history-directory
-      (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+          (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
 (setq org-log-done t)
 (setq org-src-window-setup 'current-window)
@@ -465,7 +465,7 @@
 (defun nd/skip-non-atomic-tasks ()
   (save-restriction
     (widen)
-    (if (not (nd/is-atomic-p))
+    (if (not (and ((nd/is-atomic-p) (not (nd/is-subtask-p)))))
         (save-excursion (or (outline-next-heading) (point-max))))))
 
 (defvar nd/hide-scheduled-and-waiting-next-tasks t)
