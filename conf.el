@@ -226,7 +226,7 @@
 (load "ess-site")
 (setq ess-history-file "session.Rhistory")
 (setq ess-history-directory
-          (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+      (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
 (setq org-log-done t)
 (setq org-src-window-setup 'current-window)
@@ -389,7 +389,6 @@
                 (tags-todo "-NA-CANCELLED/!"
                            ((org-agenda-overriding-header "Stuck Projects")
                             (org-agenda-skip-function 'nd/skip-non-stuck-projects)
-                            (org-agenda-skip-function 'nd/skip-non-blocked-projects)
                             (org-agenda-sorting-strategy
                              '(category-keep))))
                 (tags-todo "-NA-HOLD-CANCELLED/!"
@@ -414,52 +413,49 @@
 (setq org-agenda-auto-exclude-function 'nd/org-auto-exclude-function)
 
 ;; functions to define headlings relative to project structure (or lack thereof)
-(defun nd/is-project-p ()
-  "todo heading with a todo subheadings"
-  (save-restriction
-    (widen)
-    (let ((has-subtask)
-          (subtree-end (save-excursion (org-end-of-subtree t)))
-          (is-a-task (member (nth 2 (org-heading-components)) org-todo-keywords-1)))
-      (save-excursion
-        (forward-line 1)
-        (while (and (not has-subtask)
-                    (< (point) subtree-end)
-                    (re-search-forward "^\*+ " subtree-end t))
-          (when (member (org-get-todo-state) org-todo-keywords-1)
-            (setq has-subtask t))))
-      (and is-a-task has-subtask))))
+(defun nd/is-todoitem-p ()
+  "return t if headline has valid todo keyword"
+  (member (nth 2 (org-heading-components)) org-todo-keywords-1))
 
-(defun nd/is-subtask-p ()
-  "todo heading that is part of a project"
-  (if (member (nth 2 (org-heading-components)) org-todo-keywords-1)
-      (let ((is-subproject))
+(defun nd/todoitem-has-children ()
+  "returns t if heading is a todoitem and has todoitems in its subtree"
+  (if (nd/is-todoitem-p)
+      (let ((has-children)
+            (subtree-end (save-excursion (org-end-of-subtree t))))
         (save-excursion
-          (while (and (not is-subproject) (org-up-heading-safe))
-            (when (member (nth 2 (org-heading-components)) org-todo-keywords-1)
-              (setq is-subproject t))))
-        is-subproject)))
+          (outline-next-heading)
+          (while (and (not has-children)
+                      (< (point) subtree-end))
+            (when (nd/is-todoitem-p)
+              (setq has-children t)
+            (outline-next-heading))))
+        has-children)))
 
-(defun nd/is-atomic-p ()
-  "todo heading with no todo subheadings"
-  (save-restriction
-    (widen)
-    (let ((has-subtask)
-          (subtree-end (save-excursion (org-end-of-subtree t)))
-          (is-a-task (member (nth 2 (org-heading-components)) org-todo-keywords-1)))
-      (save-excursion
-        (forward-line 1)
-        (while (and (not has-subtask)
-                    (< (point) subtree-end)
-                    (re-search-forward "^\*+ " subtree-end t))
-          (when (member (org-get-todo-state) org-todo-keywords-1)
-            (setq has-subtask t))))
-      (and is-a-task (not has-subtask)))))
+(defun nd/todoitem-has-parent ()
+  "returns t if heading is a todoitem that is in the subtree of another todoitem"
+  (if (nd/is-todoitem-p)
+      (let ((has-parent))
+        (save-excursion
+          (while (and (not has-parent) (org-up-heading-safe))
+            (when (nd/is-todoitem-p)
+              (setq has-parent t))))
+        has-parent)))
 
+(defun nd/is-project-p ()
+  (nd/todoitem-has-children))
+
+(defun nd/is-task-p ()
+  (and (nd/is-todoitem-p) (not nd/todoitem-has-children)))
+
+(defun nd/is-atomic-task-p ()
+  (and (nd/is-task-p) (not (nd/todoitem-has-parent))))
+  
 ;; functions to test tasks (which are "atomic")
 ;; (defun nd/is-scheduled-p ()
 ;;   "task with scheduled property"
 ;;   ((org-entry-get nil "SCHEDULED")))
+
+;; org-forward-heading-same-level
 
 ;; task skip functions
 (defun nd/skip-non-atomic-tasks ()
@@ -477,60 +473,8 @@
     (org-agenda-redo))
   (message "%s WAITING and SCHEDULED NEXT Tasks" (if nd/hide-scheduled-and-waiting-next-tasks "Hide" "Show")))
 
-;; this skip function seems inefficient, it looks like we are skipping one headline at a time
-;; but searching for NEXT in the entire subtree
-;; can I do better?
-(defun nd/skip-stuck-projects ()
-  "Skip trees that are not stuck projects"
-  ;; save narrow buffer state
-  (save-restriction
-    ;; widen to see the entire buffer
-    (widen)
-    ;; define next-headline as either the next headline or the end of the buffer
-    (let ((next-headline (save-excursion (or (outline-next-heading) (point-max)))))
-      ;; if headline has subtasks
-      (if (nd/is-project-p)
-          ;; define subtree-end as the end of the subtree
-          ;; initialize has-next with nil
-          (let* ((subtree-end (save-excursion (org-end-of-subtree t)))
-                 (has-next ))
-            ;; save where we are pointing
-            (save-excursion
-              ;; go forward one line
-              (forward-line 1)
-              ;; while loop which continues if
-              ;; - has-next is nil
-              ;; - we are not at the end of the subtree
-              ;; - there is no NEXT between here and the subtree end
-
-              ;; this is a loop because there could be multiple NEXT tasks (obviously)
-              ;; the regex search moves the point to the end of the first found NEXT
-              ;; relative to the start point position
-              ;; once it gets to the end of the subtree it returns nil and the loop breaks
-              (while (and (not has-next)
-                          (< (point) subtree-end)
-                          (re-search-forward "^\\*+ NEXT " subtree-end t))
-                ;; if WAITING is not in tag list
-                ;; i guess this is here because if the loop finds next
-                ;; and the NEXT task also has WAITING (which it would need to inherit
-                ;; because WAITING and NEXT are mutully exclusive) then we keep looping
-
-                ;; so the Bernt defined stuck projects as those which have WAITING tasks
-                ;; that override a NEXT subtask
-                (unless (member "WAITING" (org-get-tags-at))
-                  ;; set has-next to true
-                  (setq has-next t))))
-            ;; if we have a next task, set to nil (eg don't skip)
-            (if has-next
-                nil
-              ;; if no next task, skip to next headline
-              next-headline)) ; a stuck project, has subtasks but no next task
-        ;; don't skip if not a project
-        nil))))
-
 (defun nd/skip-non-stuck-projects ()
   "Skip trees that are not stuck projects"
-  ;; (nd/list-sublevels-for-projects-indented)
   (save-restriction
     (widen)
     (let ((next-headline (save-excursion (or (outline-next-heading) (point-max)))))
@@ -549,27 +493,41 @@
               nil)) ; a stuck project, has subtasks but no next task
         next-headline))))
 
-(defun nd/skip-non-blocked-projects ()
-  "Skip trees that are not stuck projects"
-  ;; (nd/list-sublevels-for-projects-indented)
-  (save-restriction
-    (widen)
-    (let ((next-headline (save-excursion (or (outline-next-heading) (point-max)))))
-      (if (nd/is-project-p)
-          (let* ((subtree-end (save-excursion (org-end-of-subtree t)))
-                 (has-next ))
-            (save-excursion
-              (forward-line 1)
-              (while (and (not has-next)
-                          (< (point) subtree-end)
-                          (re-search-forward "^\\*+ WAITING " subtree-end t))
-                (unless (member "WAITING" (org-get-tags-at))
-                  (setq has-next t))))
-            (if has-next
-                next-headline
-              nil)) ; a stuck project, has subtasks but no next task
-        next-headline))))
+;; project test functions
+;; is state
+;;   if project
+;;     if order = 1
+;;       return (state is true)
+;;     else order > 1
+;;       call is state (recursive)
+;;   else if task
+;;     return (state is true)
+;; note: this needs to iterate through lines
+(defun nd/is-active-project-p ()
+  "return true if project has at least one
+NEXT/scheduled task or active subproject"
+  ;; if not a project then don't bother
+  (if (nd/is-project-p)
+      (let (((subtree-end (save-excursion (org-end-of-subtree t))))
+            (is-active))
+        (save-excursion
+          (while (and (not is-active)
+                      (< (point) subtree-end))
+            (outline-heading-next)
+            (cond ((nd/is-active-task-p) (setq is-active t))
+                  ((nd/is-active-project-p) (setq is-active))))))))
 
+;; (defun nd/skip-non-stuck-projects ()
+  ;; goto next headline
+  ;; if project
+  ;;   if project order 1
+  ;;     if it has NEXT, WAITING, HOLD, or a scheduled task
+  ;;       then skip (return end of subtree)
+  ;;     else stuck project, return nil
+  ;;   else (order > 1)
+  ;;     descend into project (recursion)
+  ;; skip (either an atomic task or non-todo, return next heading)
+;;  )
 
 (defun nd/skip-non-projects ()
   "Skip trees that are not projects"

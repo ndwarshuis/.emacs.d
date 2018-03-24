@@ -594,6 +594,7 @@ TODO: add meeting template as scheduled+action item thing
 #+END_SRC
 *** filtering functions
 some definitions:
+- todoitem: heading with todo state
 - task: todo heading with no todo headings beneath it
 - project: todo heading with tasks or other project in subtree
 - subtask: task that is part of a project
@@ -605,48 +606,43 @@ some definitions:
   - etc
 #+BEGIN_SRC emacs-lisp
   ;; functions to define headlings relative to project structure (or lack thereof)
-  (defun nd/is-project-p ()
-    "todo heading with a todo subheadings"
-    (save-restriction
-      (widen)
-      (let ((has-subtask)
-            (subtree-end (save-excursion (org-end-of-subtree t)))
-            (is-a-task (member (nth 2 (org-heading-components)) org-todo-keywords-1)))
-        (save-excursion
-          (forward-line 1)
-          (while (and (not has-subtask)
-                      (< (point) subtree-end)
-                      (re-search-forward "^\*+ " subtree-end t))
-            (when (member (org-get-todo-state) org-todo-keywords-1)
-              (setq has-subtask t))))
-        (and is-a-task has-subtask))))
+  (defun nd/is-todoitem-p ()
+    "return t if headline has valid todo keyword"
+    (member (nth 2 (org-heading-components)) org-todo-keywords-1))
 
-  (defun nd/is-subtask-p ()
-    "todo heading that is part of a project"
-    (if (member (nth 2 (org-heading-components)) org-todo-keywords-1)
-        (let ((is-subproject))
+  (defun nd/todoitem-has-children ()
+    "returns t if heading is a todoitem and has todoitems in its subtree"
+    (if (nd/is-todoitem-p)
+        (let ((has-children)
+              (subtree-end (save-excursion (org-end-of-subtree t))))
           (save-excursion
-            (while (and (not is-subproject) (org-up-heading-safe))
-              (when (member (nth 2 (org-heading-components)) org-todo-keywords-1)
-                (setq is-subproject t))))
-          is-subproject)))
+            (outline-next-heading)
+            (while (and (not has-children)
+                        (< (point) subtree-end))
+              (when (nd/is-todoitem-p)
+                (setq has-children t)
+              (outline-next-heading))))
+          has-children)))
 
-  (defun nd/is-atomic-p ()
-    "todo heading with no todo subheadings"
-    (save-restriction
-      (widen)
-      (let ((has-subtask)
-            (subtree-end (save-excursion (org-end-of-subtree t)))
-            (is-a-task (member (nth 2 (org-heading-components)) org-todo-keywords-1)))
-        (save-excursion
-          (forward-line 1)
-          (while (and (not has-subtask)
-                      (< (point) subtree-end)
-                      (re-search-forward "^\*+ " subtree-end t))
-            (when (member (org-get-todo-state) org-todo-keywords-1)
-              (setq has-subtask t))))
-        (and is-a-task (not has-subtask)))))
+  (defun nd/todoitem-has-parent ()
+    "returns t if heading is a todoitem that is in the subtree of another todoitem"
+    (if (nd/is-todoitem-p)
+        (let ((has-parent))
+          (save-excursion
+            (while (and (not has-parent) (org-up-heading-safe))
+              (when (nd/is-todoitem-p)
+                (setq has-parent t))))
+          has-parent)))
 
+  (defun nd/is-project-p ()
+    (nd/todoitem-has-children))
+
+  (defun nd/is-task-p ()
+    (and (nd/is-todoitem-p) (not nd/todoitem-has-children)))
+
+  (defun nd/is-atomic-task-p ()
+    (and (nd/is-task-p) (not (nd/todoitem-has-parent))))
+    
   ;; functions to test tasks (which are "atomic")
   ;; (defun nd/is-scheduled-p ()
   ;;   "task with scheduled property"
@@ -700,6 +696,19 @@ some definitions:
   ;;   else if task
   ;;     return (state is true)
   ;; note: this needs to iterate through lines
+  (defun nd/is-active-project-p ()
+    "return true if project has at least one
+  NEXT/scheduled task or active subproject"
+    ;; if not a project then don't bother
+    (if (nd/is-project-p)
+        (let (((subtree-end (save-excursion (org-end-of-subtree t))))
+              (is-active))
+          (save-excursion
+            (while (and (not is-active)
+                        (< (point) subtree-end))
+              (outline-heading-next)
+              (cond ((nd/is-active-task-p) (setq is-active t))
+                    ((nd/is-active-project-p) (setq is-active))))))))
 
   ;; (defun nd/skip-non-stuck-projects ()
     ;; goto next headline
