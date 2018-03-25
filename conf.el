@@ -475,25 +475,32 @@ and retrieve the keyword"
 ;; org-forward-heading-same-level
 
 ;; project level testing
+(defun nd/test-first-order-project ()
+  "tests the state of a project assuming first order.
+if not first order, this function will iterate to the next project
+and descend into it by calling itelf recursively.
+function is not meant to be called independently."
+  (let ((found-active)
+        (previous-point))
+    (save-excursion
+      (setq previous-point (point))
+      (outline-next-heading)
+      (while (and (not found-active)
+                  (> (point) previous-point))
+        (when (or (and (nd/is-project-p)
+                       (nd/test-first-order-project))
+                  (nd/is-active-task-p))
+          (setq found-active t))
+        (setq previous-point (point))
+        (org-forward-heading-same-level 1 t)))
+    found-active))
+
 (defun nd/is-active-project-p ()
   "return keyword if project has at least one
 active task or project"
   (let ((keyword (nd/is-project-p)))
     (if keyword
-        (let ((found-active)
-              (subtree-end (save-excursion (org-end-of-subtree t))))
-          (save-excursion
-            (outline-next-heading)
-            (while (and (not found-active)
-                        (< (point) subtree-end))
-              (when (or (nd/is-active-project-p) (nd/is-active-task-p))
-                (setq found-active t))
-              ;; TODO; this is not very efficient as we test for project twice
-              (if (nd/is-project-p)
-                  (org-forward-heading-same-level 1 t)
-                (outline-next-heading))))
-          (and found-active
-               keyword)))))
+        (nd/test-first-order-project))))
 
 ;; task skip functions
 (defun nd/skip-non-atomic-tasks ()
