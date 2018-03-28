@@ -226,7 +226,7 @@
 (load "ess-site")
 (setq ess-history-file "session.Rhistory")
 (setq ess-history-directory
-      (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+          (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
 (setq org-log-done t)
 (setq org-src-window-setup 'current-window)
@@ -489,6 +489,27 @@ function is not meant to be called independently."
                   (> (point) previous-point))
         (when (or (and (nd/is-project-p)
                        (nd/test-first-order-project))
+                  (nd/is-active-task-p))
+          (setq found-active t))
+        (setq previous-point (point))
+        (org-forward-heading-same-level 1 t)))
+    found-active))
+
+;; project level testing
+(defun nd/test-blocked-project ()
+  (let ((found-active)
+        (found-blocked)
+        (found-held)
+        (previous-point))
+    (save-excursion
+      (setq previous-point (point))
+      (outline-next-heading)
+      ;; note, only active tasks can break the loop because we don't know if the final
+      ;; heading in the project will be active (and could override the project status)
+      (while (and (not found-active)
+                  (> (point) previous-point))
+        (when (or (and (nd/is-project-p)
+                       (nd/test-blocked-project))
                   (nd/is-active-task-p))
           (setq found-active t))
         (setq previous-point (point))
