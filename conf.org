@@ -704,16 +704,17 @@ some definitions:
         (outline-next-heading)
         (while (and (< project-state 3)
                     (> (point) previous-point))
-          (let ((keyword (nd/is-todoitem))
+          (let ((keyword (nd/is-todoitem-p)))
             (if keyword
+                ;; TODO: filter out project headings like HOLD and DONE
                 (let ((cur-state (cond ((nd/heading-has-children) (nd/descend-into-project))
                                        ((equal keyword "HOLD") 1)
                                        ((equal keyword "WAITING") 2)
                                        ((equal keyword "NEXT") 3)
-                                       ((nd/is-scheduled-heading) 3)
+                                       ((nd/is-scheduled-heading-p) 3)
                                        (t 0))))
                   (if (> cur-state project-state)
-                      (setq project-state cur-state))))
+                      (setq project-state cur-state)))))
           (setq previous-point (point))
           (org-forward-heading-same-level 1 t)))
       project-state))
@@ -721,9 +722,9 @@ some definitions:
   (defun nd/is-active-project-p ()
     "return keyword if project has at least one
   active task or project"
+    ;; TODO: skip over projects based on heading alone (eg HOLD and DONE)
     (let ((keyword (nd/is-project-p)))
-      (if keyword
-          (nd/test-first-order-project))))
+      (and keyword (equal 3 (nd/descend-into-project)))))
 
   ;; task skip functions
   (defun nd/skip-non-atomic-tasks ()

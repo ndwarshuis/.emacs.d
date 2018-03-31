@@ -226,7 +226,7 @@
 (load "ess-site")
 (setq ess-history-file "session.Rhistory")
 (setq ess-history-directory
-          (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+      (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
 (setq org-log-done t)
 (setq org-src-window-setup 'current-window)
@@ -473,7 +473,6 @@ and retrieve the keyword"
   (equal (nd/is-task-p) "WAITING"))
 
 ;; org-forward-heading-same-level
-
 ;; project level testing
 (defun nd/test-first-order-project ()
   "tests the state of a project assuming first order.
@@ -496,32 +495,41 @@ function is not meant to be called independently."
     found-active))
 
 ;; project level testing
-(defun nd/test-blocked-project ()
-  (let ((found-active)
-        (found-blocked)
-        (found-held)
+(defun nd/descend-into-project ()
+  "returns numeric value according to state of project:
+0: stuck
+1: held
+2: waiting
+3: active
+
+Larger values have precedence over smaller (eg a NEXT
+keyword will override any other WAITING or HELD task present"
+  (let ((project-state 0)
         (previous-point))
     (save-excursion
       (setq previous-point (point))
       (outline-next-heading)
-      ;; note, only active tasks can break the loop because we don't know if the final
-      ;; heading in the project will be active (and could override the project status)
-      (while (and (not found-active)
+      (while (and (< project-state 3)
                   (> (point) previous-point))
-        (when (or (and (nd/is-project-p)
-                       (nd/test-blocked-project))
-                  (nd/is-active-task-p))
-          (setq found-active t))
+        (let ((keyword (nd/is-todoitem-p)))
+          (if keyword
+              (let ((cur-state (cond ((nd/heading-has-children) (nd/descend-into-project))
+                                     ((equal keyword "HOLD") 1)
+                                     ((equal keyword "WAITING") 2)
+                                     ((equal keyword "NEXT") 3)
+                                     ((nd/is-scheduled-heading-p) 3)
+                                     (t 0))))
+                (if (> cur-state project-state)
+                    (setq project-state cur-state)))))
         (setq previous-point (point))
         (org-forward-heading-same-level 1 t)))
-    found-active))
+    project-state))
 
 (defun nd/is-active-project-p ()
   "return keyword if project has at least one
 active task or project"
   (let ((keyword (nd/is-project-p)))
-    (if keyword
-        (nd/test-first-order-project))))
+    (and keyword (equal 3 (nd/descend-into-project)))))
 
 ;; task skip functions
 (defun nd/skip-non-atomic-tasks ()
