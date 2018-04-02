@@ -271,13 +271,6 @@
               ("NEXT" ("WAITING") ("CANCELLED") ("HOLD"))
               ("DONE" ("WAITING") ("CANCELLED") ("HOLD")))))
 
-(defun org-summary-todo (n-done n-not-done)
-  "Switch entry to DONE when all subentries are done, to TODO otherwise."
-  (let (org-log-done org-log-states)   ; turn off logging
-    (org-todo (if (= n-not-done 0) "DONE" "TODO"))))
-
-(add-hook 'org-after-todo-statistics-hook 'org-summary-todo)
-
 (setq  org-tag-alist (quote ((:startgroup)
                             ("@errand" . ?e)
                             ("@work" . ?o)
@@ -343,69 +336,6 @@
   (setq org-agenda-tags-column (- 4 (window-width)))
   (org-agenda-align-tags))
 
-(setq org-agenda-tags-todo-honor-ignore-options t)
-(setq org-agenda-custom-commands
-      (quote ((" " "Agenda"
-               ((agenda "" nil)
-                (tags "REFILE"
-                      ((org-agenda-overriding-header "Tasks to Refile")
-                       (org-tags-match-list-sublevels nil)))
-                (tags-todo "-NA-REFILE/!"
-                           ((org-agenda-overriding-header (concat "Project Next Tasks"))
-                            (org-agenda-skip-function 'nd/skip-non-next-project-tasks)
-                            (org-agenda-todo-ignore-with-date 'all)
-                            (org-agenda-sorting-strategy
-                             '(category-keep))))
-                (tags-todo "-NA-REFILE/!"
-                           ((org-agenda-overriding-header (concat "Project Waiting Tasks"))
-                            (org-agenda-skip-function 'nd/skip-non-waiting-project-tasks)
-                            (org-agenda-todo-ignore-with-date 'all)
-                            (org-agenda-sorting-strategy
-                             '(category-keep))))
-                (tags-todo "-NA-REFILE/!"
-                           ((org-agenda-overriding-header (concat "Project Held Tasks"))
-                            (org-agenda-skip-function 'nd/skip-non-held-project-tasks)
-                            (org-agenda-todo-ignore-with-date 'all)
-                            (org-agenda-sorting-strategy
-                             '(category-keep))))
-                (tags-todo "-NA-REFILE/!"
-                           ((org-agenda-overriding-header (concat "Atomic Tasks"))
-                            (org-agenda-skip-function 'nd/skip-non-atomic-tasks)
-                            (org-agenda-todo-ignore-with-date 'all)
-                            (org-agenda-sorting-strategy
-                             '(category-keep))))
-                (tags-todo "-NA-REFILE/!"
-                           ((org-agenda-overriding-header "Stuck Projects")
-                            (org-agenda-skip-function 'nd/skip-non-stuck-projects)
-                            (org-agenda-sorting-strategy
-                             '(category-keep))))
-                (tags-todo "-NA-REFILE/!"
-                           ((org-agenda-overriding-header "Held Projects")
-                            (org-agenda-skip-function 'nd/skip-non-held-projects)
-                            (org-agenda-sorting-strategy
-                             '(category-keep))))
-                (tags-todo "-NA-REFILE/!"
-                           ((org-agenda-overriding-header "Waiting Projects")
-                            (org-agenda-skip-function 'nd/skip-non-waiting-projects)
-                            (org-agenda-sorting-strategy
-                             '(category-keep))))
-                (tags-todo "-NA-REFILE/!"
-                           ((org-agenda-overriding-header "Active Projects")
-                            (org-agenda-skip-function 'nd/skip-non-active-projects)
-                            (org-agenda-sorting-strategy
-                             '(category-keep)))))
-                ;; (tags-todo "-NA-REFILE/!"
-                ;;            ((org-agenda-overriding-header "Projects")
-                ;;             (org-agenda-skip-function 'nd/skip-non-projects)
-                ;;             (org-tags-match-list-sublevels 'indented)
-                ;;             (org-agenda-sorting-strategy
-                ;;              '(category-keep))))
-                ;; (tags "-NA-REFILE/"
-                ;;       ((org-agenda-overriding-header "Tasks to Archive")
-                ;;        (org-agenda-skip-function 'nd/skip-non-archivable-tasks)
-                ;;        (org-tags-match-list-sublevels nil))))
-               nil))))
-
 (defun nd/org-auto-exclude-function (tag)
   "Automatic task exclusion in the agenda with / RET"
   (and (cond
@@ -416,33 +346,11 @@
 (setq org-agenda-auto-exclude-function 'nd/org-auto-exclude-function)
 
 (defun nd/is-todoitem-p ()
-  "return todo keyword if present in headline
-(which defines the heading as a todoitem)
-this is used to both test if a heading is a todoitem 
-and retrieve the keyword"
+  "return todo keyword if present in headline (which defines the heading as a todoitem)
+this is used to both test if a heading is a todoitem and retrieving the keyword"
   (let ((keyword (nth 2 (org-heading-components))))
     (if (member keyword org-todo-keywords-1)
         keyword)))
-
-(defun nd/heading-has-children ()
-  "returns t if heading has todoitems in its immediate subtree"
-  ;; TODO make this more efficient (and accurate) by only testing
-  ;; the level immediately below (if it exists)
-  (let ((has-children)
-        (subtree-end (save-excursion (org-end-of-subtree t))))
-    (save-excursion
-      (outline-next-heading)
-      (while (and (not has-children)
-                  (< (point) subtree-end))
-        (when (nd/is-todoitem-p)
-          (setq has-children t))
-;;        (org-forward-heading-same-level 1 t)))
-        (outline-next-heading)))
-    has-children))
-
-(defun nd/heading-has-parent ()
-  "returns parent keyword if heading is in the immediate subtree of a todoitem"
-  (save-excursion (and (org-up-heading-safe) (nd/is-todoitem-p))))
 
 (defun nd/is-project-p ()
   "return todo keyword if heading is todoitem and has children"
@@ -474,8 +382,30 @@ and retrieve the keyword"
   "return keyword if task is WAITING"
   (equal (nd/is-task-p) "WAITING"))
 
-;; org-forward-heading-same-level
-;; project level testing
+(defconst nd/project-invalid-todostates
+  '("WAITING" "NEXT")
+  "projects cannot have these todostates") 
+
+(defun nd/heading-has-children ()
+  "returns t if heading has todoitems in its immediate subtree"
+  ;; TODO make this more efficient (and accurate) by only testing
+  ;; the level immediately below (if it exists)
+  (let ((has-children)
+        (subtree-end (save-excursion (org-end-of-subtree t))))
+    (save-excursion
+      (outline-next-heading)
+      (while (and (not has-children)
+                  (< (point) subtree-end))
+        (when (nd/is-todoitem-p)
+          (setq has-children t))
+;;        (org-forward-heading-same-level 1 t)))
+        (outline-next-heading)))
+    has-children))
+
+(defun nd/heading-has-parent ()
+  "returns parent keyword if heading is in the immediate subtree of a todoitem"
+  (save-excursion (and (org-up-heading-safe) (nd/is-todoitem-p))))
+
 (defun nd/test-first-order-project ()
   "tests the state of a project assuming first order.
 if not first order, this function will iterate to the next project
@@ -496,39 +426,45 @@ function is not meant to be called independently."
         (org-forward-heading-same-level 1 t)))
     found-active))
 
-(defconst nd/project-invalid-todostates
-  '("WAITING" "NEXT")
-  "projects cannot have these todostates") 
-
 ;; project level testing
+;; TODO: is there a better way to handle statuscodes like this??? (array like thingy)
 (defun nd/descend-into-project ()
-  "returns numeric value according to state of project:
-0: stuck
-1: held
-2: waiting
-3: active
+  "returns statuscode according to state of project:
+0: complete
+10: stuck
+20: held
+30: waiting
+40: active
 
-Larger values have precedence over smaller (eg a NEXT
-keyword will override any other WAITING or HELD task present"
+This function works on an assumed order of precendence:
+- we start by assuming all projects as complete (eg only DONE and CANCELLED)
+- if project has any TODO (regardless of DONE or CANCELLED) it is stuck
+- if project has any HOLD (regardless of DONE, CANCELLED, or TODO) it is held
+- in the same manner WAITING means waiting project
+- in the same manner, NEXT means active. NEXT overrides all
+
+Using this scheme, we simply compare the magnitude of the statuscodes"
   (let ((project-state 0)
         (previous-point))
     (save-excursion
       (setq previous-point (point))
       (outline-next-heading)
-      (while (and (< project-state 3)
+      (while (and (< project-state 40)
                   (> (point) previous-point))
         (let ((keyword (nd/is-todoitem-p))
               (has-children (nd/heading-has-children)))
           (if keyword
               (let ((cur-state
                      (if has-children
-                         (cond ((equal keyword "HOLD") 1)
+                         (cond ((equal keyword "HOLD") 20)
                                ((equal keyword "TODO") (nd/descend-into-project))
+                               ;; NOTE: all projects are assumed to only have TODO, HOLD, CANCELLED, or DONE, hence the three possible statuscodes
                                (t 0))
-                       (cond ((equal keyword "HOLD") 1)
-                             ((equal keyword "WAITING") 2)
-                             ((equal keyword "NEXT") 3)
-                             ((nd/is-scheduled-heading-p) 3)
+                       (cond ((equal keyword "TODO") 10)
+                             ((equal keyword "HOLD") 20)
+                             ((equal keyword "WAITING") 30)
+                             ((equal keyword "NEXT") 40)
+                             ((nd/is-scheduled-heading-p) 40)
                              (t 0)))))
                 (if (> cur-state project-state)
                     (setq project-state cur-state)))))
@@ -540,11 +476,10 @@ keyword will override any other WAITING or HELD task present"
   (let ((keyword (nd/is-project-p)))
     (if keyword
         (cond ((member keyword nd/project-invalid-todostates) nil)
-              ((and (equal keyword "HOLD") (= statuscode 1)) keyword)
-              ((and (equal keyword "HOLD") (/= statuscode 1)) nil)
+              ((and (equal keyword "HOLD") (= statuscode 20)) keyword)
+              ((and (equal keyword "HOLD") (/= statuscode 20)) nil)
               ((= statuscode (nd/descend-into-project)) keyword)))))
 
-;; task skip functions
 ;; NOTE: use save-restriction and widen if we ever actually use narrowing
 (defun nd/skip-non-atomic-tasks ()
   (if (not (nd/is-atomic-task-p))
@@ -563,224 +498,110 @@ keyword will override any other WAITING or HELD task present"
       (save-excursion (or (outline-next-heading) (point-max)))))
   
 (defun nd/skip-non-stuck-projects ()
-  (if (not (nd/is-project-status-p 0))
+  (if (not (nd/is-project-status-p 10))
       (save-excursion (or (outline-next-heading) (point-max)))))
 
 (defun nd/skip-non-held-projects ()
-  (if (not (nd/is-project-status-p 1))
+  (if (not (nd/is-project-status-p 20))
       (save-excursion (or (outline-next-heading) (point-max)))))
 
 (defun nd/skip-non-waiting-projects ()
-  (if (not (nd/is-project-status-p 2))
+  (if (not (nd/is-project-status-p 30))
       (save-excursion (or (outline-next-heading) (point-max)))))
 
 (defun nd/skip-non-active-projects ()
-  (if (not (nd/is-project-status-p 3))
+  (if (not (nd/is-project-status-p 40))
       (save-excursion (or (outline-next-heading) (point-max)))))
 
-;; (defvar nd/hide-scheduled-and-waiting-next-tasks t)
+(defvar nd/agenda-project-view t)
 
-;; (defun nd/toggle-next-task-display ()
-;;   (interactive)
-;;   (setq nd/hide-scheduled-and-waiting-next-tasks (not nd/hide-scheduled-and-waiting-next-tasks))
-;;   (when  (equal major-mode 'org-agenda-mode)
-;;     (org-agenda-redo))
-;;   (message "%s WAITING and SCHEDULED NEXT Tasks" (if nd/hide-scheduled-and-waiting-next-tasks "Hide" "Show")))
+(defun nd/toggle-project-display ()
+  (interactive)
+  (setq nd/agenda-project-view (not nd/agenda-project-view))
+  (when  (equal major-mode 'org-agenda-mode)
+    (org-agenda-redo))
+  (message "%s project view in agenda" (if nd/agenda-project-view "Showing" "Hiding")))
 
-;; (defun nd/skip-non-stuck-projects ()
-;;   "Skip trees that are not stuck projects"
-;;   (save-restriction
-;;     (widen)
-;;     (let ((next-headline (save-excursion (or (outline-next-heading) (point-max)))))
-;;       (if (nd/is-project-p)
-;;           (let* ((subtree-end (save-excursion (org-end-of-subtree t)))
-;;                  (has-next ))
-;;             (save-excursion
-;;               (forward-line 1)
-;;               (while (and (not has-next)
-;;                           (< (point) subtree-end)
-;;                           (re-search-forward "^\\*+ NEXT " subtree-end t))
-;;                 (unless (member "WAITING" (org-get-tags-at))
-;;                   (setq has-next t))))
-;;             (if has-next
-;;                 next-headline
-;;               nil)) ; a stuck project, has subtasks but no next task
-;;         next-headline))))
+(defun nd/agenda-base-task-command (header skip-fun)
+  ;;(quote
+   (tags-todo "-NA-REFILE/!"
+              ((org-agenda-overriding-header header)
+               (org-agenda-skip-function skip-fun)
+               (org-agenda-todo-ignore-with-date 'all)
+               (org-agenda-sorting-strategy
+                '(category-keep)))))
+  
+;; (defvar nd/agenda-task-commands 
+;;   (quote
+;;    (tags-todo "-NA-REFILE/!"
+;;               ((org-agenda-overriding-header (concat "Project Next Tasks"))
+;;                (org-agenda-skip-function 'nd/skip-non-next-project-tasks)
+;;                (org-agenda-todo-ignore-with-date 'all)
+;;                (org-agenda-sorting-strategy
+;;                 '(category-keep))))
+;;    (tags-todo "-NA-REFILE/!"
+;;               ((org-agenda-overriding-header (concat "Project Waiting Tasks"))
+;;                (org-agenda-skip-function 'nd/skip-non-waiting-project-tasks)
+;;                (org-agenda-todo-ignore-with-date 'all)
+;;                (org-agenda-sorting-strategy
+;;                 '(category-keep))))
+;;    (tags-todo "-NA-REFILE/!"
+;;               ((org-agenda-overriding-header (concat "Project Held Tasks"))
+;;                (org-agenda-skip-function 'nd/skip-non-held-project-tasks)
+;;                (org-agenda-todo-ignore-with-date 'all)
+;;                (org-agenda-sorting-strategy
+;;                 '(category-keep))))
+;;    (tags-todo "-NA-REFILE/!"
+;;               ((org-agenda-overriding-header (concat "Atomic Tasks"))
+;;                (org-agenda-skip-function 'nd/skip-non-atomic-tasks)
+;;                (org-agenda-todo-ignore-with-date 'all)
+;;                (org-agenda-sorting-strategy
+;;                 '(category-keep))))))
+  
+;; (defvar nd/agenda-project-commands
+;;   (quote
+;;    ((tags-todo "-NA-REFILE/!"
+;;                ((org-agenda-overriding-header "Stuck Projects")
+;;                 (org-agenda-skip-function 'nd/skip-non-stuck-projects)
+;;                 (org-agenda-sorting-strategy
+;;                  '(category-keep))))
+;;     (tags-todo "-NA-REFILE/!"
+;;                ((org-agenda-overriding-header "Held Projects")
+;;                 (org-agenda-skip-function 'nd/skip-non-held-projects)
+;;                 (org-agenda-sorting-strategy
+;;                  '(category-keep))))
+;;     (tags-todo "-NA-REFILE/!"
+;;                ((org-agenda-overriding-header "Waiting Projects")
+;;                 (org-agenda-skip-function 'nd/skip-non-waiting-projects)
+;;                 (org-agenda-sorting-strategy
+;;                  '(category-keep))))
+;;     (tags-todo "-NA-REFILE/!"
+;;                ((org-agenda-overriding-header "Active 
+;;                 (org-agenda-skip-function 'nd/skip-non-active-projects)
+;;                 (org-agenda-sorting-strategy
+;;                  '(category-keep)))))))
 
-;; project test functions
-;; is state
-;;   if project
-;;     if order = 1
-;;       return (state is true)
-;;     else order > 1
-;;       call is state (recursive)
-;;   else if task
-;;     return (state is true)
-;; note: this needs to iterate through lines
-;; (defun nd/is-active-project-p ()
-;;   "return true if project has at least one
-;; NEXT/scheduled task or active subproject"
-;;   ;; if not a project then don't bother
-;;   (if (nd/is-project-p)
-;;       (let (((subtree-end (save-excursion (org-end-of-subtree t))))
-;;             (is-active))
-;;         (save-excursion
-;;           (while (and (not is-active)
-;;                       (< (point) subtree-end))
-;;             (outline-heading-next)
-;;             (cond ((nd/is-active-task-p) (setq is-active t))
-;;                   ((nd/is-active-project-p) (setq is-active))))))))
-
-;; (defun nd/skip-non-stuck-projects ()
-  ;; goto next headline
-  ;; if project
-  ;;   if project order 1
-  ;;     if it has NEXT, WAITING, HOLD, or a scheduled task
-  ;;       then skip (return end of subtree)
-  ;;     else stuck project, return nil
-  ;;   else (order > 1)
-  ;;     descend into project (recursion)
-  ;; skip (either an atomic task or non-todo, return next heading)
-;;  )
-
-;; (defun nd/skip-non-projects ()
-;;   "Skip trees that are not projects"
-;;   ;; (nd/list-sublevels-for-projects-indented)
-;;   (if (save-excursion (nd/skip-non-stuck-projects))
-;;       (save-restriction
-;;         (widen)
-;;         (let ((subtree-end (save-excursion (org-end-of-subtree t))))
-;;           (cond
-;;            ((nd/is-project-p)
-;;             nil)
-;;            ((and (nd/is-subtask-p) (not (nd/is-atomic-p)))
-;;             nil)
-;;            (t
-;;             subtree-end))))
-;;     (save-excursion (org-end-of-subtree t))))
-
-(defun nd/skip-non-tasks ()
-  "Show non-project tasks.
-Skip project and sub-project tasks, habits, and project related tasks."
-  (save-restriction
-    (widen)
-    (let ((next-headline (save-excursion (or (outline-next-heading) (point-max)))))
-      (cond
-       ((nd/is-atomic-p)
-        nil)
-       (t
-        next-headline)))))
-
-(defun nd/skip-project-trees-and-habits ()
-  "Skip trees that are projects"
-  (save-restriction
-    (widen)
-    (let ((subtree-end (save-excursion (org-end-of-subtree t))))
-      (cond
-       ((nd/is-project-p)
-        subtree-end)
-       ;; ((org-is-habit-p)
-       ;;  subtree-end)
-       (t
-        nil)))))
-
-(defun nd/skip-projects-and-habits-and-single-tasks ()
-  "Skip trees that are projects, tasks that are habits, single non-project tasks"
-  (save-restriction
-    (widen)
-    (let ((next-headline (save-excursion (or (outline-next-heading) (point-max)))))
-      (cond
-       ;; ((org-is-habit-p)
-       ;;  next-headline)
-       ((and nd/hide-scheduled-and-waiting-next-tasks
-             (member "WAITING" (org-get-tags-at)))
-        next-headline)
-       ((nd/is-project-p)
-        next-headline)
-       ((and (nd/is-atomic-p) (not (nd/is-subtask-p)))
-        next-headline)
-       (t
-        nil)))))
-
-(defun nd/skip-project-tasks-maybe ()
-  "Show tasks related to the current restriction.
-When restricted to a project, skip project and sub project tasks, habits, NEXT tasks, and loose tasks.
-When not restricted, skip project and sub-project tasks, habits, and project related tasks."
-  (save-restriction
-    (widen)
-    (let* ((subtree-end (save-excursion (org-end-of-subtree t)))
-           (next-headline (save-excursion (or (outline-next-heading) (point-max))))
-           (limit-to-project (marker-buffer org-agenda-restrict-begin)))
-      (cond
-       ((nd/is-project-p)
-        next-headline)
-       ;; ((org-is-habit-p)
-       ;;  subtree-end)
-       ((and (not limit-to-project)
-             (nd/is-subtask-p))
-        subtree-end)
-       ((and limit-to-project
-             (nd/is-subtask-p)
-             (member (org-get-todo-state) (list "NEXT")))
-        subtree-end)
-       (t
-        nil)))))
-
-(defun nd/skip-project-tasks ()
-  "Show non-project tasks.
-Skip project and sub-project tasks, habits, and project related tasks."
-  (save-restriction
-    (widen)
-    (let* ((subtree-end (save-excursion (org-end-of-subtree t))))
-      (cond
-       ((nd/is-project-p)
-        subtree-end)
-       ;; ((org-is-habit-p)
-       ;;  subtree-end)
-       ((nd/is-subtask-p)
-        subtree-end)
-       (t
-        nil)))))
-
-(defun nd/skip-non-project-tasks ()
-  "Show project tasks.
-Skip project and sub-project tasks, habits, and loose non-project tasks."
-  (save-restriction
-    (widen)
-    (let* ((subtree-end (save-excursion (org-end-of-subtree t)))
-           (next-headline (save-excursion (or (outline-next-heading) (point-max)))))
-      (cond
-       ((nd/is-project-p)
-        next-headline)
-       ;; ((org-is-habit-p)
-       ;;  subtree-end)
-       ((and (nd/is-subtask-p)
-             (member (org-get-todo-state) (list "NEXT")))
-        subtree-end)
-       ((not (nd/is-subtask-p))
-        subtree-end)
-       (t
-        nil)))))
-
-(defun nd/skip-projects-and-habits ()
-  "Skip trees that are projects and tasks that are habits"
-  (save-restriction
-    (widen)
-    (let ((subtree-end (save-excursion (org-end-of-subtree t))))
-      (cond
-       ((nd/is-project-p)
-        subtree-end)
-       ;; ((org-is-habit-p)
-       ;;  subtree-end)
-       (t
-        nil)))))
-
-;; (defun nd/skip-non-subprojects ()
-;;   "Skip trees that are not projects"
-;;   (let ((next-headline (save-excursion (outline-next-heading))))
-;;     (if (nd/is-subproject-p)
-;;         nil
-;;       next-headline)))
+(setq org-agenda-tags-todo-honor-ignore-options t)
+(setq org-agenda-custom-commands
+      (quote ((" " "Agenda"
+               (;;(agenda "" nil)
+                (tags "REFILE"
+                      ((org-agenda-overriding-header "Tasks to Refile")
+                       (org-tags-match-list-sublevels nil)))
+                nd/agenda-base-task-command)
+                ;;(nd/agenda-base-task-command "Project next tasks" 'nd/skip-non-next-project-tasks))
+                ;;(if nd/agenda-project-view nd/agenda-project-commands nd/agenda-task-commands))
+                ;; (tags-todo "-NA-REFILE/!"
+                ;;            ((org-agenda-overriding-header "Projects")
+                ;;             (org-agenda-skip-function 'nd/skip-non-projects)
+                ;;             (org-tags-match-list-sublevels 'indented)
+                ;;             (org-agenda-sorting-strategy
+                ;;              '(category-keep))))
+                ;; (tags "-NA-REFILE/"
+                ;;       ((org-agenda-overriding-header "Tasks to Archive")
+                ;;        (org-agenda-skip-function 'nd/skip-non-archivable-tasks)
+                ;;        (org-tags-match-list-sublevels nil))))
+               nil))))
 
 (use-package org-bullets
   :ensure t
