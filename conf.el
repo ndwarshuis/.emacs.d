@@ -522,14 +522,12 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
     (org-agenda-redo))
   (message "%s project view in agenda" (if nd/agenda-project-view "Showing" "Hiding")))
 
-(defun nd/agenda-base-task-command (header skip-fun)
-  ;;(quote
-   (tags-todo "-NA-REFILE/!"
-              ((org-agenda-overriding-header header)
-               (org-agenda-skip-function skip-fun)
-               (org-agenda-todo-ignore-with-date 'all)
-               (org-agenda-sorting-strategy
-                '(category-keep)))))
+(defmacro nd/agenda-base-task-command (header skip-fun)
+  `(tags-todo "-NA-REFILE/!"
+        ((org-agenda-overriding-header ,header)
+              (org-agenda-skip-function ,skip-fun)
+              (org-agenda-todo-ignore-with-date 'all)
+              (org-agenda-sorting-strategy '(category-keep)))))
   
 ;; (defvar nd/agenda-task-commands 
 ;;   (quote
@@ -583,25 +581,25 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
 
 (setq org-agenda-tags-todo-honor-ignore-options t)
 (setq org-agenda-custom-commands
-      (quote ((" " "Agenda"
-               (;;(agenda "" nil)
-                (tags "REFILE"
-                      ((org-agenda-overriding-header "Tasks to Refile")
-                       (org-tags-match-list-sublevels nil)))
-                nd/agenda-base-task-command)
-                ;;(nd/agenda-base-task-command "Project next tasks" 'nd/skip-non-next-project-tasks))
-                ;;(if nd/agenda-project-view nd/agenda-project-commands nd/agenda-task-commands))
-                ;; (tags-todo "-NA-REFILE/!"
-                ;;            ((org-agenda-overriding-header "Projects")
-                ;;             (org-agenda-skip-function 'nd/skip-non-projects)
-                ;;             (org-tags-match-list-sublevels 'indented)
-                ;;             (org-agenda-sorting-strategy
-                ;;              '(category-keep))))
-                ;; (tags "-NA-REFILE/"
-                ;;       ((org-agenda-overriding-header "Tasks to Archive")
-                ;;        (org-agenda-skip-function 'nd/skip-non-archivable-tasks)
-                ;;        (org-tags-match-list-sublevels nil))))
-               nil))))
+      `((" " "Agenda"
+         ((agenda "" nil)
+          (tags "REFILE"
+                ((org-agenda-overriding-header (if nd/agenda-project-view "Tasks to Refile" "Herro"))
+                 (org-tags-match-list-sublevels nil)))
+          ,(macroexpand '(nd/agenda-base-task-command "Atomic tasks" 'nd/skip-non-atomic-tasks)))
+         ;;(nd/agenda-base-task-command "Project next tasks" 'nd/skip-non-next-project-tasks))
+         ;;(if nd/agenda-project-view nd/agenda-project-commands nd/agenda-task-commands))
+         ;; (tags-todo "-NA-REFILE/!"
+         ;;            ((org-agenda-overriding-header "Projects")
+         ;;             (org-agenda-skip-function 'nd/skip-non-projects)
+         ;;             (org-tags-match-list-sublevels 'indented)
+         ;;             (org-agenda-sorting-strategy
+         ;;              '(category-keep))))
+         ;; (tags "-NA-REFILE/"
+         ;;       ((org-agenda-overriding-header "Tasks to Archive")
+         ;;        (org-agenda-skip-function 'nd/skip-non-archivable-tasks)
+         ;;        (org-tags-match-list-sublevels nil))))
+         nil)))
 
 (use-package org-bullets
   :ensure t
