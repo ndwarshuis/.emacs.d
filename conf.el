@@ -523,14 +523,14 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
   (message "%s project view in agenda" (if nd/agenda-project-view "Showing" "Hiding")))
 
 (defmacro nd/agenda-base-task-command (header skip-fun)
-  `(tags-todo "-NA-REFILE/!"
+  `(list tags-todo "-NA-REFILE/!"
         ((org-agenda-overriding-header ,header)
               (org-agenda-skip-function ,skip-fun)
               (org-agenda-todo-ignore-with-date 'all)
               (org-agenda-sorting-strategy '(category-keep)))))
   
 (defmacro nd/agenda-base-project-command (header skip-fun)
-  `(tags-todo "-NA-REFILE/!"
+  `(list tags-todo "-NA-REFILE/!"
         ((org-agenda-overriding-header ,header)
               (org-agenda-skip-function ,skip-fun)
               (org-agenda-sorting-strategy '(category-keep)))))
@@ -564,14 +564,14 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
 
 (setq org-agenda-tags-todo-honor-ignore-options t)
 (setq org-agenda-custom-commands
-      `((" " "Agenda"
-         ((agenda "" nil)
-          (tags "REFILE"
-                ((org-agenda-overriding-header (if nd/agenda-project-view "Tasks to Refile" "Herro"))
-                 (org-tags-match-list-sublevels nil)))
-          (if nd/agenda-project-view 
-              ,(macroexpand '(nd/agenda-base-task-command "Atomic Tasks" 'nd/skip-non-atomic-tasks))
-            ,(macroexpand '(nd/agenda-base-project-command "Active Projects" 'nd/skip-non-active-projects))))
+      '((" " "Agenda"
+         ((if t '(agenda "" nil)))
+          ;; (tags "REFILE"
+          ;;       ((org-agenda-overriding-header (if nd/agenda-project-view "Tasks to Refile" "Herro"))
+          ;;        (org-tags-match-list-sublevels nil)))
+          ;; (if nd/agenda-project-view 
+          ;;     ,(macroexpand '(nd/agenda-base-task-command "Atomic Tasks" 'nd/skip-non-atomic-tasks))
+          ;;   ,(macroexpand '(nd/agenda-base-project-command "Active Projects" 'nd/skip-non-active-projects))))
          ;;(nd/agenda-base-task-command "Project next tasks" 'nd/skip-non-next-project-tasks))
          ;;(if nd/agenda-project-view nd/agenda-project-commands nd/agenda-task-commands))
          ;; (tags-todo "-NA-REFILE/!"
