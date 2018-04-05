@@ -529,32 +529,15 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
               (org-agenda-todo-ignore-with-date 'all)
               (org-agenda-sorting-strategy '(category-keep)))))
   
-;; (defvar nd/agenda-task-commands 
-;;   (quote
-;;    (tags-todo "-NA-REFILE/!"
-;;               ((org-agenda-overriding-header (concat "Project Next Tasks"))
-;;                (org-agenda-skip-function 'nd/skip-non-next-project-tasks)
-;;                (org-agenda-todo-ignore-with-date 'all)
-;;                (org-agenda-sorting-strategy
-;;                 '(category-keep))))
-;;    (tags-todo "-NA-REFILE/!"
-;;               ((org-agenda-overriding-header (concat "Project Waiting Tasks"))
-;;                (org-agenda-skip-function 'nd/skip-non-waiting-project-tasks)
-;;                (org-agenda-todo-ignore-with-date 'all)
-;;                (org-agenda-sorting-strategy
-;;                 '(category-keep))))
-;;    (tags-todo "-NA-REFILE/!"
-;;               ((org-agenda-overriding-header (concat "Project Held Tasks"))
-;;                (org-agenda-skip-function 'nd/skip-non-held-project-tasks)
-;;                (org-agenda-todo-ignore-with-date 'all)
-;;                (org-agenda-sorting-strategy
-;;                 '(category-keep))))
-;;    (tags-todo "-NA-REFILE/!"
-;;               ((org-agenda-overriding-header (concat "Atomic Tasks"))
-;;                (org-agenda-skip-function 'nd/skip-non-atomic-tasks)
-;;                (org-agenda-todo-ignore-with-date 'all)
-;;                (org-agenda-sorting-strategy
-;;                 '(category-keep))))))
+(defmacro nd/agenda-base-project-command (header skip-fun)
+  `(tags-todo "-NA-REFILE/!"
+        ((org-agenda-overriding-header ,header)
+              (org-agenda-skip-function ,skip-fun)
+              (org-agenda-sorting-strategy '(category-keep)))))
+
+;; (defmacro nd/agenda-task-commands () 
+;;   (apply #'values '((macroexpand '(nd/agenda-base-task-command "Project Next Tasks" 'nd/skip-non-next-project-task))
+;;                     (macroexpand '(nd/agenda-base-task-command "Atomic tasks" 'nd/skip-non-atomic-tasks)))))
   
 ;; (defvar nd/agenda-project-commands
 ;;   (quote
@@ -586,7 +569,9 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
           (tags "REFILE"
                 ((org-agenda-overriding-header (if nd/agenda-project-view "Tasks to Refile" "Herro"))
                  (org-tags-match-list-sublevels nil)))
-          ,(macroexpand '(nd/agenda-base-task-command "Atomic tasks" 'nd/skip-non-atomic-tasks)))
+          (if nd/agenda-project-view 
+              ,(macroexpand '(nd/agenda-base-task-command "Atomic Tasks" 'nd/skip-non-atomic-tasks))
+            ,(macroexpand '(nd/agenda-base-project-command "Active Projects" 'nd/skip-non-active-projects))))
          ;;(nd/agenda-base-task-command "Project next tasks" 'nd/skip-non-next-project-tasks))
          ;;(if nd/agenda-project-view nd/agenda-project-commands nd/agenda-task-commands))
          ;; (tags-todo "-NA-REFILE/!"
