@@ -563,12 +563,13 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
 ;;                  '(category-keep)))))))
 
 (setq org-agenda-tags-todo-honor-ignore-options t)
+(setq testy 'tags)
 (setq org-agenda-custom-commands
-      '((" " "Agenda"
-         ((if t '(agenda "" nil)))
-          ;; (tags "REFILE"
-          ;;       ((org-agenda-overriding-header (if nd/agenda-project-view "Tasks to Refile" "Herro"))
-          ;;        (org-tags-match-list-sublevels nil)))
+      `((" " "Agenda"
+         ((agenda "" nil)
+          (,testy "REFILE"
+                ((org-agenda-overriding-header (if nd/agenda-project-view "Tasks to Refile" "Herro"))
+                 (org-tags-match-list-sublevels nil))))
           ;; (if nd/agenda-project-view 
           ;;     ,(macroexpand '(nd/agenda-base-task-command "Atomic Tasks" 'nd/skip-non-atomic-tasks))
           ;;   ,(macroexpand '(nd/agenda-base-project-command "Active Projects" 'nd/skip-non-active-projects))))
