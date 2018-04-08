@@ -262,15 +262,6 @@
               ("HOLD" :foreground "violet" :weight bold)
               ("CANCELLED" :foreground "deep sky blue" :weight bold))))
 
-(setq org-todo-state-tags-triggers
-      (quote (("CANCELLED" ("CANCELLED" . t))
-              ("WAITING" ("WAITING" . t))
-              ("HOLD" ("WAITING") ("HOLD" . t))
-              (done ("WAITING") ("HOLD"))
-              ("TODO" ("WAITING") ("CANCELLED") ("HOLD"))
-              ("NEXT" ("WAITING") ("CANCELLED") ("HOLD"))
-              ("DONE" ("WAITING") ("CANCELLED") ("HOLD")))))
-
 (setq  org-tag-alist (quote ((:startgroup)
                             ("@errand" . ?e)
                             ("@work" . ?o)
