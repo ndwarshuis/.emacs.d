@@ -65,6 +65,10 @@
 
 (global-set-key (kbd "C-h a") 'apropos)
 
+(global-set-key (kbd "<f1>") 'org-agenda)
+(global-set-key (kbd "<f2>") 'org-capture)
+(global-set-key (kbd "<f3>") 'org-iswitchb)
+
 (use-package delight
   :ensure t)
 
@@ -226,7 +230,7 @@
 (load "ess-site")
 (setq ess-history-file "session.Rhistory")
 (setq ess-history-directory
-      (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+          (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
 (setq org-log-done t)
 (setq org-src-window-setup 'current-window)
@@ -239,20 +243,13 @@
 (add-to-list 'org-structure-template-alist
              '("el" "#+BEGIN_SRC emacs-lisp\n?\n#+END_SRC"))
 
-(global-set-key "\C-cl" 'org-store-link)
-(global-set-key "\C-ca" 'org-agenda)
-(global-set-key "\C-cb" 'org-iswitchb)
-(global-set-key (kbd "C-c c") 'org-capture)
-
-;; consider adding f1-12 shortcuts for org things that must be a) fast and b) work in any mode
-
 (setq org-special-ctrl-a/e t)
 (setq org-special-ctrl-k t)
 (setq org-yank-adjusted-subtrees t)
 
 (setq org-todo-keywords
-      (quote ((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d)")
-              (sequence "WAITING(w@/!)" "HOLD(h@/!)" "|" "CANCELLED(c@/!)"))))
+      '((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d)")
+        (sequence "WAITING(w@/!)" "HOLD(h@/!)" "|" "CANCELLED(c@/!)")))
 
 (setq org-todo-keyword-faces
       (quote (("TODO" :foreground "light coral" :weight bold)
@@ -264,33 +261,38 @@
 
 (setq  org-tag-alist (quote ((:startgroup)
                             ("@errand" . ?e)
-                            ("@work" . ?o)
+                            ("@work" . ?w)
                             ("@home" . ?h)
                             ("@travel" . ?f)
                             (:endgroup)
                             ("LAPTOP" . ?L)
-                            ("WAITING" . ?W)
-                            ("HOLD" . ?H)
                             ("PERSONAL" . ?P)
-                            ("WORK" . ?O)
+                            ("WORK" . ?W)
                             ("NOTE" . ?N)
-                            ("CANCELLED" . ?C)
                             ("FLAGGED" . ??))))
 
-(setq org-capture-templates
-      (quote (("t" "todo" entry (file "~/Org/capture.org") "* TODO %?\n%U\n")
-              ("n" "note" entry (file "~/Org/capture.org") "* %? :NOTE:\n%U\n" )
-              ("a" "appointment" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t\n" )
-              ("m" "multi-day" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t--%^t\n" )
-              ("d" "deadline" entry (file "~/Org/capture.org") "* TODO %?\nDEADLINE: %^t\n%U\n" )
+;; TODO I'm sure there is a better way to do this in lisp
+(setq org-tag-faces
+      '(("LAPTOP" . (:foreground "PaleGreen"))
+        ("PERSONAL" . (:foreground "PaleGreen"))
+        ("WORK" . (:foreground "PaleGreen"))
+        ("NOTE" . (:foreground "PaleGreen"))
+        ("FLAGGED" . (:foreground "PaleGreen"))))
 
-              ("j" "journal" entry (file+datetree "~/Org/diary.org") "* %?\n%U\n")
-              ("p" "org-protocol" entry (file+headline ,(concat org-directory "~/Org/capture.org") "Inbox")
-               "* %^{Title}\nSource: %u, %c\n #+BEGIN_QUOTE\n%i\n#+END_QUOTE\n\n\n%?")
-              ("L" "org-protocol" entry (file+headline ,(concat org-directory "~/Org/capture.org") "Inbox")
-               "* %? [[%:link][%:description]] \nCaptured On: %U")            
-              ("h" "habit" entry (file "~/Org/capture.org")
-               "* NEXT %?\n%U\n%a\nSCHEDULED: %(format-time-string \"%<<%Y-%m-%d %a .+1d/3d>>\")\n:PROPERTIES:\n:STYLE: habit\n:REPEAT_TO_STATE: NEXT\n:END:\n"))))
+(setq org-capture-templates
+      '(("t" "todo" entry (file "~/Org/capture.org") "* TODO %?\n%U\n")
+        ("n" "note" entry (file "~/Org/capture.org") "* %? :NOTE:\n%U\n" )
+        ("a" "appointment" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t\n" )
+        ("m" "multi-day" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t--%^t\n" )
+        ("d" "deadline" entry (file "~/Org/capture.org") "* TODO %?\nDEADLINE: %^t\n%U\n" )
+        
+        ("j" "journal" entry (file+datetree "~/Org/diary.org") "* %?\n%U\n")
+        ("p" "org-protocol" entry (file+headline ,(concat org-directory "~/Org/capture.org") "Inbox")
+         "* %^{Title}\nSource: %u, %c\n #+BEGIN_QUOTE\n%i\n#+END_QUOTE\n\n\n%?")
+        ("L" "org-protocol" entry (file+headline ,(concat org-directory "~/Org/capture.org") "Inbox")
+         "* %? [[%:link][%:description]] \nCaptured On: %U")            
+        ("h" "habit" entry (file "~/Org/capture.org")
+         "* NEXT %?\n%U\n%a\nSCHEDULED: %(format-time-string \"%<<%Y-%m-%d %a .+1d/3d>>\")\n:PROPERTIES:\n:STYLE: habit\n:REPEAT_TO_STATE: NEXT\n:END:\n")))
 
 (setq org-refile-targets (quote ((nil :maxlevel . 9)
                                  ("~/Org/reference/idea.org" :maxlevel . 9)
@@ -300,7 +302,7 @@
 (setq org-outline-path-complete-in-steps nil)
 (setq org-completion-use-ido t)
 
-(setq org-refile-allow-creating-parent-nodes (quote confirm))
+(setq org-refile-allow-creating-parent-nodes 'confirm)
 
 (setq org-indirect-buffer-display 'current-window)
 

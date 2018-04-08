@@ -101,9 +101,16 @@ NOTE: this only works if we start term after gui, and term has light bg. not big
     (setq dashboard-items '((recents . 10))))
 #+END_SRC
 * keybindings
-** apropros
+** overrides
 #+BEGIN_SRC emacs-lisp
-(global-set-key (kbd "C-h a") 'apropos)
+  (global-set-key (kbd "C-h a") 'apropos)
+#+END_SRC
+** modeless bindings
+These are commands that should work in any mode. Make the assumption that function keys are pretty much free in any major/minor mode
+#+BEGIN_SRC emacs-lisp
+  (global-set-key (kbd "<f1>") 'org-agenda)
+  (global-set-key (kbd "<f2>") 'org-capture)
+  (global-set-key (kbd "<f3>") 'org-iswitchb)
 #+END_SRC
 * printing
 ** 
@@ -373,15 +380,6 @@ vim is all about escape, not...ctrl+g???
                '("el" "#+BEGIN_SRC emacs-lisp\n?\n#+END_SRC"))
 #+END_SRC
 ** keyboard shortcuts
-*** global
-#+BEGIN_SRC emacs-lisp
-  (global-set-key "\C-cl" 'org-store-link)
-  (global-set-key "\C-ca" 'org-agenda)
-  (global-set-key "\C-cb" 'org-iswitchb)
-  (global-set-key (kbd "C-c c") 'org-capture)
-
-  ;; consider adding f1-12 shortcuts for org things that must be a) fast and b) work in any mode
-#+END_SRC
 *** navigation
 #+BEGIN_SRC emacs-lisp
   (setq org-special-ctrl-a/e t)
@@ -392,8 +390,8 @@ vim is all about escape, not...ctrl+g???
 *** sequences
 #+BEGIN_SRC emacs-lisp
   (setq org-todo-keywords
-        (quote ((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d)")
-                (sequence "WAITING(w@/!)" "HOLD(h@/!)" "|" "CANCELLED(c@/!)"))))
+        '((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d)")
+          (sequence "WAITING(w@/!)" "HOLD(h@/!)" "|" "CANCELLED(c@/!)")))
 #+END_SRC
 *** colors
 #+BEGIN_SRC emacs-lisp
@@ -405,42 +403,45 @@ vim is all about escape, not...ctrl+g???
               ("HOLD" :foreground "violet" :weight bold)
               ("CANCELLED" :foreground "deep sky blue" :weight bold))))
 #+END_SRC
-** tag selection keys
+** tags 
+I use tags for filtering in the agenda view to narrow down tasks by project/context. I don't use tags for custom commands (easier with skip functions). I make the tags here brightly colored to distinguish from those set in FILETAGS
 #+BEGIN_SRC emacs-lisp
   (setq  org-tag-alist (quote ((:startgroup)
                               ("@errand" . ?e)
-                              ("@work" . ?o)
+                              ("@work" . ?w)
                               ("@home" . ?h)
                               ("@travel" . ?f)
                               (:endgroup)
                               ("LAPTOP" . ?L)
-                              ("WAITING" . ?W)
-                              ("HOLD" . ?H)
                               ("PERSONAL" . ?P)
-                              ("WORK" . ?O)
+                              ("WORK" . ?W)
                               ("NOTE" . ?N)
-                              ("CANCELLED" . ?C)
                               ("FLAGGED" . ??))))
+
+  ;; TODO I'm sure there is a better way to do this in lisp
+  (setq org-tag-faces
+        '(("LAPTOP" . (:foreground "PaleGreen"))
+          ("PERSONAL" . (:foreground "PaleGreen"))
+          ("WORK" . (:foreground "PaleGreen"))
+          ("NOTE" . (:foreground "PaleGreen"))
+          ("FLAGGED" . (:foreground "PaleGreen"))))
 #+END_SRC
 ** capture templates
-TODO, use %a to link to calling buffer
-TODO: add fast way to immediately schedule an event or appointment
-TODO: add meeting template as scheduled+action item thing
 #+BEGIN_SRC emacs-lisp
   (setq org-capture-templates
-        (quote (("t" "todo" entry (file "~/Org/capture.org") "* TODO %?\n%U\n")
-                ("n" "note" entry (file "~/Org/capture.org") "* %? :NOTE:\n%U\n" )
-                ("a" "appointment" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t\n" )
-                ("m" "multi-day" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t--%^t\n" )
-                ("d" "deadline" entry (file "~/Org/capture.org") "* TODO %?\nDEADLINE: %^t\n%U\n" )
-
-                ("j" "journal" entry (file+datetree "~/Org/diary.org") "* %?\n%U\n")
-                ("p" "org-protocol" entry (file+headline ,(concat org-directory "~/Org/capture.org") "Inbox")
-                 "* %^{Title}\nSource: %u, %c\n #+BEGIN_QUOTE\n%i\n#+END_QUOTE\n\n\n%?")
-                ("L" "org-protocol" entry (file+headline ,(concat org-directory "~/Org/capture.org") "Inbox")
-                 "* %? [[%:link][%:description]] \nCaptured On: %U")            
-                ("h" "habit" entry (file "~/Org/capture.org")
-                 "* NEXT %?\n%U\n%a\nSCHEDULED: %(format-time-string \"%<<%Y-%m-%d %a .+1d/3d>>\")\n:PROPERTIES:\n:STYLE: habit\n:REPEAT_TO_STATE: NEXT\n:END:\n"))))
+        '(("t" "todo" entry (file "~/Org/capture.org") "* TODO %?\n%U\n")
+          ("n" "note" entry (file "~/Org/capture.org") "* %? :NOTE:\n%U\n" )
+          ("a" "appointment" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t\n" )
+          ("m" "multi-day" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t--%^t\n" )
+          ("d" "deadline" entry (file "~/Org/capture.org") "* TODO %?\nDEADLINE: %^t\n%U\n" )
+          
+          ("j" "journal" entry (file+datetree "~/Org/diary.org") "* %?\n%U\n")
+          ("p" "org-protocol" entry (file+headline ,(concat org-directory "~/Org/capture.org") "Inbox")
+           "* %^{Title}\nSource: %u, %c\n #+BEGIN_QUOTE\n%i\n#+END_QUOTE\n\n\n%?")
+          ("L" "org-protocol" entry (file+headline ,(concat org-directory "~/Org/capture.org") "Inbox")
+           "* %? [[%:link][%:description]] \nCaptured On: %U")            
+          ("h" "habit" entry (file "~/Org/capture.org")
+           "* NEXT %?\n%U\n%a\nSCHEDULED: %(format-time-string \"%<<%Y-%m-%d %a .+1d/3d>>\")\n:PROPERTIES:\n:STYLE: habit\n:REPEAT_TO_STATE: NEXT\n:END:\n")))
 #+END_SRC
 ** refile
 *** targets
@@ -457,7 +458,7 @@ TODO: add meeting template as scheduled+action item thing
 #+END_SRC
 *** node creation
 #+BEGIN_SRC emacs-lisp
-  (setq org-refile-allow-creating-parent-nodes (quote confirm))
+  (setq org-refile-allow-creating-parent-nodes 'confirm)
 #+END_SRC
 *** use current window
 #+BEGIN_SRC emacs-lisp
