@@ -324,8 +324,9 @@
 (setq org-agenda-dim-blocked-tasks nil)
 (setq org-agenda-compact-blocks t)
 
-(setq org-agenda-span 'day)
+(evil-define-key 'motion org-agenda-mode-map "T" 'nd/toggle-project-toplevel-display)
 
+(setq org-agenda-span 'day)
 (setq org-agenda-time-grid (quote ((daily today remove-match)
                                    #("----------------" 0 16 (org-heading t))
                                    (0900 1100 1300 1500 1700))))
@@ -435,6 +436,7 @@ function is not meant to be called independently."
 20: held
 30: waiting
 40: active
+50: invalid???
 
 This function works on an assumed order of precendence:
 - we start by assuming all projects as complete (eg only DONE and CANCELLED)
@@ -460,11 +462,11 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
                                ((equal keyword "TODO") (nd/descend-into-project))
                                ;; NOTE: all projects are assumed to only have TODO, HOLD, CANCELLED, or DONE, hence the three possible statuscodes
                                (t 0))
-                       (cond ((equal keyword "TODO") 10)
-                             ((equal keyword "HOLD") 20)
+                       (cond ((equal keyword "HOLD") 20)
                              ((equal keyword "WAITING") 30)
                              ((equal keyword "NEXT") 40)
-                             ((nd/is-scheduled-heading-p) 40)
+                             ((and (equal keyword "TODO") (nd/is-scheduled-heading-p)) 40)
+                             ((equal keyword "TODO") 10)
                              (t 0)))))
                 (if (> cur-state project-state)
                     (setq project-state cur-state)))))
@@ -481,6 +483,7 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
               ((= statuscode (nd/descend-into-project)) keyword)))))
 
 ;; NOTE: use save-restriction and widen if we ever actually use narrowing
+;; tasks
 (defun nd/skip-non-atomic-tasks ()
   (if (not (nd/is-atomic-task-p))
       (save-excursion (or (outline-next-heading) (point-max)))))
@@ -497,95 +500,65 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
   (if (not (equal (nd/is-project-task-p) "HOLD"))
       (save-excursion (or (outline-next-heading) (point-max)))))
   
-(defun nd/skip-non-stuck-projects ()
-  (if (not (nd/is-project-status-p 10))
+;; projects
+(defun nd/skip-projects-without-statuscode (statuscode)
+  (if (not (nd/is-project-status-p statuscode))
       (save-excursion (or (outline-next-heading) (point-max)))))
 
-(defun nd/skip-non-held-projects ()
-  (if (not (nd/is-project-status-p 20))
+;; top-level projects
+(defun nd/skip-subprojects-without-statuscode (statuscode)
+  (if (or (nd/heading-has-parent) (not (nd/is-project-status-p statuscode)))
       (save-excursion (or (outline-next-heading) (point-max)))))
 
-(defun nd/skip-non-waiting-projects ()
-  (if (not (nd/is-project-status-p 30))
-      (save-excursion (or (outline-next-heading) (point-max)))))
+(defvar nd/agenda-limit-project-toplevel t
+  "used to filter projects by all levels or top-level only")
 
-(defun nd/skip-non-active-projects ()
-  (if (not (nd/is-project-status-p 40))
-      (save-excursion (or (outline-next-heading) (point-max)))))
-
-(defvar nd/agenda-project-view t)
-
-(defun nd/toggle-project-display ()
+(defun nd/toggle-project-toplevel-display ()
   (interactive)
-  (setq nd/agenda-project-view (not nd/agenda-project-view))
+  (setq nd/agenda-limit-project-toplevel (not nd/agenda-limit-project-toplevel))
   (when  (equal major-mode 'org-agenda-mode)
     (org-agenda-redo))
-  (message "%s project view in agenda" (if nd/agenda-project-view "Showing" "Hiding")))
+  (message "Showing %s project view in agenda" (if nd/agenda-limit-project-toplevel "toplevel" "complete")))
 
-(defmacro nd/agenda-base-task-command (header skip-fun)
-  `(list tags-todo "-NA-REFILE/!"
-        ((org-agenda-overriding-header ,header)
-              (org-agenda-skip-function ,skip-fun)
-              (org-agenda-todo-ignore-with-date 'all)
-              (org-agenda-sorting-strategy '(category-keep)))))
-  
-(defmacro nd/agenda-base-project-command (header skip-fun)
-  `(list tags-todo "-NA-REFILE/!"
-        ((org-agenda-overriding-header ,header)
-              (org-agenda-skip-function ,skip-fun)
-              (org-agenda-sorting-strategy '(category-keep)))))
+(defmacro nd/agenda-base-task-command (keyword skip-fun)
+  "shorter syntax to define task agenda commands"
+  `(tags-todo
+    "-NA-REFILE/!"
+    ((org-agenda-overriding-header (concat ,keyword " Tasks"))
+     (org-agenda-skip-function ,skip-fun)
+     (org-agenda-todo-ignore-with-date 'all)
+     (org-agenda-sorting-strategy '(category-keep)))))
 
-;; (defmacro nd/agenda-task-commands () 
-;;   (apply #'values '((macroexpand '(nd/agenda-base-task-command "Project Next Tasks" 'nd/skip-non-next-project-task))
-;;                     (macroexpand '(nd/agenda-base-task-command "Atomic tasks" 'nd/skip-non-atomic-tasks)))))
-  
-;; (defvar nd/agenda-project-commands
-;;   (quote
-;;    ((tags-todo "-NA-REFILE/!"
-;;                ((org-agenda-overriding-header "Stuck Projects")
-;;                 (org-agenda-skip-function 'nd/skip-non-stuck-projects)
-;;                 (org-agenda-sorting-strategy
-;;                  '(category-keep))))
-;;     (tags-todo "-NA-REFILE/!"
-;;                ((org-agenda-overriding-header "Held Projects")
-;;                 (org-agenda-skip-function 'nd/skip-non-held-projects)
-;;                 (org-agenda-sorting-strategy
-;;                  '(category-keep))))
-;;     (tags-todo "-NA-REFILE/!"
-;;                ((org-agenda-overriding-header "Waiting Projects")
-;;                 (org-agenda-skip-function 'nd/skip-non-waiting-projects)
-;;                 (org-agenda-sorting-strategy
-;;                  '(category-keep))))
-;;     (tags-todo "-NA-REFILE/!"
-;;                ((org-agenda-overriding-header "Active 
-;;                 (org-agenda-skip-function 'nd/skip-non-active-projects)
-;;                 (org-agenda-sorting-strategy
-;;                  '(category-keep)))))))
+(defmacro nd/agenda-base-project-command (keyword statuscode)
+  "shorter syntax to define project agenda commands"
+  `(tags-todo
+    "-NA-REFILE-ATOMIC/!"
+    ((org-agenda-overriding-header (concat
+                                    (and nd/agenda-limit-project-toplevel "Toplevel ")
+                                    ,keyword
+                                    " Projects"))
+     (org-agenda-skip-function (if nd/agenda-limit-project-toplevel
+                                   '(nd/skip-subprojects-without-statuscode ,statuscode)
+                                 '(nd/skip-projects-without-statuscode ,statuscode)))
+     (org-agenda-sorting-strategy '(category-keep)))))
 
 (setq org-agenda-tags-todo-honor-ignore-options t)
-(setq testy 'tags)
 (setq org-agenda-custom-commands
-      `((" " "Agenda"
+      `(("t" "Task view"
          ((agenda "" nil)
-          (,testy "REFILE"
-                ((org-agenda-overriding-header (if nd/agenda-project-view "Tasks to Refile" "Herro"))
-                 (org-tags-match-list-sublevels nil))))
-          ;; (if nd/agenda-project-view 
-          ;;     ,(macroexpand '(nd/agenda-base-task-command "Atomic Tasks" 'nd/skip-non-atomic-tasks))
-          ;;   ,(macroexpand '(nd/agenda-base-project-command "Active Projects" 'nd/skip-non-active-projects))))
-         ;;(nd/agenda-base-task-command "Project next tasks" 'nd/skip-non-next-project-tasks))
-         ;;(if nd/agenda-project-view nd/agenda-project-commands nd/agenda-task-commands))
-         ;; (tags-todo "-NA-REFILE/!"
-         ;;            ((org-agenda-overriding-header "Projects")
-         ;;             (org-agenda-skip-function 'nd/skip-non-projects)
-         ;;             (org-tags-match-list-sublevels 'indented)
-         ;;             (org-agenda-sorting-strategy
-         ;;              '(category-keep))))
-         ;; (tags "-NA-REFILE/"
-         ;;       ((org-agenda-overriding-header "Tasks to Archive")
-         ;;        (org-agenda-skip-function 'nd/skip-non-archivable-tasks)
-         ;;        (org-tags-match-list-sublevels nil))))
-         nil)))
+          ,(macroexpand '(nd/agenda-base-task-command "Next Project" 'nd/skip-non-next-project-tasks))
+          ,(macroexpand '(nd/agenda-base-task-command "Waiting Project" 'nd/skip-non-waiting-project-tasks))
+          ,(macroexpand '(nd/agenda-base-task-command "Atomic" 'nd/skip-non-atomic-tasks))
+          ,(macroexpand '(nd/agenda-base-task-command "Held Project" 'nd/skip-non-held-project-tasks))))
+        ("o" "Project Overview"
+          (,(macroexpand '(nd/agenda-base-project-command "Stuck" 10))
+           ,(macroexpand '(nd/agenda-base-project-command "Waiting" 20))
+           ,(macroexpand '(nd/agenda-base-project-command "Active" 40))
+           ,(macroexpand '(nd/agenda-base-project-command "Held" 30))))
+        ("r" "Refile and errors"
+         ((tags "REFILE"
+                ((org-agenda-overriding-header "Tasks to Refile"))
+                (org-tags-match-list-sublevels nil))))))
 
 (use-package org-bullets
   :ensure t
