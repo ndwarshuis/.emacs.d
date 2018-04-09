@@ -230,7 +230,7 @@
 (load "ess-site")
 (setq ess-history-file "session.Rhistory")
 (setq ess-history-directory
-          (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+      (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
 (setq org-log-done t)
 (setq org-src-window-setup 'current-window)
@@ -317,27 +317,93 @@
 (setq org-agenda-dim-blocked-tasks nil)
 (setq org-agenda-compact-blocks t)
 
-(evil-define-key 'motion org-agenda-mode-map "T" 'nd/toggle-project-toplevel-display)
+(setq org-agenda-tags-todo-honor-ignore-options t)
+(setq org-agenda-custom-commands
+      `(("t"
+         "Task view"
+         ((agenda "" nil)
+          ,(macroexpand '(nd/agenda-base-task-command "Next Project" 'nd/skip-non-next-project-tasks))
+          ,(macroexpand '(nd/agenda-base-task-command "Waiting Project" 'nd/skip-non-waiting-project-tasks))
+          ,(macroexpand '(nd/agenda-base-task-command "Atomic" 'nd/skip-non-atomic-tasks))
+          ,(macroexpand '(nd/agenda-base-task-command "Held Project" 'nd/skip-non-held-project-tasks))))
+        ("o"
+         "Project Overview"
+         (,(macroexpand '(nd/agenda-base-project-command "Stuck" 10))
+          ,(macroexpand '(nd/agenda-base-project-command "Waiting" 20))
+          ,(macroexpand '(nd/agenda-base-project-command "Active" 40))
+          ,(macroexpand '(nd/agenda-base-project-command "Held" 30))))
+        ("r"
+         "Refile and errors"
+         ;; TODO add error detection here
+         ((tags "REFILE" ((org-agenda-overriding-header "Tasks to Refile")) (org-tags-match-list-sublevels nil))
+          ,(macroexpand '(nd/agenda-base-task-command "Discontinous Project" 'nd/skip-non-discontinuous-project-tasks))
+          ,(macroexpand '(nd/agenda-base-project-command "Invalid" 50))))))
 
-(setq org-agenda-span 'day)
-(setq org-agenda-time-grid (quote ((daily today remove-match)
-                                   #("----------------" 0 16 (org-heading t))
-                                   (0900 1100 1300 1500 1700))))
+(defvar nd/agenda-limit-project-toplevel t
+  "used to filter projects by all levels or top-level only")
 
-(add-hook 'org-finalize-agenda-hook 'place-agenda-tags)
-(defun place-agenda-tags ()
-  "Put the agenda tags by the right border of the agenda window."
-  (setq org-agenda-tags-column (- 4 (window-width)))
-  (org-agenda-align-tags))
+(defun nd/toggle-project-toplevel-display ()
+  (interactive)
+  (setq nd/agenda-limit-project-toplevel (not nd/agenda-limit-project-toplevel))
+  (when  (equal major-mode 'org-agenda-mode)
+    (org-agenda-redo))
+  (message "Showing %s project view in agenda" (if nd/agenda-limit-project-toplevel "toplevel" "complete")))
 
-(defun nd/org-auto-exclude-function (tag)
-  "Automatic task exclusion in the agenda with / RET"
-  (and (cond
-        ((string= tag "hold")
-         t))
-       (concat "-" tag)))
+(defmacro nd/agenda-base-task-command (keyword skip-fun)
+  "shorter syntax to define task agenda commands"
+  `(tags-todo
+    "-NA-REFILE/!"
+    ((org-agenda-overriding-header (concat ,keyword " Tasks"))
+     (org-agenda-skip-function ,skip-fun)
+     (org-agenda-todo-ignore-with-date 'all)
+     (org-agenda-sorting-strategy '(category-keep)))))
 
-(setq org-agenda-auto-exclude-function 'nd/org-auto-exclude-function)
+(defmacro nd/agenda-base-project-command (keyword statuscode)
+  "shorter syntax to define project agenda commands"
+  `(tags-todo
+    "-NA-REFILE-ATOMIC/!"
+    ((org-agenda-overriding-header (concat
+                                    (and nd/agenda-limit-project-toplevel "Toplevel ")
+                                    ,keyword
+                                    " Projects"))
+     (org-agenda-skip-function (if nd/agenda-limit-project-toplevel
+                                   '(nd/skip-subprojects-without-statuscode ,statuscode)
+                                 '(nd/skip-projects-without-statuscode ,statuscode)))
+     (org-agenda-sorting-strategy '(category-keep)))))
+
+;; NOTE: use save-restriction and widen if we ever actually use narrowing
+;; tasks
+(defun nd/skip-non-atomic-tasks ()
+  (if (not (nd/is-atomic-task-p))
+      (save-excursion (or (outline-next-heading) (point-max)))))
+
+(defun nd/skip-non-next-project-tasks ()
+  (if (not (equal (nd/is-project-task-p) "NEXT"))
+      (save-excursion (or (outline-next-heading) (point-max)))))
+
+(defun nd/skip-non-waiting-project-tasks ()
+  (if (not (equal (nd/is-project-task-p) "WAITING"))
+      (save-excursion (or (outline-next-heading) (point-max)))))
+
+(defun nd/skip-non-held-project-tasks ()
+  (if (not (equal (nd/is-project-task-p) "HOLD"))
+      (save-excursion (or (outline-next-heading) (point-max)))))
+  
+(defun nd/skip-non-discontinous-project-tasks ()
+  (if (not (nd/is-discontinous-project-task-p))
+      (save-excursion (or (outline-next-heading) (point-max)))))
+  
+;; projects
+;; TODO skip entire subtree if we don't need to evaluate anything inside
+;; otherwise (for example) a held project will still have it's subtasks show up
+(defun nd/skip-projects-without-statuscode (statuscode)
+  (if (not (nd/is-project-status-p statuscode))
+      (save-excursion (or (outline-next-heading) (point-max)))))
+
+;; top-level projects
+(defun nd/skip-subprojects-without-statuscode (statuscode)
+  (if (or (nd/heading-has-parent) (not (nd/is-project-status-p statuscode)))
+      (save-excursion (or (outline-next-heading) (point-max)))))
 
 (defun nd/is-todoitem-p ()
   "return todo keyword if present in headline (which defines the heading as a todoitem)
@@ -376,10 +442,6 @@ this is used to both test if a heading is a todoitem and retrieving the keyword"
   "return keyword if task is WAITING"
   (equal (nd/is-task-p) "WAITING"))
 
-(defconst nd/project-invalid-todostates
-  '("WAITING" "NEXT")
-  "projects cannot have these todostates") 
-
 (defun nd/heading-has-children ()
   "returns t if heading has todoitems in its immediate subtree"
   ;; TODO make this more efficient (and accurate) by only testing
@@ -399,6 +461,19 @@ this is used to both test if a heading is a todoitem and retrieving the keyword"
 (defun nd/heading-has-parent ()
   "returns parent keyword if heading is in the immediate subtree of a todoitem"
   (save-excursion (and (org-up-heading-safe) (nd/is-todoitem-p))))
+
+(defun nd/is-discontinuous-project-task-p ()
+  "detects todoitems that are children of non-todoitems
+that in turn are children of todoitems (discontinous project)"
+  (let ((has-todoitem-parent)
+        (has-non-todoitem-parent))
+    (save-excursion
+      (while (and (org-up-heading-safe)
+                  has-todoitem-parent)
+        (if (nd/is-todoitem-p)
+            (setq has-todoitem-parent t)
+          (setq has-non-todoitem-parent t))))
+    (and has-todoitem-parent has-non-todoitem-parent)))
 
 (defun nd/test-first-order-project ()
   "tests the state of a project assuming first order.
@@ -420,6 +495,10 @@ function is not meant to be called independently."
         (org-forward-heading-same-level 1 t)))
     found-active))
 
+(defconst nd/project-invalid-todostates
+  '("WAITING" "NEXT")
+  "projects cannot have these todostates") 
+
 ;; project level testing
 ;; TODO: is there a better way to handle statuscodes like this??? (array like thingy)
 (defun nd/descend-into-project ()
@@ -436,7 +515,9 @@ This function works on an assumed order of precendence:
 - if project has any TODO (regardless of DONE or CANCELLED) it is stuck
 - if project has any HOLD (regardless of DONE, CANCELLED, or TODO) it is held
 - in the same manner WAITING means waiting project
-- in the same manner, NEXT means active. NEXT overrides all
+- in the same manner, NEXT or scheduled means active.
+- can also detect errors which override all
+- anything higher than active breaks the recursion/tree walk
 
 Using this scheme, we simply compare the magnitude of the statuscodes"
   (let ((project-state 0)
@@ -451,15 +532,23 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
           (if keyword
               (let ((cur-state
                      (if has-children
-                         (cond ((equal keyword "HOLD") 20)
-                               ((equal keyword "TODO") (nd/descend-into-project))
-                               ;; NOTE: all projects are assumed to only have TODO, HOLD, CANCELLED, or DONE, hence the three possible statuscodes
-                               (t 0))
+                         (cond ((member keyword nd/project-invalid-todostates) 50)
+                               ((nd/is-scheduled-heading-p) 50)
+                               ;; cancelled and hold work independent of everything underneath
+                               ((equal keyword "CANCELLED") 0)
+                               ((equal keyword "HOLD") 20)
+                               ;; all other tests require a descent into the child project hence let form
+                               (t (let ((child-statuscode (nd/descend-into-project)))
+                                    ;; projects marked TODO should not be complete
+                                    (cond ((equal keyword "TODO") (if (> child-statuscode 0) child-statuscode 50))
+                                          ;; projects marked DONE should have all subtasks/projects marked DONE/CANCELLED
+                                          (t (if (= child-statuscode 0) 0 50))))))
                        (cond ((equal keyword "HOLD") 20)
                              ((equal keyword "WAITING") 30)
                              ((equal keyword "NEXT") 40)
                              ((and (equal keyword "TODO") (nd/is-scheduled-heading-p)) 40)
                              ((equal keyword "TODO") 10)
+                             ;; catchall means CANCELLED or DONE (complete)
                              (t 0)))))
                 (if (> cur-state project-state)
                     (setq project-state cur-state)))))
@@ -470,88 +559,33 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
 (defun nd/is-project-status-p (statuscode)
   (let ((keyword (nd/is-project-p)))
     (if keyword
-        (cond ((member keyword nd/project-invalid-todostates) nil)
-              ((and (equal keyword "HOLD") (= statuscode 20)) keyword)
-              ((and (equal keyword "HOLD") (/= statuscode 20)) nil)
-              ((= statuscode (nd/descend-into-project)) keyword)))))
+        (if (member keyword nd/project-invalid-todostates)
+            (if (= statuscode 50) keyword)
+          (if (equal keyword "HOLD")
+              (if (= statuscode 20) keyword)
+            (if (= statuscode (nd/descend-into-project)) keyword))))))
 
-;; NOTE: use save-restriction and widen if we ever actually use narrowing
-;; tasks
-(defun nd/skip-non-atomic-tasks ()
-  (if (not (nd/is-atomic-task-p))
-      (save-excursion (or (outline-next-heading) (point-max)))))
+(evil-define-key 'motion org-agenda-mode-map "T" 'nd/toggle-project-toplevel-display)
 
-(defun nd/skip-non-next-project-tasks ()
-  (if (not (equal (nd/is-project-task-p) "NEXT"))
-      (save-excursion (or (outline-next-heading) (point-max)))))
+(setq org-agenda-span 'day)
+(setq org-agenda-time-grid (quote ((daily today remove-match)
+                                   #("----------------" 0 16 (org-heading t))
+                                   (0900 1100 1300 1500 1700))))
 
-(defun nd/skip-non-waiting-project-tasks ()
-  (if (not (equal (nd/is-project-task-p) "WAITING"))
-      (save-excursion (or (outline-next-heading) (point-max)))))
+(add-hook 'org-finalize-agenda-hook 'place-agenda-tags)
+(defun place-agenda-tags ()
+  "Put the agenda tags by the right border of the agenda window."
+  (setq org-agenda-tags-column (- 4 (window-width)))
+  (org-agenda-align-tags))
 
-(defun nd/skip-non-held-project-tasks ()
-  (if (not (equal (nd/is-project-task-p) "HOLD"))
-      (save-excursion (or (outline-next-heading) (point-max)))))
-  
-;; projects
-(defun nd/skip-projects-without-statuscode (statuscode)
-  (if (not (nd/is-project-status-p statuscode))
-      (save-excursion (or (outline-next-heading) (point-max)))))
+(defun nd/org-auto-exclude-function (tag)
+  "Automatic task exclusion in the agenda with / RET"
+  (and (cond
+        ((string= tag "hold")
+         t))
+       (concat "-" tag)))
 
-;; top-level projects
-(defun nd/skip-subprojects-without-statuscode (statuscode)
-  (if (or (nd/heading-has-parent) (not (nd/is-project-status-p statuscode)))
-      (save-excursion (or (outline-next-heading) (point-max)))))
-
-(defvar nd/agenda-limit-project-toplevel t
-  "used to filter projects by all levels or top-level only")
-
-(defun nd/toggle-project-toplevel-display ()
-  (interactive)
-  (setq nd/agenda-limit-project-toplevel (not nd/agenda-limit-project-toplevel))
-  (when  (equal major-mode 'org-agenda-mode)
-    (org-agenda-redo))
-  (message "Showing %s project view in agenda" (if nd/agenda-limit-project-toplevel "toplevel" "complete")))
-
-(defmacro nd/agenda-base-task-command (keyword skip-fun)
-  "shorter syntax to define task agenda commands"
-  `(tags-todo
-    "-NA-REFILE/!"
-    ((org-agenda-overriding-header (concat ,keyword " Tasks"))
-     (org-agenda-skip-function ,skip-fun)
-     (org-agenda-todo-ignore-with-date 'all)
-     (org-agenda-sorting-strategy '(category-keep)))))
-
-(defmacro nd/agenda-base-project-command (keyword statuscode)
-  "shorter syntax to define project agenda commands"
-  `(tags-todo
-    "-NA-REFILE-ATOMIC/!"
-    ((org-agenda-overriding-header (concat
-                                    (and nd/agenda-limit-project-toplevel "Toplevel ")
-                                    ,keyword
-                                    " Projects"))
-     (org-agenda-skip-function (if nd/agenda-limit-project-toplevel
-                                   '(nd/skip-subprojects-without-statuscode ,statuscode)
-                                 '(nd/skip-projects-without-statuscode ,statuscode)))
-     (org-agenda-sorting-strategy '(category-keep)))))
-
-(setq org-agenda-tags-todo-honor-ignore-options t)
-(setq org-agenda-custom-commands
-      `(("t" "Task view"
-         ((agenda "" nil)
-          ,(macroexpand '(nd/agenda-base-task-command "Next Project" 'nd/skip-non-next-project-tasks))
-          ,(macroexpand '(nd/agenda-base-task-command "Waiting Project" 'nd/skip-non-waiting-project-tasks))
-          ,(macroexpand '(nd/agenda-base-task-command "Atomic" 'nd/skip-non-atomic-tasks))
-          ,(macroexpand '(nd/agenda-base-task-command "Held Project" 'nd/skip-non-held-project-tasks))))
-        ("o" "Project Overview"
-          (,(macroexpand '(nd/agenda-base-project-command "Stuck" 10))
-           ,(macroexpand '(nd/agenda-base-project-command "Waiting" 20))
-           ,(macroexpand '(nd/agenda-base-project-command "Active" 40))
-           ,(macroexpand '(nd/agenda-base-project-command "Held" 30))))
-        ("r" "Refile and errors"
-         ((tags "REFILE"
-                ((org-agenda-overriding-header "Tasks to Refile"))
-                (org-tags-match-list-sublevels nil))))))
+(setq org-agenda-auto-exclude-function 'nd/org-auto-exclude-function)
 
 (use-package org-bullets
   :ensure t
