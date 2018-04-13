@@ -429,11 +429,11 @@ I use tags for filtering in the agenda view to narrow down tasks by project/cont
 ** capture templates
 #+BEGIN_SRC emacs-lisp
   (setq org-capture-templates
-        '(("t" "todo" entry (file "~/Org/capture.org") "* TODO %?\n%U\n")
+        '(("t" "todo" entry (file "~/Org/capture.org") "* TODO %?\ndeliverable: \n%U\n")
           ("n" "note" entry (file "~/Org/capture.org") "* %? :NOTE:\n%U\n" )
           ("a" "appointment" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t\n" )
           ("m" "multi-day" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t--%^t\n" )
-          ("d" "deadline" entry (file "~/Org/capture.org") "* TODO %?\nDEADLINE: %^t\n%U\n" )
+          ("d" "deadline" entry (file "~/Org/capture.org") "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n" )
           
           ("j" "journal" entry (file+datetree "~/Org/diary.org") "* %?\n%U\n")
           ("p" "org-protocol" entry (file+headline ,(concat org-directory "~/Org/capture.org") "Inbox")
@@ -494,15 +494,53 @@ I use tags for filtering in the agenda view to narrow down tasks by project/cont
           ("o"
            "Project Overview"
            (,(macroexpand '(nd/agenda-base-project-command "Stuck" 10))
-            ,(macroexpand '(nd/agenda-base-project-command "Waiting" 20))
+            ,(macroexpand '(nd/agenda-base-project-command "Waiting" 30))
             ,(macroexpand '(nd/agenda-base-project-command "Active" 40))
-            ,(macroexpand '(nd/agenda-base-project-command "Held" 30))))
+            ,(macroexpand '(nd/agenda-base-project-command "Held" 20))))
           ("r"
            "Refile and errors"
-           ;; TODO add error detection here
            ((tags "REFILE" ((org-agenda-overriding-header "Tasks to Refile")) (org-tags-match-list-sublevels nil))
             ,(macroexpand '(nd/agenda-base-task-command "Discontinous Project" 'nd/skip-non-discontinuous-project-tasks))
-            ,(macroexpand '(nd/agenda-base-project-command "Invalid" 50))))))
+            ,(macroexpand '(nd/agenda-base-project-command "Unmarked Completed" 0))
+            ;;,(macroexpand '(nd/agenda-base-project-command "Invalid" 50))
+            (tags
+             "-NA-REFILE-ATOMIC/"
+             ((org-agenda-overriding-header (concat
+                                             (and nd/agenda-limit-project-toplevel "Toplevel ")
+                                             "Invalud Projects"))
+              (org-agenda-skip-function (if nd/agenda-limit-project-toplevel
+                                            '(nd/skip-subprojects-without-statuscode 50)
+                                          '(nd/skip-projects-without-statuscode 50)))
+              (org-agenda-sorting-strategy '(category-keep))))))
+          ("a"
+           "Archive"
+           ((tags "-REFILE/"
+                  ((org-agenda-overriding-header "Tasks to Archive")
+                   (org-agenda-skip-function 'bh/skip-non-archivable-tasks)
+                   (org-tags-match-list-sublevels nil)))))))
+
+  (defun bh/skip-non-archivable-tasks ()
+    "Skip trees that are not available for archiving"
+    (save-restriction
+      (widen)
+      ;; Consider only tasks with done todo headings as archivable candidates
+      (let ((next-headline (save-excursion (or (outline-next-heading) (point-max))))
+            (subtree-end (save-excursion (org-end-of-subtree t))))
+        (if (member (org-get-todo-state) org-todo-keywords-1)
+            (if (member (org-get-todo-state) org-done-keywords)
+                (let* ((daynr (string-to-int (format-time-string "%d" (current-time))))
+                       (a-month-ago (* 60 60 24 (+ daynr 1)))
+                       (last-month (format-time-string "%Y-%m-" (time-subtract (current-time) (seconds-to-time a-month-ago))))
+                       (this-month (format-time-string "%Y-%m-" (current-time)))
+                       (subtree-is-current (save-excursion
+                                             (forward-line 1)
+                                             (and (< (point) subtree-end)
+                                                  (re-search-forward (concat last-month "\\|" this-month) subtree-end t)))))
+                  (if subtree-is-current
+                      subtree-end ; Has a date in this month or last month, skip it
+                    nil))  ; available to archive
+              (or subtree-end (point-max)))
+          next-headline))))
 #+END_SRC
 *** interactive view functions
 #+BEGIN_SRC emacs-lisp
@@ -543,39 +581,54 @@ I use tags for filtering in the agenda view to narrow down tasks by project/cont
 These are the primary means we use to sort through tasks. Note that we could do this with
 tags in the custom commands section but I find this easier to maintain and possibly faster.
 #+BEGIN_SRC emacs-lisp
-  ;; NOTE: use save-restriction and widen if we ever actually use narrowing
-  ;; tasks
   (defun nd/skip-non-atomic-tasks ()
-    (if (not (nd/is-atomic-task-p))
-        (save-excursion (or (outline-next-heading) (point-max)))))
+    (save-restriction
+      (widen)
+      (if (not (nd/is-atomic-task-p))
+          (save-excursion (or (outline-next-heading) (point-max))))))
 
   (defun nd/skip-non-next-project-tasks ()
-    (if (not (equal (nd/is-project-task-p) "NEXT"))
-        (save-excursion (or (outline-next-heading) (point-max)))))
-
+    (save-restriction
+      (widen)
+      ;; TODO skip over invalid and held
+      (if (not (equal (nd/is-project-task-p) "NEXT"))
+          (save-excursion (or (outline-next-heading) (point-max))))))
+    
   (defun nd/skip-non-waiting-project-tasks ()
-    (if (not (equal (nd/is-project-task-p) "WAITING"))
-        (save-excursion (or (outline-next-heading) (point-max)))))
+    (save-restriction
+      (widen)
+      ;; TODO skip over invalid and held
+      (if (not (equal (nd/is-project-task-p) "WAITING"))
+          (save-excursion (or (outline-next-heading) (point-max))))))
 
   (defun nd/skip-non-held-project-tasks ()
-    (if (not (equal (nd/is-project-task-p) "HOLD"))
-        (save-excursion (or (outline-next-heading) (point-max)))))
+    (save-restriction
+      (widen)
+      ;; TODO skip over invalid and held
+      (if (not (equal (nd/is-project-task-p) "HOLD"))
+          (save-excursion (or (outline-next-heading) (point-max))))))
     
-  (defun nd/skip-non-discontinous-project-tasks ()
-    (if (not (nd/is-discontinous-project-task-p))
-        (save-excursion (or (outline-next-heading) (point-max)))))
+  (defun nd/skip-non-discontinuous-project-tasks ()
+    (save-restriction
+      (widen)
+      (if (not (nd/is-discontinuous-project-task-p))
+          (save-excursion (or (outline-next-heading) (point-max))))))
     
   ;; projects
   ;; TODO skip entire subtree if we don't need to evaluate anything inside
   ;; otherwise (for example) a held project will still have it's subtasks show up
   (defun nd/skip-projects-without-statuscode (statuscode)
-    (if (not (nd/is-project-status-p statuscode))
-        (save-excursion (or (outline-next-heading) (point-max)))))
+    (save-restriction
+      (widen)
+      (if (not (nd/is-project-status-p statuscode))
+          (save-excursion (or (outline-next-heading) (point-max))))))
 
   ;; top-level projects
   (defun nd/skip-subprojects-without-statuscode (statuscode)
-    (if (or (nd/heading-has-parent) (not (nd/is-project-status-p statuscode)))
-        (save-excursion (or (outline-next-heading) (point-max)))))
+    (save-restriction
+      (widen)
+      (if (or (nd/heading-has-parent) (not (nd/is-project-status-p statuscode)))
+          (save-excursion (or (outline-next-heading) (point-max))))))
 #+END_SRC
 *** task helper functions
 These are the building blocks for skip functions.
@@ -644,7 +697,7 @@ These are the building blocks for skip functions.
           (has-non-todoitem-parent))
       (save-excursion
         (while (and (org-up-heading-safe)
-                    has-todoitem-parent)
+                    (not has-todoitem-parent))
           (if (nd/is-todoitem-p)
               (setq has-todoitem-parent t)
             (setq has-non-todoitem-parent t))))
@@ -702,11 +755,10 @@ These are the building blocks for skip functions.
         (outline-next-heading)
         (while (and (< project-state 40)
                     (> (point) previous-point))
-          (let ((keyword (nd/is-todoitem-p))
-                (has-children (nd/heading-has-children)))
+          (let ((keyword (nd/is-todoitem-p)))
             (if keyword
                 (let ((cur-state
-                       (if has-children
+                       (if (nd/heading-has-children)
                            (cond ((member keyword nd/project-invalid-todostates) 50)
                                  ((nd/is-scheduled-heading-p) 50)
                                  ;; cancelled and hold work independent of everything underneath
@@ -734,11 +786,22 @@ These are the building blocks for skip functions.
   (defun nd/is-project-status-p (statuscode)
     (let ((keyword (nd/is-project-p)))
       (if keyword
-          (if (member keyword nd/project-invalid-todostates)
-              (if (= statuscode 50) keyword)
-            (if (equal keyword "HOLD")
-                (if (= statuscode 20) keyword)
-              (if (= statuscode (nd/descend-into-project)) keyword))))))
+          ;; these first cases are determined entirely by the toplevel heading
+          ;; if invalid keyword, t if we ask about 50
+          (cond ((member keyword nd/project-invalid-todostates) (if (= statuscode 50) keyword))
+                ;; if hold, t if we ask about 20
+                ((equal keyword "HOLD") (if (= statuscode 20) keyword))
+                ((equal keyword "CANCELLED") (if (= statuscode 0) keyword))
+                ;; all other cases need the statuscode from the subtasks below the heading
+                (t (let ((child-statuscode (nd/descend-into-project)))
+                     ;; if done, t if project is done and we ask about 0
+                     ;; or t if project is not done (>0) and we ask about 50
+                     (if (equal keyword "DONE")
+                         (cond ((and (> child-statuscode 0) (= statuscode 50)) keyword)
+                               ((= child-statuscode statuscode 0) keyword))
+                       ;; all other queries are independent of heading
+                       ;; t if children match the statuscode we ask
+                       (if (= statuscode child-statuscode) keyword))))))))
 #+END_SRC
 *** keymap
 #+BEGIN_SRC emacs-lisp
