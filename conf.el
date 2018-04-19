@@ -317,34 +317,6 @@
 (setq org-agenda-dim-blocked-tasks nil)
 (setq org-agenda-compact-blocks t)
 
-(setq org-agenda-tags-todo-honor-ignore-options t)
-(setq org-agenda-custom-commands
-      `(("t"
-         "Task view"
-         ((agenda "" nil)
-          ,(macroexpand '(nd/agenda-base-task-command "Next Project" 'nd/skip-non-next-project-tasks))
-          ,(macroexpand '(nd/agenda-base-task-command "Waiting Project" 'nd/skip-non-waiting-project-tasks))
-          ,(macroexpand '(nd/agenda-base-task-command "Atomic" 'nd/skip-non-atomic-tasks))
-          ,(macroexpand '(nd/agenda-base-task-command "Held Project" 'nd/skip-non-held-project-tasks))))
-        ("o"
-         "Project Overview"
-         (,(macroexpand '(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/!" "Stuck" 10))
-          ,(macroexpand '(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/!" "Waiting" 30))
-          ,(macroexpand '(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/!" "Active" 40))
-          ,(macroexpand '(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/!" "Held" 20))))
-        ("r"
-         "Refile and errors"
-         ((tags "REFILE" ((org-agenda-overriding-header "Tasks to Refile")) (org-tags-match-list-sublevels nil))
-          ,(macroexpand '(nd/agenda-base-task-command "Discontinous Project" 'nd/skip-non-discontinuous-project-tasks))
-          ,(macroexpand '(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/!" "Unmarked Completed" 0))
-          ,(macroexpand '(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/" "Invalid" 50))))
-        ("a"
-         "Archive"
-         ((tags "-REFILE/"
-                ((org-agenda-overriding-header "Atomic Tasks to Archive")
-                 (org-agenda-skip-function 'nd/skip-non-archivable-atomic-tasks)
-                 (org-tags-match-list-sublevels nil)))))))
-
 (defvar nd/agenda-limit-project-toplevel t
   "used to filter projects by all levels or top-level only")
 
@@ -355,7 +327,7 @@
     (org-agenda-redo))
   (message "Showing %s project view in agenda" (if nd/agenda-limit-project-toplevel "toplevel" "complete")))
 
-(defmacro nd/agenda-base-task-command (keyword skip-fun)
+(defun nd/agenda-base-task-command (keyword skip-fun)
   "shorter syntax to define task agenda commands"
   `(tags-todo
     "-NA-REFILE/!"
@@ -364,7 +336,7 @@
      (org-agenda-todo-ignore-with-date 'all)
      (org-agenda-sorting-strategy '(category-keep)))))
 
-(defmacro nd/agenda-base-project-command (match keyword statuscode)
+(defun nd/agenda-base-project-command (match keyword statuscode)
   "shorter syntax to define project agenda commands"
   `(tags
     ,match
@@ -626,6 +598,34 @@ Using this scheme, we simply compare the magnitude of the statuscodes"
                      ;; all other queries are independent of heading
                      ;; t if children match the statuscode we ask
                      (if (= statuscode child-statuscode) keyword))))))))
+
+(setq org-agenda-tags-todo-honor-ignore-options t)
+(setq org-agenda-custom-commands
+      `(("t"
+         "Task view"
+         ((agenda "" nil)
+          ,(nd/agenda-base-task-command "Next Project" ''nd/skip-non-next-project-tasks)
+          ,(nd/agenda-base-task-command "Waiting Project" ''nd/skip-non-waiting-project-tasks)
+          ,(nd/agenda-base-task-command "Atomic" ''nd/skip-non-atomic-tasks)
+          ,(nd/agenda-base-task-command "Held Project" ''nd/skip-non-held-project-tasks)))
+        ("o"
+         "Project Overview"
+         (,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/!" "Stuck" 10)
+          ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/!" "Waiting" 30)
+          ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/!" "Active" 40)
+          ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/!" "Held" 20)))
+        ("r"
+         "Refile and errors"
+         ((tags "REFILE" ((org-agenda-overriding-header "Tasks to Refile")) (org-tags-match-list-sublevels nil))
+          ,(nd/agenda-base-task-command "Discontinous Project" ''nd/skip-non-discontinuous-project-tasks)
+          ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/!" "Unmarked Completed" 0)
+          ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/" "Invalid" 50)))
+        ("A"
+         "Archive"
+         ((tags "-NA-REFILE/"
+                ((org-agenda-overriding-header "Atomic Tasks to Archive")
+                 (org-agenda-skip-function 'nd/skip-non-archivable-atomic-tasks)
+                 (org-tags-match-list-sublevels nil)))))))
 
 (evil-define-key 'motion org-agenda-mode-map "T" 'nd/toggle-project-toplevel-display)
 
