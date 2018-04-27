@@ -414,6 +414,8 @@ I use tags for contexts (mostly). The "@" represents location contexts and a mut
                          (:endgroup)
                          ("#laptop" . ?L)
                          ("#hood" . ?H)
+                         ("WORK" . ?W)
+                         ("PERSONAL" . ?P)
                          ("NOTE" . ?N)
                          ("FLAGGED" . ??)))
 
@@ -594,70 +596,85 @@ These are the building blocks for skip functions.
     "projects cannot have these todostates") 
 
   ;; project level testing
+  (defconst nd/project-statuscodes
+    '(:archivable
+      :complete
+      :stuck
+      :held
+      :waiting
+      :active
+      :done-incomplete
+      :undone-complete
+      :undone-closed
+      :done-unclosed
+      :invalid-todostate
+      :scheduled-project
+      :discontinous)
+    "list of statuscodes to be used in assessing projects
+  Note they are listed in order of priority (eg items further
+  down the list override higher items")
+
+  (defmacro nd/compare-statuscodes (operator statuscode-1 statuscode-2)
+    "syntactic suger to compare statuscodes by position"
+    `(,operator (position ,statuscode-1 nd/project-statuscodes)
+       (position ,statuscode-2 nd/project-statuscodes)))
+    
+  (defun nd/status< (statuscode-1 statuscode-2)
+    "returns t is statuscode-1 is lesser priority than statuscode-2"
+    (nd/compare-statuscodes < statuscode-1 statuscode-2))
+
+  (defun nd/status> (statuscode-1 statuscode-2)
+    "returns t is statuscode-1 is greater priority than statuscode-2"
+    (nd/compare-statuscodes > statuscode-1 statuscode-2))
+
+  (defun nd/status= (statuscode-1 statuscode-2)
+    "returns t is statuscode-1 is equal priority than statuscode-2"
+    (nd/compare-statuscodes = statuscode-1 statuscode-2))
+
   (defun nd/descend-into-project ()
-    "returns statuscode according to state of project:
-  0: archivable
-  5: complete
-  10: stuck
-  20: held
-  30: waiting
-  40: active
-  50: invalid
-
-  This function works on an assumed order of precendence:
-  - we start by assuming all projects as complete (eg only DONE and CANCELLED)
-  - if project has any TODO (regardless of DONE or CANCELLED) it is stuck
-  - if project has any HOLD (regardless of DONE, CANCELLED, or TODO) it is held
-  - in the same manner WAITING means waiting project
-  - in the same manner, NEXT or scheduled means active.
-  - can also detect errors which override all
-  - anything higher than active breaks the recursion/tree walk
-
-  Using this scheme, we simply compare the magnitude of the statuscodes"
-    (let ((project-state 0)
+    "returns statuscode of project and recursively descends into subprojects"
+    (let ((project-state :archivable)
           (previous-point))
       (save-excursion
         (setq previous-point (point))
         (outline-next-heading)
-        (while (and (< project-state 40)
+        ;; loop breaks if active or higher priority
+        ;; note that all invalid statuscodes are higher
+        ;; thus this function will only return the first
+        ;; encountered error
+        (while (and (nd/status< project-state :active)
                     (> (point) previous-point))
           (let ((keyword (nd/is-todoitem-p)))
             (if keyword
                 (let ((cur-state
                        (if (nd/heading-has-children)
-                           ;; invalid todo states or scheduled project headers auto invalidate
-                           (cond ((member keyword nd/project-invalid-todostates) 50)
-                                 ((nd/is-scheduled-heading-p) 50)
-                                 ;; cancelled and hold work independent of everything underneath
-                                 ((equal keyword "CANCELLED") (if (nd/is-archivable-heading-p) 0 5))
-                                 ((equal keyword "HOLD") 20)
-                                 ;; all other tests require a descent into the child project
+                           (cond ((member keyword nd/project-invalid-todostates) :invalid-todostate)
+                                 ((nd/is-scheduled-heading-p) :scheduled-project)
+                                 ((equal keyword "CANCELLED") (if (nd/is-archivable-heading-p)
+                                                                  :archivable
+                                                                :complete))
+                                 ((equal keyword "HOLD") :held)
                                  (t (let ((child-statuscode (nd/descend-into-project)))
-                                      ;; projects marked TODO should not be complete
-                                      (cond ((equal keyword "TODO") (if (> child-statuscode 5)
-                                                                        child-statuscode 50))
-                                            ;; assume that all projects here are DONE
-                                            ;; first test if all children are archivable
+                                      (cond ((equal keyword "TODO")
+                                             (if (nd/status> child-statuscode :complete)
+                                                 child-statuscode
+                                               :undone-complete))
                                             (t (case child-statuscode
-                                                 (5 5)
-                                                 ;; if this heading is archivable
-                                                 ;; then the entire project is archivable
-                                                 ;; else merely completed
-                                                 (0 (if (nd/is-archivable-heading-p) 0 5))
-                                                 ;; if children are completed but not archivable
-                                                 ;; then the project is completed, otherwise
-                                                 ;; the project is marked DONE with incomplete
-                                                 ;; subtasks and therefore invalid
-                                                 (t (if (= child-statuscode 5) 5 50))))))))
-                         (cond ((equal keyword "HOLD") 20)
-                               ((equal keyword "WAITING") 30)
-                               ((equal keyword "NEXT") 40)
-                               ((and (equal keyword "TODO") (nd/is-scheduled-heading-p)) 40)
-                               ((equal keyword "TODO") 10)
-                               ((nd/is-archivable-heading-p) 0)
-                               ;; catchall means CANCELLED or DONE (complete)
-                               (t 5)))))
-                  (if (> cur-state project-state)
+                                                 (:complete :complete)
+                                                 (:archivable (if (nd/is-archivable-heading-p)
+                                                                  :archivable
+                                                                :complete))
+                                                 (t (if (= child-statuscode :complete)
+                                                        :complete
+                                                      :done-imcomplete))))))))
+                         (cond ((equal keyword "HOLD") :held)
+                               ((equal keyword "WAITING") :waiting)
+                               ((equal keyword "NEXT") :active)
+                               ((and (equal keyword "TODO") (nd/is-scheduled-heading-p)) :active)
+                               ((equal keyword "TODO") :stuck)
+                               ((nd/is-archivable-heading-p) :archivable)
+                               (t :complete)))))
+                  (if (nd/status> cur-state project-state)
                       (setq project-state cur-state)))))
           (setq previous-point (point))
           (org-forward-heading-same-level 1 t)))
@@ -666,35 +683,30 @@ These are the building blocks for skip functions.
   (defun nd/is-project-status-p (statuscode)
     (let ((keyword (nd/is-project-p)))
       (if keyword
-          ;; these first cases are determined entirely by the toplevel heading
-          ;; if invalid keyword, t if we ask about 50
-          (cond ((member keyword nd/project-invalid-todostates) (if (= statuscode 50) keyword))
-                ;; if hold, t if we ask about 20
-                ((equal keyword "HOLD") (if (= statuscode 20) keyword))
-                ;; if cancelled, figure out if archivable
-                ;; t if archivable and we ask 0 and t if not archivable and we ask 5
+          (cond ((member keyword nd/project-invalid-todostates)
+                 (if (nd/status= statuscode :invalid-todostate) keyword))
+                ((equal keyword "HOLD") (if (nd/status= statuscode :held) keyword))
                 ((equal keyword "CANCELLED") (if (nd/is-archivable-heading-p)
-                                                 (if (= statuscode 0) keyword)
-                                               (if (= statuscode 5) keyword)))
-                ;; all other cases need the statuscode from the subtasks below the heading
+                                                 (if (nd/status= statuscode :archivable) keyword)
+                                               (if (nd/status= statuscode :complete) keyword)))
                 (t (let ((child-statuscode (nd/descend-into-project)))
-                     ;; if done, t if project is done and we ask about 0
-                     ;; or t if project is not done (>0) and we ask about 50
-                     (if (equal keyword "DONE")
-                         (if (nd/is-archivable-heading-p)
-                             (if (= statuscode child-statuscode 0) keyword)
-                           (if (= statuscode child-statuscode 5)
-                               keyword
-                             (if (and (> child-statuscode 5) (= statuscode 50)) keyword)))
-
-                       ;; if TODO then the subtasks must not be done (completed or archivable)
-                       (if (equal keyword "TODO")
-                           (if (> child-statuscode 5)
-                               (if (= statuscode child-statuscode) keyword)
-                             (if (= statuscode 50) keyword))
-                         ;; all other queries are independent of heading
-                         ;; t if children match the statuscode we ask
-                         (if (= statuscode child-statuscode) keyword)))))))))
+                     (cond ((equal keyword "DONE")
+                            (if (nd/is-archivable-heading-p)
+                                ;; TODO make my statuscode condition checker handle multiples
+                                (if (and (nd/status= statuscode :archivable)
+                                         (nd/status= child-statuscode :archivable))
+                                    keyword)
+                              (if (and (nd/status= statuscode :complete)
+                                       (nd/status= child-statuscode :complete))
+                                  keyword
+                                (if (and (nd/status> child-statuscode :complete)
+                                         (nd/status= statuscode :done-incomplete))
+                                    keyword))))
+                           ((equal keyword "TODO")
+                            (if (nd/status> child-statuscode :complete)
+                                (if (nd/status= statuscode child-statuscode) keyword)
+                              (if (nd/status= statuscode :undone-complete) keyword)))
+                           (t (if (nd/status= statuscode child-statuscode) keyword)))))))))
 #+END_SRC
 *** skip functions
 These are the primary means we use to sort through tasks. Note that we could do this with
@@ -832,33 +844,33 @@ tags in the custom commands section but I find this easier to maintain and possi
             ,(nd/agenda-base-task-command "Held Project" ''nd/skip-non-held-project-tasks)))
           ("o"
            "Project Overview"
-           (,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Stuck" 10)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Waiting" 30)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Active" 40)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Held" 20)))
+           (,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Stuck" :stuck)
+            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Waiting" :waiting)
+            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Active" :active)
+            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Held" :held)))
           ("r"
            "Refile and errors"
            ((tags "REFILE"
                   ((org-agenda-overriding-header "Tasks to Refile"))
                   (org-tags-match-list-sublevels nil))
             ,(nd/agenda-base-task-command "Discontinous Project" ''nd/skip-non-discontinuous-project-tasks)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Unmarked Completed" 5)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/" "Invalid" 50)
+            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Unmarked Completed" :complete)
+            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/" "Invalid" :invalid-todostate)
             ;; ,(nd/agenda-base-task-command "Done But Not Closed" ''nd/skip-non-done-open-todoitems)
             ;; ,(nd/agenda-base-task-command "Closed But Not Done" ''nd/skip-non-open-closed-todoitems)
             ))
           ("s"
            "Series projects"
-           (,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC+Project_Type=\"series\"/!" "Active Series" 40)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC+Project_Type=\"series\"/!" "Empty Series" 5)))
+           (,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC+Project_Type=\"series\"/!" "Active Series" :active)
+            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC+Project_Type=\"series\"/!" "Empty Series" :complete)))
           ("A"
            "Archivable Tasks and Projects"
            ((tags "-NA-REFILE/"
                   ((org-agenda-overriding-header "Atomic Tasks to Archive")
                    (org-agenda-skip-function 'nd/skip-non-archivable-atomic-tasks)
                    (org-tags-match-list-sublevels nil)))
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC+Project_Type=\"series\"/!" "Archivable Series" 0)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/" "Archivable" 0)))))
+            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC+Project_Type=\"series\"/!" "Archivable Series" :archivable)
+            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/" "Archivable" :archivable)))))
 
 #+END_SRC
 *** keymap
