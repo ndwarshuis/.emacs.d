@@ -230,7 +230,7 @@
 (load "ess-site")
 (setq ess-history-file "session.Rhistory")
 (setq ess-history-directory
-          (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+      (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
 (setq org-log-done t)
 (setq org-src-window-setup 'current-window)
@@ -437,11 +437,8 @@ that in turn are children of todoitems (discontinous project)"
     :active
     :done-incomplete
     :undone-complete
-    :undone-closed
-    :done-unclosed
     :invalid-todostate
-    :scheduled-project
-    :discontinous)
+    :scheduled-project)
   "list of statuscodes to be used in assessing projects
 Note they are listed in order of priority (eg items further
 down the list override higher items")
@@ -512,33 +509,65 @@ down the list override higher items")
         (org-forward-heading-same-level 1 t)))
     project-state))
 
+(defmacro nd/is-project-keyword-status-p (top-keyword operator statuscode)
+  "tests if a project has toplevel heading of top-keyword and
+child status equal to status code and returns keyword if
+both are true"
+  `(if (and (equal ,keyword ,top-keyword)
+            (nd/compare-statuscodes ,operator (nd/descend-into-project) statuscode))
+       ,keyword))
+
 (defun nd/is-project-status-p (statuscode)
   (let ((keyword (nd/is-project-p)))
     (if keyword
-        (cond ((member keyword nd/project-invalid-todostates)
-               (if (nd/status= statuscode :invalid-todostate) keyword))
-              ((equal keyword "HOLD") (if (nd/status= statuscode :held) keyword))
-              ((equal keyword "CANCELLED") (if (nd/is-archivable-heading-p)
-                                               (if (nd/status= statuscode :archivable) keyword)
-                                             (if (nd/status= statuscode :complete) keyword)))
-              (t (let ((child-statuscode (nd/descend-into-project)))
-                   (cond ((equal keyword "DONE")
-                          (if (nd/is-archivable-heading-p)
-                              ;; TODO make my statuscode condition checker handle multiples
-                              (if (and (nd/status= statuscode :archivable)
-                                       (nd/status= child-statuscode :archivable))
-                                  keyword)
-                            (if (and (nd/status= statuscode :complete)
-                                     (nd/status= child-statuscode :complete))
-                                keyword
-                              (if (and (nd/status> child-statuscode :complete)
-                                       (nd/status= statuscode :done-incomplete))
-                                  keyword))))
-                         ((equal keyword "TODO")
-                          (if (nd/status> child-statuscode :complete)
-                              (if (nd/status= statuscode child-statuscode) keyword)
-                            (if (nd/status= statuscode :undone-complete) keyword)))
-                         (t (if (nd/status= statuscode child-statuscode) keyword)))))))))
+        (case statuscode
+          ;; projects closed more than 30 days ago
+          ;; note CANCELLED overrides all subtasks/projects
+          (:archivable
+           (if (nd/is-archivable-heading-p)
+               (cond ((equal keyword "CANCELLED") keyword)
+                     (t (nd/is-project-keyword-status-p "DONE" = :archivable)))))
+
+          ;; projects closed less than 30 days ago
+          ;; note CANCELLED overrides all subtasks/projects
+          (:complete
+           (if (not (nd/is-archivable-heading-p))
+               (cond ((equal keyword "CANCELLED") keyword)
+                     (t (nd/is-project-keyword-status-p "DONE" = :complete)))))
+
+          ;; projects with no waiting, held, or active components
+          (:stuck
+           (nd/is-project-keyword-status-p "TODO" = :stuck))
+
+          ;; held projects
+          ;; note toplevel HOLD overrides all subtasks/projects
+          (:held
+           (cond ((equal keyword "HOLD") keyword)
+                 (t (nd/is-project-keyword-status-p "TODO" = :stuck))))
+
+          ;; projects with at least one waiting component
+          (:waiting
+           (nd/is-project-keyword-status-p "TODO" = :waiting))
+
+          ;; projects with at least one active component
+          (:active
+           (nd/is-project-keyword-status-p "TODO" = :active))
+
+          ;; projects marked DONE but still have undone subtasks
+          (:done-incomplete
+           (nd/is-project-keyword-status-p "DONE" > :complete))
+
+          ;; projects not marked DONE but all subtasks are done
+          (:undone-complete
+           (nd/is-project-keyword-status-p "TODO" < :stuck))
+
+          ;; projects with invalid todo keywords
+          (:invalid-todostate
+           (if (member keyword nd/project-invalid-todostates) keyword))
+
+          ;; projects with scheduled heading (only subtasks should be scheduled)
+          (:scheduled-project
+           (if (nd/is-scheduled-heading-p) keyword))))))
 
 ;; TODO we could clean this up with macros
 (defun nd/skip-non-atomic-tasks ()
