@@ -319,9 +319,15 @@
   (not (member (nth 2 (org-heading-components)) org-done-keywords)))
 (setq org-refile-target-verify-function 'nd/verify-refile-target)
 
-(setq org-agenda-files (quote ("~/Org"
-                               "~/Org/large_projects"
-                               "~/Org/reference")))
+(use-package org-bullets
+  :ensure t
+  :config
+    (add-hook 'org-mode-hook (lambda () (org-bullets-mode))))
+
+(setq org-agenda-files '("~/Org"
+                      "~/Org/large_projects"
+                      "~/Org/reference"))
+;; (setq org-agenda-files '("~/Org/reference/agendatest.org"))
 (setq org-agenda-dim-blocked-tasks nil)
 (setq org-agenda-compact-blocks t)
 
@@ -345,7 +351,7 @@ this is used to both test if a heading is a todoitem and retrieving the keyword"
   (and (not (nd/heading-has-parent)) (nd/is-task-p)))
   
 (defun nd/is-project-task-p ()
-  "return todo keyword if heading is task with no parents"
+  "return todo keyword if heading is task with parents"
   (and (nd/heading-has-parent) (nd/is-task-p)))
 
 (defun nd/is-scheduled-heading-p ()
@@ -410,9 +416,9 @@ this is used to both test if a heading is a todoitem and retrieving the keyword"
   "returns parent keyword if heading is in the immediate subtree of a todoitem"
   (save-excursion (and (org-up-heading-safe) (nd/is-todoitem-p))))
 
-(defun nd/is-discontinuous-project-task-p ()
-  "detects todoitems that are children of non-todoitems
-that in turn are children of todoitems (discontinous project)"
+(defun nd/has-discontinuous-parent ()
+  "returns t if heading has a parent which is not a
+todoitem which in turn has a parent which is a todoitem"
   (let ((has-todoitem-parent)
         (has-non-todoitem-parent))
     (save-excursion
@@ -509,149 +515,180 @@ down the list override higher items")
         (org-forward-heading-same-level 1 t)))
     project-state))
 
-(defmacro nd/is-project-keyword-status-p (top-keyword operator statuscode)
+(defmacro nd/is-project-keyword-status-p (test-keyword operator statuscode)
   "tests if a project has toplevel heading of top-keyword and
 child status equal to status code and returns keyword if
 both are true"
-  `(if (and (equal ,keyword ,top-keyword)
-            (nd/compare-statuscodes ,operator (nd/descend-into-project) statuscode))
-       ,keyword))
+  `(and
+    (equal ,keyword ,test-keyword)
+    (nd/compare-statuscodes ,operator (nd/descend-into-project) ,statuscode)))
 
 (defun nd/is-project-status-p (statuscode)
-  (let ((keyword (nd/is-project-p)))
-    (if keyword
-        (case statuscode
-          ;; projects closed more than 30 days ago
-          ;; note CANCELLED overrides all subtasks/projects
-          (:archivable
-           (if (nd/is-archivable-heading-p)
-               (cond ((equal keyword "CANCELLED") keyword)
-                     (t (nd/is-project-keyword-status-p "DONE" = :archivable)))))
+  "Returns t if project matches statuscode given. 
+Note that this assumes the headline being tested is a valid project"
+  (case statuscode
+    ;; projects closed more than 30 days ago
+    ;; note CANCELLED overrides all subtasks/projects
+    (:archivable
+     (if (nd/is-archivable-heading-p)
+         (or (equal keyword "CANCELLED") 
+             (nd/is-project-keyword-status-p "DONE" = :archivable))))
+    
+    ;; projects closed less than 30 days ago
+    ;; note CANCELLED overrides all subtasks/projects
+    (:complete
+     (if (not (nd/is-archivable-heading-p))
+         (or (equal keyword "CANCELLED")
+             (nd/is-project-keyword-status-p "DONE" = :complete))))
+    
+    ;; projects with no waiting, held, or active components
+    (:stuck
+     (nd/is-project-keyword-status-p "TODO" = :stuck))
+    
+    ;; held projects
+    ;; note toplevel HOLD overrides all subtasks/projects
+    (:held
+     (or (equal keyword "HOLD")
+         (nd/is-project-keyword-status-p "TODO" = :held)))
+    
+    ;; projects with at least one waiting component
+    (:waiting
+     (nd/is-project-keyword-status-p "TODO" = :waiting))
+    
+    ;; projects with at least one active component
+    (:active
+     (nd/is-project-keyword-status-p "TODO" = :active))
+    
+    ;; projects marked DONE but still have undone subtasks
+    (:done-incomplete
+     (nd/is-project-keyword-status-p "DONE" > :complete))
+    
+    ;; projects marked TODO but all subtasks are done
+    (:undone-complete
+     (nd/is-project-keyword-status-p "TODO" < :stuck))
+    
+    ;; projects with invalid todo keywords
+    (:invalid-todostate
+     (member keyword nd/project-invalid-todostates))
+    
+    ;; projects with scheduled heading (only subtasks should be scheduled)
+    (:scheduled-project
+     (nd/is-scheduled-heading-p))
 
-          ;; projects closed less than 30 days ago
-          ;; note CANCELLED overrides all subtasks/projects
-          (:complete
-           (if (not (nd/is-archivable-heading-p))
-               (cond ((equal keyword "CANCELLED") keyword)
-                     (t (nd/is-project-keyword-status-p "DONE" = :complete)))))
+    ;; error if not known
+    (t (if (not (member statuscode nd/project-statuscodes))
+           (error "unknown statuscode")))))
 
-          ;; projects with no waiting, held, or active components
-          (:stuck
-           (nd/is-project-keyword-status-p "TODO" = :stuck))
+;; helper functions
+(defun nd/skip-item ()
+  (save-excursion (or (outline-next-heading) (point-max))))
 
-          ;; held projects
-          ;; note toplevel HOLD overrides all subtasks/projects
-          (:held
-           (cond ((equal keyword "HOLD") keyword)
-                 (t (nd/is-project-keyword-status-p "TODO" = :stuck))))
+(defun nd/skip-subtree ()
+  (save-excursion (or (org-end-of-subtree t) (point-max))))
 
-          ;; projects with at least one waiting component
-          (:waiting
-           (nd/is-project-keyword-status-p "TODO" = :waiting))
+(defconst nd/project-skip-todostates
+  '("HOLD" "CANCELLED")
+  "These keywords override all contents within their subtrees.
+Currently used to tell skip functions when they can hop over
+entire subtrees to save time and ignore tasks")
 
-          ;; projects with at least one active component
-          (:active
-           (nd/is-project-keyword-status-p "TODO" = :active))
-
-          ;; projects marked DONE but still have undone subtasks
-          (:done-incomplete
-           (nd/is-project-keyword-status-p "DONE" > :complete))
-
-          ;; projects not marked DONE but all subtasks are done
-          (:undone-complete
-           (nd/is-project-keyword-status-p "TODO" < :stuck))
-
-          ;; projects with invalid todo keywords
-          (:invalid-todostate
-           (if (member keyword nd/project-invalid-todostates) keyword))
-
-          ;; projects with scheduled heading (only subtasks should be scheduled)
-          (:scheduled-project
-           (if (nd/is-scheduled-heading-p) keyword))))))
-
-;; TODO we could clean this up with macros
-(defun nd/skip-non-atomic-tasks ()
-  (save-restriction
-    (widen)
-    (if (not (nd/is-atomic-task-p))
-        (save-excursion (or (outline-next-heading) (point-max))))))
-
-(defun nd/skip-non-next-project-tasks ()
-  (save-restriction
-    (widen)
-    ;; TODO skip over invalid and held
-    (if (not (equal (nd/is-project-task-p) "NEXT"))
-        (save-excursion (or (outline-next-heading) (point-max))))))
+(defmacro nd/skip-heading-with (heading-fun test-fun)
+  "Skips headings accoring to certain characteristics. heading-fun
+is a function that tests the heading and returns the todoitem keyword
+on success. Test-fun is a function that further tests the identity of
+the heading and may or may not use the keyword output supplied by
+the heading-fun. This function will not skip if heading-fun and 
+test-fun return true"
+  `(save-restriction
+     (widen)
+     (let ((keyword (,heading-fun)))
+       (message keyword)
+       (if (not (and keyword ,test-fun))
+           (nd/skip-item)))))
   
-(defun nd/skip-non-waiting-project-tasks ()
-  (save-restriction
-    (widen)
-    ;; TODO skip over invalid and held
-    (if (not (equal (nd/is-project-task-p) "WAITING"))
-        (save-excursion (or (outline-next-heading) (point-max))))))
+;; atomic tasks
+;; by definition these have no parents, so
+;; we don't need to worry about skipping over projects
+;; any todo state is valid and we only sort by done/cancelled
+(defun nd/skip-non-unclosed-atomic-tasks ()
+  (nd/skip-heading-with
+   nd/is-atomic-task-p
+   (not (member keyword org-done-keywords))))
 
-(defun nd/skip-non-held-project-tasks ()
+(defun nd/skip-non-closed-atomic-tasks ()
+  (nd/skip-heading-with
+   nd/is-atomic-task-p
+   (and (member keyword org-done-keywords)
+        (not (nd/is-archivable-heading)))))
+
+(defun nd/skip-non-archivable-atomic-tasks ()
+  (nd/skip-heading-with
+   nd/is-atomic-task-p
+   (and (member keyword org-done-keywords)
+        (nd/is-archivable-heading))))
+
+;; project tasks
+;; since these are part of projects I need to assess
+;; if the parent project is skippable, in which case
+;; I jump to the next subtree
+;; Note that I only care about the keyword in these
+;; cases because I don't archive these, I archive
+;; their parent projects. The keywords I care about
+;; are NEXT, WAITING, and HOLD because these are
+;; definitive project tasks that require/inhibit
+;; futher action
+(defun nd/skip-non-keyword-project-tasks (skip-keyword)
   (save-restriction
     (widen)
-    ;; TODO skip over invalid and held
-    (if (not (equal (nd/is-project-task-p) "HOLD"))
-        (save-excursion (or (outline-next-heading) (point-max))))))
+    (let ((keyword (nd/is-todoitem-p)))
+      (if keyword
+          (if (nd/heading-has-children)
+              (if (member keyword nd/project-skip-todostates)
+                  (nd/skip-subtree)
+                (nd/skip-item))
+            (if (not (and (nd/heading-has-parent)
+                          (equal keyword skip-keyword)))
+                (nd/skip-item)))
+        (nd/skip-item)))))
   
-;; slip functions
+;; task-level errors
 (defun nd/skip-non-discontinuous-project-tasks ()
-  (save-restriction
-    (widen)
-    (if (not (nd/is-discontinuous-project-task-p))
-        (save-excursion (or (outline-next-heading) (point-max))))))
+  (nd/skip-heading-with
+   nd/is-todoitem-p
+   (nd/has-discontinuous-parent)))
 
-(defun nd/skip-non-done-open-todoitems ()
-  (save-restriction
-    (widen)
-    (if (not (and (member (nd/is-todoitem-p) org-done-keywords) (not (nd/is-closed-heading-p))))
-        (save-excursion (or (outline-next-heading) (point-max))))))
-  
+(defun nd/skip-non-done-unclosed-todoitems ()
+  (nd/skip-heading-with
+   nd/is-todoitem-p
+   (and (member keyword org-done-keywords)
+        (not (nd/is-closed-heading-p)))))
+
 (defun nd/skip-non-undone-closed-todoitems ()
-  (save-restriction
-    (widen)
-    (if (not (and (not (member (nd/is-todoitem-p)) org-done-keywords) (nd/is-closed-heading-p)))
-        (save-excursion (or (outline-next-heading) (point-max))))))
+  (nd/skip-heading-with
+   nd/is-todoitem-p
+   (and (not (member keyword org-done-keywords))
+        (nd/is-closed-heading-p))))
+
+(defun nd/skip-non-series-atomic-tasks ()
+  (nd/skip-heading-with
+   nd/is-atomic-task-p
+   (nd/is-series-heading-p)))
 
 ;; projects
-;; TODO skip entire subtree if we don't need to evaluate anything inside
-;; otherwise (for example) a held project will still have it's subtasks show up
 (defun nd/skip-projects-without-statuscode (statuscode)
   (save-restriction
     (widen)
-    (if (not (nd/is-project-status-p statuscode))
-        (save-excursion (or (outline-next-heading) (point-max))))))
-
-;; top-level projects
-(defun nd/skip-subprojects-without-statuscode (statuscode)
-  (save-restriction
-    (widen)
-    (if (or (nd/heading-has-parent) (not (nd/is-project-status-p statuscode)))
-        (save-excursion (or (outline-next-heading) (point-max))))))
-
-(defun nd/skip-series-projects-without-statuscode (statuscode)
-  (save-restriction
-    (widen)
-    (if (not (and (nd/is-series-heading-p) (nd/is-project-status-p statuscode)))
-        (save-excursion (or (outline-next-heading) (point-max))))))
-;; series projects
-;; defined as project with property Project_type=series
-;; must have:
-;; - one level of subtasks
-;; - all subtasks either TODO/scheduled, NEXT, DONE, CANCELLED
-;; - at least one TODO/scheduled or NEXT (active) ..else empty
-;; invalid if:
-;; - project header is invalid project header (typical rules apply)
-
-;; archiving
-(defun nd/skip-non-archivable-atomic-tasks ()
-  (save-restriction
-    (widen)
-    (if (not (nd/is-archivable-atomic-task-p))
-        (save-excursion (or (outline-next-heading) (point-max))))))
+    (let ((keyword (nd/is-project-p)))
+      ;; TODO there may be a way to skip over skippable projects
+      ;; and save a few cycles. Not a huge deal, but would require
+      ;; keeping the skippable line and then skipping over the others
+      ;; in one fell swoop, not easy to do efficiently
+      (if keyword
+          (if (not (nd/is-project-status-p statuscode))
+              (if nd/agenda-limit-project-toplevel
+                  (nd/skip-subtree)
+                (nd/skip-item)))
+        (nd/skip-item)))))
 
 (defvar nd/agenda-limit-project-toplevel t
   "used to filter projects by all levels or top-level only")
@@ -665,8 +702,8 @@ both are true"
 
 (defun nd/agenda-base-task-command (keyword skip-fun)
   "shorter syntax to define task agenda commands"
-  `(tags-todo
-    "-NA-REFILE/!"
+  `(tags
+    "-NA-REFILE/"
     ((org-agenda-overriding-header (concat ,keyword " Tasks"))
      (org-agenda-skip-function ,skip-fun)
      (org-agenda-todo-ignore-with-date 'all)
@@ -680,9 +717,7 @@ both are true"
                                     (and nd/agenda-limit-project-toplevel "Toplevel ")
                                     ,keyword
                                     " Projects"))
-     (org-agenda-skip-function (if nd/agenda-limit-project-toplevel
-                                   '(nd/skip-subprojects-without-statuscode ,statuscode)
-                                 '(nd/skip-projects-without-statuscode ,statuscode)))
+     (org-agenda-skip-function '(nd/skip-projects-without-statuscode ,statuscode))
      (org-agenda-sorting-strategy '(category-keep)))))
 
 (setq org-agenda-tags-todo-honor-ignore-options t)
@@ -690,10 +725,10 @@ both are true"
       `(("t"
          "Task View"
          ((agenda "" nil)
-          ,(nd/agenda-base-task-command "Next Project" ''nd/skip-non-next-project-tasks)
-          ,(nd/agenda-base-task-command "Waiting Project" ''nd/skip-non-waiting-project-tasks)
-          ,(nd/agenda-base-task-command "Atomic" ''nd/skip-non-atomic-tasks)
-          ,(nd/agenda-base-task-command "Held Project" ''nd/skip-non-held-project-tasks)))
+          ,(nd/agenda-base-task-command "Next Project" ''(nd/skip-non-keyword-project-tasks "NEXT"))
+          ,(nd/agenda-base-task-command "Waiting Project" ''(nd/skip-non-keyword-project-tasks "WAITING"))
+          ,(nd/agenda-base-task-command "Atomic" ''nd/skip-non-unclosed-atomic-tasks)
+          ,(nd/agenda-base-task-command "Held Project" ''(nd/skip-non-keyword-project-tasks "HOLD"))))
         ("o"
          "Project Overview"
          (,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Stuck" :stuck)
@@ -706,11 +741,11 @@ both are true"
                 ((org-agenda-overriding-header "Tasks to Refile"))
                 (org-tags-match-list-sublevels nil))
           ,(nd/agenda-base-task-command "Discontinous Project" ''nd/skip-non-discontinuous-project-tasks)
-          ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Unmarked Completed" :complete)
-          ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/" "Invalid" :invalid-todostate)
-          ;; ,(nd/agenda-base-task-command "Done But Not Closed" ''nd/skip-non-done-open-todoitems)
-          ;; ,(nd/agenda-base-task-command "Closed But Not Done" ''nd/skip-non-open-closed-todoitems)
-          ))
+          ,(nd/agenda-base-task-command "Undone Closed" ''nd/skip-non-undone-closed-todoitems)
+          ,(nd/agenda-base-task-command "Done Unclosed" ''nd/skip-non-done-unclosed-todoitems)
+          ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/" "Undone Completed" :undone-complete)
+          ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/" "Done Incompleted" :done-incomplete)
+          ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/" "Invalid Todostate" :invalid-todostate)))
         ("s"
          "Series projects"
          (,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC+Project_Type=\"series\"/!" "Active Series" :active)
@@ -745,11 +780,6 @@ both are true"
        (concat "-" tag)))
 
 (setq org-agenda-auto-exclude-function 'nd/org-auto-exclude-function)
-
-(use-package org-bullets
-  :ensure t
-  :config
-    (add-hook 'org-mode-hook (lambda () (org-bullets-mode))))
 
 (use-package calfw-org
   :init
