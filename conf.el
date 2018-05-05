@@ -372,6 +372,20 @@ If it does not have a date, it will return nil."
   (let ((timestamp (org-entry-get nil date-property)))
     (if timestamp (float-time (date-to-time timestamp)))))
 
+(defun nd/heading-compare-timestamp (timestamp-fun &optional ref-time future)
+  "helper function that returns the timestamp (returned by timestamp-fun on the
+current header) if timestamp is futher back in time compared to a ref-time
+ (default to 0 which is now, where negative is past an positive is future). 
+If the future flag is set, returns timestamp if it is in the future
+ compared to ref-time. Returns nil if no timestamp is found."
+  (let* ((timestamp (funcall timestamp-fun))
+        (ref-time (or ref-time 0)))
+    (if (and timestamp
+             (if future
+                 (> (- timestamp (float-time)) ref-time)
+               (<= (- timestamp (float-time)) ref-time)))
+        timestamp)))
+
 (defun nd/is-timestamped-heading-p ()
   (nd/get-date-property "TIMESTAMP"))
 
@@ -385,17 +399,18 @@ If it does not have a date, it will return nil."
   (nd/get-date-property "CLOSED"))
 
 (defun nd/is-stale-heading-p ()
-  (let ((timestamp (nd/is-timestamped-heading-p)))
-    (if (and timestamp (> (- (float-time) timestamp) 0))
-        timestamp)))
+  (nd/heading-compare-timestamp 'nd/is-timestamped-heading-p))
+
+(defun nd/is-fresh-heading-p ()
+  (nd/heading-compare-timestamp 'nd/is-timestamped-heading-p nil t))
 
 (defvar nd/archive-delay-days 30
   "the number of days to wait before tasks show up in the archive view")
 
 (defun nd/is-archivable-heading-p ()
-  (let ((timestamp (nd/is-closed-heading-p)))
-    (if (and timestamp (> (- (float-time) timestamp) (* 60 60 24 nd/archive-delay-days)))
-        timestamp)))
+  (nd/heading-compare-timestamp
+   'nd/is-closed-heading-p
+    (- (* 60 60 24 nd/archive-delay-days))))
 
 (defun nd/is-todoitem-p ()
   (let ((keyword (nth 2 (org-heading-components))))
@@ -420,11 +435,8 @@ If it does not have a date, it will return nil."
 (defun nd/heading-has-children (heading-test)
   "returns t if heading has subheadings that return t when assessed with 
 heading-test function"
-  ;; TODO make this more efficient (and accurate) by only testing
-  ;; the level immediately below (if it exists)
-  (let ((has-children)
-        (subtree-end (save-excursion (org-end-of-subtree t)))
-        (previous-point))
+  (let ((subtree-end (save-excursion (org-end-of-subtree t)))
+        has-children previous-point)
     (save-excursion
       (setq previous-point (point))
       (outline-next-heading)
@@ -434,7 +446,6 @@ heading-test function"
           (setq has-children t))
         (setq previous-point (point))
         (org-forward-heading-same-level 1 t)))
-        ;; (outline-next-heading)))
     has-children))
 
 (defun nd/heading-has-parent (heading-test)
@@ -674,6 +685,24 @@ test-fun return true"
    nd/is-atomic-task-p
    (and (member keyword org-done-keywords)
         (nd/is-archivable-heading-p))))
+
+;; periodicals
+;; these are headers marked with PARENT_TYPE=periodical
+;; property that have timestamped headers as children
+;; which in turn may or may not have todo keywords.
+;; They are to be refilled when all children are stale
+;; Note that I only care about the parent headers
+;; as the children should always show up in the agenda
+;; simply because they have timestamps. Parents can be
+;; either fresh (at least one child in the future) or
+;; stale (all children in the past)
+(defun nd/skip-non-fresh-periodical-parent-headers ()
+  (save-restriction
+    (widen)
+    (if (and (nd/is-periodical-p)
+             (not (nd/header-has-parent 'nd/is-periodical-p))
+             (nd/header-has-children 'nd/is-fresh-heading-p))
+        (nd/skip-heading))))
 
 ;; project tasks
 ;; since these are part of projects I need to assess
