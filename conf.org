@@ -483,14 +483,14 @@ There are several types of tags I use:
 #+END_SRC
 ** properties
 #+BEGIN_SRC emacs-lisp
-  (add-to-list 'org-default-properties "PROJECT_TYPE")
+  (add-to-list 'org-default-properties "PARENT_TYPE")
   (add-to-list 'org-default-properties "OWNER")
   (setq org-global-properties
-        '(("Project_Type_ALL" . "series")
+        '(("PARENT_TYPE_ALL" . "periodical iterator")
           ("Effort_ALL" . "00 10 30 60 90")))
 
   ;; TODO this may not be needed
-  (setq org-use-property-inheritance '("Project_Type"))
+  (setq org-use-property-inheritance '("PARENT_TYPE"))
 #+END_SRC
 ** capture templates
 #+BEGIN_SRC emacs-lisp
@@ -584,6 +584,8 @@ Each of these returns the timestamp if found.
           timestamp)))
 #+END_SRC
 **** task level testing
+Each of these returns the keyword if true
+Doubles as a way to further test the todostate in downstream functions
 #+BEGIN_SRC emacs-lisp
   (defun nd/is-todoitem-p ()
     (let ((keyword (nth 2 (org-heading-components))))
@@ -598,12 +600,18 @@ Each of these returns the timestamp if found.
 
   (defun nd/is-atomic-task-p ()
     (and (not (nd/heading-has-parent)) (nd/is-task-p)))
+#+END_SRC
+**** property testing
+Returns t is heading matches a certian set of properties
+#+BEGIN_SRC emacs-lisp
+  (defun nd/is-periodical-heading-p ()
+    (equal "periodical" (org-entry-get nil "PARENT_TYPE" t)))
 
-  (defun nd/is-series-heading-p ()
-    "return t if headline has property Project_Type=series"
-    (equal "series" (org-entry-get nil "Project_Type" t)))
+  (defun nd/is-iterator-heading-p ()
+    (equal "iterator" (org-entry-get nil "PARENT_TYPE" t)))
 #+END_SRC
 **** relational testing
+Returns t if heading has certain relationship to other headings
 #+BEGIN_SRC emacs-lisp
   (defun nd/heading-has-children ()
     "returns t if heading has todoitems in its immediate subtree"
@@ -794,7 +802,7 @@ These are the primary means we use to sort through tasks. Note that we could do 
 tags in the custom commands section but I find this easier to maintain and possibly faster.
 #+BEGIN_SRC emacs-lisp
   ;; helper functions
-  (defun nd/skip-item ()
+  (defun nd/skip-heading ()
     (save-excursion (or (outline-next-heading) (point-max))))
 
   (defun nd/skip-subtree ()
@@ -818,7 +826,7 @@ tags in the custom commands section but I find this easier to maintain and possi
        (let ((keyword (,heading-fun)))
          (message keyword)
          (if (not (and keyword ,test-fun))
-             (nd/skip-item)))))
+             (nd/skip-heading)))))
 
   ;; stale headings 
   ;; For archiving headings with old timestamps
@@ -838,7 +846,7 @@ tags in the custom commands section but I find this easier to maintain and possi
                   (not (member keyword org-done-keywords))
                   (not (nd/heading-has-children))
                   (not (nd/heading-has-parent))))
-            (nd/skip-item)))))
+            (nd/skip-heading)))))
     
   ;; atomic tasks
   ;; by definition these have no parents, so
@@ -882,16 +890,16 @@ tags in the custom commands section but I find this easier to maintain and possi
             (if (nd/heading-has-children)
                 (if (member keyword nd/project-skip-todostates)
                     (nd/skip-subtree)
-                  (nd/skip-item))
+                  (nd/skip-heading))
               (if (not (and (nd/heading-has-parent)
                             (not (nd/is-timestamped-heading-p))
                             (not (nd/is-scheduled-heading-p))
                             (not (nd/is-deadlined-heading-p))
                             (equal keyword skip-keyword)))
-                  (nd/skip-item)))
-          (nd/skip-item)))))
+                  (nd/skip-heading)))
+          (nd/skip-heading)))))
     
-  ;; task-level errors
+  ;; header-level errors
   (defun nd/skip-non-discontinuous-project-tasks ()
     (nd/skip-heading-with
      nd/is-todoitem-p
@@ -909,10 +917,17 @@ tags in the custom commands section but I find this easier to maintain and possi
      (and (not (member keyword org-done-keywords))
           (nd/is-closed-heading-p))))
 
-  (defun nd/skip-non-series-atomic-tasks ()
+  (defun nd/skip-non-untimestamped-periodical-headers ()
+    (save-restriction
+      (widen)
+      (if (not (and (nd/is-periodical-p)
+                    (not (nd/is-timestamped-heading-p))))
+          (nd/skip-heading))))
+
+  (defun nd/skip-non-iterator-atomic-tasks ()
     (nd/skip-heading-with
      nd/is-atomic-task-p
-     (nd/is-series-heading-p)))
+     (nd/is-iterator-heading-p)))
 
   ;; projects
   (defun nd/skip-projects-without-statuscode (statuscode)
@@ -924,8 +939,8 @@ tags in the custom commands section but I find this easier to maintain and possi
                      (nd/heading-has-parent))
                 (nd/skip-subtree)
               (if (not (nd/is-project-status-p statuscode))
-                  (nd/skip-item)))
-          (nd/skip-item)))))
+                  (nd/skip-heading)))
+          (nd/skip-heading)))))
 #+END_SRC
 *** interactive view functions
 #+BEGIN_SRC emacs-lisp
@@ -969,8 +984,8 @@ tags in the custom commands section but I find this easier to maintain and possi
        (org-agenda-sorting-strategy '(category-keep)))))
 
   (let ((task-view-match "-NA-REFILE")
-        (project-view-match "-NA-REFILE-Project_Type=\"series\"/")
-        (series-view-match "-NA-REFILE+Project_Type=\"series\"/"))
+        (project-view-match "-NA-REFILE-PARENT_TYPE=\"iterator\"/")
+        (series-view-match "-NA-REFILE+PARENT_TYPE=\"iterator\"/"))
     (setq org-agenda-custom-commands
           `(("t"
              "Task View"
@@ -992,7 +1007,7 @@ tags in the custom commands section but I find this easier to maintain and possi
               ,(nd/agenda-base-project-command series-view-match "Active Series" :active)
               ,(nd/agenda-base-project-command series-view-match "Waiting Series" :waiting)
               ,(nd/agenda-base-project-command series-view-match "Held Series" :held)
-              ,(nd/agenda-base-task-command series-view-match "Uninitialized Series" ''nd/skip-non-series-atomic-tasks)))
+              ,(nd/agenda-base-task-command series-view-match "Uninitialized Series" ''nd/skip-non-iterator-atomic-tasks)))
             ("r"
              "Refile and Critical Errors"
              ((tags "REFILE"

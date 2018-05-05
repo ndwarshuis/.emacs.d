@@ -318,14 +318,14 @@ to which the faces are applied"
 (nd/add-tag-face "PaleGoldenrod" 8 10)
 (nd/add-tag-face "violet" 11 19)
 
-(add-to-list 'org-default-properties "PROJECT_TYPE")
+(add-to-list 'org-default-properties "PARENT_TYPE")
 (add-to-list 'org-default-properties "OWNER")
 (setq org-global-properties
-      '(("Project_Type_ALL" . "series")
+      '(("PARENT_TYPE_ALL" . "periodical iterator")
         ("Effort_ALL" . "00 10 30 60 90")))
 
 ;; TODO this may not be needed
-(setq org-use-property-inheritance '("Project_Type"))
+(setq org-use-property-inheritance '("PARENT_TYPE"))
 
 (setq org-capture-templates
       '(("t" "todo" entry (file "~/Org/capture.org") "* TODO %?\ndeliverable: \n%U\n")
@@ -769,8 +769,8 @@ test-fun return true"
      (org-agenda-sorting-strategy '(category-keep)))))
 
 (let ((task-view-match "-NA-REFILE")
-      (project-view-match "-NA-REFILE-Project_Type=\"series\"/")
-      (series-view-match "-NA-REFILE+Project_Type=\"series\"/"))
+      (project-view-match "-NA-REFILE-PARENT_TYPE=\"iterator\"/")
+      (series-view-match "-NA-REFILE+PARENT_TYPE=\"iterator\"/"))
   (setq org-agenda-custom-commands
         `(("t"
            "Task View"
