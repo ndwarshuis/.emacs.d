@@ -369,6 +369,27 @@ vim is all about escape, not...ctrl+g???
   (delight 'org-indent-mode)
   (setq org-directory "~/Org")
 #+END_SRC
+** ui
+*** bullets
+#+BEGIN_SRC emacs-lisp
+(use-package org-bullets
+  :ensure t
+  :config
+    (add-hook 'org-mode-hook (lambda () (org-bullets-mode))))
+#+END_SRC
+*** font height
+the fonts in org headings bug me, make them smaller and less invasive
+#+BEGIN_SRC emacs-lisp
+  (defun nd/org-ui-heading-same-font-height ()
+    (let ((heading-height 1.15))
+      (set-face-attribute 'org-level-1 nil :weight 'bold :height heading-height)
+      (set-face-attribute 'org-level-2 nil :weight 'semi-bold :height heading-height)
+      (set-face-attribute 'org-level-3 nil :weight 'normal :height heading-height)
+      (set-face-attribute 'org-level-4 nil :weight 'normal :height heading-height)
+      (set-face-attribute 'org-level-5 nil :weight 'normal :height heading-height)))
+
+  (add-hook 'org-mode-hook 'nd/org-ui-heading-same-font-height)
+#+END_SRC
 ** evil modes
 #+BEGIN_SRC emacs-lisp
   ;;(add-hook 'org-capture-mode-hook 'evil-append)
@@ -386,12 +407,19 @@ vim is all about escape, not...ctrl+g???
   (setq org-special-ctrl-k t)
   (setq org-yank-adjusted-subtrees t)
 #+END_SRC
+*** custom
+#+BEGIN_SRC emacs-lisp
+  (add-hook 'org-mode-hook
+            (lambda ()
+              (local-set-key (kbd "C-c C-x x") 'nd/mark-subtree-done)
+              (local-set-key (kbd "C-c C-x c") 'nd/org-clone-subtree-with-time-shift-reset)))
+#+END_SRC
 ** todo states
 *** sequences
 #+BEGIN_SRC emacs-lisp
   (setq org-todo-keywords
         '((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d)")
-          (sequence "WAITING(w@/!)" "HOLD(h@/!)" "|" "CANCELLED(c@/!)")))
+          (sequence "WAIT(w@/!)" "HOLD(h@/!)" "|" "CANC(c@/!)")))
 #+END_SRC
 *** colors
 #+BEGIN_SRC emacs-lisp
@@ -399,40 +427,68 @@ vim is all about escape, not...ctrl+g???
       (quote (("TODO" :foreground "light coral" :weight bold)
               ("NEXT" :foreground "khaki" :weight bold)
               ("DONE" :foreground "light green" :weight bold)
-              ("WAITING" :foreground "orange" :weight bold)
+              ("WAIT" :foreground "orange" :weight bold)
               ("HOLD" :foreground "violet" :weight bold)
-              ("CANCELLED" :foreground "deep sky blue" :weight bold))))
+              ("CANC" :foreground "deep sky blue" :weight bold))))
 #+END_SRC
 ** tags
-I use tags for contexts (mostly). The "@" represents location contexts and a mutually exclusive as there is only one of me. The "#" contexts represent tools which must be available.
+I use tags for agenda filtering. Very fast and simple.
+Each tag here starts with a symbol to define its group. Some groups are mutually exclusive, and each group has a different color.
+Any tag that is not part of these groups (eg some filetags in the few cases I use those) is easy to distinguish as it has the default tag color and is all caps.
+
+There are several types of tags I use:
+- location: a GTD contexts; these start with "@"
+- tools: also a GTD contexts; these start with "#"
+- attribute: useful flags for filtering; these start with "%"
+- life areas: key areas of life which define priorities and goals; these start with "_"
 #+BEGIN_SRC emacs-lisp
   (setq  org-tag-alist '((:startgroup)
                          ("@errand" . ?e)
                          ("@work" . ?w)
                          ("@home" . ?h)
-                         ("@travel" . ?f)
+                         ("@travel" . ?t)
                          (:endgroup)
-                         ("#laptop" . ?L)
-                         ("#hood" . ?H)
-                         ("WORK" . ?W)
-                         ("PERSONAL" . ?P)
-                         ("NOTE" . ?N)
-                         ("FLAGGED" . ??)))
 
-  ;; TODO I'm sure there is a better way to do this in lisp
-  (setq org-tag-faces
-        '(("@errand" . (:foreground "PaleGreen"))
-          ("@work" . (:foreground "PaleGreen"))
-          ("@home" . (:foreground "PaleGreen"))
-          ("@travel" . (:foreground "PaleGreen"))
-          ("#laptop" . (:foreground "SkyBlue"))
-          ("#hood" . (:foreground "SkyBlue"))))
+                         ("#laptop" . ?L)
+                         ("#tcult" . ?T)
+
+                         ("%note" . ?n)
+                         ("%subdiv" . ?s)
+
+                         (:startgroup)
+                         ("_env" . ?E)
+                         ("_fin" . ?F)
+                         ("_int" . ?I)
+                         ("_met" . ?M)
+                         ("_phy" . ?H)
+                         ("_pro" . ?P)
+                         ("_rec" . ?R)
+                         ("_soc" . ?S)
+                         (:endgroup)))
+
+  ;; not the most elegant but this will work
+  (setq org-tag-faces '())
+
+  (defun nd/add-tag-face (fg-name start end)
+    "Adds list of cons cells to org-tag-faces with foreground set to fg-name.
+  Start and end specify the positions in org-tag-alist which define the tags
+  to which the faces are applied"
+    (dolist (tag (mapcar #'car (subseq org-tag-alist start end)))
+      (push `(,tag . (:foreground ,fg-name)) org-tag-faces)))
+
+  (nd/add-tag-face "PaleGreen" 1 5)
+  (nd/add-tag-face "SkyBlue" 6 8)
+  (nd/add-tag-face "PaleGoldenrod" 8 10)
+  (nd/add-tag-face "violet" 11 19)
 #+END_SRC
 ** properties
 #+BEGIN_SRC emacs-lisp
-  ;; this is basically the same as putting the properties at the top of all org files
-  (add-to-list 'org-default-properties "Project_Type")
-  (setq org-global-properties '(("Project_Type_ALL" . "series")))
+  (add-to-list 'org-default-properties "PROJECT_TYPE")
+  (add-to-list 'org-default-properties "OWNER")
+  (setq org-global-properties
+        '(("Project_Type_ALL" . "series")
+          ("Effort_ALL" . "00 10 30 60 90")))
+
   ;; TODO this may not be needed
   (setq org-use-property-inheritance '("Project_Type"))
 #+END_SRC
@@ -440,7 +496,7 @@ I use tags for contexts (mostly). The "@" represents location contexts and a mut
 #+BEGIN_SRC emacs-lisp
   (setq org-capture-templates
         '(("t" "todo" entry (file "~/Org/capture.org") "* TODO %?\ndeliverable: \n%U\n")
-          ("n" "note" entry (file "~/Org/capture.org") "* %? :NOTE:\n%U\n" )
+          ("n" "note" entry (file "~/Org/capture.org") "* %? :\\%note:\n%U\n" )
           ("a" "appointment" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t\n" )
           ("m" "multi-day" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t--%^t\n" )
           ("d" "deadline" entry (file "~/Org/capture.org") "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n" )
@@ -481,19 +537,11 @@ I use tags for contexts (mostly). The "@" represents location contexts and a mut
     (not (member (nth 2 (org-heading-components)) org-done-keywords)))
   (setq org-refile-target-verify-function 'nd/verify-refile-target)
 #+END_SRC
-** ui
-*** bullets
-#+BEGIN_SRC emacs-lisp
-(use-package org-bullets
-  :ensure t
-  :config
-    (add-hook 'org-mode-hook (lambda () (org-bullets-mode))))
-#+END_SRC
 ** agenda
 *** basic config
 #+BEGIN_SRC emacs-lisp
   (setq org-agenda-files '("~/Org"
-                        "~/Org/large_projects"
+                        "~/Org/projects"
                         "~/Org/reference"))
   ;; (setq org-agenda-files '("~/Org/reference/agendatest.org"))
   (setq org-agenda-dim-blocked-tasks nil)
@@ -501,72 +549,62 @@ I use tags for contexts (mostly). The "@" represents location contexts and a mut
 #+END_SRC
 *** task helper functions
 These are the building blocks for skip functions.
+**** timestamps
+Each of these returns the timestamp if found.
 #+BEGIN_SRC emacs-lisp
-  (defun nd/is-todoitem-p ()
-    "return todo keyword if present in headline (which defines the heading as a todoitem)
-  this is used to both test if a heading is a todoitem and retrieving the keyword"
-    (let ((keyword (nth 2 (org-heading-components))))
-      (if (member keyword org-todo-keywords-1)
-          keyword)))
+  (defun nd/get-date-property (date-property)
+    "Helper function to get the date property and convert to a number.
+  If it does not have a date, it will return nil."
+    (let ((timestamp (org-entry-get nil date-property)))
+      (if timestamp (float-time (date-to-time timestamp)))))
 
-  (defun nd/is-project-p ()
-    "return todo keyword if heading is todoitem and has children"
-    (and (nd/heading-has-children) (nd/is-todoitem-p)))
-
-  (defun nd/is-task-p ()
-    "return todo keyword if heading is todoitem with no children"
-    (and (not (nd/heading-has-children)) (nd/is-todoitem-p)))
-
-  (defun nd/is-atomic-task-p ()
-    "return todo keyword if heading is task with no parents"
-    (and (not (nd/heading-has-parent)) (nd/is-task-p)))
-    
-  (defun nd/is-project-task-p ()
-    "return todo keyword if heading is task with parents"
-    (and (nd/heading-has-parent) (nd/is-task-p)))
+  (defun nd/is-timestamped-heading-p ()
+    (nd/get-date-property "TIMESTAMP"))
 
   (defun nd/is-scheduled-heading-p ()
-    "return timestamp if headline is scheduled"
-    (org-entry-get nil "SCHEDULED"))
+    (nd/get-date-property "SCHEDULED"))
 
-  (defun nd/is-series-header-p ()
-    "return t if headline has property Project_Type=series"
-    (equal "series" (org-entry-get nil "Project_Type")))
+  (defun nd/is-deadlined-heading-p ()
+    (nd/get-date-property "DEADLINE"))
 
   (defun nd/is-closed-heading-p ()
-    "return timestamp if headline is closed"
-    (let ((timestamp (org-entry-get nil "CLOSED")))
-      (if timestamp (float-time (date-to-time timestamp)))))
+    (nd/get-date-property "CLOSED"))
+
+  (defun nd/is-stale-heading-p ()
+    (let ((timestamp (nd/is-timestamped-heading-p)))
+      (if (and timestamp (> (- (float-time) timestamp) 0))
+          timestamp)))
 
   (defvar nd/archive-delay-days 30
     "the number of days to wait before tasks show up in the archive view")
 
   (defun nd/is-archivable-heading-p ()
-    "return timestamp if todoitem is closed and older than specified time"
     (let ((timestamp (nd/is-closed-heading-p)))
-      ;; NOTE we do not ensure that the todo state is in done keywords
-      ;; this is to allow easier error correction in slip functions
       (if (and timestamp (> (- (float-time) timestamp) (* 60 60 24 nd/archive-delay-days)))
           timestamp)))
-
-  (defun nd/is-archivable-atomic-task-p ()
-    "return keyword if heading is an archivable task"
-    (and (nd/is-archivable-heading-p) (nd/is-atomic-task-p)))
-    
-  (defun nd/is-archivable-project-p ()
-    "return keyword if heading is an archivable task"
-    (and (nd/is-archivable-heading-p) (nd/is-project-p)))
-
-  (defun nd/is-active-task-p ()
-    "return keyword if task is either NEXT or scheduled"
-    (let ((keyword (nd/is-task-p)))
-      (if (or (equal keyword "NEXT") (nd/is-scheduled-heading-p))
+#+END_SRC
+**** task level testing
+#+BEGIN_SRC emacs-lisp
+  (defun nd/is-todoitem-p ()
+    (let ((keyword (nth 2 (org-heading-components))))
+      (if (member keyword org-todo-keywords-1)
           keyword)))
 
-  (defun nd/is-blocked-task-p ()
-    "return keyword if task is WAITING"
-    (equal (nd/is-task-p) "WAITING"))
+  (defun nd/is-project-p ()
+    (and (nd/heading-has-children) (nd/is-todoitem-p)))
 
+  (defun nd/is-task-p ()
+    (and (not (nd/heading-has-children)) (nd/is-todoitem-p)))
+
+  (defun nd/is-atomic-task-p ()
+    (and (not (nd/heading-has-parent)) (nd/is-task-p)))
+
+  (defun nd/is-series-heading-p ()
+    "return t if headline has property Project_Type=series"
+    (equal "series" (org-entry-get nil "Project_Type" t)))
+#+END_SRC
+**** relational testing
+#+BEGIN_SRC emacs-lisp
   (defun nd/heading-has-children ()
     "returns t if heading has todoitems in its immediate subtree"
     ;; TODO make this more efficient (and accurate) by only testing
@@ -599,12 +637,13 @@ These are the building blocks for skip functions.
               (setq has-todoitem-parent t)
             (setq has-non-todoitem-parent t))))
       (and has-todoitem-parent has-non-todoitem-parent)))
-
+#+END_SRC
+**** project level testing
+#+BEGIN_SRC emacs-lisp
   (defconst nd/project-invalid-todostates
-    '("WAITING" "NEXT")
+    '("WAIT" "NEXT")
     "projects cannot have these todostates") 
 
-  ;; project level testing
   (defconst nd/project-statuscodes
     '(:archivable
       :complete
@@ -656,7 +695,7 @@ These are the building blocks for skip functions.
                        (if (nd/heading-has-children)
                            (cond ((member keyword nd/project-invalid-todostates) :invalid-todostate)
                                  ((nd/is-scheduled-heading-p) :scheduled-project)
-                                 ((equal keyword "CANCELLED") (if (nd/is-archivable-heading-p)
+                                 ((equal keyword "CANC") (if (nd/is-archivable-heading-p)
                                                                   :archivable
                                                                 :complete))
                                  ((equal keyword "HOLD") :held)
@@ -670,11 +709,11 @@ These are the building blocks for skip functions.
                                                  (:archivable (if (nd/is-archivable-heading-p)
                                                                   :archivable
                                                                 :complete))
-                                                 (t (if (= child-statuscode :complete)
+                                                 (t (if (nd/status= child-statuscode :complete)
                                                         :complete
-                                                      :done-imcomplete))))))))
+                                                      :done-incomplete))))))))
                          (cond ((equal keyword "HOLD") :held)
-                               ((equal keyword "WAITING") :waiting)
+                               ((equal keyword "WAIT") :waiting)
                                ((equal keyword "NEXT") :active)
                                ((and (equal keyword "TODO") (nd/is-scheduled-heading-p)) :active)
                                ((equal keyword "TODO") :stuck)
@@ -699,17 +738,17 @@ These are the building blocks for skip functions.
   Note that this assumes the headline being tested is a valid project"
     (case statuscode
       ;; projects closed more than 30 days ago
-      ;; note CANCELLED overrides all subtasks/projects
+      ;; note CANC overrides all subtasks/projects
       (:archivable
        (if (nd/is-archivable-heading-p)
-           (or (equal keyword "CANCELLED") 
+           (or (equal keyword "CANC") 
                (nd/is-project-keyword-status-p "DONE" = :archivable))))
       
       ;; projects closed less than 30 days ago
-      ;; note CANCELLED overrides all subtasks/projects
+      ;; note CANC overrides all subtasks/projects
       (:complete
        (if (not (nd/is-archivable-heading-p))
-           (or (equal keyword "CANCELLED")
+           (or (equal keyword "CANC")
                (nd/is-project-keyword-status-p "DONE" = :complete))))
       
       ;; projects with no waiting, held, or active components
@@ -762,7 +801,7 @@ tags in the custom commands section but I find this easier to maintain and possi
     (save-excursion (or (org-end-of-subtree t) (point-max))))
 
   (defconst nd/project-skip-todostates
-    '("HOLD" "CANCELLED")
+    '("HOLD" "CANC")
     "These keywords override all contents within their subtrees.
   Currently used to tell skip functions when they can hop over
   entire subtrees to save time and ignore tasks")
@@ -780,27 +819,50 @@ tags in the custom commands section but I find this easier to maintain and possi
          (message keyword)
          (if (not (and keyword ,test-fun))
              (nd/skip-item)))))
+
+  ;; stale headings 
+  ;; For archiving headings with old timestamps
+  ;; Note that these are not always todo items
+  ;; I only care about those that are not part
+  ;; of projects (projects will get taken care
+  ;; of when the entire project is finished)
+  ;; and those that are not DONE/CANC (as
+  ;; those appear in the regular archive
+  ;; section)
+  (defun nd/skip-non-stale-headings ()
+    (save-restriction
+      (widen)
+      (let ((keyword (nd/is-todoitem-p)))
+        (if (not
+             (and (nd/is-stale-heading-p)
+                  (not (member keyword org-done-keywords))
+                  (not (nd/heading-has-children))
+                  (not (nd/heading-has-parent))))
+            (nd/skip-item)))))
     
   ;; atomic tasks
   ;; by definition these have no parents, so
   ;; we don't need to worry about skipping over projects
-  ;; any todo state is valid and we only sort by done/cancelled
+  ;; any todo state is valid and we only sort by done/canc
   (defun nd/skip-non-unclosed-atomic-tasks ()
     (nd/skip-heading-with
      nd/is-atomic-task-p
-     (not (member keyword org-done-keywords))))
+     (and (not (nd/is-timestamped-heading-p))
+          (not (nd/is-scheduled-heading-p))
+          (not (nd/is-deadlined-heading-p))
+          (not (member keyword org-done-keywords)))))
 
   (defun nd/skip-non-closed-atomic-tasks ()
     (nd/skip-heading-with
      nd/is-atomic-task-p
      (and (member keyword org-done-keywords)
-          (not (nd/is-archivable-heading)))))
+          (not (nd/is-archivable-heading-p)))))
 
   (defun nd/skip-non-archivable-atomic-tasks ()
     (nd/skip-heading-with
      nd/is-atomic-task-p
      (and (member keyword org-done-keywords)
-          (nd/is-archivable-heading))))
+          (nd/is-archivable-heading-p))))
 
   ;; project tasks
   ;; since these are part of projects I need to assess
@@ -809,7 +871,7 @@ tags in the custom commands section but I find this easier to maintain and possi
   ;; Note that I only care about the keyword in these
   ;; cases because I don't archive these, I archive
   ;; their parent projects. The keywords I care about
-  ;; are NEXT, WAITING, and HOLD because these are
+  ;; are NEXT, WAIT, and HOLD because these are
   ;; definitive project tasks that require/inhibit
   ;; futher action
   (defun nd/skip-non-keyword-project-tasks (skip-keyword)
@@ -822,6 +884,9 @@ tags in the custom commands section but I find this easier to maintain and possi
                     (nd/skip-subtree)
                   (nd/skip-item))
               (if (not (and (nd/heading-has-parent)
+                            (not (nd/is-timestamped-heading-p))
+                            (not (nd/is-scheduled-heading-p))
+                            (not (nd/is-deadlined-heading-p))
                             (equal keyword skip-keyword)))
                   (nd/skip-item)))
           (nd/skip-item)))))
@@ -854,14 +919,11 @@ tags in the custom commands section but I find this easier to maintain and possi
     (save-restriction
       (widen)
       (let ((keyword (nd/is-project-p)))
-        ;; TODO there may be a way to skip over skippable projects
-        ;; and save a few cycles. Not a huge deal, but would require
-        ;; keeping the skippable line and then skipping over the others
-        ;; in one fell swoop, not easy to do efficiently
         (if keyword
-            (if (not (nd/is-project-status-p statuscode))
-                (if nd/agenda-limit-project-toplevel
-                    (nd/skip-subtree)
+            (if (and nd/agenda-limit-project-toplevel
+                     (nd/heading-has-parent))
+                (nd/skip-subtree)
+              (if (not (nd/is-project-status-p statuscode))
                   (nd/skip-item)))
           (nd/skip-item)))))
 #+END_SRC
@@ -873,71 +935,83 @@ tags in the custom commands section but I find this easier to maintain and possi
   (defun nd/toggle-project-toplevel-display ()
     (interactive)
     (setq nd/agenda-limit-project-toplevel (not nd/agenda-limit-project-toplevel))
-    (when  (equal major-mode 'org-agenda-mode)
+    (when (equal major-mode 'org-agenda-mode)
       (org-agenda-redo))
-    (message "Showing %s project view in agenda" (if nd/agenda-limit-project-toplevel "toplevel" "complete")))
+    (message "Showing %s project view in agenda"
+             (if nd/agenda-limit-project-toplevel "toplevel" "complete")))
+#+END_SRC
+*** custom commands
+#+BEGIN_SRC emacs-lisp
+  (setq org-agenda-tags-todo-honor-ignore-options t)
 
-  (defun nd/agenda-base-task-command (keyword skip-fun)
+  (setq org-agenda-prefix-format
+        '((agenda . " %-12:c%-5:e%?-12t% s")
+          (timeline . " % s")
+          (todo . " %-12:c")
+          (tags . " %-12:c%-5:e")
+          (search . " %-12:c")))
+
+  (defun nd/agenda-base-task-command (match keyword skip-fun)
     "shorter syntax to define task agenda commands"
     `(tags
-      "-NA-REFILE/"
+      ,match
       ((org-agenda-overriding-header (concat ,keyword " Tasks"))
        (org-agenda-skip-function ,skip-fun)
-       (org-agenda-todo-ignore-with-date 'all)
        (org-agenda-sorting-strategy '(category-keep)))))
 
   (defun nd/agenda-base-project-command (match keyword statuscode)
     "shorter syntax to define project agenda commands"
     `(tags
       ,match
-      ((org-agenda-overriding-header (concat
-                                      (and nd/agenda-limit-project-toplevel "Toplevel ")
-                                      ,keyword
-                                      " Projects"))
+      ((org-agenda-overriding-header
+        (concat (and nd/agenda-limit-project-toplevel "Toplevel ") ,keyword " Projects"))
        (org-agenda-skip-function '(nd/skip-projects-without-statuscode ,statuscode))
        (org-agenda-sorting-strategy '(category-keep)))))
-    
-#+END_SRC
-*** custom commands
-#+BEGIN_SRC emacs-lisp
-  (setq org-agenda-tags-todo-honor-ignore-options t)
-  (setq org-agenda-custom-commands
-        `(("t"
-           "Task View"
-           ((agenda "" nil)
-            ,(nd/agenda-base-task-command "Next Project" ''(nd/skip-non-keyword-project-tasks "NEXT"))
-            ,(nd/agenda-base-task-command "Waiting Project" ''(nd/skip-non-keyword-project-tasks "WAITING"))
-            ,(nd/agenda-base-task-command "Atomic" ''nd/skip-non-unclosed-atomic-tasks)
-            ,(nd/agenda-base-task-command "Held Project" ''(nd/skip-non-keyword-project-tasks "HOLD"))))
-          ("o"
-           "Project Overview"
-           (,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Stuck" :stuck)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Waiting" :waiting)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Active" :active)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/!" "Held" :held)))
-          ("r"
-           "Refile and errors"
-           ((tags "REFILE"
-                  ((org-agenda-overriding-header "Tasks to Refile"))
-                  (org-tags-match-list-sublevels nil))
-            ,(nd/agenda-base-task-command "Discontinous Project" ''nd/skip-non-discontinuous-project-tasks)
-            ,(nd/agenda-base-task-command "Undone Closed" ''nd/skip-non-undone-closed-todoitems)
-            ,(nd/agenda-base-task-command "Done Unclosed" ''nd/skip-non-done-unclosed-todoitems)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/" "Undone Completed" :undone-complete)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/" "Done Incompleted" :done-incomplete)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC-Project_Type=\"series\"/" "Invalid Todostate" :invalid-todostate)))
-          ("s"
-           "Series projects"
-           (,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC+Project_Type=\"series\"/!" "Active Series" :active)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC+Project_Type=\"series\"/!" "Empty Series" :complete)))
-          ("A"
-           "Archivable Tasks and Projects"
-           ((tags "-NA-REFILE/"
-                  ((org-agenda-overriding-header "Atomic Tasks to Archive")
-                   (org-agenda-skip-function 'nd/skip-non-archivable-atomic-tasks)
-                   (org-tags-match-list-sublevels nil)))
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC+Project_Type=\"series\"/!" "Archivable Series" :archivable)
-            ,(nd/agenda-base-project-command "-NA-REFILE-ATOMIC/" "Archivable" :archivable)))))
+
+  (let ((task-view-match "-NA-REFILE")
+        (project-view-match "-NA-REFILE-Project_Type=\"series\"/")
+        (series-view-match "-NA-REFILE+Project_Type=\"series\"/"))
+    (setq org-agenda-custom-commands
+          `(("t"
+             "Task View"
+             ((agenda "" nil)
+              ,(nd/agenda-base-task-command task-view-match "Next Project" ''(nd/skip-non-keyword-project-tasks "NEXT"))
+              ,(nd/agenda-base-task-command task-view-match "Waiting Project" ''(nd/skip-non-keyword-project-tasks "WAIT"))
+              ,(nd/agenda-base-task-command task-view-match "Atomic" ''nd/skip-non-unclosed-atomic-tasks)
+              ,(nd/agenda-base-task-command task-view-match "Held Project" ''(nd/skip-non-keyword-project-tasks "HOLD"))))
+            ("p"
+             "Project View"
+             (,(nd/agenda-base-project-command project-view-match "Stuck" :stuck)
+              ,(nd/agenda-base-project-command project-view-match "Waiting" :waiting)
+              ,(nd/agenda-base-project-command project-view-match "Active" :active)
+              ,(nd/agenda-base-project-command project-view-match "Held" :held)))
+            ("s"
+             "Series View"
+             (,(nd/agenda-base-project-command series-view-match "Stuck Series" :stuck)
+              ,(nd/agenda-base-project-command series-view-match "Empty Series" :undone-complete)
+              ,(nd/agenda-base-project-command series-view-match "Active Series" :active)
+              ,(nd/agenda-base-project-command series-view-match "Waiting Series" :waiting)
+              ,(nd/agenda-base-project-command series-view-match "Held Series" :held)
+              ,(nd/agenda-base-task-command series-view-match "Uninitialized Series" ''nd/skip-non-series-atomic-tasks)))
+            ("r"
+             "Refile and Critical Errors"
+             ((tags "REFILE"
+                    ((org-agenda-overriding-header "Tasks to Refile"))
+                    (org-tags-match-list-sublevels nil))
+              ,(nd/agenda-base-task-command task-view-match "Discontinous Project" ''nd/skip-non-discontinuous-project-tasks)
+              ,(nd/agenda-base-project-command project-view-match "Invalid Todostate" :invalid-todostate)))
+            ("e"
+             "Non-critical Errors"
+             (,(nd/agenda-base-task-command task-view-match "Undone Closed" ''nd/skip-non-undone-closed-todoitems)
+              ,(nd/agenda-base-task-command task-view-match "Done Unclosed" ''nd/skip-non-done-unclosed-todoitems)
+              ,(nd/agenda-base-project-command project-view-match "Undone Completed" :undone-complete)
+              ,(nd/agenda-base-project-command project-view-match "Done Incompleted" :done-incomplete)))
+            ("A"
+             "Archivable Tasks and Projects"
+             (,(nd/agenda-base-task-command task-view-match "Archivable Atomic" ''nd/skip-non-archivable-atomic-tasks)
+              ,(nd/agenda-base-task-command task-view-match "Stale" ''nd/skip-non-stale-headings)
+              ,(nd/agenda-base-project-command series-view-match "Archivable Series" :archivable)
+              ,(nd/agenda-base-project-command project-view-match "Archivable" :archivable))))))
 
 #+END_SRC
 *** keymap
@@ -971,6 +1045,51 @@ the agenda does not do this by default...it's annoying
          (concat "-" tag)))
 
   (setq org-agenda-auto-exclude-function 'nd/org-auto-exclude-function)
+#+END_SRC
+** column_view
+#+BEGIN_SRC emacs-lisp
+  (setq org-columns-default-format
+        "%25ITEM %4TODO %TAGS %3Effort{+} %OWNER(OWN)")
+
+  (set-face-attribute 'org-column nil :background "#1e2023")
+  ;; org-columns-summary-types
+#+END_SRC
+** interactive functions
+#+BEGIN_SRC emacs-lisp
+  (defun nd/mark-subtree-keyword (new-keyword &optional exclude)
+    "marks all tasks in a subtree with keyword unless original keyword
+  is in the optional argument exclude"
+    (let ((subtree-end (save-excursion (org-end-of-subtree t))))
+      (if (not (listp exclude))
+          (error "exlude must be a list if provided"))
+      (save-excursion
+        (while (< (point) subtree-end)
+          (let ((keyword (nd/is-todoitem-p)))
+            (if (and keyword (not (member keyword exclude)))
+                (org-todo new-keyword)))
+          (outline-next-heading)))))
+
+  (defun nd/mark-subtree-done ()
+    "marks all tasks in subtree as DONE unless they are already canc"
+    (interactive)
+    (nd/mark-subtree-keyword "DONE" '("CANC")))
+
+  (defun nd/org-clone-subtree-with-time-shift-reset (n &optional shift)
+    "Like `org-clone-subtree-with-time-shift' except it resets checkboxes
+  and reverts all todo keywords to TODO"
+    (interactive "nNumber of clones to produce: ")
+    (let ((shift (read-from-minibuffer
+                  "Date shift per clone (e.g. +1w, empty to copy unchanged): ")))
+      (condition-case err
+          (progn
+            (org-clone-subtree-with-time-shift n shift)
+            (save-excursion
+              (dotimes (i n)
+               (org-forward-heading-same-level 1 t)
+               (org-reset-checkbox-state-subtree)
+               (nd/mark-subtree-keyword "TODO")
+               (org-cycle))))
+        (error (message "%s" (error-message-string err))))))
 #+END_SRC
 ** caldav
 +BEGIN_SRC emacs-lisp
