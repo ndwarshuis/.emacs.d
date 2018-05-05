@@ -616,9 +616,8 @@ Returns t if heading has certain relationship to other headings
   (defun nd/heading-has-children (heading-test)
     "returns t if heading has subheadings that return t when assessed with 
   heading-test function"
-    (let ((has-children)
-          (subtree-end (save-excursion (org-end-of-subtree t)))
-          (previous-point))
+    (let ((subtree-end (save-excursion (org-end-of-subtree t)))
+          has-children previous-point)
       (save-excursion
         (setq previous-point (point))
         (outline-next-heading)
