@@ -593,13 +593,13 @@ Doubles as a way to further test the todostate in downstream functions
           keyword)))
 
   (defun nd/is-project-p ()
-    (and (nd/heading-has-children) (nd/is-todoitem-p)))
+    (and (nd/heading-has-children 'nd/is-todoitem-p) (nd/is-todoitem-p)))
 
   (defun nd/is-task-p ()
-    (and (not (nd/heading-has-children)) (nd/is-todoitem-p)))
+    (and (not (nd/heading-has-children 'nd/is-todoitem-p)) (nd/is-todoitem-p)))
 
   (defun nd/is-atomic-task-p ()
-    (and (not (nd/heading-has-parent)) (nd/is-task-p)))
+    (and (not (nd/heading-has-parent 'nd/is-todoitem-p)) (nd/is-task-p)))
 #+END_SRC
 **** property testing
 Returns t is heading matches a certian set of properties
@@ -613,25 +613,30 @@ Returns t is heading matches a certian set of properties
 **** relational testing
 Returns t if heading has certain relationship to other headings
 #+BEGIN_SRC emacs-lisp
-  (defun nd/heading-has-children ()
-    "returns t if heading has todoitems in its immediate subtree"
+  (defun nd/heading-has-children (heading-test)
+    "returns t if heading has subheadings that return t when assessed with 
+  heading-test function"
     ;; TODO make this more efficient (and accurate) by only testing
     ;; the level immediately below (if it exists)
     (let ((has-children)
-          (subtree-end (save-excursion (org-end-of-subtree t))))
+          (subtree-end (save-excursion (org-end-of-subtree t)))
+          (previous-point))
       (save-excursion
+        (setq previous-point (point))
         (outline-next-heading)
         (while (and (not has-children)
-                    (< (point) subtree-end))
-          (when (nd/is-todoitem-p)
+                    (< previous-point (point) subtree-end))
+          (when (funcall heading-test)
             (setq has-children t))
-  ;;        (org-forward-heading-same-level 1 t)))
-          (outline-next-heading)))
+          (setq previous-point (point))
+          (org-forward-heading-same-level 1 t)))
+          ;; (outline-next-heading)))
       has-children))
 
-  (defun nd/heading-has-parent ()
-    "returns parent keyword if heading is in the immediate subtree of a todoitem"
-    (save-excursion (and (org-up-heading-safe) (nd/is-todoitem-p))))
+  (defun nd/heading-has-parent (heading-test)
+    "returns parent keyword if heading is in the immediate subtree of a heading 
+  that evaluated to t with heading-test function"
+    (save-excursion (and (org-up-heading-safe) (funcall heading-test))))
 
   (defun nd/has-discontinuous-parent ()
     "returns t if heading has a parent which is not a
@@ -700,7 +705,7 @@ Returns t if heading has certain relationship to other headings
           (let ((keyword (nd/is-todoitem-p)))
             (if keyword
                 (let ((cur-state
-                       (if (nd/heading-has-children)
+                       (if (nd/heading-has-children 'nd/is-todoitem-p)
                            (cond ((member keyword nd/project-invalid-todostates) :invalid-todostate)
                                  ((nd/is-scheduled-heading-p) :scheduled-project)
                                  ((equal keyword "CANC") (if (nd/is-archivable-heading-p)
@@ -844,8 +849,8 @@ tags in the custom commands section but I find this easier to maintain and possi
         (if (not
              (and (nd/is-stale-heading-p)
                   (not (member keyword org-done-keywords))
-                  (not (nd/heading-has-children))
-                  (not (nd/heading-has-parent))))
+                  (not (nd/heading-has-children 'nd/is-todoitem-p))
+                  (not (nd/heading-has-parent 'nd/is-todoitem-p))))
             (nd/skip-heading)))))
     
   ;; atomic tasks
@@ -887,11 +892,11 @@ tags in the custom commands section but I find this easier to maintain and possi
       (widen)
       (let ((keyword (nd/is-todoitem-p)))
         (if keyword
-            (if (nd/heading-has-children)
+            (if (nd/heading-has-children 'nd/is-todoitem-p)
                 (if (member keyword nd/project-skip-todostates)
                     (nd/skip-subtree)
                   (nd/skip-heading))
-              (if (not (and (nd/heading-has-parent)
+              (if (not (and (nd/heading-has-parent 'nd/is-todoitem-p)
                             (not (nd/is-timestamped-heading-p))
                             (not (nd/is-scheduled-heading-p))
                             (not (nd/is-deadlined-heading-p))
@@ -936,7 +941,7 @@ tags in the custom commands section but I find this easier to maintain and possi
       (let ((keyword (nd/is-project-p)))
         (if keyword
             (if (and nd/agenda-limit-project-toplevel
-                     (nd/heading-has-parent))
+                     (nd/heading-has-parent 'nd/is-todoitem-p))
                 (nd/skip-subtree)
               (if (not (nd/is-project-status-p statuscode))
                   (nd/skip-heading)))

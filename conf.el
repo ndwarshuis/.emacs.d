@@ -403,37 +403,44 @@ If it does not have a date, it will return nil."
         keyword)))
 
 (defun nd/is-project-p ()
-  (and (nd/heading-has-children) (nd/is-todoitem-p)))
+  (and (nd/heading-has-children 'nd/is-todoitem-p) (nd/is-todoitem-p)))
 
 (defun nd/is-task-p ()
-  (and (not (nd/heading-has-children)) (nd/is-todoitem-p)))
+  (and (not (nd/heading-has-children 'nd/is-todoitem-p)) (nd/is-todoitem-p)))
 
 (defun nd/is-atomic-task-p ()
-  (and (not (nd/heading-has-parent)) (nd/is-task-p)))
+  (and (not (nd/heading-has-parent 'nd/is-todoitem-p)) (nd/is-task-p)))
 
-(defun nd/is-series-heading-p ()
-  "return t if headline has property Project_Type=series"
-  (equal "series" (org-entry-get nil "Project_Type" t)))
+(defun nd/is-periodical-heading-p ()
+  (equal "periodical" (org-entry-get nil "PARENT_TYPE" t)))
 
-(defun nd/heading-has-children ()
-  "returns t if heading has todoitems in its immediate subtree"
+(defun nd/is-iterator-heading-p ()
+  (equal "iterator" (org-entry-get nil "PARENT_TYPE" t)))
+
+(defun nd/heading-has-children (heading-test)
+  "returns t if heading has subheadings that return t when assessed with 
+heading-test function"
   ;; TODO make this more efficient (and accurate) by only testing
   ;; the level immediately below (if it exists)
   (let ((has-children)
-        (subtree-end (save-excursion (org-end-of-subtree t))))
+        (subtree-end (save-excursion (org-end-of-subtree t)))
+        (previous-point))
     (save-excursion
+      (setq previous-point (point))
       (outline-next-heading)
       (while (and (not has-children)
-                  (< (point) subtree-end))
-        (when (nd/is-todoitem-p)
+                  (< previous-point (point) subtree-end))
+        (when (funcall heading-test)
           (setq has-children t))
-;;        (org-forward-heading-same-level 1 t)))
-        (outline-next-heading)))
+        (setq previous-point (point))
+        (org-forward-heading-same-level 1 t)))
+        ;; (outline-next-heading)))
     has-children))
 
-(defun nd/heading-has-parent ()
-  "returns parent keyword if heading is in the immediate subtree of a todoitem"
-  (save-excursion (and (org-up-heading-safe) (nd/is-todoitem-p))))
+(defun nd/heading-has-parent (heading-test)
+  "returns parent keyword if heading is in the immediate subtree of a heading 
+that evaluated to t with heading-test function"
+  (save-excursion (and (org-up-heading-safe) (funcall heading-test))))
 
 (defun nd/has-discontinuous-parent ()
   "returns t if heading has a parent which is not a
@@ -500,7 +507,7 @@ down the list override higher items")
         (let ((keyword (nd/is-todoitem-p)))
           (if keyword
               (let ((cur-state
-                     (if (nd/heading-has-children)
+                     (if (nd/heading-has-children 'nd/is-todoitem-p)
                          (cond ((member keyword nd/project-invalid-todostates) :invalid-todostate)
                                ((nd/is-scheduled-heading-p) :scheduled-project)
                                ((equal keyword "CANC") (if (nd/is-archivable-heading-p)
@@ -598,7 +605,7 @@ Note that this assumes the headline being tested is a valid project"
            (error "unknown statuscode")))))
 
 ;; helper functions
-(defun nd/skip-item ()
+(defun nd/skip-heading ()
   (save-excursion (or (outline-next-heading) (point-max))))
 
 (defun nd/skip-subtree ()
@@ -622,7 +629,7 @@ test-fun return true"
      (let ((keyword (,heading-fun)))
        (message keyword)
        (if (not (and keyword ,test-fun))
-           (nd/skip-item)))))
+           (nd/skip-heading)))))
 
 ;; stale headings 
 ;; For archiving headings with old timestamps
@@ -640,9 +647,9 @@ test-fun return true"
       (if (not
            (and (nd/is-stale-heading-p)
                 (not (member keyword org-done-keywords))
-                (not (nd/heading-has-children))
-                (not (nd/heading-has-parent))))
-          (nd/skip-item)))))
+                (not (nd/heading-has-children 'nd/is-todoitem-p))
+                (not (nd/heading-has-parent 'nd/is-todoitem-p))))
+          (nd/skip-heading)))))
   
 ;; atomic tasks
 ;; by definition these have no parents, so
@@ -683,19 +690,19 @@ test-fun return true"
     (widen)
     (let ((keyword (nd/is-todoitem-p)))
       (if keyword
-          (if (nd/heading-has-children)
+          (if (nd/heading-has-children 'nd/is-todoitem-p)
               (if (member keyword nd/project-skip-todostates)
                   (nd/skip-subtree)
-                (nd/skip-item))
-            (if (not (and (nd/heading-has-parent)
+                (nd/skip-heading))
+            (if (not (and (nd/heading-has-parent 'nd/is-todoitem-p)
                           (not (nd/is-timestamped-heading-p))
                           (not (nd/is-scheduled-heading-p))
                           (not (nd/is-deadlined-heading-p))
                           (equal keyword skip-keyword)))
-                (nd/skip-item)))
-        (nd/skip-item)))))
+                (nd/skip-heading)))
+        (nd/skip-heading)))))
   
-;; task-level errors
+;; header-level errors
 (defun nd/skip-non-discontinuous-project-tasks ()
   (nd/skip-heading-with
    nd/is-todoitem-p
@@ -713,10 +720,17 @@ test-fun return true"
    (and (not (member keyword org-done-keywords))
         (nd/is-closed-heading-p))))
 
-(defun nd/skip-non-series-atomic-tasks ()
+(defun nd/skip-non-untimestamped-periodical-headers ()
+  (save-restriction
+    (widen)
+    (if (not (and (nd/is-periodical-p)
+                  (not (nd/is-timestamped-heading-p))))
+        (nd/skip-heading))))
+
+(defun nd/skip-non-iterator-atomic-tasks ()
   (nd/skip-heading-with
    nd/is-atomic-task-p
-   (nd/is-series-heading-p)))
+   (nd/is-iterator-heading-p)))
 
 ;; projects
 (defun nd/skip-projects-without-statuscode (statuscode)
@@ -725,11 +739,11 @@ test-fun return true"
     (let ((keyword (nd/is-project-p)))
       (if keyword
           (if (and nd/agenda-limit-project-toplevel
-                   (nd/heading-has-parent))
+                   (nd/heading-has-parent 'nd/is-todoitem-p))
               (nd/skip-subtree)
             (if (not (nd/is-project-status-p statuscode))
-                (nd/skip-item)))
-        (nd/skip-item)))))
+                (nd/skip-heading)))
+        (nd/skip-heading)))))
 
 (defvar nd/agenda-limit-project-toplevel t
   "used to filter projects by all levels or top-level only")
@@ -792,7 +806,7 @@ test-fun return true"
             ,(nd/agenda-base-project-command series-view-match "Active Series" :active)
             ,(nd/agenda-base-project-command series-view-match "Waiting Series" :waiting)
             ,(nd/agenda-base-project-command series-view-match "Held Series" :held)
-            ,(nd/agenda-base-task-command series-view-match "Uninitialized Series" ''nd/skip-non-series-atomic-tasks)))
+            ,(nd/agenda-base-task-command series-view-match "Uninitialized Series" ''nd/skip-non-iterator-atomic-tasks)))
           ("r"
            "Refile and Critical Errors"
            ((tags "REFILE"
