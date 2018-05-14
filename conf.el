@@ -61,7 +61,8 @@
   :ensure t
   :config
   (dashboard-setup-startup-hook)
-  (setq dashboard-items '((recents . 10))))
+   (setq dashboard-banner-logo-title "Emacs"))
+   ;; (setq dashboard-items '((recents . 10))))
 
 (global-set-key (kbd "C-h a") 'apropos)
 
@@ -117,7 +118,8 @@
   :ensure t
   :delight
   :init
-    (add-hook 'prog-mode-hook #'rainbow-delimiters-mode))
+    (add-hook 'prog-mode-hook #'rainbow-delimiters-mode)
+    (add-hook 'ess-mode-hook #'rainbow-delimiters-mode))
 
 (use-package ace-window
   :ensure t
@@ -267,6 +269,20 @@
             (local-set-key (kbd "C-c C-x x") 'nd/mark-subtree-done)
             (local-set-key (kbd "C-c C-x c") 'nd/org-clone-subtree-with-time-shift-reset)))
 
+(evil-define-key 'motion org-agenda-mode-map
+  "t" 'nd/toggle-project-toplevel-display
+  "D" 'org-agenda-day-view
+  "W" 'org-agenda-week-view
+  "M" 'org-agenda-month-view
+  "Y" 'org-agenda-year-view
+  "ct" nil
+  "e" 'org-agenda-set-effort
+  "ce" nil)
+
+(add-hook 'org-agenda-mode-hook
+          (lambda ()
+            (local-set-key (kbd "C-c C-c") '(message org-tags-alist))))
+
 (setq org-todo-keywords
       '((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d)")
         (sequence "WAIT(w@/!)" "HOLD(h@/!)" "|" "CANC(c@/!)")))
@@ -279,50 +295,69 @@
               ("HOLD" :foreground "violet" :weight bold)
               ("CANC" :foreground "deep sky blue" :weight bold))))
 
-(setq  org-tag-alist '((:startgroup)
-                       ("@errand" . ?e)
-                       ("@work" . ?w)
-                       ("@home" . ?h)
-                       ("@travel" . ?t)
-                       (:endgroup)
+(defun nd/filter-tags-prefix (prefix tags-list)
+  "Return a subset of tags-list whose first character matches prefix.'
+tags-list defaults to org-tag-alist if not given"
+  (seq-filter (lambda (tag)
+                (and (stringp tag)
+                     (string-prefix-p prefix tag)))
+              tags-list))
 
-                       ("#laptop" . ?L)
-                       ("#tcult" . ?T)
-
-                       ("%note" . ?n)
-                       ("%subdiv" . ?s)
-
-                       (:startgroup)
-                       ("_env" . ?E)
-                       ("_fin" . ?F)
-                       ("_int" . ?I)
-                       ("_met" . ?M)
-                       ("_phy" . ?H)
-                       ("_pro" . ?P)
-                       ("_rec" . ?R)
-                       ("_soc" . ?S)
-                       (:endgroup)))
-
-;; not the most elegant but this will work
-(setq org-tag-faces '())
-
-(defun nd/add-tag-face (fg-name start end)
+(defun nd/add-tag-face (fg-name prefix)
   "Adds list of cons cells to org-tag-faces with foreground set to fg-name.
 Start and end specify the positions in org-tag-alist which define the tags
 to which the faces are applied"
-  (dolist (tag (mapcar #'car (subseq org-tag-alist start end)))
+  (dolist (tag (nd/filter-tags-prefix prefix (mapcar #'car org-tag-alist)))
     (push `(,tag . (:foreground ,fg-name)) org-tag-faces)))
 
-(nd/add-tag-face "PaleGreen" 1 5)
-(nd/add-tag-face "SkyBlue" 6 8)
-(nd/add-tag-face "PaleGoldenrod" 8 10)
-(nd/add-tag-face "violet" 11 19)
+;; for some reason, org-mode doesn't like it if the org-tags-alist
+;; has special chars before it is loaded (overrides keybindings)
+;; this somewhat convoluted hook works tho...
+(defun nd/set-org-tag-alist-and-faces ()
+  (progn
+    ;; dirty hack to keep org agenda happy
+;;    (setq org-tag-alist '((:newline)))
+    (setq org-tag-alist
+          '((:startgroup)
+            ("@errand" . ?e)
+            ("@home" . ?h)
+            ("@work" . ?w)
+            ("@travel" . ?t)
+            (:endgroup)
+            
+            ("#laptop" . ?L)
+            ("#tcult" . ?T)
+            ("#phone" . ?O)
+            
+            ("$note" . ?n)
+            ("$inc" . ?i)
+            ("$subdiv" . ?s)
+            
+            (:startgroup)
+            ("_env" . ?E)
+            ("_fin" . ?F)
+            ("_int" . ?I)
+            ("_met" . ?M)
+            ("_phy" . ?H)
+            ("_pro" . ?P)
+            ("_rec" . ?R)
+            ("_soc" . ?S)
+            (:endgroup)))
+    
+    (setq org-tag-faces '())
+    
+    (nd/add-tag-face "PaleGreen" "@")
+    (nd/add-tag-face "SkyBlue" "#")
+    (nd/add-tag-face "PaleGoldenrod" "$")
+    (nd/add-tag-face "violet" "_")))
+
+(add-hook 'org-mode-hook 'nd/set-org-tag-alist-and-faces)
 
 (add-to-list 'org-default-properties "PARENT_TYPE")
 (add-to-list 'org-default-properties "OWNER")
 (setq org-global-properties
       '(("PARENT_TYPE_ALL" . "periodical iterator")
-        ("Effort_ALL" . "00 10 30 60 90")))
+        ("Effort_ALL" . "0:05 0:15 0:30 1:00 1:30 2:00 3:00 4:00 5:00 6:00")))
 
 ;; TODO this may not be needed
 (setq org-use-property-inheritance '("PARENT_TYPE"))
@@ -330,7 +365,7 @@ to which the faces are applied"
 (setq org-capture-templates
       '(("t" "todo" entry (file "~/Org/capture.org") "* TODO %?\ndeliverable: \n%U\n")
         ("n" "note" entry (file "~/Org/capture.org") "* %? :\\%note:\n%U\n" )
-        ("a" "appointment" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t\n" )
+        ("a" "appointment" entry (file "~/Org/capture.org") "* %?\n%U\n%^t\n" )
         ("m" "multi-day" entry (file "~/Org/capture.org") "* TODO %?\n%U\n%^t--%^t\n" )
         ("d" "deadline" entry (file "~/Org/capture.org") "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n" )
         
@@ -423,6 +458,9 @@ If the future flag is set, returns timestamp if it is in the future
 (defun nd/is-task-p ()
   (and (not (nd/heading-has-children 'nd/is-todoitem-p)) (nd/is-todoitem-p)))
 
+(defun nd/is-project-task-p ()
+  (and (nd/heading-has-parent 'nd/is-todoitem-p) (nd/is-task-p)))
+
 (defun nd/is-atomic-task-p ()
   (and (not (nd/heading-has-parent 'nd/is-todoitem-p)) (nd/is-task-p)))
 
@@ -431,6 +469,14 @@ If the future flag is set, returns timestamp if it is in the future
 
 (defun nd/is-iterator-heading-p ()
   (equal "iterator" (org-entry-get nil "PARENT_TYPE" t)))
+
+(defun nd/heading-has-effort-p ()
+  (org-entry-get nil "Effort"))
+
+(defun nd/heading-has-context-p ()
+  (let ((tags (org-get-tags-at)))
+    (or (> (length (nd/filter-tags-prefix "#" tags)) 0)
+        (> (length (nd/filter-tags-prefix "@" tags)) 0))))
 
 (defun nd/heading-has-children (heading-test)
   "returns t if heading has subheadings that return t when assessed with 
@@ -615,7 +661,6 @@ Note that this assumes the headline being tested is a valid project"
     (t (if (not (member statuscode nd/project-statuscodes))
            (error "unknown statuscode")))))
 
-;; helper functions
 (defun nd/skip-heading ()
   (save-excursion (or (outline-next-heading) (point-max))))
 
@@ -642,15 +687,6 @@ test-fun return true"
        (if (not (and keyword ,test-fun))
            (nd/skip-heading)))))
 
-;; stale headings 
-;; For archiving headings with old timestamps
-;; Note that these are not always todo items
-;; I only care about those that are not part
-;; of projects (projects will get taken care
-;; of when the entire project is finished)
-;; and those that are not DONE/CANC (as
-;; those appear in the regular archive
-;; section)
 (defun nd/skip-non-stale-headings ()
   (save-restriction
     (widen)
@@ -661,18 +697,14 @@ test-fun return true"
                 (not (nd/heading-has-children 'nd/is-todoitem-p))
                 (not (nd/heading-has-parent 'nd/is-todoitem-p))))
           (nd/skip-heading)))))
-  
-;; atomic tasks
-;; by definition these have no parents, so
-;; we don't need to worry about skipping over projects
-;; any todo state is valid and we only sort by done/canc
-(defun nd/skip-non-unclosed-atomic-tasks ()
-  (nd/skip-heading-with
-   nd/is-atomic-task-p
-   (and (not (nd/is-timestamped-heading-p))
-        (not (nd/is-scheduled-heading-p))
-        (not (nd/is-deadlined-heading-p))
-        (not (member keyword org-done-keywords)))))
+
+;; NOTE: this assumes that tags-todo will
+;; filter out all done state tasks
+(defun nd/skip-non-atomic-tasks ()
+  (save-excursion
+    (widen)
+    (if (not (nd/is-atomic-task-p))
+        (nd/skip-heading))))
 
 (defun nd/skip-non-closed-atomic-tasks ()
   (nd/skip-heading-with
@@ -686,34 +718,31 @@ test-fun return true"
    (and (member keyword org-done-keywords)
         (nd/is-archivable-heading-p))))
 
-;; periodicals
-;; these are headers marked with PARENT_TYPE=periodical
-;; property that have timestamped headers as children
-;; which in turn may or may not have todo keywords.
-;; They are to be refilled when all children are stale
-;; Note that I only care about the parent headers
-;; as the children should always show up in the agenda
-;; simply because they have timestamps. Parents can be
-;; either fresh (at least one child in the future) or
-;; stale (all children in the past)
 (defun nd/skip-non-fresh-periodical-parent-headers ()
   (save-restriction
     (widen)
-    (if (and (nd/is-periodical-p)
-             (not (nd/header-has-parent 'nd/is-periodical-p))
-             (nd/header-has-children 'nd/is-fresh-heading-p))
+    (if (not (and (nd/is-periodical-heading-p)
+                  (not (nd/heading-has-parent 'nd/is-periodical-heading-p))
+                  (nd/heading-has-children 'nd/is-fresh-heading-p)))
         (nd/skip-heading))))
 
-;; project tasks
-;; since these are part of projects I need to assess
-;; if the parent project is skippable, in which case
-;; I jump to the next subtree
-;; Note that I only care about the keyword in these
-;; cases because I don't archive these, I archive
-;; their parent projects. The keywords I care about
-;; are NEXT, WAIT, and HOLD because these are
-;; definitive project tasks that require/inhibit
-;; futher action
+(defun nd/skip-non-stale-periodical-parent-headers ()
+  (save-restriction
+    (widen)
+    (if (not (and (nd/is-periodical-heading-p)
+                  (not (nd/heading-has-parent 'nd/is-periodical-heading-p))
+                  (nd/heading-has-children 'nd/is-stale-heading-p)
+                  (not (nd/heading-has-children 'nd/is-fresh-heading-p))))
+        (nd/skip-heading))))
+
+(defun nd/skip-non-empty-periodical-parent-headers ()
+  (save-restriction
+    (widen)
+    (if (not (and (nd/is-periodical-heading-p)
+                  (not (nd/heading-has-parent 'nd/is-periodical-heading-p))
+                  (not (nd/heading-has-children 'nd/is-timestamped-heading-p))))
+        (nd/skip-heading))))
+
 (defun nd/skip-non-keyword-project-tasks (skip-keyword)
   (save-restriction
     (widen)
@@ -730,8 +759,7 @@ test-fun return true"
                           (equal keyword skip-keyword)))
                 (nd/skip-heading)))
         (nd/skip-heading)))))
-  
-;; header-level errors
+
 (defun nd/skip-non-discontinuous-project-tasks ()
   (nd/skip-heading-with
    nd/is-todoitem-p
@@ -749,19 +777,31 @@ test-fun return true"
    (and (not (member keyword org-done-keywords))
         (nd/is-closed-heading-p))))
 
-(defun nd/skip-non-untimestamped-periodical-headers ()
-  (save-restriction
-    (widen)
-    (if (not (and (nd/is-periodical-p)
-                  (not (nd/is-timestamped-heading-p))))
-        (nd/skip-heading))))
-
 (defun nd/skip-non-iterator-atomic-tasks ()
   (nd/skip-heading-with
    nd/is-atomic-task-p
    (nd/is-iterator-heading-p)))
 
-;; projects
+(defun nd/skip-atomic-tasks-with-context ()
+  (nd/skip-heading-with
+   nd/is-atomic-task-p
+   (not (nd/heading-has-context-p))))
+
+(defun nd/skip-project-tasks-with-context ()
+  (nd/skip-heading-with
+   nd/is-project-task-p
+   (not (nd/heading-has-context-p))))
+
+(defun nd/skip-projects-with-context ()
+  (nd/skip-heading-with
+   nd/is-project-p
+   (not (nd/heading-has-context-p))))
+
+(defun nd/skip-tasks-with-effort ()
+  (nd/skip-heading-with
+   nd/is-task-p
+   (not (nd/heading-has-effort-p))))
+
 (defun nd/skip-projects-without-statuscode (statuscode)
   (save-restriction
     (widen)
@@ -777,6 +817,9 @@ test-fun return true"
 (defvar nd/agenda-limit-project-toplevel t
   "used to filter projects by all levels or top-level only")
 
+(defvar nd/agenda-hide-incubator-tags t
+  "used to filter incubator headings")
+
 (defun nd/toggle-project-toplevel-display ()
   (interactive)
   (setq nd/agenda-limit-project-toplevel (not nd/agenda-limit-project-toplevel))
@@ -785,79 +828,102 @@ test-fun return true"
   (message "Showing %s project view in agenda"
            (if nd/agenda-limit-project-toplevel "toplevel" "complete")))
 
+(defun nd/toggle-agenda-var (var msg)
+  (interactive)
+  (set var (not (eval var)))
+  (when (equal major-mode 'org-agenda-mode)
+    (org-agenda-redo))
+  (message msg))
+
 (setq org-agenda-tags-todo-honor-ignore-options t)
 
 (setq org-agenda-prefix-format
-      '((agenda . " %-12:c%-5:e%?-12t% s")
-        (timeline . " % s")
-        (todo . " %-12:c")
-        (tags . " %-12:c%-5:e")
-        (search . " %-12:c")))
+      '((agenda . "  %-12:c%-7:e%?-12t% s")
+        (timeline . "  % s")
+        (todo . "  %-12:c")
+        (tags . "  %-12:c%-7:e")
+        (search . "  %-12:c")))
 
-(defun nd/agenda-base-task-command (match keyword skip-fun)
-  "shorter syntax to define task agenda commands"
+(defun nd/agenda-base-header-command (match header skip-fun)
   `(tags
     ,match
-    ((org-agenda-overriding-header (concat ,keyword " Tasks"))
+    ((org-agenda-overriding-header ,header)
      (org-agenda-skip-function ,skip-fun)
      (org-agenda-sorting-strategy '(category-keep)))))
 
-(defun nd/agenda-base-project-command (match keyword statuscode)
-  "shorter syntax to define project agenda commands"
+(defun nd/agenda-base-task-command (match header skip-fun)
+  `(tags-todo
+    ,match
+    ((org-agenda-overriding-header ,header)
+     (org-agenda-skip-function ,skip-fun)
+     (org-agenda-todo-ignore-with-date t)
+     (org-agenda-sorting-strategy '(category-keep)))))
+
+(defun nd/agenda-base-project-command (match header statuscode)
   `(tags
     ,match
     ((org-agenda-overriding-header
-      (concat (and nd/agenda-limit-project-toplevel "Toplevel ") ,keyword " Projects"))
+      (concat (and nd/agenda-limit-project-toplevel "Toplevel ") ,header))
      (org-agenda-skip-function '(nd/skip-projects-without-statuscode ,statuscode))
      (org-agenda-sorting-strategy '(category-keep)))))
 
-(let ((task-view-match "-NA-REFILE")
-      (project-view-match "-NA-REFILE-PARENT_TYPE=\"iterator\"/")
-      (series-view-match "-NA-REFILE+PARENT_TYPE=\"iterator\"/"))
+(setq org-agenda-tag-filter-preset (list "-%inc"))
+
+(let ((task-match "-NA-REFILE-PARENT_TYPE=\"periodical\"/")
+      (project-match "-NA-REFILE-PARENT_TYPE=\"periodical\"-PARENT_TYPE=\"iterator\"/")
+      (periodical-match "-NA-REFILE+PARENT_TYPE=\"periodical\"-PARENT_TYPE=\"iterator\"/")
+      (iterator-match "-NA-REFILE-PARENT_TYPE=\"periodical\"+PARENT_TYPE=\"iterator\"/"))
   (setq org-agenda-custom-commands
         `(("t"
            "Task View"
            ((agenda "" nil)
-            ,(nd/agenda-base-task-command task-view-match "Next Project" ''(nd/skip-non-keyword-project-tasks "NEXT"))
-            ,(nd/agenda-base-task-command task-view-match "Waiting Project" ''(nd/skip-non-keyword-project-tasks "WAIT"))
-            ,(nd/agenda-base-task-command task-view-match "Atomic" ''nd/skip-non-unclosed-atomic-tasks)
-            ,(nd/agenda-base-task-command task-view-match "Held Project" ''(nd/skip-non-keyword-project-tasks "HOLD"))))
+            ,(nd/agenda-base-task-command task-match "Next Project Tasks" ''(nd/skip-non-keyword-project-tasks "NEXT"))
+            ,(nd/agenda-base-task-command task-match "Waiting Project Tasks" ''(nd/skip-non-keyword-project-tasks "WAIT"))
+            ,(nd/agenda-base-task-command project-match "Atomic Tasks" ''nd/skip-non-atomic-tasks)
+            ,(nd/agenda-base-task-command task-match "Held Project Tasks" ''(nd/skip-non-keyword-project-tasks "HOLD"))))
           ("p"
            "Project View"
-           (,(nd/agenda-base-project-command project-view-match "Stuck" :stuck)
-            ,(nd/agenda-base-project-command project-view-match "Waiting" :waiting)
-            ,(nd/agenda-base-project-command project-view-match "Active" :active)
-            ,(nd/agenda-base-project-command project-view-match "Held" :held)))
-          ("s"
-           "Series View"
-           (,(nd/agenda-base-project-command series-view-match "Stuck Series" :stuck)
-            ,(nd/agenda-base-project-command series-view-match "Empty Series" :undone-complete)
-            ,(nd/agenda-base-project-command series-view-match "Active Series" :active)
-            ,(nd/agenda-base-project-command series-view-match "Waiting Series" :waiting)
-            ,(nd/agenda-base-project-command series-view-match "Held Series" :held)
-            ,(nd/agenda-base-task-command series-view-match "Uninitialized Series" ''nd/skip-non-iterator-atomic-tasks)))
+           (,(nd/agenda-base-project-command project-match "Stuck Projects" :stuck)
+            ,(nd/agenda-base-project-command project-match "Waiting Projects" :waiting)
+            ,(nd/agenda-base-project-command project-match "Active Projects" :active)
+            ,(nd/agenda-base-project-command project-match "Held Projects" :held)))
+          ("P"
+           "Periodical View"
+           (,(nd/agenda-base-header-command periodical-match "Empty Periodicals" ''nd/skip-non-empty-periodical-parent-headers)
+            ,(nd/agenda-base-header-command periodical-match "Stale Periodicals" ''nd/skip-non-stale-periodical-parent-headers)
+            ,(nd/agenda-base-header-command periodical-match "Fresh Periodicals" ''nd/skip-non-fresh-periodical-parent-headers)))
+          ("i"
+           "Iterator View"
+           (,(nd/agenda-base-project-command iterator-match "Stuck Iterators (require NEXT or schedule)" :stuck)
+            ,(nd/agenda-base-project-command iterator-match "Empty Iterators (require new tasks)" :undone-complete)
+            ,(nd/agenda-base-task-command iterator-match "Uninitialized Iterators (no tasks added)" ''nd/skip-non-iterator-atomic-tasks)
+            ,(nd/agenda-base-project-command iterator-match "Active Iterators" :active)
+            ,(nd/agenda-base-project-command iterator-match "Waiting Iterators" :waiting)
+            ,(nd/agenda-base-project-command iterator-match "Held Iterators" :held)))
           ("r"
            "Refile and Critical Errors"
            ((tags "REFILE"
                   ((org-agenda-overriding-header "Tasks to Refile"))
                   (org-tags-match-list-sublevels nil))
-            ,(nd/agenda-base-task-command task-view-match "Discontinous Project" ''nd/skip-non-discontinuous-project-tasks)
-            ,(nd/agenda-base-project-command project-view-match "Invalid Todostate" :invalid-todostate)))
+            ,(nd/agenda-base-task-command "-NA-REFILE/TODO|NEXT|WAIT" "Project Tasks Without Context" ''nd/skip-project-tasks-with-context)
+            ,(nd/agenda-base-task-command "-NA-REFILE/!" "Atomic Tasks Without Context" ''nd/skip-atomic-tasks-with-context)
+            ;; ,(nd/agenda-base-task-command "-NA-REFILE-%subdiv/TODO|NEXT|WAIT" "Tasks Without Effort" ''nd/skip-tasks-with-effort)
+            ,(nd/agenda-base-task-command task-match "Discontinous Project" ''nd/skip-non-discontinuous-project-tasks)
+            ,(nd/agenda-base-project-command project-match "Invalid Todostate" :invalid-todostate)))
           ("e"
            "Non-critical Errors"
-           (,(nd/agenda-base-task-command task-view-match "Undone Closed" ''nd/skip-non-undone-closed-todoitems)
-            ,(nd/agenda-base-task-command task-view-match "Done Unclosed" ''nd/skip-non-done-unclosed-todoitems)
-            ,(nd/agenda-base-project-command project-view-match "Undone Completed" :undone-complete)
-            ,(nd/agenda-base-project-command project-view-match "Done Incompleted" :done-incomplete)))
+           (,(nd/agenda-base-header-command task-match "Undone Closed" ''nd/skip-non-undone-closed-todoitems)
+            ,(nd/agenda-base-header-command task-match "Done Unclosed" ''nd/skip-non-done-unclosed-todoitems)
+            ,(nd/agenda-base-project-command project-match "Undone Completed" :undone-complete)
+            ,(nd/agenda-base-project-command project-match "Done Incompleted" :done-incomplete)))
           ("A"
            "Archivable Tasks and Projects"
-           (,(nd/agenda-base-task-command task-view-match "Archivable Atomic" ''nd/skip-non-archivable-atomic-tasks)
-            ,(nd/agenda-base-task-command task-view-match "Stale" ''nd/skip-non-stale-headings)
-            ,(nd/agenda-base-project-command series-view-match "Archivable Series" :archivable)
-            ,(nd/agenda-base-project-command project-view-match "Archivable" :archivable))))))
+           (,(nd/agenda-base-header-command task-match "Archivable Atomic Tasks" ''nd/skip-non-archivable-atomic-tasks)
+            ,(nd/agenda-base-header-command task-match "Stale Tasks" ''nd/skip-non-stale-headings)
+            ,(nd/agenda-base-project-command iterator-match "Archivable Iterators" :archivable)
+            ,(nd/agenda-base-project-command project-match "Archivable Projects" :archivable))))))
 
-(evil-define-key 'motion org-agenda-mode-map "T" 'nd/toggle-project-toplevel-display)
-
+(setq org-agenda-start-on-weekday 1)
 (setq org-agenda-span 'day)
 (setq org-agenda-time-grid (quote ((daily today remove-match)
                                    #("----------------" 0 16 (org-heading t))
@@ -879,7 +945,7 @@ test-fun return true"
 (setq org-agenda-auto-exclude-function 'nd/org-auto-exclude-function)
 
 (setq org-columns-default-format
-      "%25ITEM %4TODO %TAGS %3Effort{+} %OWNER(OWN)")
+      "%25ITEM %4TODO %TAGS %5Effort{:} %OWNER(OWN)")
 
 (set-face-attribute 'org-column nil :background "#1e2023")
 ;; org-columns-summary-types
