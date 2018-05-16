@@ -57,12 +57,12 @@
     (spaceline-spacemacs-theme)
     (setq spaceline-buffer-size-p nil))
 
-(use-package dashboard
-  :ensure t
-  :config
-  (dashboard-setup-startup-hook)
-   (setq dashboard-banner-logo-title "Emacs"))
-   ;; (setq dashboard-items '((recents . 10))))
+;;  (use-package dashboard
+;;    :ensure t
+;;    :config
+;;    (dashboard-setup-startup-hook)
+;;     (setq dashboard-banner-logo-title "Emacs"))
+     ;; (setq dashboard-items '((recents . 10))))
 
 (global-set-key (kbd "C-h a") 'apropos)
 
@@ -281,7 +281,7 @@
 
 (add-hook 'org-agenda-mode-hook
           (lambda ()
-            (local-set-key (kbd "C-c C-c") '(message org-tags-alist))))
+            (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)))
 
 (setq org-todo-keywords
       '((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d)")
@@ -295,63 +295,56 @@
               ("HOLD" :foreground "violet" :weight bold)
               ("CANC" :foreground "deep sky blue" :weight bold))))
 
-(defun nd/filter-tags-prefix (prefix tags-list)
+(defun nd/filter-list-prefix (prefix str-list)
   "Return a subset of tags-list whose first character matches prefix.'
-tags-list defaults to org-tag-alist if not given"
-  (seq-filter (lambda (tag)
-                (and (stringp tag)
-                     (string-prefix-p prefix tag)))
-              tags-list))
+  tags-list defaults to org-tag-alist if not given"
+  (seq-filter (lambda (i)
+                (and (stringp i)
+                     (string-prefix-p prefix i)))
+              str-list))
 
 (defun nd/add-tag-face (fg-name prefix)
   "Adds list of cons cells to org-tag-faces with foreground set to fg-name.
-Start and end specify the positions in org-tag-alist which define the tags
-to which the faces are applied"
-  (dolist (tag (nd/filter-tags-prefix prefix (mapcar #'car org-tag-alist)))
+  Start and end specify the positions in org-tag-alist which define the tags
+  to which the faces are applied"
+  (dolist (tag (nd/filter-list-prefix prefix (mapcar #'car org-tag-alist)))
     (push `(,tag . (:foreground ,fg-name)) org-tag-faces)))
 
-;; for some reason, org-mode doesn't like it if the org-tags-alist
-;; has special chars before it is loaded (overrides keybindings)
-;; this somewhat convoluted hook works tho...
-(defun nd/set-org-tag-alist-and-faces ()
-  (progn
-    ;; dirty hack to keep org agenda happy
-;;    (setq org-tag-alist '((:newline)))
-    (setq org-tag-alist
-          '((:startgroup)
-            ("@errand" . ?e)
-            ("@home" . ?h)
-            ("@work" . ?w)
-            ("@travel" . ?t)
-            (:endgroup)
-            
-            ("#laptop" . ?L)
-            ("#tcult" . ?T)
-            ("#phone" . ?O)
-            
-            ("$note" . ?n)
-            ("$inc" . ?i)
-            ("$subdiv" . ?s)
-            
-            (:startgroup)
-            ("_env" . ?E)
-            ("_fin" . ?F)
-            ("_int" . ?I)
-            ("_met" . ?M)
-            ("_phy" . ?H)
-            ("_pro" . ?P)
-            ("_rec" . ?R)
-            ("_soc" . ?S)
-            (:endgroup)))
-    
-    (setq org-tag-faces '())
-    
-    (nd/add-tag-face "PaleGreen" "@")
-    (nd/add-tag-face "SkyBlue" "#")
-    (nd/add-tag-face "PaleGoldenrod" "$")
-    (nd/add-tag-face "violet" "_")))
+;; for some reason, most special chars don't really
+;; work in org-tag-alist, only #, @, %, and _
+(setq org-tag-alist
+      '((:startgroup)
+        ("@errand" . ?e)
+        ("@home" . ?h)
+        ("@work" . ?w)
+        ("@travel" . ?t)
+        (:endgroup)
+        
+        ("#laptop" . ?L)
+        ("#tcult" . ?T)
+        ("#phone" . ?O)
+        
+        ("%note" . ?n)
+        ("%inc" . ?i)
+        ("%subdiv" . ?s)
+        
+        (:startgroup)
+        ("_env" . ?E)
+        ("_fin" . ?F)
+        ("_int" . ?I)
+        ("_met" . ?M)
+        ("_phy" . ?H)
+        ("_pro" . ?P)
+        ("_rec" . ?R)
+        ("_soc" . ?S)
+        (:endgroup)))
 
-(add-hook 'org-mode-hook 'nd/set-org-tag-alist-and-faces)
+(setq org-tag-faces '())
+
+(nd/add-tag-face "PaleGreen" "@")
+(nd/add-tag-face "SkyBlue" "#")
+(nd/add-tag-face "PaleGoldenrod" "%")
+(nd/add-tag-face "violet" "_")
 
 (add-to-list 'org-default-properties "PARENT_TYPE")
 (add-to-list 'org-default-properties "OWNER")
@@ -475,8 +468,11 @@ If the future flag is set, returns timestamp if it is in the future
 
 (defun nd/heading-has-context-p ()
   (let ((tags (org-get-tags-at)))
-    (or (> (length (nd/filter-tags-prefix "#" tags)) 0)
-        (> (length (nd/filter-tags-prefix "@" tags)) 0))))
+    (or (> (length (nd/filter-list-prefix "#" tags)) 0)
+        (> (length (nd/filter-list-prefix "@" tags)) 0))))
+
+(defun nd/heading-has-tag-p (tag)
+  (member tag (org-get-tags-at)))
 
 (defun nd/heading-has-children (heading-test)
   "returns t if heading has subheadings that return t when assessed with 
@@ -687,6 +683,17 @@ test-fun return true"
        (if (not (and keyword ,test-fun))
            (nd/skip-heading)))))
 
+(defun nd/skip-headings-with-tags (pos-tags-list &optional neg-tags-list)
+  "Skips headings that have tags in pos-tags-list and also skips
+tags that do not have tags in neg-tags-list"
+  (save-restriction
+    (widen)
+    (let ((header-tags (org-get-tags-at)))
+      (if (and (or (not pos-tags-list)
+                   (intersection pos-tags-list header-tags :test 'equal))
+               (not (intersection neg-tags-list header-tags :test 'equal)))
+          (nd/skip-heading)))))
+
 (defun nd/skip-non-stale-headings ()
   (save-restriction
     (widen)
@@ -867,16 +874,14 @@ test-fun return true"
      (org-agenda-skip-function '(nd/skip-projects-without-statuscode ,statuscode))
      (org-agenda-sorting-strategy '(category-keep)))))
 
-(setq org-agenda-tag-filter-preset (list "-%inc"))
-
-(let ((task-match "-NA-REFILE-PARENT_TYPE=\"periodical\"/")
-      (project-match "-NA-REFILE-PARENT_TYPE=\"periodical\"-PARENT_TYPE=\"iterator\"/")
+(let ((task-match "-NA-REFILE-%inc-PARENT_TYPE=\"periodical\"/")
+      (project-match "-NA-REFILE-%inc-PARENT_TYPE=\"periodical\"-PARENT_TYPE=\"iterator\"/")
       (periodical-match "-NA-REFILE+PARENT_TYPE=\"periodical\"-PARENT_TYPE=\"iterator\"/")
       (iterator-match "-NA-REFILE-PARENT_TYPE=\"periodical\"+PARENT_TYPE=\"iterator\"/"))
   (setq org-agenda-custom-commands
         `(("t"
            "Task View"
-           ((agenda "" nil)
+           ((agenda "" (org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc"))))
             ,(nd/agenda-base-task-command task-match "Next Project Tasks" ''(nd/skip-non-keyword-project-tasks "NEXT"))
             ,(nd/agenda-base-task-command task-match "Waiting Project Tasks" ''(nd/skip-non-keyword-project-tasks "WAIT"))
             ,(nd/agenda-base-task-command project-match "Atomic Tasks" ''nd/skip-non-atomic-tasks)
@@ -900,6 +905,13 @@ test-fun return true"
             ,(nd/agenda-base-project-command iterator-match "Active Iterators" :active)
             ,(nd/agenda-base-project-command iterator-match "Waiting Iterators" :waiting)
             ,(nd/agenda-base-project-command iterator-match "Held Iterators" :held)))
+          ("I"
+           "Incubator View"
+           ((agenda "" ((org-agenda-span 7)
+                        (org-agenda-time-grid nil)
+                        (org-agenda-entry-types '(:deadline :timestamp))))
+            ,(nd/agenda-base-task-command "-NA-REFILE+%inc/" "Incubated Tasks" ''nd/skip-non-atomic-tasks)
+            ,(nd/agenda-base-project-command "-NA-REFILE+%inc/" "Incubated Projects" :held)))
           ("r"
            "Refile and Critical Errors"
            ((tags "REFILE"
@@ -923,7 +935,7 @@ test-fun return true"
             ,(nd/agenda-base-project-command iterator-match "Archivable Iterators" :archivable)
             ,(nd/agenda-base-project-command project-match "Archivable Projects" :archivable))))))
 
-(setq org-agenda-start-on-weekday 1)
+(setq org-agenda-start-on-weekday 0)
 (setq org-agenda-span 'day)
 (setq org-agenda-time-grid (quote ((daily today remove-match)
                                    #("----------------" 0 16 (org-heading t))
