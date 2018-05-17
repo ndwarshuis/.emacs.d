@@ -20,7 +20,9 @@
 
 (setq scroll-conservatively 100)
 
-(when window-system (global-prettify-symbols-mode t))
+(add-hook 'ess-mode-hook #'prettify-symbols-mode)
+(add-hook 'inferior-ess-mode-hook #'prettify-symbols-mode)
+(add-hook 'prog-mode-hook #'prettify-symbols-mode)
 
 (when window-system (global-hl-line-mode t))
 
@@ -119,6 +121,7 @@
   :delight
   :init
     (add-hook 'prog-mode-hook #'rainbow-delimiters-mode)
+    (add-hook 'inferior-ess-mode-hook #'rainbow-delimiters-mode)
     (add-hook 'ess-mode-hook #'rainbow-delimiters-mode))
 
 (use-package ace-window
@@ -276,6 +279,7 @@
   "M" 'org-agenda-month-view
   "Y" 'org-agenda-year-view
   "ct" nil
+  "sC" 'nd/org-agenda-filter-non-context
   "e" 'org-agenda-set-effort
   "ce" nil)
 
@@ -842,6 +846,18 @@ tags that do not have tags in neg-tags-list"
     (org-agenda-redo))
   (message msg))
 
+(defun nd/org-agenda-filter-non-context ()
+"A quick and dirty agenda filter that removes all
+tasks with context tags"
+  (interactive)
+  (let* ((tags-list (mapcar #'car org-tag-alist))
+         (context-tags (append
+                        (nd/filter-list-prefix "@" tags-list)
+                        (nd/filter-list-prefix "#" tags-list))))
+    (setq org-agenda-tag-filter
+          (mapcar (lambda(tag) (concat "-" tag)) context-tags))
+    (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
+
 (setq org-agenda-tags-todo-honor-ignore-options t)
 
 (setq org-agenda-prefix-format
@@ -917,8 +933,8 @@ tags that do not have tags in neg-tags-list"
            ((tags "REFILE"
                   ((org-agenda-overriding-header "Tasks to Refile"))
                   (org-tags-match-list-sublevels nil))
-            ,(nd/agenda-base-task-command "-NA-REFILE/TODO|NEXT|WAIT" "Project Tasks Without Context" ''nd/skip-project-tasks-with-context)
-            ,(nd/agenda-base-task-command "-NA-REFILE/!" "Atomic Tasks Without Context" ''nd/skip-atomic-tasks-with-context)
+            ,(nd/agenda-base-task-command "-NA-REFILE-%inc/TODO|NEXT|WAIT" "Project Tasks Without Context" ''nd/skip-project-tasks-with-context)
+            ,(nd/agenda-base-task-command "-NA-REFILE-%inc/!" "Atomic Tasks Without Context" ''nd/skip-atomic-tasks-with-context)
             ;; ,(nd/agenda-base-task-command "-NA-REFILE-%subdiv/TODO|NEXT|WAIT" "Tasks Without Effort" ''nd/skip-tasks-with-effort)
             ,(nd/agenda-base-task-command task-match "Discontinous Project" ''nd/skip-non-discontinuous-project-tasks)
             ,(nd/agenda-base-project-command project-match "Invalid Todostate" :invalid-todostate)))
