@@ -263,7 +263,7 @@ event of an error or nonlocal exit."
 (load "ess-site")
 (setq ess-history-file "session.Rhistory")
 (setq ess-history-directory
-          (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+      (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
 (setq org-log-done t)
 (setq org-startup-indented t)
@@ -420,11 +420,11 @@ event of an error or nonlocal exit."
 
 (let ((capfile "~/Org/capture.org"))
   (setq org-capture-templates
-        '(("t" "todo" entry (file capfile) "* TODO %?\ndeliverable: \n%U\n")
-          ("n" "note" entry (file capfile) "* %? :\\%note:\n%U\n" )
-          ("a" "appointment" entry (file capfile) "* %?\n%U\n%^t\n" )
-          ("m" "multi-day" entry (file capfile) "* TODO %?\n%U\n%^t--%^t\n" )
-          ("d" "deadline" entry (file capfile) "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n" ))))
+        `(("t" "todo" entry (file ,capfile) "* TODO %?\ndeliverable: \n%U\n")
+          ("n" "note" entry (file ,capfile) "* %? :\\%note:\n%U\n" )
+          ("a" "appointment" entry (file ,capfile) "* %?\n%U\n%^t\n" )
+          ("m" "multi-day" entry (file ,capfile) "* TODO %?\n%U\n%^t--%^t\n" )
+          ("d" "deadline" entry (file ,capfile) "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n" ))))
 
 (setq org-refile-targets (quote ((nil :maxlevel . 9)
                                  ("~/Org/reference/idea.org" :maxlevel . 9)
