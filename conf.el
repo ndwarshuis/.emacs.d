@@ -320,6 +320,23 @@ event of an error or nonlocal exit."
 
 (advice-add #'org-fast-tag-selection :around #'nd/org-tag-window-advice)
 
+(defun nd/org-capture-position (buffer alist)
+  (let ((new (split-window (get-buffer-window) -14 'below)))
+    (set-window-buffer new buffer)
+    new))
+
+(defun nd/org-capture-window-advice (orig-fn table title &optional prompt specials)
+  "Advice to fix window placement in `org-capture-select-template'."
+  (let  ((override '("\\*Org Select\\*" nd/org-capture-position)))
+    (add-to-list 'display-buffer-alist override)
+    (nd/with-advice
+        ((#'org-switch-to-buffer-other-window :override #'pop-to-buffer))
+      (unwind-protect (funcall orig-fn table title prompt specials)
+        (setq display-buffer-alist
+              (delete override display-buffer-alist))))))
+
+(advice-add #'org-mks :around #'nd/org-capture-window-advice)
+
 (setq org-src-window-setup 'current-window)
 (setq org-src-fontify-natively t)
 (setq org-edit-src-content-indentation 0)
