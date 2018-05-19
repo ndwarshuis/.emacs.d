@@ -189,6 +189,14 @@ event of an error or nonlocal exit."
                    `(advice-remove ,(car adform) ,(nth 2 adform)))
                  adlist))))
 
+(defun nd/filter-list-prefix (prefix str-list)
+  "Return a subset of tags-list whose first character matches prefix.'
+  tags-list defaults to org-tag-alist if not given"
+  (seq-filter (lambda (i)
+                (and (stringp i)
+                     (string-prefix-p prefix i)))
+              str-list))
+
 (defun split-and-follow-horizontally ()
     (interactive)
     (split-window-below)
@@ -255,7 +263,7 @@ event of an error or nonlocal exit."
 (load "ess-site")
 (setq ess-history-file "session.Rhistory")
 (setq ess-history-directory
-      (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+          (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
 (setq org-log-done t)
 (setq org-startup-indented t)
@@ -326,7 +334,7 @@ event of an error or nonlocal exit."
 (add-hook 'org-mode-hook
           (lambda ()
             (local-set-key (kbd "C-c C-x x") 'nd/mark-subtree-done)
-            (local-set-key (kbd "C-c C-x c") 'nd/org-clone-subtree-with-time-shift-reset)))
+            (local-set-key (kbd "C-c C-x c") 'nd/org-clone-subtree-with-time-shift)))
 
 (evil-define-key 'motion org-agenda-mode-map
   "t" 'nd/toggle-project-toplevel-display
@@ -354,14 +362,6 @@ event of an error or nonlocal exit."
         ("WAIT" :foreground "orange" :weight bold)
         ("HOLD" :foreground "violet" :weight bold)
         ("CANC" :foreground "deep sky blue" :weight bold)))
-
-(defun nd/filter-list-prefix (prefix str-list)
-  "Return a subset of tags-list whose first character matches prefix.'
-  tags-list defaults to org-tag-alist if not given"
-  (seq-filter (lambda (i)
-                (and (stringp i)
-                     (string-prefix-p prefix i)))
-              str-list))
 
 (defun nd/add-tag-face (fg-name prefix)
   "Adds list of cons cells to org-tag-faces with foreground set to fg-name.
@@ -409,12 +409,14 @@ event of an error or nonlocal exit."
 (add-to-list 'org-default-properties "PARENT_TYPE")
 (add-to-list 'org-default-properties "OWNER")
 (add-to-list 'org-default-properties "GOAL")
+(add-to-list 'org-default-properties "TIME_SHIFT")
+
 (setq org-global-properties
       '(("PARENT_TYPE_ALL" . "periodical iterator")
         ("Effort_ALL" . "0:05 0:15 0:30 1:00 1:30 2:00 3:00 4:00 5:00 6:00")))
 
 ;; TODO this may not be needed
-(setq org-use-property-inheritance '("PARENT_TYPE"))
+(setq org-use-property-inheritance '("PARENT_TYPE" "TIME_SHIFT"))
 
 (let ((capfile "~/Org/capture.org"))
   (setq org-capture-templates
@@ -1063,12 +1065,14 @@ is in the optional argument exclude"
   (interactive)
   (nd/mark-subtree-keyword "DONE" '("CANC")))
 
-(defun nd/org-clone-subtree-with-time-shift-reset (n &optional shift)
+(defun nd/org-clone-subtree-with-time-shift (n &optional shift)
   "Like `org-clone-subtree-with-time-shift' except it resets checkboxes
 and reverts all todo keywords to TODO"
   (interactive "nNumber of clones to produce: ")
-  (let ((shift (read-from-minibuffer
-                "Date shift per clone (e.g. +1w, empty to copy unchanged): ")))
+    
+  (let ((shift (or (org-entry-get nil "TIME_SHIFT" 'selective)
+                   (read-from-minibuffer
+                    "Date shift per clone (e.g. +1w, empty to copy unchanged): "))))
     (condition-case err
         (progn
           (org-clone-subtree-with-time-shift n shift)
