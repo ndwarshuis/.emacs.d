@@ -258,7 +258,6 @@ event of an error or nonlocal exit."
       (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
 (setq org-log-done t)
-(setq org-src-window-setup 'current-window)
 (setq org-startup-indented t)
 (delight 'org-indent-mode)
 (setq org-directory "~/Org")
@@ -314,6 +313,10 @@ event of an error or nonlocal exit."
 (advice-add #'org-fast-tag-selection :around #'nd/org-tag-window-advice)
 
 ;;(add-hook 'org-capture-mode-hook 'evil-append)
+
+(setq org-src-window-setup 'current-window)
+(setq org-src-fontify-natively t)
+(setq org-edit-src-content-indentation 0)
 
 (add-to-list 'org-structure-template-alist
              '("el" "#+BEGIN_SRC emacs-lisp\n?\n#+END_SRC"))
