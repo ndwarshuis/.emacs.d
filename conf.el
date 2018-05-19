@@ -169,6 +169,26 @@
   (global-undo-tree-mode)
   (setq undo-tree-visualizer-diff t))
 
+;; lovingly stolen from aaron harris
+(defmacro nd/with-advice (adlist &rest body)
+  "Execute BODY with temporary advice in ADLIST.
+
+Each element of ADLIST should be a list of the form
+  (SYMBOL WHERE FUNCTION [PROPS])
+suitable for passing to `advice-add'.  The BODY is wrapped in an
+`unwind-protect' form, so the advice will be removed even in the
+event of an error or nonlocal exit."
+  (declare (debug ((&rest (&rest form)) body))
+           (indent 1))
+  `(progn
+     ,@(mapcar (lambda (adform)
+                 (cons 'advice-add adform))
+               adlist)
+     (unwind-protect (progn ,@body)
+       ,@(mapcar (lambda (adform)
+                   `(advice-remove ,(car adform) ,(nth 2 adform)))
+                 adlist))))
+
 (defun split-and-follow-horizontally ()
     (interactive)
     (split-window-below)
@@ -257,6 +277,41 @@
     (set-face-attribute 'org-level-5 nil :weight 'normal :height heading-height)))
 
 (add-hook 'org-mode-hook 'nd/org-ui-heading-same-font-height)
+
+(defun nd/org-todo-position (buffer alist)
+  (let ((win (car (cl-delete-if-not
+                   (lambda (window)
+                     (with-current-buffer (window-buffer window)
+                       (memq major-mode
+                             '(org-mode org-agenda-mode))))
+                   (window-list)))))
+    (when win
+      (let ((new (split-window win -4 'below)))
+        (set-window-buffer new buffer)
+        new))))
+
+(defun nd/org-todo-window-advice (orig-fn)
+  "Advice to fix window placement in `org-fast-todo-selection'."
+  (let  ((override '("\\*Org todo\\*" nd/org-todo-position)))
+    (add-to-list 'display-buffer-alist override)
+    (nd/with-advice
+        ((#'org-switch-to-buffer-other-window :override #'pop-to-buffer))
+      (unwind-protect (funcall orig-fn)
+        (setq display-buffer-alist
+              (delete override display-buffer-alist))))))
+
+(advice-add #'org-fast-todo-selection :around #'nd/org-todo-window-advice)
+
+(defun nd/org-tag-window-advice (orig-fn current inherited table &optional todo-table)
+  "Advice to fix window placement in `org-fast-tags-selection'."
+  (nd/with-advice
+      ((#'delete-other-windows :override #'ignore)
+       ;; pretty sure I just got lucky here...
+       (#'split-window-vertically :override #'(lambda (&optional size)
+                                                (split-window-below (or size -9)))))
+    (unwind-protect (funcall orig-fn current inherited table todo-table))))
+
+(advice-add #'org-fast-tag-selection :around #'nd/org-tag-window-advice)
 
 ;;(add-hook 'org-capture-mode-hook 'evil-append)
 
@@ -352,6 +407,7 @@
 
 (add-to-list 'org-default-properties "PARENT_TYPE")
 (add-to-list 'org-default-properties "OWNER")
+(add-to-list 'org-default-properties "GOAL")
 (setq org-global-properties
       '(("PARENT_TYPE_ALL" . "periodical iterator")
         ("Effort_ALL" . "0:05 0:15 0:30 1:00 1:30 2:00 3:00 4:00 5:00 6:00")))
@@ -397,6 +453,7 @@
 ;; (setq org-agenda-files '("~/Org/reference/agendatest.org"))
 (setq org-agenda-dim-blocked-tasks nil)
 (setq org-agenda-compact-blocks t)
+(setq org-agenda-window-setup 'only-window)
 
 (defun nd/get-date-property (date-property)
   "Helper function to get the date property and convert to a number.
@@ -754,7 +811,7 @@ tags that do not have tags in neg-tags-list"
                   (not (nd/heading-has-children 'nd/is-timestamped-heading-p))))
         (nd/skip-heading))))
 
-(defun nd/skip-non-keyword-project-tasks (skip-keyword)
+(defun nd/skip-non-project-tasks ()
   (save-restriction
     (widen)
     (let ((keyword (nd/is-todoitem-p)))
@@ -767,7 +824,8 @@ tags that do not have tags in neg-tags-list"
                           (not (nd/is-timestamped-heading-p))
                           (not (nd/is-scheduled-heading-p))
                           (not (nd/is-deadlined-heading-p))
-                          (equal keyword skip-keyword)))
+                          ;; (equal keyword skip-keyword)
+                          ))
                 (nd/skip-heading)))
         (nd/skip-heading)))))
 
@@ -867,6 +925,20 @@ tasks with context tags"
         (tags . "  %-12:c%-7:e")
         (search . "  %-12:c")))
 
+(defconst nd/org-agenda-todo-sort-order '("NEXT" "WAIT" "HOLD" "TODO"))
+
+(setq org-agenda-cmp-user-defined
+      '(lambda (a b)
+         (let ((pa (- (length (member
+                               (get-text-property 1 'todo-state a)
+                               nd/org-agenda-todo-sort-order))))
+               (pb (- (length (member
+                               (get-text-property 1 'todo-state b)
+                               nd/org-agenda-todo-sort-order)))))
+           (cond ((or (null pa) (null pb)) nil)
+                 ((> pa pb) +1)
+                 ((< pa pb) -1)))))
+
 (defun nd/agenda-base-header-command (match header skip-fun)
   `(tags
     ,match
@@ -874,13 +946,14 @@ tasks with context tags"
      (org-agenda-skip-function ,skip-fun)
      (org-agenda-sorting-strategy '(category-keep)))))
 
-(defun nd/agenda-base-task-command (match header skip-fun)
+(defun nd/agenda-base-task-command (match header skip-fun &optional sort)
+  (or sort (setq sort ''(category-keep)))
   `(tags-todo
     ,match
     ((org-agenda-overriding-header ,header)
      (org-agenda-skip-function ,skip-fun)
      (org-agenda-todo-ignore-with-date t)
-     (org-agenda-sorting-strategy '(category-keep)))))
+     (org-agenda-sorting-strategy ,sort))))
 
 (defun nd/agenda-base-project-command (match header statuscode)
   `(tags
@@ -898,10 +971,13 @@ tasks with context tags"
         `(("t"
            "Task View"
            ((agenda "" (org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc"))))
-            ,(nd/agenda-base-task-command task-match "Next Project Tasks" ''(nd/skip-non-keyword-project-tasks "NEXT"))
-            ,(nd/agenda-base-task-command task-match "Waiting Project Tasks" ''(nd/skip-non-keyword-project-tasks "WAIT"))
-            ,(nd/agenda-base-task-command project-match "Atomic Tasks" ''nd/skip-non-atomic-tasks)
-            ,(nd/agenda-base-task-command task-match "Held Project Tasks" ''(nd/skip-non-keyword-project-tasks "HOLD"))))
+            ,(nd/agenda-base-task-command project-match
+                                          "Project Tasks"
+                                          ''nd/skip-non-project-tasks
+                                          ''(user-defined-up category-keep))
+            ,(nd/agenda-base-task-command project-match
+                                          "Atomic Tasks"
+                                          ''nd/skip-non-atomic-tasks)))
           ("p"
            "Project View"
            (,(nd/agenda-base-project-command project-match "Stuck Projects" :stuck)
@@ -933,9 +1009,6 @@ tasks with context tags"
            ((tags "REFILE"
                   ((org-agenda-overriding-header "Tasks to Refile"))
                   (org-tags-match-list-sublevels nil))
-            ,(nd/agenda-base-task-command "-NA-REFILE-%inc/TODO|NEXT|WAIT" "Project Tasks Without Context" ''nd/skip-project-tasks-with-context)
-            ,(nd/agenda-base-task-command "-NA-REFILE-%inc/!" "Atomic Tasks Without Context" ''nd/skip-atomic-tasks-with-context)
-            ;; ,(nd/agenda-base-task-command "-NA-REFILE-%subdiv/TODO|NEXT|WAIT" "Tasks Without Effort" ''nd/skip-tasks-with-effort)
             ,(nd/agenda-base-task-command task-match "Discontinous Project" ''nd/skip-non-discontinuous-project-tasks)
             ,(nd/agenda-base-project-command project-match "Invalid Todostate" :invalid-todostate)))
           ("e"
