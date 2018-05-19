@@ -288,6 +288,16 @@ event of an error or nonlocal exit."
                    `(advice-remove ,(car adform) ,(nth 2 adform)))
                  adlist))))
 #+END_SRC
+** functions
+#+BEGIN_SRC emacs-lisp
+(defun nd/filter-list-prefix (prefix str-list)
+  "Return a subset of tags-list whose first character matches prefix.'
+  tags-list defaults to org-tag-alist if not given"
+  (seq-filter (lambda (i)
+                (and (stringp i)
+                     (string-prefix-p prefix i)))
+              str-list))
+#+END_SRC
 * custom functions
 ** follow window splitting
 #+BEGIN_SRC emacs-lisp
@@ -392,10 +402,10 @@ event of an error or nonlocal exit."
 * org-mode
 ** basic
 #+BEGIN_SRC emacs-lisp
-  (setq org-log-done t)
-  (setq org-startup-indented t)
-  (delight 'org-indent-mode)
-  (setq org-directory "~/Org")
+(setq org-log-done t)
+(setq org-startup-indented t)
+(delight 'org-indent-mode)
+(setq org-directory "~/Org")
 #+END_SRC
 ** ui
 *** bullets
@@ -423,47 +433,43 @@ Org mode is great and all, but the windows never show up in the right place
 **** todo selection
 I only need a teeny tiny window below my current window for todo selection
 #+BEGIN_SRC emacs-lisp
-  (defun nd/org-todo-position (buffer alist)
-    (let ((win (car (cl-delete-if-not
-                     (lambda (window)
-                       (with-current-buffer (window-buffer window)
-                         (memq major-mode
-                               '(org-mode org-agenda-mode))))
-                     (window-list)))))
-      (when win
-        (let ((new (split-window win -4 'below)))
-          (set-window-buffer new buffer)
-          new))))
+(defun nd/org-todo-position (buffer alist)
+  (let ((win (car (cl-delete-if-not
+                   (lambda (window)
+                     (with-current-buffer (window-buffer window)
+                       (memq major-mode
+                             '(org-mode org-agenda-mode))))
+                   (window-list)))))
+    (when win
+      (let ((new (split-window win -4 'below)))
+        (set-window-buffer new buffer)
+        new))))
 
-  (defun nd/org-todo-window-advice (orig-fn)
-    "Advice to fix window placement in `org-fast-todo-selection'."
-    (let  ((override '("\\*Org todo\\*" nd/org-todo-position)))
-      (add-to-list 'display-buffer-alist override)
-      (nd/with-advice
-          ((#'org-switch-to-buffer-other-window :override #'pop-to-buffer))
-        (unwind-protect (funcall orig-fn)
-          (setq display-buffer-alist
-                (delete override display-buffer-alist))))))
+(defun nd/org-todo-window-advice (orig-fn)
+  "Advice to fix window placement in `org-fast-todo-selection'."
+  (let  ((override '("\\*Org todo\\*" nd/org-todo-position)))
+    (add-to-list 'display-buffer-alist override)
+    (nd/with-advice
+        ((#'org-switch-to-buffer-other-window :override #'pop-to-buffer))
+      (unwind-protect (funcall orig-fn)
+        (setq display-buffer-alist
+              (delete override display-buffer-alist))))))
 
-  (advice-add #'org-fast-todo-selection :around #'nd/org-todo-window-advice)
+(advice-add #'org-fast-todo-selection :around #'nd/org-todo-window-advice)
 #+END_SRC
 **** tag selection
 By default, the tag selection window obliterates all but the current window...how disorienting :/
 #+BEGIN_SRC emacs-lisp
-  (defun nd/org-tag-window-advice (orig-fn current inherited table &optional todo-table)
-    "Advice to fix window placement in `org-fast-tags-selection'."
-    (nd/with-advice
-        ((#'delete-other-windows :override #'ignore)
-         ;; pretty sure I just got lucky here...
-         (#'split-window-vertically :override #'(lambda (&optional size)
-                                                  (split-window-below (or size -9)))))
-      (unwind-protect (funcall orig-fn current inherited table todo-table))))
+(defun nd/org-tag-window-advice (orig-fn current inherited table &optional todo-table)
+  "Advice to fix window placement in `org-fast-tags-selection'."
+  (nd/with-advice
+      ((#'delete-other-windows :override #'ignore)
+       ;; pretty sure I just got lucky here...
+       (#'split-window-vertically :override #'(lambda (&optional size)
+                                                (split-window-below (or size -9)))))
+    (unwind-protect (funcall orig-fn current inherited table todo-table))))
 
-  (advice-add #'org-fast-tag-selection :around #'nd/org-tag-window-advice)
-#+END_SRC
-** evil modes
-#+BEGIN_SRC emacs-lisp
-  ;;(add-hook 'org-capture-mode-hook 'evil-append)
+(advice-add #'org-fast-tag-selection :around #'nd/org-tag-window-advice)
 #+END_SRC
 ** src
 *** basic
@@ -511,19 +517,19 @@ By default, the tag selection window obliterates all but the current window...ho
 ** todo states
 *** sequences
 #+BEGIN_SRC emacs-lisp
-  (setq org-todo-keywords
-        '((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d)")
-          (sequence "WAIT(w@/!)" "HOLD(h@/!)" "|" "CANC(c@/!)")))
+(setq org-todo-keywords
+      '((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d)")
+        (sequence "WAIT(w@/!)" "HOLD(h@/!)" "|" "CANC(c@/!)")))
 #+END_SRC
 *** colors
 #+BEGIN_SRC emacs-lisp
 (setq org-todo-keyword-faces
-      (quote (("TODO" :foreground "light coral" :weight bold)
-              ("NEXT" :foreground "khaki" :weight bold)
-              ("DONE" :foreground "light green" :weight bold)
-              ("WAIT" :foreground "orange" :weight bold)
-              ("HOLD" :foreground "violet" :weight bold)
-              ("CANC" :foreground "deep sky blue" :weight bold))))
+      '(("TODO" :foreground "light coral" :weight bold)
+        ("NEXT" :foreground "khaki" :weight bold)
+        ("DONE" :foreground "light green" :weight bold)
+        ("WAIT" :foreground "orange" :weight bold)
+        ("HOLD" :foreground "violet" :weight bold)
+        ("CANC" :foreground "deep sky blue" :weight bold)))
 #+END_SRC
 ** tags
 I use tags for agenda filtering. Very fast and simple.
@@ -536,56 +542,48 @@ There are several types of tags I use:
 - attribute: useful flags for filtering; these start with "%"
 - life areas: key areas of life which define priorities and goals; these start with "_"
 #+BEGIN_SRC emacs-lisp
-  (defun nd/filter-list-prefix (prefix str-list)
-    "Return a subset of tags-list whose first character matches prefix.'
-    tags-list defaults to org-tag-alist if not given"
-    (seq-filter (lambda (i)
-                  (and (stringp i)
-                       (string-prefix-p prefix i)))
-                str-list))
+(defun nd/add-tag-face (fg-name prefix)
+  "Adds list of cons cells to org-tag-faces with foreground set to fg-name.
+  Start and end specify the positions in org-tag-alist which define the tags
+  to which the faces are applied"
+  (dolist (tag (nd/filter-list-prefix prefix (mapcar #'car org-tag-alist)))
+    (push `(,tag . (:foreground ,fg-name)) org-tag-faces)))
 
-  (defun nd/add-tag-face (fg-name prefix)
-    "Adds list of cons cells to org-tag-faces with foreground set to fg-name.
-    Start and end specify the positions in org-tag-alist which define the tags
-    to which the faces are applied"
-    (dolist (tag (nd/filter-list-prefix prefix (mapcar #'car org-tag-alist)))
-      (push `(,tag . (:foreground ,fg-name)) org-tag-faces)))
+;; for some reason, most special chars don't really
+;; work in org-tag-alist, only #, @, %, and _
+(setq org-tag-alist
+      '((:startgroup)
+        ("@errand" . ?e)
+        ("@home" . ?h)
+        ("@work" . ?w)
+        ("@travel" . ?t)
+        (:endgroup)
+        
+        ("#laptop" . ?L)
+        ("#tcult" . ?T)
+        ("#phone" . ?O)
+        
+        ("%note" . ?n)
+        ("%inc" . ?i)
+        ("%subdiv" . ?s)
+        
+        (:startgroup)
+        ("_env" . ?E)
+        ("_fin" . ?F)
+        ("_int" . ?I)
+        ("_met" . ?M)
+        ("_phy" . ?H)
+        ("_pro" . ?P)
+        ("_rec" . ?R)
+        ("_soc" . ?S)
+        (:endgroup)))
 
-  ;; for some reason, most special chars don't really
-  ;; work in org-tag-alist, only #, @, %, and _
-  (setq org-tag-alist
-        '((:startgroup)
-          ("@errand" . ?e)
-          ("@home" . ?h)
-          ("@work" . ?w)
-          ("@travel" . ?t)
-          (:endgroup)
-          
-          ("#laptop" . ?L)
-          ("#tcult" . ?T)
-          ("#phone" . ?O)
-          
-          ("%note" . ?n)
-          ("%inc" . ?i)
-          ("%subdiv" . ?s)
-          
-          (:startgroup)
-          ("_env" . ?E)
-          ("_fin" . ?F)
-          ("_int" . ?I)
-          ("_met" . ?M)
-          ("_phy" . ?H)
-          ("_pro" . ?P)
-          ("_rec" . ?R)
-          ("_soc" . ?S)
-          (:endgroup)))
+(setq org-tag-faces '())
 
-  (setq org-tag-faces '())
-
-  (nd/add-tag-face "PaleGreen" "@")
-  (nd/add-tag-face "SkyBlue" "#")
-  (nd/add-tag-face "PaleGoldenrod" "%")
-  (nd/add-tag-face "violet" "_")
+(nd/add-tag-face "PaleGreen" "@")
+(nd/add-tag-face "SkyBlue" "#")
+(nd/add-tag-face "PaleGoldenrod" "%")
+(nd/add-tag-face "violet" "_")
 
 #+END_SRC
 ** properties

@@ -312,8 +312,6 @@ event of an error or nonlocal exit."
 
 (advice-add #'org-fast-tag-selection :around #'nd/org-tag-window-advice)
 
-;;(add-hook 'org-capture-mode-hook 'evil-append)
-
 (setq org-src-window-setup 'current-window)
 (setq org-src-fontify-natively t)
 (setq org-edit-src-content-indentation 0)
@@ -350,12 +348,12 @@ event of an error or nonlocal exit."
         (sequence "WAIT(w@/!)" "HOLD(h@/!)" "|" "CANC(c@/!)")))
 
 (setq org-todo-keyword-faces
-      (quote (("TODO" :foreground "light coral" :weight bold)
-              ("NEXT" :foreground "khaki" :weight bold)
-              ("DONE" :foreground "light green" :weight bold)
-              ("WAIT" :foreground "orange" :weight bold)
-              ("HOLD" :foreground "violet" :weight bold)
-              ("CANC" :foreground "deep sky blue" :weight bold))))
+      '(("TODO" :foreground "light coral" :weight bold)
+        ("NEXT" :foreground "khaki" :weight bold)
+        ("DONE" :foreground "light green" :weight bold)
+        ("WAIT" :foreground "orange" :weight bold)
+        ("HOLD" :foreground "violet" :weight bold)
+        ("CANC" :foreground "deep sky blue" :weight bold)))
 
 (defun nd/filter-list-prefix (prefix str-list)
   "Return a subset of tags-list whose first character matches prefix.'
