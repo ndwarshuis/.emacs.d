@@ -113,7 +113,6 @@ These are commands that should work in any mode. Make the assumption that functi
 #+BEGIN_SRC emacs-lisp
   (global-set-key (kbd "<f1>") 'org-agenda)
   (global-set-key (kbd "<f2>") 'org-capture)
-  (global-set-key (kbd "<f3>") 'org-iswitchb)
 #+END_SRC
 * printing
 ** 
@@ -406,6 +405,7 @@ event of an error or nonlocal exit."
 (setq org-startup-indented t)
 (delight 'org-indent-mode)
 (setq org-directory "~/Org")
+(run-at-time "00:59" 3600 'org-save-all-org-buffers)
 #+END_SRC
 ** ui
 *** bullets
@@ -804,154 +804,154 @@ Returns t if heading has certain relationship to other headings
 #+END_SRC
 **** project level testing
 #+BEGIN_SRC emacs-lisp
-  (defconst nd/project-invalid-todostates
-    '("WAIT" "NEXT")
-    "projects cannot have these todostates") 
+(defconst nd/project-invalid-todostates
+  '("WAIT" "NEXT")
+  "projects cannot have these todostates") 
 
-  (defconst nd/project-statuscodes
-    '(:archivable
-      :complete
-      :stuck
-      :held
-      :waiting
-      :active
-      :done-incomplete
-      :undone-complete
-      :invalid-todostate
-      :scheduled-project)
-    "list of statuscodes to be used in assessing projects
-  Note they are listed in order of priority (eg items further
-  down the list override higher items")
+(defconst nd/project-statuscodes
+  '(:archivable
+    :complete
+    :stuck
+    :held
+    :waiting
+    :active
+    :done-incomplete
+    :undone-complete
+    :invalid-todostate
+    :scheduled-project)
+  "list of statuscodes to be used in assessing projects
+Note they are listed in order of priority (eg items further
+down the list override higher items")
 
-  (defmacro nd/compare-statuscodes (operator statuscode-1 statuscode-2)
-    "syntactic suger to compare statuscodes by position"
-    `(,operator (position ,statuscode-1 nd/project-statuscodes)
-       (position ,statuscode-2 nd/project-statuscodes)))
-    
-  (defun nd/status< (statuscode-1 statuscode-2)
-    "returns t is statuscode-1 is lesser priority than statuscode-2"
-    (nd/compare-statuscodes < statuscode-1 statuscode-2))
+(defmacro nd/compare-statuscodes (operator statuscode-1 statuscode-2)
+  "syntactic suger to compare statuscodes by position"
+  `(,operator (position ,statuscode-1 nd/project-statuscodes)
+     (position ,statuscode-2 nd/project-statuscodes)))
+  
+(defun nd/status< (statuscode-1 statuscode-2)
+  "returns t is statuscode-1 is lesser priority than statuscode-2"
+  (nd/compare-statuscodes < statuscode-1 statuscode-2))
 
-  (defun nd/status> (statuscode-1 statuscode-2)
-    "returns t is statuscode-1 is greater priority than statuscode-2"
-    (nd/compare-statuscodes > statuscode-1 statuscode-2))
+(defun nd/status> (statuscode-1 statuscode-2)
+  "returns t is statuscode-1 is greater priority than statuscode-2"
+  (nd/compare-statuscodes > statuscode-1 statuscode-2))
 
-  (defun nd/status= (statuscode-1 statuscode-2)
-    "returns t is statuscode-1 is equal priority than statuscode-2"
-    (nd/compare-statuscodes = statuscode-1 statuscode-2))
+(defun nd/status= (statuscode-1 statuscode-2)
+  "returns t is statuscode-1 is equal priority than statuscode-2"
+  (nd/compare-statuscodes = statuscode-1 statuscode-2))
 
-  (defun nd/descend-into-project ()
-    "returns statuscode of project and recursively descends into subprojects"
-    (let ((project-state :archivable)
-          (previous-point))
-      (save-excursion
+(defun nd/descend-into-project ()
+  "returns statuscode of project and recursively descends into subprojects"
+  (let ((project-state :archivable)
+        (previous-point))
+    (save-excursion
+      (setq previous-point (point))
+      (outline-next-heading)
+      ;; loop breaks if active or higher priority
+      ;; note that all invalid statuscodes are higher
+      ;; thus this function will only return the first
+      ;; encountered error
+      (while (and (nd/status< project-state :active)
+                  (> (point) previous-point))
+        (let ((keyword (nd/is-todoitem-p)))
+          (if keyword
+              (let ((cur-state
+                     (if (nd/heading-has-children 'nd/is-todoitem-p)
+                         (cond ((member keyword nd/project-invalid-todostates) :invalid-todostate)
+                               ((nd/is-scheduled-heading-p) :scheduled-project)
+                               ((equal keyword "CANC") (if (nd/is-archivable-heading-p)
+                                                                :archivable
+                                                              :complete))
+                               ((equal keyword "HOLD") :held)
+                               (t (let ((child-statuscode (nd/descend-into-project)))
+                                    (cond ((equal keyword "TODO")
+                                           (if (nd/status> child-statuscode :complete)
+                                               child-statuscode
+                                             :undone-complete))
+                                          (t (case child-statuscode
+                                               (:complete :complete)
+                                               (:archivable (if (nd/is-archivable-heading-p)
+                                                                :archivable
+                                                              :complete))
+                                               (t (if (nd/status= child-statuscode :complete)
+                                                      :complete
+                                                    :done-incomplete))))))))
+                       (cond ((equal keyword "HOLD") :held)
+                             ((equal keyword "WAIT") :waiting)
+                             ((equal keyword "NEXT") :active)
+                             ((and (equal keyword "TODO") (nd/is-scheduled-heading-p)) :active)
+                             ((equal keyword "TODO") :stuck)
+                             ((nd/is-archivable-heading-p) :archivable)
+                             (t :complete)))))
+                (if (nd/status> cur-state project-state)
+                    (setq project-state cur-state)))))
         (setq previous-point (point))
-        (outline-next-heading)
-        ;; loop breaks if active or higher priority
-        ;; note that all invalid statuscodes are higher
-        ;; thus this function will only return the first
-        ;; encountered error
-        (while (and (nd/status< project-state :active)
-                    (> (point) previous-point))
-          (let ((keyword (nd/is-todoitem-p)))
-            (if keyword
-                (let ((cur-state
-                       (if (nd/heading-has-children 'nd/is-todoitem-p)
-                           (cond ((member keyword nd/project-invalid-todostates) :invalid-todostate)
-                                 ((nd/is-scheduled-heading-p) :scheduled-project)
-                                 ((equal keyword "CANC") (if (nd/is-archivable-heading-p)
-                                                                  :archivable
-                                                                :complete))
-                                 ((equal keyword "HOLD") :held)
-                                 (t (let ((child-statuscode (nd/descend-into-project)))
-                                      (cond ((equal keyword "TODO")
-                                             (if (nd/status> child-statuscode :complete)
-                                                 child-statuscode
-                                               :undone-complete))
-                                            (t (case child-statuscode
-                                                 (:complete :complete)
-                                                 (:archivable (if (nd/is-archivable-heading-p)
-                                                                  :archivable
-                                                                :complete))
-                                                 (t (if (nd/status= child-statuscode :complete)
-                                                        :complete
-                                                      :done-incomplete))))))))
-                         (cond ((equal keyword "HOLD") :held)
-                               ((equal keyword "WAIT") :waiting)
-                               ((equal keyword "NEXT") :active)
-                               ((and (equal keyword "TODO") (nd/is-scheduled-heading-p)) :active)
-                               ((equal keyword "TODO") :stuck)
-                               ((nd/is-archivable-heading-p) :archivable)
-                               (t :complete)))))
-                  (if (nd/status> cur-state project-state)
-                      (setq project-state cur-state)))))
-          (setq previous-point (point))
-          (org-forward-heading-same-level 1 t)))
-      project-state))
+        (org-forward-heading-same-level 1 t)))
+    project-state))
 
-  (defmacro nd/is-project-keyword-status-p (test-keyword operator statuscode)
-    "tests if a project has toplevel heading of top-keyword and
-  child status equal to status code and returns keyword if
-  both are true"
-    `(and
-      (equal ,keyword ,test-keyword)
-      (nd/compare-statuscodes ,operator (nd/descend-into-project) ,statuscode)))
+(defmacro nd/is-project-keyword-status-p (test-keyword operator statuscode)
+  "tests if a project has toplevel heading of top-keyword and
+child status equal to status code and returns keyword if
+both are true"
+  `(and
+    (equal ,keyword ,test-keyword)
+    (nd/compare-statuscodes ,operator (nd/descend-into-project) ,statuscode)))
 
-  (defun nd/is-project-status-p (statuscode)
-    "Returns t if project matches statuscode given. 
-  Note that this assumes the headline being tested is a valid project"
-    (case statuscode
-      ;; projects closed more than 30 days ago
-      ;; note CANC overrides all subtasks/projects
-      (:archivable
-       (if (nd/is-archivable-heading-p)
-           (or (equal keyword "CANC") 
-               (nd/is-project-keyword-status-p "DONE" = :archivable))))
-      
-      ;; projects closed less than 30 days ago
-      ;; note CANC overrides all subtasks/projects
-      (:complete
-       (if (not (nd/is-archivable-heading-p))
-           (or (equal keyword "CANC")
-               (nd/is-project-keyword-status-p "DONE" = :complete))))
-      
-      ;; projects with no waiting, held, or active components
-      (:stuck
-       (nd/is-project-keyword-status-p "TODO" = :stuck))
-      
-      ;; held projects
-      ;; note toplevel HOLD overrides all subtasks/projects
-      (:held
-       (or (equal keyword "HOLD")
-           (nd/is-project-keyword-status-p "TODO" = :held)))
-      
-      ;; projects with at least one waiting component
-      (:waiting
-       (nd/is-project-keyword-status-p "TODO" = :waiting))
-      
-      ;; projects with at least one active component
-      (:active
-       (nd/is-project-keyword-status-p "TODO" = :active))
-      
-      ;; projects marked DONE but still have undone subtasks
-      (:done-incomplete
-       (nd/is-project-keyword-status-p "DONE" > :complete))
-      
-      ;; projects marked TODO but all subtasks are done
-      (:undone-complete
-       (nd/is-project-keyword-status-p "TODO" < :stuck))
-      
-      ;; projects with invalid todo keywords
-      (:invalid-todostate
-       (member keyword nd/project-invalid-todostates))
-      
-      ;; projects with scheduled heading (only subtasks should be scheduled)
-      (:scheduled-project
-       (nd/is-scheduled-heading-p))
+(defun nd/is-project-status-p (statuscode)
+  "Returns t if project matches statuscode given. 
+Note that this assumes the headline being tested is a valid project"
+  (case statuscode
+    ;; projects closed more than 30 days ago
+    ;; note CANC overrides all subtasks/projects
+    (:archivable
+     (if (nd/is-archivable-heading-p)
+         (or (equal keyword "CANC") 
+             (nd/is-project-keyword-status-p "DONE" = :archivable))))
+    
+    ;; projects closed less than 30 days ago
+    ;; note CANC overrides all subtasks/projects
+    (:complete
+     (if (not (nd/is-archivable-heading-p))
+         (or (equal keyword "CANC")
+             (nd/is-project-keyword-status-p "DONE" = :complete))))
+    
+    ;; projects with no waiting, held, or active components
+    (:stuck
+     (nd/is-project-keyword-status-p "TODO" = :stuck))
+    
+    ;; held projects
+    ;; note toplevel HOLD overrides all subtasks/projects
+    (:held
+     (or (equal keyword "HOLD")
+         (nd/is-project-keyword-status-p "TODO" = :held)))
+    
+    ;; projects with at least one waiting component
+    (:waiting
+     (nd/is-project-keyword-status-p "TODO" = :waiting))
+    
+    ;; projects with at least one active component
+    (:active
+     (nd/is-project-keyword-status-p "TODO" = :active))
+    
+    ;; projects marked DONE but still have undone subtasks
+    (:done-incomplete
+     (nd/is-project-keyword-status-p "DONE" > :complete))
+    
+    ;; projects marked TODO but all subtasks are done
+    (:undone-complete
+     (nd/is-project-keyword-status-p "TODO" < :stuck))
+    
+    ;; projects with invalid todo keywords
+    (:invalid-todostate
+     (member keyword nd/project-invalid-todostates))
+    
+    ;; projects with scheduled heading (only subtasks should be scheduled)
+    (:scheduled-project
+     (nd/is-scheduled-heading-p))
 
-      ;; error if not known
-      (t (if (not (member statuscode nd/project-statuscodes))
-             (error "unknown statuscode")))))
+    ;; error if not known
+    (t (if (not (member statuscode nd/project-statuscodes))
+           (error "unknown statuscode")))))
 #+END_SRC
 *** skip functions
 These are the primary means we use to sort through tasks. Note that we could do this with
@@ -1213,123 +1213,124 @@ Note that this is used for "normal" projects as well as iterators
 #+END_SRC
 *** custom commands
 #+BEGIN_SRC emacs-lisp
-  (setq org-agenda-tags-todo-honor-ignore-options t)
+(setq org-agenda-tags-todo-honor-ignore-options t)
 
-  (setq org-agenda-prefix-format
-        '((agenda . "  %-12:c%-7:e%?-12t% s")
-          (timeline . "  % s")
-          (todo . "  %-12:c")
-          (tags . "  %-12:c%-7:e")
-          (search . "  %-12:c")))
+(setq org-agenda-prefix-format
+      '((agenda . "  %-12:c %-5:e %?-12t% s")
+        (timeline . "  % s")
+        (todo . "  %-12:c")
+        (tags . "  %-12:c %-5:e ")
+        (search . "  %-12:c")))
 
-  (defconst nd/org-agenda-todo-sort-order '("NEXT" "WAIT" "HOLD" "TODO"))
+(defconst nd/org-agenda-todo-sort-order '("NEXT" "WAIT" "HOLD" "TODO"))
 
-  (setq org-agenda-cmp-user-defined
-        '(lambda (a b)
-           (let ((pa (- (length (member
-                                 (get-text-property 1 'todo-state a)
-                                 nd/org-agenda-todo-sort-order))))
-                 (pb (- (length (member
-                                 (get-text-property 1 'todo-state b)
-                                 nd/org-agenda-todo-sort-order)))))
-             (cond ((or (null pa) (null pb)) nil)
-                   ((> pa pb) +1)
-                   ((< pa pb) -1)))))
+(setq org-agenda-cmp-user-defined
+      '(lambda (a b)
+         (let ((pa (- (length (member
+                               (get-text-property 1 'todo-state a)
+                               nd/org-agenda-todo-sort-order))))
+               (pb (- (length (member
+                               (get-text-property 1 'todo-state b)
+                               nd/org-agenda-todo-sort-order)))))
+           (cond ((or (null pa) (null pb)) nil)
+                 ((> pa pb) +1)
+                 ((< pa pb) -1)))))
 
-  (defun nd/agenda-base-header-command (match header skip-fun)
-    `(tags
-      ,match
-      ((org-agenda-overriding-header ,header)
-       (org-agenda-skip-function ,skip-fun)
-       (org-agenda-sorting-strategy '(category-keep)))))
+(defun nd/agenda-base-header-command (match header skip-fun)
+  `(tags
+    ,match
+    ((org-agenda-overriding-header ,header)
+     (org-agenda-skip-function ,skip-fun)
+     (org-agenda-sorting-strategy '(category-keep)))))
 
-  (defun nd/agenda-base-task-command (match header skip-fun &optional sort)
-    (or sort (setq sort ''(category-keep)))
-    `(tags-todo
-      ,match
-      ((org-agenda-overriding-header ,header)
-       (org-agenda-skip-function ,skip-fun)
-       (org-agenda-todo-ignore-with-date t)
-       (org-agenda-sorting-strategy ,sort))))
+(defun nd/agenda-base-task-command (match header skip-fun &optional sort)
+  (or sort (setq sort ''(category-keep)))
+  `(tags-todo
+    ,match
+    ((org-agenda-overriding-header ,header)
+     (org-agenda-skip-function ,skip-fun)
+     (org-agenda-todo-ignore-with-date t)
+     (org-agenda-sorting-strategy ,sort))))
 
-  (defun nd/agenda-base-project-command (match header statuscode)
-    `(tags
-      ,match
-      ((org-agenda-overriding-header
-        (concat (and nd/agenda-limit-project-toplevel "Toplevel ") ,header))
-       (org-agenda-skip-function '(nd/skip-projects-without-statuscode ,statuscode))
-       (org-agenda-sorting-strategy '(category-keep)))))
+(defun nd/agenda-base-project-command (match header statuscode)
+  `(tags
+    ,match
+    ((org-agenda-overriding-header
+      (concat (and nd/agenda-limit-project-toplevel "Toplevel ") ,header))
+     (org-agenda-skip-function '(nd/skip-projects-without-statuscode ,statuscode))
+     (org-agenda-sorting-strategy '(category-keep)))))
 
-  (let ((task-match "-NA-REFILE-%inc-PARENT_TYPE=\"periodical\"/")
-        (project-match "-NA-REFILE-%inc-PARENT_TYPE=\"periodical\"-PARENT_TYPE=\"iterator\"/")
-        (periodical-match "-NA-REFILE+PARENT_TYPE=\"periodical\"-PARENT_TYPE=\"iterator\"/")
-        (iterator-match "-NA-REFILE-PARENT_TYPE=\"periodical\"+PARENT_TYPE=\"iterator\"/"))
-    (setq org-agenda-custom-commands
-          `(("t"
-             "Task View"
-             ((agenda "" (org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc"))))
-              ,(nd/agenda-base-task-command project-match
-                                            "Project Tasks"
-                                            ''nd/skip-non-project-tasks
-                                            ''(user-defined-up category-keep))
-              ,(nd/agenda-base-task-command project-match
-                                            "Atomic Tasks"
-                                            ''nd/skip-non-atomic-tasks)))
-            ("p"
-             "Project View"
-             (,(nd/agenda-base-project-command project-match "Stuck Projects" :stuck)
-              ,(nd/agenda-base-project-command project-match "Waiting Projects" :waiting)
-              ,(nd/agenda-base-project-command project-match "Active Projects" :active)
-              ,(nd/agenda-base-project-command project-match "Held Projects" :held)))
-            ("P"
-             "Periodical View"
-             (,(nd/agenda-base-header-command periodical-match "Empty Periodicals" ''nd/skip-non-empty-periodical-parent-headers)
-              ,(nd/agenda-base-header-command periodical-match "Stale Periodicals" ''nd/skip-non-stale-periodical-parent-headers)
-              ,(nd/agenda-base-header-command periodical-match "Fresh Periodicals" ''nd/skip-non-fresh-periodical-parent-headers)))
-            ("i"
-             "Iterator View"
-             (,(nd/agenda-base-project-command iterator-match "Stuck Iterators (require NEXT or schedule)" :stuck)
-              ,(nd/agenda-base-project-command iterator-match "Empty Iterators (require new tasks)" :undone-complete)
-              ,(nd/agenda-base-task-command iterator-match "Uninitialized Iterators (no tasks added)" ''nd/skip-non-iterator-atomic-tasks)
-              ,(nd/agenda-base-project-command iterator-match "Active Iterators" :active)
-              ,(nd/agenda-base-project-command iterator-match "Waiting Iterators" :waiting)
-              ,(nd/agenda-base-project-command iterator-match "Held Iterators" :held)))
-            ("I"
-             "Incubator View"
-             ((agenda "" ((org-agenda-span 7)
-                          (org-agenda-time-grid nil)
-                          (org-agenda-entry-types '(:deadline :timestamp))))
-              ,(nd/agenda-base-task-command "-NA-REFILE+%inc/" "Incubated Tasks" ''nd/skip-non-atomic-tasks)
-              ,(nd/agenda-base-project-command "-NA-REFILE+%inc/" "Incubated Projects" :held)))
-            ("r"
-             "Refile and Critical Errors"
-             ((tags "REFILE"
-                    ((org-agenda-overriding-header "Tasks to Refile"))
-                    (org-tags-match-list-sublevels nil))
-              ,(nd/agenda-base-task-command task-match "Discontinous Project" ''nd/skip-non-discontinuous-project-tasks)
-              ,(nd/agenda-base-project-command project-match "Invalid Todostate" :invalid-todostate)))
-            ("e"
-             "Non-critical Errors"
-             (,(nd/agenda-base-header-command task-match "Undone Closed" ''nd/skip-non-undone-closed-todoitems)
-              ,(nd/agenda-base-header-command task-match "Done Unclosed" ''nd/skip-non-done-unclosed-todoitems)
-              ,(nd/agenda-base-project-command project-match "Undone Completed" :undone-complete)
-              ,(nd/agenda-base-project-command project-match "Done Incompleted" :done-incomplete)))
-            ("A"
-             "Archivable Tasks and Projects"
-             (,(nd/agenda-base-header-command task-match "Archivable Atomic Tasks" ''nd/skip-non-archivable-atomic-tasks)
-              ,(nd/agenda-base-header-command task-match "Stale Tasks" ''nd/skip-non-stale-headings)
-              ,(nd/agenda-base-project-command iterator-match "Archivable Iterators" :archivable)
-              ,(nd/agenda-base-project-command project-match "Archivable Projects" :archivable))))))
+(let ((task-match "-NA-REFILE-%inc-PARENT_TYPE=\"periodical\"/")
+      (project-match "-NA-REFILE-%inc-PARENT_TYPE=\"periodical\"-PARENT_TYPE=\"iterator\"/")
+      (periodical-match "-NA-REFILE+PARENT_TYPE=\"periodical\"-PARENT_TYPE=\"iterator\"/")
+      (iterator-match "-NA-REFILE-PARENT_TYPE=\"periodical\"+PARENT_TYPE=\"iterator\"/"))
+  (setq org-agenda-custom-commands
+        `(("t"
+           "Task View"
+           ((agenda "" (org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc"))))
+            ,(nd/agenda-base-task-command project-match
+                                          "Project Tasks"
+                                          ''nd/skip-non-project-tasks
+                                          ''(user-defined-up category-keep))
+            ,(nd/agenda-base-task-command project-match
+                                          "Atomic Tasks"
+                                          ''nd/skip-non-atomic-tasks)))
+          ("p"
+           "Project View"
+           (,(nd/agenda-base-project-command project-match "Stuck Projects" :stuck)
+            ,(nd/agenda-base-project-command project-match "Waiting Projects" :waiting)
+            ,(nd/agenda-base-project-command project-match "Active Projects" :active)
+            ,(nd/agenda-base-project-command project-match "Held Projects" :held)))
+          ("P"
+           "Periodical View"
+           (,(nd/agenda-base-header-command periodical-match "Empty Periodicals" ''nd/skip-non-empty-periodical-parent-headers)
+            ,(nd/agenda-base-header-command periodical-match "Stale Periodicals" ''nd/skip-non-stale-periodical-parent-headers)
+            ,(nd/agenda-base-header-command periodical-match "Fresh Periodicals" ''nd/skip-non-fresh-periodical-parent-headers)))
+          ("i"
+           "Iterator View"
+           (,(nd/agenda-base-project-command iterator-match "Stuck Iterators (require NEXT or schedule)" :stuck)
+            ,(nd/agenda-base-project-command iterator-match "Empty Iterators (require new tasks)" :undone-complete)
+            ,(nd/agenda-base-task-command iterator-match "Uninitialized Iterators (no tasks added)" ''nd/skip-non-iterator-atomic-tasks)
+            ,(nd/agenda-base-project-command iterator-match "Active Iterators" :active)
+            ,(nd/agenda-base-project-command iterator-match "Waiting Iterators" :waiting)
+            ,(nd/agenda-base-project-command iterator-match "Held Iterators" :held)))
+          ("I"
+           "Incubator View"
+           ((agenda "" ((org-agenda-span 7)
+                        (org-agenda-time-grid nil)
+                        (org-agenda-entry-types '(:deadline :timestamp))))
+            ,(nd/agenda-base-task-command "-NA-REFILE+%inc/" "Incubated Tasks" ''nd/skip-non-atomic-tasks)
+            ,(nd/agenda-base-project-command "-NA-REFILE+%inc/" "Incubated Projects" :held)))
+          ("r"
+           "Refile and Critical Errors"
+           ((tags "REFILE"
+                  ((org-agenda-overriding-header "Tasks to Refile"))
+                  (org-tags-match-list-sublevels nil))
+            ,(nd/agenda-base-task-command task-match "Discontinous Project" ''nd/skip-non-discontinuous-project-tasks)
+            ,(nd/agenda-base-project-command project-match "Invalid Todostate" :invalid-todostate)))
+          ("e"
+           "Non-critical Errors"
+           (,(nd/agenda-base-header-command task-match "Undone Closed" ''nd/skip-non-undone-closed-todoitems)
+            ,(nd/agenda-base-header-command task-match "Done Unclosed" ''nd/skip-non-done-unclosed-todoitems)
+            ,(nd/agenda-base-project-command task-match "Undone Completed" :undone-complete)
+            ,(nd/agenda-base-project-command task-match "Done Incompleted" :done-incomplete)))
+          ("A"
+           "Archivable Tasks and Projects"
+           (,(nd/agenda-base-header-command task-match "Archivable Atomic Tasks" ''nd/skip-non-archivable-atomic-tasks)
+            ,(nd/agenda-base-header-command task-match "Stale Tasks" ''nd/skip-non-stale-headings)
+            ,(nd/agenda-base-project-command iterator-match "Archivable Iterators" :archivable)
+            ,(nd/agenda-base-project-command project-match "Archivable Projects" :archivable))))))
 
 #+END_SRC
 *** views
 **** calendar display
 #+BEGIN_SRC emacs-lisp
-  (setq org-agenda-start-on-weekday 0)
-  (setq org-agenda-span 'day)
-  (setq org-agenda-time-grid (quote ((daily today remove-match)
-                                     #("----------------" 0 16 (org-heading t))
-                                     (0900 1100 1300 1500 1700))))
+(setq org-agenda-start-on-weekday 0)
+(setq org-agenda-span 'day)
+(setq org-agenda-current-time-string "### -- NOW -- ###")
+(setq org-agenda-time-grid '((daily today remove-match)
+							 (0800 1000 1200 1200 1400 1600)
+                             "......" "-----------------"))
 #+End_src
 **** right align tags
 the agenda does not do this by default...it's annoying

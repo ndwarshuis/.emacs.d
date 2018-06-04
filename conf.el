@@ -1,4 +1,3 @@
-
 (setq inhibit-startup-screen t)
 
 (tool-bar-mode -1)
@@ -70,7 +69,6 @@
 
 (global-set-key (kbd "<f1>") 'org-agenda)
 (global-set-key (kbd "<f2>") 'org-capture)
-(global-set-key (kbd "<f3>") 'org-iswitchb)
 
 (use-package delight
   :ensure t)
@@ -263,12 +261,13 @@ event of an error or nonlocal exit."
 (load "ess-site")
 (setq ess-history-file "session.Rhistory")
 (setq ess-history-directory
-      (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+	  (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
 (setq org-log-done t)
 (setq org-startup-indented t)
 (delight 'org-indent-mode)
 (setq org-directory "~/Org")
+(run-at-time "00:59" 3600 'org-save-all-org-buffers)
 
 (use-package org-bullets
   :ensure t
@@ -932,10 +931,10 @@ tasks with context tags"
 (setq org-agenda-tags-todo-honor-ignore-options t)
 
 (setq org-agenda-prefix-format
-      '((agenda . "  %-12:c%-7:e%?-12t% s")
+      '((agenda . "  %-12:c %-5:e %?-12t% s")
         (timeline . "  % s")
         (todo . "  %-12:c")
-        (tags . "  %-12:c%-7:e")
+        (tags . "  %-12:c %-5:e ")
         (search . "  %-12:c")))
 
 (defconst nd/org-agenda-todo-sort-order '("NEXT" "WAIT" "HOLD" "TODO"))
@@ -1028,8 +1027,8 @@ tasks with context tags"
            "Non-critical Errors"
            (,(nd/agenda-base-header-command task-match "Undone Closed" ''nd/skip-non-undone-closed-todoitems)
             ,(nd/agenda-base-header-command task-match "Done Unclosed" ''nd/skip-non-done-unclosed-todoitems)
-            ,(nd/agenda-base-project-command project-match "Undone Completed" :undone-complete)
-            ,(nd/agenda-base-project-command project-match "Done Incompleted" :done-incomplete)))
+            ,(nd/agenda-base-project-command task-match "Undone Completed" :undone-complete)
+            ,(nd/agenda-base-project-command task-match "Done Incompleted" :done-incomplete)))
           ("A"
            "Archivable Tasks and Projects"
            (,(nd/agenda-base-header-command task-match "Archivable Atomic Tasks" ''nd/skip-non-archivable-atomic-tasks)
@@ -1039,9 +1038,10 @@ tasks with context tags"
 
 (setq org-agenda-start-on-weekday 0)
 (setq org-agenda-span 'day)
-(setq org-agenda-time-grid (quote ((daily today remove-match)
-                                   #("----------------" 0 16 (org-heading t))
-                                   (0900 1100 1300 1500 1700))))
+(setq org-agenda-current-time-string "### -- NOW -- ###")
+(setq org-agenda-time-grid '((daily today remove-match)
+							 (0800 1000 1200 1200 1400 1600)
+                             "......" "-----------------"))
 
 (add-hook 'org-finalize-agenda-hook 'place-agenda-tags)
 (defun place-agenda-tags ()
