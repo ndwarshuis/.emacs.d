@@ -447,8 +447,8 @@ event of an error or nonlocal exit."
                                  (org-agenda-files :maxlevel . 9))))
 
 (setq org-refile-use-outline-path t)
-(setq org-outline-path-complete-in-steps nil)
-(setq org-completion-use-ido t)
+(setq org-outline-path-complete-in-steps t)
+;; (setq org-completion-use-ido t)
 
 (setq org-refile-allow-creating-parent-nodes 'confirm)
 
@@ -895,6 +895,8 @@ tags that do not have tags in neg-tags-list"
                 (nd/skip-heading)))
         (nd/skip-heading)))))
 
+
+
 (defvar nd/agenda-limit-project-toplevel t
   "used to filter projects by all levels or top-level only")
 
@@ -1092,13 +1094,20 @@ and reverts all todo keywords to TODO"
                     "Date shift per clone (e.g. +1w, empty to copy unchanged): "))))
     (condition-case err
         (progn
-          (org-clone-subtree-with-time-shift n shift)
           (save-excursion
-            (dotimes (i n)
-             (org-forward-heading-same-level 1 t)
-             (org-reset-checkbox-state-subtree)
-             (nd/mark-subtree-keyword "TODO")
-             (org-cycle))))
+			;; clone once and reset
+			(org-clone-subtree-with-time-shift 1 shift)
+            (org-forward-heading-same-level 1 t)
+            (org-reset-checkbox-state-subtree)
+            (nd/mark-subtree-keyword "TODO")
+            (org-cycle)
+			;; clone reset tree again if we need more than one clone
+			(if (> n 1)
+				(let ((additional-trees (- n 1)))
+				  (org-clone-subtree-with-time-shift additional-trees shift)
+				  (dotimes (i additional-trees)
+					(org-forward-heading-same-level 1 t)
+					(org-cycle))))))
       (error (message "%s" (error-message-string err))))))
 
 (use-package calfw-org
