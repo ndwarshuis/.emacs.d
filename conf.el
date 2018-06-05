@@ -263,11 +263,13 @@ event of an error or nonlocal exit."
 (setq ess-history-directory
 	  (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
 
-(setq org-log-done t)
 (setq org-startup-indented t)
 (delight 'org-indent-mode)
 (setq org-directory "~/Org")
 (run-at-time "00:59" 3600 'org-save-all-org-buffers)
+
+(setq org-log-into-drawer "LOGBOOK")
+(setq org-log-done t)
 
 (use-package org-bullets
   :ensure t
@@ -393,12 +395,12 @@ event of an error or nonlocal exit."
         ("@errand" . ?e)
         ("@home" . ?h)
         ("@work" . ?w)
-        ("@travel" . ?t)
+        ("@travel" . ?r)
         (:endgroup)
         
-        ("#laptop" . ?L)
-        ("#tcult" . ?T)
-        ("#phone" . ?O)
+        ("#laptop" . ?l)
+        ("#tcult" . ?t)
+        ("#phone" . ?p)
         
         ("%note" . ?n)
         ("%inc" . ?i)
@@ -919,7 +921,7 @@ tags that do not have tags in neg-tags-list"
   (message msg))
 
 (defun nd/org-agenda-filter-non-context ()
-"A quick and dirty agenda filter that removes all
+  "A quick and dirty agenda filter that removes all
 tasks with context tags"
   (interactive)
   (let* ((tags-list (mapcar #'car org-tag-alist))
@@ -953,14 +955,14 @@ tasks with context tags"
                  ((> pa pb) +1)
                  ((< pa pb) -1)))))
 
-(defun nd/agenda-base-header-command (match header skip-fun)
+(defun nd/agenda-base-header-cmd (match header skip-fun)
   `(tags
     ,match
     ((org-agenda-overriding-header ,header)
      (org-agenda-skip-function ,skip-fun)
      (org-agenda-sorting-strategy '(category-keep)))))
 
-(defun nd/agenda-base-task-command (match header skip-fun &optional sort)
+(defun nd/agenda-base-task-cmd (match header skip-fun &optional sort)
   (or sort (setq sort ''(category-keep)))
   `(tags-todo
     ,match
@@ -969,74 +971,135 @@ tasks with context tags"
      (org-agenda-todo-ignore-with-date t)
      (org-agenda-sorting-strategy ,sort))))
 
-(defun nd/agenda-base-project-command (match header statuscode)
-  `(tags
+(defun nd/agenda-base-proj-cmd (match header statuscode)
+  `(tags-todo
     ,match
     ((org-agenda-overriding-header
       (concat (and nd/agenda-limit-project-toplevel "Toplevel ") ,header))
      (org-agenda-skip-function '(nd/skip-projects-without-statuscode ,statuscode))
      (org-agenda-sorting-strategy '(category-keep)))))
 
-(let ((task-match "-NA-REFILE-%inc-PARENT_TYPE=\"periodical\"/")
-      (project-match "-NA-REFILE-%inc-PARENT_TYPE=\"periodical\"-PARENT_TYPE=\"iterator\"/")
-      (periodical-match "-NA-REFILE+PARENT_TYPE=\"periodical\"-PARENT_TYPE=\"iterator\"/")
-      (iterator-match "-NA-REFILE-PARENT_TYPE=\"periodical\"+PARENT_TYPE=\"iterator\"/"))
+(let* ((actionable "-NA-REFILE-%inc")
+	   (periodical "PARENT_TYPE=\"periodical\"")
+	   (iterator "PARENT_TYPE=\"iterator\"")
+	   (task-match (concat actionable "-" periodical "/!"))
+       (act-no-rep-match (concat actionable "-" periodical "-" iterator "/!"))
+       (peri-match (concat actionable "+" periodical "-" iterator "/!"))
+       (iter-match (concat actionable "-" periodical "+" iterator "/!")))
+
   (setq org-agenda-custom-commands
         `(("t"
            "Task View"
            ((agenda "" (org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc"))))
-            ,(nd/agenda-base-task-command project-match
+            ,(nd/agenda-base-task-cmd act-no-rep-match
                                           "Project Tasks"
                                           ''nd/skip-non-project-tasks
                                           ''(user-defined-up category-keep))
-            ,(nd/agenda-base-task-command project-match
+            ,(nd/agenda-base-task-cmd act-no-rep-match
                                           "Atomic Tasks"
                                           ''nd/skip-non-atomic-tasks)))
+
           ("p"
            "Project View"
-           (,(nd/agenda-base-project-command project-match "Stuck Projects" :stuck)
-            ,(nd/agenda-base-project-command project-match "Waiting Projects" :waiting)
-            ,(nd/agenda-base-project-command project-match "Active Projects" :active)
-            ,(nd/agenda-base-project-command project-match "Held Projects" :held)))
+           (,(nd/agenda-base-proj-cmd act-no-rep-match
+									  "Stuck Projects"
+									  :stuck)
+            ,(nd/agenda-base-proj-cmd act-no-rep-match
+									  "Waiting Projects"
+									  :waiting)
+            ,(nd/agenda-base-proj-cmd act-no-rep-match
+									  "Active Projects"
+									  :active)
+            ,(nd/agenda-base-proj-cmd act-no-rep-match
+									  "Held Projects"
+									  :held)))
+		  
           ("P"
            "Periodical View"
-           (,(nd/agenda-base-header-command periodical-match "Empty Periodicals" ''nd/skip-non-empty-periodical-parent-headers)
-            ,(nd/agenda-base-header-command periodical-match "Stale Periodicals" ''nd/skip-non-stale-periodical-parent-headers)
-            ,(nd/agenda-base-header-command periodical-match "Fresh Periodicals" ''nd/skip-non-fresh-periodical-parent-headers)))
+           (,(nd/agenda-base-header-cmd peri-match
+										"Empty Periodicals"
+										''nd/skip-non-empty-periodical-parent-headers)
+            ,(nd/agenda-base-header-cmd peri-match
+										"Stale Periodicals"
+										''nd/skip-non-stale-periodical-parent-headers)
+            ,(nd/agenda-base-header-cmd peri-match
+										"Fresh Periodicals"
+										''nd/skip-non-fresh-periodical-parent-headers)))
+
           ("i"
            "Iterator View"
-           (,(nd/agenda-base-project-command iterator-match "Stuck Iterators (require NEXT or schedule)" :stuck)
-            ,(nd/agenda-base-project-command iterator-match "Empty Iterators (require new tasks)" :undone-complete)
-            ,(nd/agenda-base-task-command iterator-match "Uninitialized Iterators (no tasks added)" ''nd/skip-non-iterator-atomic-tasks)
-            ,(nd/agenda-base-project-command iterator-match "Active Iterators" :active)
-            ,(nd/agenda-base-project-command iterator-match "Waiting Iterators" :waiting)
-            ,(nd/agenda-base-project-command iterator-match "Held Iterators" :held)))
+           (,(nd/agenda-base-proj-cmd iter-match
+									  "Stuck Iterators (require NEXT or schedule)"
+									  :stuck)
+            ,(nd/agenda-base-proj-cmd iter-match
+									  "Empty Iterators (require new tasks)"
+									  :undone-complete)
+            ,(nd/agenda-base-task-cmd iter-match
+									  "Uninitialized Iterators (no tasks added)"
+									  ''nd/skip-non-iterator-atomic-tasks)
+            ,(nd/agenda-base-proj-cmd iter-match
+									  "Active Iterators"
+									  :active)
+            ,(nd/agenda-base-proj-cmd iter-match
+									  "Waiting Iterators"
+									  :waiting)
+            ,(nd/agenda-base-proj-cmd iter-match
+									  "Held Iterators"
+									  :held)))
+		  
           ("I"
            "Incubator View"
            ((agenda "" ((org-agenda-span 7)
                         (org-agenda-time-grid nil)
                         (org-agenda-entry-types '(:deadline :timestamp))))
-            ,(nd/agenda-base-task-command "-NA-REFILE+%inc/" "Incubated Tasks" ''nd/skip-non-atomic-tasks)
-            ,(nd/agenda-base-project-command "-NA-REFILE+%inc/" "Incubated Projects" :held)))
+            ,(nd/agenda-base-task-cmd "-NA-REFILE+%inc/!"
+									  "Incubated Tasks"
+									  ''nd/skip-non-atomic-tasks)
+            ,(nd/agenda-base-proj-cmd "-NA-REFILE+%inc/!"
+									  "Incubated Projects"
+									  :held)))
+
           ("r"
            "Refile and Critical Errors"
            ((tags "REFILE"
                   ((org-agenda-overriding-header "Tasks to Refile"))
                   (org-tags-match-list-sublevels nil))
-            ,(nd/agenda-base-task-command task-match "Discontinous Project" ''nd/skip-non-discontinuous-project-tasks)
-            ,(nd/agenda-base-project-command project-match "Invalid Todostate" :invalid-todostate)))
+            ,(nd/agenda-base-task-cmd task-match
+									  "Discontinous Project"
+									  ''nd/skip-non-discontinuous-project-tasks)
+            ,(nd/agenda-base-proj-cmd act-no-rep-match
+									  "Invalid Todostate"
+									  :invalid-todostate)))
+
           ("e"
            "Non-critical Errors"
-           (,(nd/agenda-base-header-command task-match "Undone Closed" ''nd/skip-non-undone-closed-todoitems)
-            ,(nd/agenda-base-header-command task-match "Done Unclosed" ''nd/skip-non-done-unclosed-todoitems)
-            ,(nd/agenda-base-project-command task-match "Undone Completed" :undone-complete)
-            ,(nd/agenda-base-project-command task-match "Done Incompleted" :done-incomplete)))
+           (,(nd/agenda-base-header-cmd task-match
+										"Undone Closed"
+										''nd/skip-non-undone-closed-todoitems)
+            ,(nd/agenda-base-header-cmd (concat actionable "-" periodical)
+										"Done Unclosed"
+										''nd/skip-non-done-unclosed-todoitems)
+            ,(nd/agenda-base-proj-cmd task-match
+									  "Undone Completed"
+									  :undone-complete)
+            ,(nd/agenda-base-proj-cmd (concat actionable "-" periodical)
+									  "Done Incompleted"
+									  :done-incomplete)))
+
           ("A"
            "Archivable Tasks and Projects"
-           (,(nd/agenda-base-header-command task-match "Archivable Atomic Tasks" ''nd/skip-non-archivable-atomic-tasks)
-            ,(nd/agenda-base-header-command task-match "Stale Tasks" ''nd/skip-non-stale-headings)
-            ,(nd/agenda-base-project-command iterator-match "Archivable Iterators" :archivable)
-            ,(nd/agenda-base-project-command project-match "Archivable Projects" :archivable))))))
+           (,(nd/agenda-base-header-cmd (concat actionable "-" periodical)
+										"Archivable Atomic Tasks"
+										''nd/skip-non-archivable-atomic-tasks)
+            ,(nd/agenda-base-header-cmd (concat actionable "-" periodical)
+										"Stale Tasks"
+										''nd/skip-non-stale-headings)
+            ,(nd/agenda-base-proj-cmd (concat actionable "-" periodical "+" iterator)
+									  "Archivable Iterators"
+									  :archivable)
+            ,(nd/agenda-base-proj-cmd (concat actionable "-" periodical "-" iterator)
+									  "Archivable Projects"
+									  :archivable))))))
 
 (setq org-agenda-start-on-weekday 0)
 (setq org-agenda-span 'day)
@@ -1100,6 +1163,7 @@ and reverts all todo keywords to TODO"
             (org-forward-heading-same-level 1 t)
             (org-reset-checkbox-state-subtree)
             (nd/mark-subtree-keyword "TODO")
+            (call-interactively 'nd/org-log-delete)
             (org-cycle)
 			;; clone reset tree again if we need more than one clone
 			(if (> n 1)
@@ -1109,6 +1173,21 @@ and reverts all todo keywords to TODO"
 					(org-forward-heading-same-level 1 t)
 					(org-cycle))))))
       (error (message "%s" (error-message-string err))))))
+
+(defun nd/org-log-delete ()
+  "Delete logbook drawer of subtree."
+  (interactive)
+  (save-excursion
+    (goto-char (org-log-beginning))
+    (when (save-excursion
+            (save-match-data
+              (beginning-of-line 0)
+              (search-forward-regexp org-drawer-regexp)
+              (goto-char (match-beginning 1))
+              (looking-at "LOGBOOK")))
+      (org-mark-element)
+      (delete-region (region-beginning) (region-end))
+      (org-remove-empty-drawer-at (point)))))
 
 (use-package calfw-org
   :init
