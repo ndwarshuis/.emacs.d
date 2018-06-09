@@ -167,6 +167,13 @@
   (global-undo-tree-mode)
   (setq undo-tree-visualizer-diff t))
 
+(use-package fill-column-indicator
+  :ensure t
+  :init
+  :config
+  (setq fci-rule-use-dashes t)
+  (add-hook 'prog-mode-hook #'fci-mode))
+
 ;; lovingly stolen from aaron harris
 (defmacro nd/with-advice (adlist &rest body)
   "Execute BODY with temporary advice in ADLIST.
@@ -467,7 +474,7 @@ event of an error or nonlocal exit."
 ;; (setq org-agenda-files '("~/Org/reference/agendatest.org"))
 (setq org-agenda-dim-blocked-tasks nil)
 (setq org-agenda-compact-blocks t)
-(setq org-agenda-window-setup 'only-window)
+(setq org-agenda-window-setup 'current-window)
 
 (defun nd/get-date-property (date-property)
   "Helper function to get the date property and convert to a number.
