@@ -476,18 +476,24 @@ event of an error or nonlocal exit."
 (setq org-agenda-compact-blocks t)
 (setq org-agenda-window-setup 'current-window)
 
+(setq holiday-bahai-holidays nil)
+(setq holiday-hebrew-holidays nil)
+(setq holiday-islamic-holidays nil)
+
 (defun nd/get-date-property (date-property)
   "Helper function to get the date property and convert to a number.
 If it does not have a date, it will return nil."
   (let ((timestamp (org-entry-get nil date-property)))
     (if timestamp (float-time (date-to-time timestamp)))))
 
-(defun nd/heading-compare-timestamp (timestamp-fun &optional ref-time future)
-  "helper function that returns the timestamp (returned by timestamp-fun on the
-current header) if timestamp is futher back in time compared to a ref-time
- (default to 0 which is now, where negative is past an positive is future). 
-If the future flag is set, returns timestamp if it is in the future
- compared to ref-time. Returns nil if no timestamp is found."
+(defun nd/heading-compare-timestamp (timestamp-fun
+									 &optional ref-time future)
+  "helper function that returns the timestamp (returned by 
+timestamp-fun on the current header) if timestamp is futher back in 
+time compared to a ref-time (default to 0 which is now, where negative
+is past an positive is future). If the future flag is set, returns 
+timestamp if it is in the future compared to ref-time. Returns nil if 
+no timestamp is found."
   (let* ((timestamp (funcall timestamp-fun))
         (ref-time (or ref-time 0)))
     (if (and timestamp
@@ -509,7 +515,10 @@ If the future flag is set, returns timestamp if it is in the future
   (nd/get-date-property "CLOSED"))
 
 (defun nd/is-stale-heading-p ()
-  (nd/heading-compare-timestamp 'nd/is-timestamped-heading-p))
+  (nd/heading-compare-timestamp
+   (lambda () (let ((ts (org-entry-get nil "TIMESTAMP")))
+		   (if (and ts (not (find ?+ ts)))
+			   (float-time (date-to-time ts)))))))
 
 (defun nd/is-fresh-heading-p ()
   (nd/heading-compare-timestamp 'nd/is-timestamped-heading-p nil t))
@@ -1140,7 +1149,7 @@ set as a text property for further sorting"
      (org-agenda-skip-function '(nd/skip-projects-without-statuscode ,statuscode))
 	 ;;(org-agenda-before-sorting-filter-function 'nd/sorting-filter-demo)
 	 ;; (nd/apply-statuscodes t)
-	 (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
+;;	 (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
      (org-agenda-sorting-strategy '(category-keep)))))
 
 (let* ((actionable "-NA-REFILE-%inc")
@@ -1154,7 +1163,8 @@ set as a text property for further sorting"
   (setq org-agenda-custom-commands
         `(("t"
            "Task View"
-           ((agenda "" (org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc"))))
+           ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc")))
+						(org-agenda-include-diary t)))
             ,(nd/agenda-base-task-cmd act-no-rep-match
                                           "Project Tasks"
                                           ''nd/skip-non-project-tasks

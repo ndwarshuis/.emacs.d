@@ -686,56 +686,67 @@ There are several types of tags I use:
   (setq org-agenda-compact-blocks t)
   (setq org-agenda-window-setup 'current-window)
 #+END_SRC
+*** holidays and birthdays
+#+BEGIN_SRC emacs-lisp
+(setq holiday-bahai-holidays nil)
+(setq holiday-hebrew-holidays nil)
+(setq holiday-islamic-holidays nil)
+#+END_SRC
 *** task helper functions
 These are the building blocks for skip functions.
 **** timestamps
 Each of these returns the timestamp if found.
 #+BEGIN_SRC emacs-lisp
-  (defun nd/get-date-property (date-property)
-    "Helper function to get the date property and convert to a number.
-  If it does not have a date, it will return nil."
-    (let ((timestamp (org-entry-get nil date-property)))
-      (if timestamp (float-time (date-to-time timestamp)))))
+(defun nd/get-date-property (date-property)
+  "Helper function to get the date property and convert to a number.
+If it does not have a date, it will return nil."
+  (let ((timestamp (org-entry-get nil date-property)))
+    (if timestamp (float-time (date-to-time timestamp)))))
 
-  (defun nd/heading-compare-timestamp (timestamp-fun &optional ref-time future)
-    "helper function that returns the timestamp (returned by timestamp-fun on the
-  current header) if timestamp is futher back in time compared to a ref-time
-   (default to 0 which is now, where negative is past an positive is future). 
-  If the future flag is set, returns timestamp if it is in the future
-   compared to ref-time. Returns nil if no timestamp is found."
-    (let* ((timestamp (funcall timestamp-fun))
-          (ref-time (or ref-time 0)))
-      (if (and timestamp
-               (if future
-                   (> (- timestamp (float-time)) ref-time)
-                 (<= (- timestamp (float-time)) ref-time)))
-          timestamp)))
+(defun nd/heading-compare-timestamp (timestamp-fun
+									 &optional ref-time future)
+  "helper function that returns the timestamp (returned by 
+timestamp-fun on the current header) if timestamp is futher back in 
+time compared to a ref-time (default to 0 which is now, where negative
+is past an positive is future). If the future flag is set, returns 
+timestamp if it is in the future compared to ref-time. Returns nil if 
+no timestamp is found."
+  (let* ((timestamp (funcall timestamp-fun))
+        (ref-time (or ref-time 0)))
+    (if (and timestamp
+             (if future
+                 (> (- timestamp (float-time)) ref-time)
+               (<= (- timestamp (float-time)) ref-time)))
+        timestamp)))
 
-  (defun nd/is-timestamped-heading-p ()
-    (nd/get-date-property "TIMESTAMP"))
+(defun nd/is-timestamped-heading-p ()
+  (nd/get-date-property "TIMESTAMP"))
 
-  (defun nd/is-scheduled-heading-p ()
-    (nd/get-date-property "SCHEDULED"))
+(defun nd/is-scheduled-heading-p ()
+  (nd/get-date-property "SCHEDULED"))
 
-  (defun nd/is-deadlined-heading-p ()
-    (nd/get-date-property "DEADLINE"))
+(defun nd/is-deadlined-heading-p ()
+  (nd/get-date-property "DEADLINE"))
 
-  (defun nd/is-closed-heading-p ()
-    (nd/get-date-property "CLOSED"))
+(defun nd/is-closed-heading-p ()
+  (nd/get-date-property "CLOSED"))
 
-  (defun nd/is-stale-heading-p ()
-    (nd/heading-compare-timestamp 'nd/is-timestamped-heading-p))
+(defun nd/is-stale-heading-p ()
+  (nd/heading-compare-timestamp
+   (lambda () (let ((ts (org-entry-get nil "TIMESTAMP")))
+		   (if (and ts (not (find ?+ ts)))
+			   (float-time (date-to-time ts)))))))
 
-  (defun nd/is-fresh-heading-p ()
-    (nd/heading-compare-timestamp 'nd/is-timestamped-heading-p nil t))
+(defun nd/is-fresh-heading-p ()
+  (nd/heading-compare-timestamp 'nd/is-timestamped-heading-p nil t))
 
-  (defvar nd/archive-delay-days 30
-    "the number of days to wait before tasks show up in the archive view")
+(defvar nd/archive-delay-days 30
+  "the number of days to wait before tasks show up in the archive view")
 
-  (defun nd/is-archivable-heading-p ()
-    (nd/heading-compare-timestamp
-     'nd/is-closed-heading-p
-      (- (* 60 60 24 nd/archive-delay-days))))
+(defun nd/is-archivable-heading-p ()
+  (nd/heading-compare-timestamp
+   'nd/is-closed-heading-p
+    (- (* 60 60 24 nd/archive-delay-days))))
 #+END_SRC
 **** task level testing
 Each of these returns the keyword if true
@@ -1435,7 +1446,7 @@ set as a text property for further sorting"
      (org-agenda-skip-function '(nd/skip-projects-without-statuscode ,statuscode))
 	 ;;(org-agenda-before-sorting-filter-function 'nd/sorting-filter-demo)
 	 ;; (nd/apply-statuscodes t)
-	 (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
+;;	 (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
      (org-agenda-sorting-strategy '(category-keep)))))
 
 (let* ((actionable "-NA-REFILE-%inc")
@@ -1449,7 +1460,8 @@ set as a text property for further sorting"
   (setq org-agenda-custom-commands
         `(("t"
            "Task View"
-           ((agenda "" (org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc"))))
+           ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc")))
+						(org-agenda-include-diary t)))
             ,(nd/agenda-base-task-cmd act-no-rep-match
                                           "Project Tasks"
                                           ''nd/skip-non-project-tasks
