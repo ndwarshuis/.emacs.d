@@ -1094,6 +1094,36 @@ Note that this assumes the headline being tested is a valid project"
     (t (if (not (member statuscode nd/project-statuscodes))
            (error "unknown statuscode")))))
 #+END_SRC
+**** iterator testing
+#+BEGIN_SRC emacs-lisp
+(defconst nd/iter-future-time (* 7 24 60 60))
+
+(defconst nd/iter-statuscodes '(:uninit :empty :active))
+
+(defun nd/get-iterator-status ()
+  (let ((iter-status :uninit)
+		(subtree-end (save-excursion (org-end-of-subtree))))
+	(save-excursion
+	  (setq previous-point (point))
+	  (outline-next-heading)
+	  (while (and (not (eq iter-status :active))
+				  (< (point) subtree-end))
+		(let ((keyword (nd/is-atomic-task-p))
+			  (new-status))
+		  (if keyword
+			  (progn
+				(setq new-status (if (nd/heading-compare-timestamp
+									  (lambda ()
+										(or (nd/is-scheduled-heading-p)
+											(nd/is-deadlined-heading-p)))
+										nd/iter-future-time t)
+									 :active
+								   :empty))
+				(if (nd/compare-statuscodes0 > new-status iter-status nd/iter-statuscodes)
+					(setq iter-status new-status)))))
+		(outline-next-heading)))
+	iter-status))
+#+END_SRC
 *** skip functions
 These are the primary means we use to sort through tasks. Note that we could do this with
 tags in the custom commands section but I find this easier to maintain and possibly faster.
@@ -1542,9 +1572,19 @@ set as a text property for further sorting"
             ,(nd/agenda-base-task-cmd "-NA-REFILE+%inc/!"
 									  "Incubated Tasks"
 									  ''nd/skip-non-atomic-tasks)
-            ,(nd/agenda-base-proj-cmd "-NA-REFILE+%inc/!"
-									  "Incubated Projects"
-									  :held)))
+		   (tags-todo
+			"-NA-REFILE+%inc/!"
+		  	 ((org-agenda-overriding-header
+		  	   (concat (and
+		  				nd/agenda-limit-project-toplevel "Toplevel ")
+		  			   "Incubated Projects"))
+		  	  (org-agenda-skip-function '(nd/skip-non-projects))
+		  	  (org-agenda-before-sorting-filter-function
+			   (lambda (l) (nd/org-agenda-filter-projects '(:stuck :waiting :held :active) l)))
+			  (org-agenda-cmp-user-defined
+			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:stuck :waiting :active :held) a b)))
+		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
+		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
 
           ("r"
            "Refile and Critical Errors"
@@ -1553,10 +1593,7 @@ set as a text property for further sorting"
                   (org-tags-match-list-sublevels nil))
             ,(nd/agenda-base-task-cmd task-match
 									  "Discontinous Project"
-									  ''nd/skip-non-discontinuous-project-tasks)
-            ,(nd/agenda-base-proj-cmd act-no-rep-match
-									  "Invalid Todostate"
-									  :invalid-todostate)))
+									  ''nd/skip-non-discontinuous-project-tasks)))
 
           ("e"
            "Non-critical Errors"
@@ -1566,12 +1603,19 @@ set as a text property for further sorting"
             ,(nd/agenda-base-header-cmd (concat actionable "-" periodical)
 										"Done Unclosed"
 										''nd/skip-non-done-unclosed-todoitems)
-            ,(nd/agenda-base-proj-cmd task-match
-									  "Undone Completed"
-									  :undone-complete)
-            ,(nd/agenda-base-proj-cmd (concat actionable "-" periodical)
-									  "Done Incompleted"
-									  :done-incomplete)))
+			(tags-todo
+			 ,act-no-rep-match
+		  	 ((org-agenda-overriding-header
+		  	   (concat (and
+		  				nd/agenda-limit-project-toplevel "Toplevel ")
+		  			   "Project Errors"))
+		  	  (org-agenda-skip-function '(nd/skip-non-projects))
+		  	  (org-agenda-before-sorting-filter-function
+			   (lambda (l) (nd/org-agenda-filter-projects '(:scheduled-project :invalid-todostate :undone-complete :done-incomplete) l)))
+			  (org-agenda-cmp-user-defined
+			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:scheduled-project :invalid-todostate :undone-complete :done-incomplete) a b)))
+		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
+		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
 
           ("A"
            "Archivable Tasks and Projects"
@@ -1584,9 +1628,19 @@ set as a text property for further sorting"
             ,(nd/agenda-base-proj-cmd (concat actionable "-" periodical "+" iterator)
 									  "Archivable Iterators"
 									  :archivable)
-            ,(nd/agenda-base-proj-cmd (concat actionable "-" periodical "-" iterator)
-									  "Archivable Projects"
-									  :archivable))))))
+			(tags-todo
+			 ,(concat actionable "-" periodical "-" iterator)
+		  	 ((org-agenda-overriding-header
+		  	   (concat (and
+		  				nd/agenda-limit-project-toplevel "Toplevel ")
+		  			   "Archivable Projects"))
+		  	  (org-agenda-skip-function '(nd/skip-non-projects))
+		  	  (org-agenda-before-sorting-filter-function
+			   (lambda (l) (nd/org-agenda-filter-projects '(:archivable) l)))
+			  (org-agenda-cmp-user-defined
+			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:archivable) a b)))
+		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
+		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep)))))))))
 #+END_SRC
 *** views
 **** calendar display
