@@ -871,7 +871,7 @@ Note that this assumes the headline being tested is a valid project"
 
 (defun nd/get-iterator-status ()
   (let ((iter-status :uninit)
-		(subtree-end (save-excursion (org-end-of-subtree))))
+		(subtree-end (save-excursion (org-end-of-subtree t))))
 	(save-excursion
 	  (setq previous-point (point))
 	  (outline-next-heading)
@@ -986,6 +986,19 @@ tags that do not have tags in neg-tags-list"
                   (not (nd/heading-has-children 'nd/is-timestamped-heading-p))))
         (nd/skip-heading))))
 
+(defun nd/skip-non-iterator-parent-headers ()
+  (save-restriction
+    (widen)
+    (if (not (and (nd/is-iterator-heading-p)
+                  (not (nd/heading-has-parent 'nd/is-iterator-heading-p))))
+        (nd/skip-heading))))
+
+(defun nd/skip-non-iterator-unscheduled ()
+  (nd/skip-heading-with
+   nd/is-atomic-task-p
+   (not (or (nd/is-scheduled-heading-p)
+			(nd/is-deadlined-heading-p)))))
+
 (defun nd/skip-non-project-tasks ()
   (save-restriction
     (widen)
@@ -1020,11 +1033,6 @@ tags that do not have tags in neg-tags-list"
    nd/is-todoitem-p
    (and (not (member keyword org-done-keywords))
         (nd/is-closed-heading-p))))
-
-(defun nd/skip-non-iterator-atomic-tasks ()
-  (nd/skip-heading-with
-   nd/is-atomic-task-p
-   (nd/is-iterator-heading-p)))
 
 (defun nd/skip-atomic-tasks-with-context ()
   (nd/skip-heading-with
@@ -1067,8 +1075,6 @@ tags that do not have tags in neg-tags-list"
                    (nd/heading-has-parent 'nd/is-todoitem-p))
               (nd/skip-subtree))
         (nd/skip-heading)))))
-
-
 
 (defvar nd/agenda-limit-project-toplevel t
   "used to filter projects by all levels or top-level only")
@@ -1126,7 +1132,7 @@ tasks with context tags"
                  ((> pa pb) +1)
                  ((< pa pb) -1)))))
 
-(defun nd/org-agenda-filter-projects (filter a-line)
+(defun nd/org-agenda-filter-status (filter status-fun a-line)
   "Filter for org-agenda-before-sorting-filter-function intended for
 agenda project views (eg makes the assumption that all entries are
 from projects in the original org buffer)
@@ -1138,7 +1144,7 @@ set as a text property for further sorting"
   (let* ((m (get-text-property 1 'org-marker a-line))
 		 (s (with-current-buffer (marker-buffer m)
 			  (goto-char m)
-			  (nd/get-project-status))))
+			  (funcall status-fun))))
 	(if (member s filter)
 		(org-add-props (replace-regexp-in-string
 					   "xxxx" (symbol-name s) a-line)
@@ -1185,7 +1191,7 @@ set as a text property for further sorting"
 	   (iterator "PARENT_TYPE=\"iterator\"")
 	   (task-match (concat actionable "-" periodical "/!"))
        (act-no-rep-match (concat actionable "-" periodical "-" iterator "/!"))
-       (peri-match (concat actionable "+" periodical "-" iterator "/!"))
+       (peri-match (concat actionable "+" periodical "-" iterator))
        (iter-match (concat actionable "-" periodical "+" iterator "/!")))
 
   (setq org-agenda-custom-commands
@@ -1211,7 +1217,7 @@ set as a text property for further sorting"
 		  			   "Projects"))
 		  	  (org-agenda-skip-function '(nd/skip-non-projects))
 		  	  (org-agenda-before-sorting-filter-function
-			   (lambda (l) (nd/org-agenda-filter-projects '(:stuck :waiting :held :active) l)))
+			   (lambda (l) (nd/org-agenda-filter-status '(:stuck :waiting :held :active) 'nd/get-project-status l)))
 			  (org-agenda-cmp-user-defined
 			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:stuck :waiting :active :held) a b)))
 		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
@@ -1246,24 +1252,19 @@ set as a text property for further sorting"
 
           ("i"
            "Iterator View"
-           (,(nd/agenda-base-proj-cmd iter-match
-									  "Stuck Iterators (require NEXT or schedule)"
-									  :stuck)
-            ,(nd/agenda-base-proj-cmd iter-match
-									  "Empty Iterators (require new tasks)"
-									  :undone-complete)
-            ,(nd/agenda-base-task-cmd iter-match
-									  "Uninitialized Iterators (no tasks added)"
-									  ''nd/skip-non-iterator-atomic-tasks)
-            ,(nd/agenda-base-proj-cmd iter-match
-									  "Active Iterators"
-									  :active)
-            ,(nd/agenda-base-proj-cmd iter-match
-									  "Waiting Iterators"
-									  :waiting)
-            ,(nd/agenda-base-proj-cmd iter-match
-									  "Held Iterators"
-									  :held)))
+           ((tags
+			 "-NA-REFILE+PARENT_TYPE=\"iterator\""
+		  	 ((org-agenda-overriding-header "Iterator Status")
+		  	  (org-agenda-skip-function '(nd/skip-non-iterator-parent-headers))
+		  	  (org-agenda-before-sorting-filter-function
+			   (lambda (l) (nd/org-agenda-filter-status nd/iter-statuscodes 'nd/get-iterator-status l)))
+			  (org-agenda-cmp-user-defined
+			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status nd/iter-statuscodes a b)))
+		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
+		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))
+            ,(nd/agenda-base-task-cmd "-NA-REFILE+PARENT_TYPE=\"iterator\"/!"
+									  "Unscheduled or Undeaded"
+									  ''nd/skip-non-iterator-unscheduled)))
 		  
           ("I"
            "Incubator View"
@@ -1281,7 +1282,7 @@ set as a text property for further sorting"
 		  			   "Incubated Projects"))
 		  	  (org-agenda-skip-function '(nd/skip-non-projects))
 		  	  (org-agenda-before-sorting-filter-function
-			   (lambda (l) (nd/org-agenda-filter-projects '(:stuck :waiting :held :active) l)))
+			   (lambda (l) (nd/org-agenda-filter-status '(:stuck :waiting :held :active) 'nd/get-project-status l)))
 			  (org-agenda-cmp-user-defined
 			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:stuck :waiting :active :held) a b)))
 		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
@@ -1312,7 +1313,7 @@ set as a text property for further sorting"
 		  			   "Project Errors"))
 		  	  (org-agenda-skip-function '(nd/skip-non-projects))
 		  	  (org-agenda-before-sorting-filter-function
-			   (lambda (l) (nd/org-agenda-filter-projects '(:scheduled-project :invalid-todostate :undone-complete :done-incomplete) l)))
+			   (lambda (l) (nd/org-agenda-filter-status '(:scheduled-project :invalid-todostate :undone-complete :done-incomplete) 'nd/get-project-status l)))
 			  (org-agenda-cmp-user-defined
 			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:scheduled-project :invalid-todostate :undone-complete :done-incomplete) a b)))
 		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
@@ -1337,7 +1338,7 @@ set as a text property for further sorting"
 		  			   "Archivable Projects"))
 		  	  (org-agenda-skip-function '(nd/skip-non-projects))
 		  	  (org-agenda-before-sorting-filter-function
-			   (lambda (l) (nd/org-agenda-filter-projects '(:archivable) l)))
+			   (lambda (l) (nd/org-agenda-filter-status '(:archivable) 'nd/get-project-status l)))
 			  (org-agenda-cmp-user-defined
 			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:archivable) a b)))
 		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
