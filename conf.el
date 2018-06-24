@@ -602,112 +602,15 @@ todoitem which in turn has a parent which is a todoitem"
 (defconst nd/project-invalid-todostates
   '("WAIT" "NEXT")
   "projects cannot have these todostates") 
-
-(defconst nd/project-statuscodes
-  '(:archivable
-    :complete
-    :stuck
-    :held
-    :waiting
-    :active
-    :done-incomplete
-    :undone-complete
-    :invalid-todostate
-    :scheduled-project)
-  "list of statuscodes to be used in assessing projects
-Note they are listed in order of priority (eg items further
-down the list override higher items")
-
-(defconst nd/complete-statuscodes
-  '(:archivable
-    :complete))
-
-(defconst nd/todo-statuscodes
-  '(:stuck
-    :held
-    :waiting
-    :active))
-
-(defconst nd/error-statuscodes
-  '(:done-incomplete
-    :undone-complete
-    :invalid-todostate
-    :scheduled-project))
-
-(defmacro nd/compare-statuscodes0 (op sc1 sc2 sc-list)
-  `(,op (position ,sc1 ,sc-list) (position ,sc2 ,sc-list)))
-
-(defmacro nd/compare-statuscodes (operator statuscode-1 statuscode-2)
-  "syntactic suger to compare statuscodes by position"
-  `(,operator (position ,statuscode-1 nd/project-statuscodes)
-     (position ,statuscode-2 nd/project-statuscodes)))
   
-(defun nd/status< (statuscode-1 statuscode-2)
-  "returns t is statuscode-1 is lesser priority than statuscode-2"
-  (nd/compare-statuscodes < statuscode-1 statuscode-2))
-
-(defun nd/status> (statuscode-1 statuscode-2)
-  "returns t is statuscode-1 is greater priority than statuscode-2"
-  (nd/compare-statuscodes > statuscode-1 statuscode-2))
-
-(defun nd/status= (statuscode-1 statuscode-2)
-  "returns t is statuscode-1 is equal priority than statuscode-2"
-  (nd/compare-statuscodes = statuscode-1 statuscode-2))
-
-(defun nd/descend-into-project ()
-  "returns statuscode of project and recursively descends into subprojects"
-  (let ((project-state :archivable)
-        (previous-point))
-    (save-excursion
-      (setq previous-point (point))
-      (outline-next-heading)
-      ;; loop breaks if active or higher priority
-      ;; note that all invalid statuscodes are higher
-      ;; thus this function will only return the first
-      ;; encountered error
-      (while (and (nd/status< project-state :active)
-                  (> (point) previous-point))
-        (let ((keyword (nd/is-todoitem-p)))
-          (if keyword
-              (let ((cur-state
-                     (if (nd/heading-has-children 'nd/is-todoitem-p)
-                         (cond ((member keyword nd/project-invalid-todostates) :invalid-todostate)
-                               ((nd/is-scheduled-heading-p) :scheduled-project)
-                               ((equal keyword "CANC") (if (nd/is-archivable-heading-p)
-                                                                :archivable
-                                                              :complete))
-                               ((equal keyword "HOLD") :held)
-                               (t (let ((child-statuscode (nd/descend-into-project)))
-                                    (cond ((equal keyword "TODO")
-                                           (if (nd/status> child-statuscode :complete)
-                                               child-statuscode
-                                             :undone-complete))
-                                          (t (case child-statuscode
-                                               (:complete :complete)
-                                               (:archivable (if (nd/is-archivable-heading-p)
-                                                                :archivable
-                                                              :complete))
-                                               (t (if (nd/status= child-statuscode :complete)
-                                                      :complete
-                                                    :done-incomplete))))))))
-                       (cond ((equal keyword "HOLD") :held)
-                             ((equal keyword "WAIT") :waiting)
-                             ((equal keyword "NEXT") :active)
-                             ((and (equal keyword "TODO") (nd/is-scheduled-heading-p)) :active)
-                             ((equal keyword "TODO") :stuck)
-                             ((nd/is-archivable-heading-p) :archivable)
-                             (t :complete)))))
-                (if (nd/status> cur-state project-state)
-                    (setq project-state cur-state)))))
-        (setq previous-point (point))
-        (org-forward-heading-same-level 1 t)))
-    project-state))
-
-(defun nd/decend-into-project0 (allowed-statuscodes trans-tbl get-task-status)
+(defmacro nd/compare-statuscodes (op sc1 sc2 sc-list)
+  `(,op (position ,sc1 ,sc-list) (position ,sc2 ,sc-list)))
+  
+(defun nd/decend-into-project (allowed-statuscodes trans-tbl
+												   get-task-status)
   (let ((project-status (first allowed-statuscodes))
 		(breaker-status (car (last allowed-statuscodes)))
 		(previous-point))
-	;; (message "hi")
 	(save-excursion
 	  (setq previous-point (point))
 	  (outline-next-heading)
@@ -733,10 +636,7 @@ down the list override higher items")
 					   ;; to obtain status of task
 					   (nth (funcall get-task-status keyword)
 							allowed-statuscodes))))
-				;; (message (format "%s" (concat "new status: " (symbol-name new-status))))
-				;; (message (format "%s" (concat "project status: " (symbol-name project-status))))
-				;; (message (format "%s" keyword))
-				(if (nd/compare-statuscodes0 > new-status project-status allowed-statuscodes)
+				(if (nd/compare-statuscodes > new-status project-status allowed-statuscodes)
 					(setq project-status new-status)))))
 		(setq previous-point (point))
 		(org-forward-heading-same-level 1 t)))
@@ -754,7 +654,7 @@ down the list override higher items")
 	 
 	 ;; these require descending into the project subtasks
 	 ((equal keyword "CANC")
-	  (nd/decend-into-project0
+	  (nd/decend-into-project
 	   '(:archivable :complete)
 	   '((:stuck . 1)
 		 (:held . 1)
@@ -769,7 +669,7 @@ down the list override higher items")
 				  (nd/is-archivable-heading-p)) 0 1))))
 	 
 	 ((equal keyword "DONE")
-	  (nd/decend-into-project0
+	  (nd/decend-into-project
 	   '(:archivable :complete :done-incomplete)
 	   '((:stuck . 2)
 		 (:held . 2)
@@ -784,7 +684,7 @@ down the list override higher items")
 		   2))))
 	 
 	 ((equal keyword "TODO")
-	  (nd/decend-into-project0
+	  (nd/decend-into-project
 	   '(:undone-complete :stuck :held :waiting :active)
 	   '((:complete . 0)
 		 (:archivable . 0)
@@ -800,70 +700,6 @@ down the list override higher items")
 			   (t 0)))))
 	 
 	 (t (error (concat "invalid keyword detected: " keyword))))))
-
-(defmacro nd/is-project-keyword-status-p (test-keyword operator statuscode)
-  "tests if a project has toplevel heading of top-keyword and
-child status equal to status code and returns keyword if
-both are true"
-  `(and
-    (equal ,keyword ,test-keyword)
-    (nd/compare-statuscodes ,operator (nd/descend-into-project) ,statuscode)))
-
-(defun nd/is-project-status-p (statuscode)
-  "Returns t if project matches statuscode given. 
-Note that this assumes the headline being tested is a valid project"
-  (case statuscode
-    ;; projects closed more than 30 days ago
-    ;; note CANC overrides all subtasks/projects
-    (:archivable
-     (if (nd/is-archivable-heading-p)
-         (or (equal keyword "CANC") 
-             (nd/is-project-keyword-status-p "DONE" = :archivable))))
-    
-    ;; projects closed less than 30 days ago
-    ;; note CANC overrides all subtasks/projects
-    (:complete
-     (if (not (nd/is-archivable-heading-p))
-         (or (equal keyword "CANC")
-             (nd/is-project-keyword-status-p "DONE" = :complete))))
-    
-    ;; projects with no waiting, held, or active components
-    (:stuck
-     (nd/is-project-keyword-status-p "TODO" = :stuck))
-    
-    ;; held projects
-    ;; note toplevel HOLD overrides all subtasks/projects
-    (:held
-     (or (equal keyword "HOLD")
-         (nd/is-project-keyword-status-p "TODO" = :held)))
-    
-    ;; projects with at least one waiting component
-    (:waiting
-     (nd/is-project-keyword-status-p "TODO" = :waiting))
-    
-    ;; projects with at least one active component
-    (:active
-     (nd/is-project-keyword-status-p "TODO" = :active))
-    
-    ;; projects marked DONE but still have undone subtasks
-    (:done-incomplete
-     (nd/is-project-keyword-status-p "DONE" > :complete))
-    
-    ;; projects marked TODO but all subtasks are done
-    (:undone-complete
-     (nd/is-project-keyword-status-p "TODO" < :stuck))
-    
-    ;; projects with invalid todo keywords
-    (:invalid-todostate
-     (member keyword nd/project-invalid-todostates))
-    
-    ;; projects with scheduled heading (only subtasks should be scheduled)
-    (:scheduled-project
-     (nd/is-scheduled-heading-p))
-
-    ;; error if not known
-    (t (if (not (member statuscode nd/project-statuscodes))
-           (error "unknown statuscode")))))
 
 (defconst nd/iter-future-time (* 7 24 60 60))
 
@@ -1054,18 +890,6 @@ tags that do not have tags in neg-tags-list"
    nd/is-task-p
    (not (nd/heading-has-effort-p))))
 
-(defun nd/skip-projects-without-statuscode (statuscode)
-  (save-restriction
-    (widen)
-    (let ((keyword (nd/is-project-p)))
-      (if keyword
-          (if (and nd/agenda-limit-project-toplevel
-                   (nd/heading-has-parent 'nd/is-todoitem-p))
-              (nd/skip-subtree)
-            (if (not (nd/is-project-status-p statuscode))
-                (nd/skip-heading)))
-        (nd/skip-heading)))))
-
 (defun nd/skip-non-projects ()
   (save-restriction
     (widen)
@@ -1133,14 +957,12 @@ tasks with context tags"
                  ((< pa pb) -1)))))
 
 (defun nd/org-agenda-filter-status (filter status-fun a-line)
-  "Filter for org-agenda-before-sorting-filter-function intended for
-agenda project views (eg makes the assumption that all entries are
-from projects in the original org buffer)
+  "Filter for org-agenda-before-sorting-filter-function.
 
-Will go to the original org buffer and determine the project status
-after which it will check if status is in filter. If true, the flag
-string in the prefix is replaced with the status and the status is
-set as a text property for further sorting"
+Will go to the original org buffer and apply status-fun to determine 
+the status after which it will check if status is in filter. If true, 
+the flag string in the prefix is replaced with the status and the 
+status is set as a text property for further sorting"
   (let* ((m (get-text-property 1 'org-marker a-line))
 		 (s (with-current-buffer (marker-buffer m)
 			  (goto-char m)
@@ -1151,6 +973,9 @@ set as a text property for further sorting"
 					  nil 'project-status s))))
 
 (defun nd/org-agenda-sort-prop (prop order a b)
+  "Custom agenda sorting function that looks at property prop and
+determines order based on the position of the prop return value in
+order (a list of properties as either symbols or strings)"
   (let* ((ta (get-text-property 1 prop a))
 		 (tb (get-text-property 1 prop b))
 		 (pa (position ta order :test (if (stringp ta) #'equal)))
@@ -1175,16 +1000,17 @@ set as a text property for further sorting"
      (org-agenda-todo-ignore-with-date t)
      (org-agenda-sorting-strategy ,sort))))
 
-(defun nd/agenda-base-proj-cmd (match header statuscode)
-  `(tags-todo
-    ,match
-    ((org-agenda-overriding-header
-      (concat (and nd/agenda-limit-project-toplevel "Toplevel ") ,header))
-     (org-agenda-skip-function '(nd/skip-projects-without-statuscode ,statuscode))
-	 ;;(org-agenda-before-sorting-filter-function 'nd/sorting-filter-demo)
-	 ;; (nd/apply-statuscodes t)
-;;	 (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
-     (org-agenda-sorting-strategy '(category-keep)))))
+(defun nd/agenda-base-status-cmd (match header skip-fun sc-list sc-fun)
+  ,(tags-todo
+	,match
+	((org-agenda-overriding-header ,header)
+	 (org-agenda-skip-function ,skip-fun)
+	 (org-agenda-before-sorting-filter-function
+	  (lambda (l) (nd/org-agenda-filter-status ,sc-list ,sc-fun l)))
+	 (org-agenda-cmp-user-defined
+	  (lambda (a b) (nd/org-agenda-sort-prop 'project-status ,sc-list a b)))
+	 (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
+	 (org-agenda-sorting-strategy '(user-defined-down category-keep)))))
 
 (let* ((actionable "-NA-REFILE-%inc")
 	   (periodical "PARENT_TYPE=\"periodical\"")
@@ -1209,34 +1035,14 @@ set as a text property for further sorting"
 
           ("p"
            "Project View"
-		   ((tags-todo
-		  	 ,act-no-rep-match
-		  	 ((org-agenda-overriding-header
-		  	   (concat (and
-		  				nd/agenda-limit-project-toplevel "Toplevel ")
-		  			   "Projects"))
-		  	  (org-agenda-skip-function '(nd/skip-non-projects))
-		  	  (org-agenda-before-sorting-filter-function
-			   (lambda (l) (nd/org-agenda-filter-status '(:stuck :waiting :held :active) 'nd/get-project-status l)))
-			  (org-agenda-cmp-user-defined
-			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:stuck :waiting :active :held) a b)))
-		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
-		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
-
-          ;; ("p"
-          ;;  "Project View"
-          ;;  (,(nd/agenda-base-proj-cmd act-no-rep-match
-		  ;; 							  "Stuck Projects"
-		  ;; 							  :stuck)
-          ;;   ,(nd/agenda-base-proj-cmd act-no-rep-match
-		  ;; 							  "Waiting Projects"
-		  ;; 							  :waiting)
-          ;;   ,(nd/agenda-base-proj-cmd act-no-rep-match
-		  ;; 							  "Active Projects"
-		  ;; 							  :active)
-          ;;   ,(nd/agenda-base-proj-cmd act-no-rep-match
-		  ;; 							  "Held Projects"
-		  ;; 							  :held)))
+		   ,(nd/agenda-base-status-cmd 
+		  	 (concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Projects")
+			 ,act-no-rep-match
+			 ''nd/skip-non-projects
+			 '(:scheduled-project :invalid-todostate :undone-complete
+								  :done-incomplete :stuck :waiting
+								  :held :active)
+			 'nd/get-project-status))
 		  
           ("P"
            "Periodical View"
@@ -1274,75 +1080,47 @@ set as a text property for further sorting"
             ,(nd/agenda-base-task-cmd "-NA-REFILE+%inc/!"
 									  "Incubated Tasks"
 									  ''nd/skip-non-atomic-tasks)
-		   (tags-todo
-			"-NA-REFILE+%inc/!"
-		  	 ((org-agenda-overriding-header
-		  	   (concat (and
-		  				nd/agenda-limit-project-toplevel "Toplevel ")
-		  			   "Incubated Projects"))
-		  	  (org-agenda-skip-function '(nd/skip-non-projects))
-		  	  (org-agenda-before-sorting-filter-function
-			   (lambda (l) (nd/org-agenda-filter-status '(:stuck :waiting :held :active) 'nd/get-project-status l)))
-			  (org-agenda-cmp-user-defined
-			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:stuck :waiting :active :held) a b)))
-		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
-		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
+			,(nd/agenda-base-status-cmd 
+		  	  (concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Incubated Projects")
+			  "-NA-REFILE+%inc/!"
+			  ''nd/skip-non-projects
+			  '(:scheduled-project :invalid-todostate :undone-complete
+								   :done-incomplete :stuck :waiting
+								   :held :active)
+			  'nd/get-project-status)))
 
           ("r"
-           "Refile and Critical Errors"
+           "Refile and Errors"
            ((tags "REFILE"
                   ((org-agenda-overriding-header "Tasks to Refile"))
                   (org-tags-match-list-sublevels nil))
             ,(nd/agenda-base-task-cmd task-match
 									  "Discontinous Project"
-									  ''nd/skip-non-discontinuous-project-tasks)))
-
-          ("e"
-           "Non-critical Errors"
-           (,(nd/agenda-base-header-cmd task-match
+									  ''nd/skip-non-discontinuous-project-tasks)
+			,(nd/agenda-base-header-cmd task-match
 										"Undone Closed"
 										''nd/skip-non-undone-closed-todoitems)
             ,(nd/agenda-base-header-cmd (concat actionable "-" periodical)
 										"Done Unclosed"
-										''nd/skip-non-done-unclosed-todoitems)
-			(tags-todo
-			 ,act-no-rep-match
-		  	 ((org-agenda-overriding-header
-		  	   (concat (and
-		  				nd/agenda-limit-project-toplevel "Toplevel ")
-		  			   "Project Errors"))
-		  	  (org-agenda-skip-function '(nd/skip-non-projects))
-		  	  (org-agenda-before-sorting-filter-function
-			   (lambda (l) (nd/org-agenda-filter-status '(:scheduled-project :invalid-todostate :undone-complete :done-incomplete) 'nd/get-project-status l)))
-			  (org-agenda-cmp-user-defined
-			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:scheduled-project :invalid-todostate :undone-complete :done-incomplete) a b)))
-		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
-		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
+										''nd/skip-non-done-unclosed-todoitems)))
 
           ("A"
            "Archivable Tasks and Projects"
-           (,(nd/agenda-base-header-cmd (concat actionable "-" periodical)
+           (,(nd/agenda-base-header-cmd (concat actionable "-" periodical "-" iterator)
 										"Archivable Atomic Tasks"
 										''nd/skip-non-archivable-atomic-tasks)
             ,(nd/agenda-base-header-cmd (concat actionable "-" periodical)
 										"Stale Tasks"
 										''nd/skip-non-stale-headings)
-            ,(nd/agenda-base-proj-cmd (concat actionable "-" periodical "+" iterator)
-									  "Archivable Iterators"
-									  :archivable)
-			(tags-todo
+            ,(nd/agenda-base-header-cmd (concat actionable "-" periodical "+" iterator)
+										"Archivable Iterators"
+										''nd/skip-non-archivable-atomic-tasks)
+			,(nd/agenda-base-status-cmd 
+		  	  (concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Archivable Projects")
 			 ,(concat actionable "-" periodical "-" iterator)
-		  	 ((org-agenda-overriding-header
-		  	   (concat (and
-		  				nd/agenda-limit-project-toplevel "Toplevel ")
-		  			   "Archivable Projects"))
-		  	  (org-agenda-skip-function '(nd/skip-non-projects))
-		  	  (org-agenda-before-sorting-filter-function
-			   (lambda (l) (nd/org-agenda-filter-status '(:archivable) 'nd/get-project-status l)))
-			  (org-agenda-cmp-user-defined
-			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:archivable) a b)))
-		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
-		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep)))))))))
+			  ''nd/skip-non-projects
+			  '(:archivable)
+			  'nd/get-project-status))))))
 
 (setq org-agenda-start-on-weekday 0)
 (setq org-agenda-span 'day)
