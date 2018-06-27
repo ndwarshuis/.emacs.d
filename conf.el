@@ -731,6 +731,31 @@ todoitem which in turn has a parent which is a todoitem"
 		(outline-next-heading)))
 	iter-status))
 
+(defconst nd/peri-future-time nd/iter-future-time)
+
+(defconst nd/peri-statuscodes '(:uninit :stale :fresh))
+
+(defun nd/get-periodical-status ()
+  (let ((peri-status :uninit)
+		(subtree-end (save-excursion (org-end-of-subtree t))))
+	(save-excursion
+	  (setq previous-point (point))
+	  (outline-next-heading)
+	  (while (and (not (eq peri-status :fresh))
+				  (< (point) subtree-end))
+		(if (and (nd/is-periodical-heading-p)
+				 (not (nd/heading-has-children 'nd/is-periodical-heading-p)))
+			(let ((new-status
+				   (if (nd/heading-compare-timestamp
+						'nd/is-timestamped-heading-p
+						nd/iter-future-time t)
+					   :fresh
+					 :stale)))
+			  (if (nd/compare-statuscodes > new-status peri-status nd/peri-statuscodes)
+				  (setq peri-status new-status))))
+		(outline-next-heading)))
+	peri-status))
+
 (defun nd/skip-heading ()
   (save-excursion (or (outline-next-heading) (point-max))))
 
@@ -799,29 +824,19 @@ tags that do not have tags in neg-tags-list"
    (and (member keyword org-done-keywords)
         (nd/is-archivable-heading-p))))
 
-(defun nd/skip-non-fresh-periodical-parent-headers ()
+(defun nd/skip-non-periodical-parent-headers ()
   (save-restriction
     (widen)
     (if (not (and (nd/is-periodical-heading-p)
-                  (not (nd/heading-has-parent 'nd/is-periodical-heading-p))
-                  (nd/heading-has-children 'nd/is-fresh-heading-p)))
+                  (not (nd/heading-has-parent 'nd/is-periodical-heading-p))))
         (nd/skip-heading))))
 
-(defun nd/skip-non-stale-periodical-parent-headers ()
+(defun nd/skip-non-periodical-untimestamped ()
   (save-restriction
     (widen)
     (if (not (and (nd/is-periodical-heading-p)
-                  (not (nd/heading-has-parent 'nd/is-periodical-heading-p))
-                  (nd/heading-has-children 'nd/is-stale-heading-p)
-                  (not (nd/heading-has-children 'nd/is-fresh-heading-p))))
-        (nd/skip-heading))))
-
-(defun nd/skip-non-empty-periodical-parent-headers ()
-  (save-restriction
-    (widen)
-    (if (not (and (nd/is-periodical-heading-p)
-                  (not (nd/heading-has-parent 'nd/is-periodical-heading-p))
-                  (not (nd/heading-has-children 'nd/is-timestamped-heading-p))))
+				  (not (nd/is-timestamped-heading-p))
+                  (not (nd/heading-has-children 'nd/is-periodical-heading-p))))
         (nd/skip-heading))))
 
 (defun nd/skip-non-iterator-parent-headers ()
@@ -1049,15 +1064,21 @@ set as a text property for further sorting"
 		  
           ("P"
            "Periodical View"
-           (,(nd/agenda-base-header-cmd peri-match
-										"Empty Periodicals"
-										''nd/skip-non-empty-periodical-parent-headers)
-            ,(nd/agenda-base-header-cmd peri-match
-										"Stale Periodicals"
-										''nd/skip-non-stale-periodical-parent-headers)
-            ,(nd/agenda-base-header-cmd peri-match
-										"Fresh Periodicals"
-										''nd/skip-non-fresh-periodical-parent-headers)))
+		   ((tags
+			 "-NA-REFILE+PARENT_TYPE=\"periodical\""
+		  	 ((org-agenda-overriding-header "Periodical Status")
+		  	  (org-agenda-skip-function '(nd/skip-non-periodical-parent-headers))
+		  	  (org-agenda-before-sorting-filter-function
+			   (lambda (l) (nd/org-agenda-filter-status
+					   nd/peri-statuscodes 'nd/get-periodical-status l)))
+			  (org-agenda-cmp-user-defined
+			   (lambda (a b) (nd/org-agenda-sort-prop
+						 'project-status nd/peri-statuscodes a b)))
+		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
+		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))
+            ,(nd/agenda-base-header-cmd "-NA-REFILE+PARENT_TYPE=\"periodical\""
+										"Untimestamped"
+										''nd/skip-non-periodical-untimestamped)))
 
           ("i"
            "Iterator View"
@@ -1124,14 +1145,11 @@ set as a text property for further sorting"
           ("A"
            "Archivable Tasks and Projects"
            (,(nd/agenda-base-header-cmd (concat actionable "-" periodical)
-										"Archivable Atomic Tasks"
+										"Archivable Atomic Tasks and Iterators"
 										''nd/skip-non-archivable-atomic-tasks)
-            ,(nd/agenda-base-header-cmd (concat actionable "-" periodical)
-										"Stale Tasks"
+            ,(nd/agenda-base-header-cmd (concat actionable)
+										"Stale Tasks and Periodicals"
 										''nd/skip-non-stale-headings)
-            ,(nd/agenda-base-header-cmd (concat actionable "-" periodical "+" iterator)
-										"Archivable Iterators"
-										''nd/skip-non-archivable-atomic-tasks)
 			(tags-todo
 			 ,(concat actionable "-" periodical "-" iterator)
 		  	 ((org-agenda-overriding-header
