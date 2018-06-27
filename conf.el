@@ -861,12 +861,7 @@ tags that do not have tags in neg-tags-list"
               (if (member keyword nd/project-skip-todostates)
                   (nd/skip-subtree)
                 (nd/skip-heading))
-            (if (not (and (nd/heading-has-parent 'nd/is-todoitem-p)
-                          (not (nd/is-timestamped-heading-p))
-                          (not (nd/is-scheduled-heading-p))
-                          (not (nd/is-deadlined-heading-p))
-                          ;; (equal keyword skip-keyword)
-                          ))
+            (if (not (nd/heading-has-parent 'nd/is-todoitem-p))
                 (nd/skip-heading)))
         (nd/skip-heading)))))
 

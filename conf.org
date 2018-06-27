@@ -1146,15 +1146,9 @@ which is dealt with similarly)
               (if (member keyword nd/project-skip-todostates)
                   (nd/skip-subtree)
                 (nd/skip-heading))
-            (if (not (and (nd/heading-has-parent 'nd/is-todoitem-p)
-                          (not (nd/is-timestamped-heading-p))
-                          (not (nd/is-scheduled-heading-p))
-                          (not (nd/is-deadlined-heading-p))
-                          ;; (equal keyword skip-keyword)
-                          ))
+            (if (not (nd/heading-has-parent 'nd/is-todoitem-p))
                 (nd/skip-heading)))
         (nd/skip-heading)))))
-
 #+END_SRC
 **** header-level errors
 Some headers are invalid under certain conditions
