@@ -1196,12 +1196,13 @@ Projects are handled quite simply. They have statuscodes
 for which I test, and this can all be handled by one function.
 Note that this is used for "normal" projects as well as iterators
 #+BEGIN_SRC emacs-lisp
-(defun nd/skip-non-projects ()
+(defun nd/skip-non-projects (&optional ignore-toplevel)
   (save-restriction
     (widen)
     (let ((keyword (nd/is-project-p)))
       (if keyword
           (if (and nd/agenda-limit-project-toplevel
+				   (not ignore-toplevel)
                    (nd/heading-has-parent 'nd/is-todoitem-p))
               (nd/skip-subtree))
         (nd/skip-heading)))))
@@ -1448,8 +1449,7 @@ set as a text property for further sorting"
 			(tags-todo
 			 ,(concat actionable "-" periodical "-" iterator)
 		  	 ((org-agenda-overriding-header
-		  	   (concat (and
-		  				nd/agenda-limit-project-toplevel "Toplevel ")
+		  	   (concat (and	nd/agenda-limit-project-toplevel "Toplevel ")
 		  			   "Archivable Projects"))
 		  	  (org-agenda-skip-function '(nd/skip-non-projects))
 		  	  (org-agenda-before-sorting-filter-function
