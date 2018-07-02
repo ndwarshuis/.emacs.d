@@ -274,6 +274,7 @@ event of an error or nonlocal exit."
 (delight 'org-indent-mode)
 (setq org-directory "~/Org")
 (run-at-time "00:59" 3600 'org-save-all-org-buffers)
+(setq org-modules '(org-habit))
 
 (setq org-log-into-drawer "LOGBOOK")
 (setq org-log-done t)
@@ -467,6 +468,13 @@ event of an error or nonlocal exit."
   "Exclude todo keywords with a done state from refile targets"
   (not (member (nth 2 (org-heading-components)) org-done-keywords)))
 (setq org-refile-target-verify-function 'nd/verify-refile-target)
+
+(setq org-habit-graph-column 50)
+
+(run-at-time "05:00" 86400 (lambda ()
+							 (setq org-habit-show-habits t) 
+							 (org-agenda-redo)
+							 (message "Habits turned on")))
 
 (setq org-agenda-files '("~/Org"
                       "~/Org/projects"
@@ -902,12 +910,13 @@ tags that do not have tags in neg-tags-list"
    nd/is-task-p
    (not (nd/heading-has-effort-p))))
 
-(defun nd/skip-non-projects ()
+(defun nd/skip-non-projects (&optional ignore-toplevel)
   (save-restriction
     (widen)
     (let ((keyword (nd/is-project-p)))
       (if keyword
           (if (and nd/agenda-limit-project-toplevel
+				   (not ignore-toplevel)
                    (nd/heading-has-parent 'nd/is-todoitem-p))
               (nd/skip-subtree))
         (nd/skip-heading)))))
@@ -1014,10 +1023,11 @@ set as a text property for further sorting"
 (let* ((actionable "-NA-REFILE-%inc")
 	   (periodical "PARENT_TYPE=\"periodical\"")
 	   (iterator "PARENT_TYPE=\"iterator\"")
-	   (task-match (concat actionable "-" periodical "/!"))
-       (act-no-rep-match (concat actionable "-" periodical "-" iterator "/!"))
-       (peri-match (concat actionable "+" periodical "-" iterator))
-       (iter-match (concat actionable "-" periodical "+" iterator "/!")))
+	   (habit "STYLE=\"habit\"")
+	   (task-match (concat actionable "-" periodical "-" habit "/!"))
+       (act-no-rep-match (concat actionable "-" periodical "-" iterator "-" habit "/!"))
+       (peri-match (concat actionable "+" periodical "-" iterator "-" habit))
+       (iter-match (concat actionable "-" periodical "+" iterator "-" habit "/!")))
 
   (setq org-agenda-custom-commands
         `(("t"
@@ -1060,7 +1070,7 @@ set as a text property for further sorting"
           ("P"
            "Periodical View"
 		   ((tags
-			 "-NA-REFILE+PARENT_TYPE=\"periodical\""
+			 (concat actionable "-" iterator "+" periodical "-" habit)
 		  	 ((org-agenda-overriding-header "Periodical Status")
 		  	  (org-agenda-skip-function '(nd/skip-non-periodical-parent-headers))
 		  	  (org-agenda-before-sorting-filter-function
@@ -1139,17 +1149,16 @@ set as a text property for further sorting"
 
           ("A"
            "Archivable Tasks and Projects"
-           (,(nd/agenda-base-header-cmd (concat actionable "-" periodical)
+           (,(nd/agenda-base-header-cmd (concat actionable "-" periodical "-" habit)
 										"Archivable Atomic Tasks and Iterators"
 										''nd/skip-non-archivable-atomic-tasks)
-            ,(nd/agenda-base-header-cmd (concat actionable)
+            ,(nd/agenda-base-header-cmd (concat actionable "-" habit)
 										"Stale Tasks and Periodicals"
 										''nd/skip-non-stale-headings)
 			(tags-todo
-			 ,(concat actionable "-" periodical "-" iterator)
+			 ,(concat actionable "-" periodical "-" iterator "-" habit)
 		  	 ((org-agenda-overriding-header
-		  	   (concat (and
-		  				nd/agenda-limit-project-toplevel "Toplevel ")
+		  	   (concat (and	nd/agenda-limit-project-toplevel "Toplevel ")
 		  			   "Archivable Projects"))
 		  	  (org-agenda-skip-function '(nd/skip-non-projects))
 		  	  (org-agenda-before-sorting-filter-function
