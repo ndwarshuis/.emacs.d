@@ -46,10 +46,6 @@ work in progress
   (add-hook 'inferior-ess-mode-hook #'prettify-symbols-mode)
   (add-hook 'prog-mode-hook #'prettify-symbols-mode)
 #+END_SRC
-*** highlight current line
-#+BEGIN_SRC emacs-lisp
-(when window-system (global-hl-line-mode t))
-#+END_SRC
 ** yes-no prompt enhancement
 #+BEGIN_SRC emacs-lisp
 (defalias 'yes-or-no-p 'y-or-n-p) ; eliminate yes or no prompt on killing procs
@@ -113,6 +109,8 @@ These are commands that should work in any mode. Make the assumption that functi
 #+BEGIN_SRC emacs-lisp
   (global-set-key (kbd "<f1>") 'org-agenda)
   (global-set-key (kbd "<f2>") 'org-capture)
+  (global-set-key (kbd "<f12>") 'global-hl-line-mode)
+  (global-set-key (kbd "S-<f12>") 'display-line-numbers-mode)
 #+END_SRC
 * printing
 ** 
@@ -272,6 +270,11 @@ vim is all about escape, not...ctrl+g???
   (setq fci-rule-use-dashes t)
   (add-hook 'prog-mode-hook #'fci-mode))
 #+END_SRC
+** rainbow
+#+BEGIN_SRC emacs-lisp
+(use-package rainbow-mode
+  :ensure t)
+#+END_SRC
 * library
 A place for duct tape code that I developed (or lovingly stole from others)
 ** macros
@@ -406,6 +409,15 @@ event of an error or nonlocal exit."
         (setq tab-width 4)
         (setq python-indent 4)))
 
+#+END_SRC
+** haskell
+#+BEGIN_SRC emacs-lisp
+(use-package haskell-mode
+  :ensure t
+  :config
+  ;; enable dynamic linking by default
+  (setq haskell-compile-command "ghc -dynamic -Wall -ferror-spans -fforce-recomp -c %s")
+  (setq haskell-interactive-popup-errors nil))
 #+END_SRC
 * org-mode
 ** basic
@@ -678,12 +690,16 @@ There are several types of tags I use:
 #+END_SRC
 ** habits
 #+BEGIN_SRC emacs-lisp
-(setq org-habit-graph-column 50)
+;; (setq org-habit-graph-column 50)
 
-(run-at-time "05:00" 86400 (lambda ()
-							 (setq org-habit-show-habits t) 
-							 (org-agenda-redo)
-							 (message "Habits turned on")))
+;; (run-at-time "05:00" 86400 (lambda ()
+;; 							 (setq org-habit-show-habits t) 
+;; 							 (org-agenda-redo)
+;; 							 (message "Habits turned on")))
+#+END_SRC
+** clocking
+#+BEGIN_SRC emacs-lisp
+
 #+END_SRC
 ** agenda
 *** basic config

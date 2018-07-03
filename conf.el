@@ -23,8 +23,6 @@
 (add-hook 'inferior-ess-mode-hook #'prettify-symbols-mode)
 (add-hook 'prog-mode-hook #'prettify-symbols-mode)
 
-(when window-system (global-hl-line-mode t))
-
 (defalias 'yes-or-no-p 'y-or-n-p) ; eliminate yes or no prompt on killing procs
 
 (defvar my:theme 'spacemacs-dark)
@@ -69,6 +67,8 @@
 
 (global-set-key (kbd "<f1>") 'org-agenda)
 (global-set-key (kbd "<f2>") 'org-capture)
+(global-set-key (kbd "<f12>") 'global-hl-line-mode)
+(global-set-key (kbd "S-<f12>") 'display-line-numbers-mode)
 
 (use-package delight
   :ensure t)
@@ -174,6 +174,10 @@
   (setq fci-rule-use-dashes t)
   (add-hook 'prog-mode-hook #'fci-mode))
 
+(use-package rainbow-mode
+  :ensure t
+  :init)
+
 ;; lovingly stolen from aaron harris
 (defmacro nd/with-advice (adlist &rest body)
   "Execute BODY with temporary advice in ADLIST.
@@ -269,6 +273,13 @@ event of an error or nonlocal exit."
 (setq ess-history-file "session.Rhistory")
 (setq ess-history-directory
 	  (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+
+(use-package haskell-mode
+  :ensure t
+  :config
+  ;; enable dynamic linking by default
+  (setq haskell-compile-command "ghc -dynamic -Wall -ferror-spans -fforce-recomp -c %s")
+  (setq haskell-interactive-popup-errors nil))
 
 (setq org-startup-indented t)
 (delight 'org-indent-mode)
@@ -469,12 +480,14 @@ event of an error or nonlocal exit."
   (not (member (nth 2 (org-heading-components)) org-done-keywords)))
 (setq org-refile-target-verify-function 'nd/verify-refile-target)
 
-(setq org-habit-graph-column 50)
+;; (setq org-habit-graph-column 50)
 
-(run-at-time "05:00" 86400 (lambda ()
-							 (setq org-habit-show-habits t) 
-							 (org-agenda-redo)
-							 (message "Habits turned on")))
+;; (run-at-time "05:00" 86400 (lambda ()
+;; 							 (setq org-habit-show-habits t) 
+;; 							 (org-agenda-redo)
+;; 							 (message "Habits turned on")))
+
+
 
 (setq org-agenda-files '("~/Org"
                       "~/Org/projects"
