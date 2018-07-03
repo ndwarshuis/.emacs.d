@@ -690,12 +690,7 @@ There are several types of tags I use:
 #+END_SRC
 ** habits
 #+BEGIN_SRC emacs-lisp
-;; (setq org-habit-graph-column 50)
-
-;; (run-at-time "05:00" 86400 (lambda ()
-;; 							 (setq org-habit-show-habits t) 
-;; 							 (org-agenda-redo)
-;; 							 (message "Habits turned on")))
+(setq org-habit-graph-column 50)
 #+END_SRC
 ** clocking
 #+BEGIN_SRC emacs-lisp
