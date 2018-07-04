@@ -290,7 +290,8 @@ event of an error or nonlocal exit."
 (delight 'org-indent-mode)
 (setq org-directory "~/Org")
 (run-at-time "00:59" 3600 'org-save-all-org-buffers)
-(setq org-modules '(org-habit))
+(setq org-modules '(org-habit org-protocol))
+(require 'org-protocol)
 
 (setq org-log-into-drawer "LOGBOOK")
 (setq org-log-done t)
@@ -462,11 +463,28 @@ event of an error or nonlocal exit."
 
 (let ((capfile "~/Org/capture.org"))
   (setq org-capture-templates
-        `(("t" "todo" entry (file ,capfile) "* TODO %?\ndeliverable: \n%U\n")
-          ("n" "note" entry (file ,capfile) "* %? :\\%note:\n%U\n" )
-          ("a" "appointment" entry (file ,capfile) "* %?\n%U\n%^t\n" )
-          ("m" "multi-day" entry (file ,capfile) "* TODO %?\n%U\n%^t--%^t\n" )
-          ("d" "deadline" entry (file ,capfile) "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n" ))))
+        `(("t" "todo" entry (file ,capfile)
+		   "* TODO %?\ndeliverable: \n%U\n")
+
+          ("n" "note" entry (file ,capfile)
+		   "* %? :\\%note:\n%U\n")
+
+          ("a" "appointment" entry (file ,capfile)
+		   "* %?\n%U\n%^t\n")
+
+          ("m" "multi-day" entry (file ,capfile)
+		   "* TODO %?\n%U\n%^t--%^t\n")
+
+          ("d" "deadline" entry (file ,capfile)
+		   "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n")
+
+		  ("p" "org-protocol" entry (file ,capfile)
+           "* %^{Title}\n%u\n#+BEGIN_QUOTE\n%i\n#+END_QUOTE"
+		   :immediate-finish t)
+
+		  ("L" "org-protocol link" entry (file ,capfile)
+           "* %^{Title}\n[[%:link][%:description]]\n%U"
+		   :immediate-finish t))))
 
 (setq org-refile-targets (quote ((nil :maxlevel . 9)
                                  ("~/Org/reference/idea.org" :maxlevel . 9)
