@@ -25,6 +25,9 @@
 
 (defalias 'yes-or-no-p 'y-or-n-p) ; eliminate yes or no prompt on killing procs
 
+;; for spacemacs theme
+(setq spacemacs-theme-custom-colors '((lnum . "#64707c")))
+
 (defvar my:theme 'spacemacs-dark)
 (defvar my:theme-window-loaded nil)
 (defvar my:theme-terminal-loaded nil)
@@ -125,7 +128,10 @@
 (use-package ace-window
   :ensure t
   :bind ("M-o" . ace-window)
-  :config (setq aw-background nil))
+  :config
+  (setq aw-background t)
+  (set-face-attribute 'aw-leading-char-face nil :foreground "#292b2e"
+					  :background "#bc6ec5":height 1.0 :box nil))
 
 (use-package avy
   :ensure t
@@ -175,8 +181,7 @@
   (add-hook 'prog-mode-hook #'fci-mode))
 
 (use-package rainbow-mode
-  :ensure t
-  :init)
+  :ensure t)
 
 ;; lovingly stolen from aaron harris
 (defmacro nd/with-advice (adlist &rest body)
@@ -480,12 +485,7 @@ event of an error or nonlocal exit."
   (not (member (nth 2 (org-heading-components)) org-done-keywords)))
 (setq org-refile-target-verify-function 'nd/verify-refile-target)
 
-;; (setq org-habit-graph-column 50)
-
-;; (run-at-time "05:00" 86400 (lambda ()
-;; 							 (setq org-habit-show-habits t) 
-;; 							 (org-agenda-redo)
-;; 							 (message "Habits turned on")))
+(setq org-habit-graph-column 50)
 
 
 

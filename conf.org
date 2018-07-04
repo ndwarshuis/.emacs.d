@@ -50,6 +50,11 @@ work in progress
 #+BEGIN_SRC emacs-lisp
 (defalias 'yes-or-no-p 'y-or-n-p) ; eliminate yes or no prompt on killing procs
 #+END_SRC
+** theme customizations
+#+BEGIN_SRC emacs-lisp
+;; for spacemacs theme
+(setq spacemacs-theme-custom-colors '((lnum . "#64707c")))
+#+END_SRC
 ** theme color selection
 need this to:
 a) apply the gui theme if gui is loaded as client and
@@ -181,10 +186,13 @@ These are commands that should work in any mode. Make the assumption that functi
 #+END_SRC
 ** ace-window
 #+BEGIN_SRC emacs-lisp
-  (use-package ace-window
-    :ensure t
-    :bind ("M-o" . ace-window)
-    :config (setq aw-background nil))
+(use-package ace-window
+  :ensure t
+  :bind ("M-o" . ace-window)
+  :config
+  (setq aw-background t)
+  (set-face-attribute 'aw-leading-char-face nil :foreground "#292b2e"
+					  :background "#bc6ec5":height 1.0 :box nil))
 #+END_SRC
 ** avy
 #+BEGIN_SRC emacs-lisp
