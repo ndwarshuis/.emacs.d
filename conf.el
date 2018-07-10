@@ -72,6 +72,19 @@
 (global-set-key (kbd "<f2>") 'org-capture)
 (global-set-key (kbd "<f12>") 'global-hl-line-mode)
 (global-set-key (kbd "S-<f12>") 'display-line-numbers-mode)
+(global-set-key (kbd "C-<f12>") 'mu4e)
+
+(use-package evil
+  :ensure t
+  :init
+  ;; this is required to make evil collection work
+  (setq evil-want-integration nil)
+  :config
+  (evil-mode 1))
+
+(use-package evil-collection
+  :ensure t
+  :after evil)
 
 (use-package delight
   :ensure t)
@@ -149,22 +162,6 @@
 (use-package calfw
   :init
   :ensure t)
-
-(use-package evil
-  :ensure t
-  :config
-  (evil-mode 1)
-  (use-package evil-org
-    :ensure t
-    :after org
-    :delight
-    :config
-    (add-hook 'org-mode-hook 'evil-org-mode)
-    (add-hook 'evil-org-mode-hook
-              (lambda ()
-                (evil-org-set-key-theme)))
-    (require 'evil-org-agenda)
-    (evil-org-agenda-set-keys)))
 
 (use-package undo-tree
   :ensure t
@@ -292,6 +289,17 @@ event of an error or nonlocal exit."
 (run-at-time "00:59" 3600 'org-save-all-org-buffers)
 (setq org-modules '(org-habit org-protocol))
 (require 'org-protocol)
+
+(use-package evil-org
+  :ensure t
+  :after evil
+  :after org
+  :delight
+  :config
+  (add-hook 'org-mode-hook 'evil-org-mode)
+  (add-hook 'evil-org-mode-hook (lambda () (evil-org-set-key-theme)))
+  (require 'evil-org-agenda)
+  (evil-org-agenda-set-keys))
 
 (setq org-log-into-drawer "LOGBOOK")
 (setq org-log-done t)
@@ -1063,7 +1071,7 @@ set as a text property for further sorting"
   (setq org-agenda-custom-commands
         `(("t"
            "Task View"
-           ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc")))
+           ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc" "REFILE")))
 						(org-agenda-include-diary t)))
             ,(nd/agenda-base-task-cmd act-no-rep-match
                                           "Project Tasks"
@@ -1101,7 +1109,7 @@ set as a text property for further sorting"
           ("P"
            "Periodical View"
 		   ((tags
-			 (concat actionable "-" iterator "+" periodical "-" habit)
+			 ,(concat actionable "-" iterator "+" periodical "-" habit)
 		  	 ((org-agenda-overriding-header "Periodical Status")
 		  	  (org-agenda-skip-function '(nd/skip-non-periodical-parent-headers))
 		  	  (org-agenda-before-sorting-filter-function
@@ -1298,6 +1306,29 @@ and reverts all todo keywords to TODO"
                 cfw:fchar-top-junction ?┯
                 cfw:fchar-top-left-corner ?┏
                 cfw:fchar-top-right-corner ?┓))
+
+(require 'mu4e)
+(evil-collection-init 'mu4e)
+(setq mail-user-agent 'mu4e-user-agent
+	  mu4e-maildir "/mnt/data/Mail"
+	  mu4e-drafts-folder "/gmail/[Gmail].Drafts"
+	  mu4e-sent-folder   "/gmail/[Gmail].Sent Mail"
+	  mu4e-trash-folder  "/gmail/[Gmail].Trash")
+
+(require 'smtpmail)
+(setq message-send-mail-function 'smtpmail-send-it
+	  user-mail-address "natedwarshuis@gmail.com"
+	  user-full-name "Nate Dwarshuis"
+
+      mu4e-sent-messages-behavior 'delete
+      
+	  starttls-use-gnutls t
+	  smtpmail-starttls-credentials '(("smtp.gmail.com" 587 nil nil))
+	  smtpmail-auth-credentials '(("smtp.gmail.com" 587
+								   "natedwarshuis@gmail.com" nil))
+	  smtpmail-default-smtp-server "smtp.gmail.com"
+	  smtpmail-smtp-service 587
+	  smtpmail-smtp-server "smtp.gmail.com")
 
 (defvar nd-term-shell "/bin/bash")
 (defadvice ansi-term (before force-bash)
