@@ -101,34 +101,55 @@
   :init
   (which-key-mode))
 
-(use-package ido
-  :ensure t
-  :bind
-  ("C-x C-b" . 'ido-switch-buffer)
-  ("C-x b" . 'ibuffer)
-  :config
-  (ido-mode 1)
-  (setq ido-everywhere t)
-  (setq ido-enable-flex-matching t)
-  (setq ido-max-directory-size 100000)
-  (setq ido-default-file-method 'selected-window)
-  (setq ido-default-buffer-method 'selected-window)
-  (use-package ido-vertical-mode
-    :ensure t
-    :init
-    (ido-vertical-mode 1)
-    (setq ido-vertical-define-keys 'C-n-and-C-p-only)))
+;; (use-package ido
+;;   :ensure t
+;;   :bind
+;;   ("C-x C-b" . 'ido-switch-buffer)
+;;   ("C-x b" . 'ibuffer)
+;;   :config
+;;   (ido-mode 1)
+;;   (setq ido-everywhere t)
+;;   (setq ido-enable-flex-matching t)
+;;   (setq ido-max-directory-size 100000)
+;;   (setq ido-default-file-method 'selected-window)
+;;   (setq ido-default-buffer-method 'selected-window)
+;;   (use-package ido-vertical-mode
+;;     :ensure t
+;;     :init
+;;     (ido-vertical-mode 1)
+;;     (setq ido-vertical-define-keys 'C-n-and-C-p-only)))
 
 
   ;; (setq ido-file-extensions-order '(".org" ".txt" ".py" ".emacs" ".xml" ".el" ".ini" ".cfg" ".cnf"))
 
-(use-package smex
+(use-package helm
   :ensure t
-  :init
-  (smex-initialize)
   :bind
-  ("M-x" . 'smex)
-  ("M-X" . 'smex-major-mode-commands))
+  ("C-x C-f" . 'helm-find-files)
+  ("C-x C-b" . 'helm-buffers-list)
+  ("M-x" . 'helm-M-x)
+  ("C-c h" . 'helm-command-prefix)
+  :init
+  (helm-mode 1)
+  :config
+  (setq helm-autoresize-max-height 0
+		helm-autoresize-max-height 40
+		helm-M-x-fuzzy-match t
+		helm-buffers-fuzzy-matching t
+		helm-recentf-fuzzy-match t
+		helm-semantic-fuzzy-match t
+		helm-imenu-fuzzy-match t))
+
+(helm-autoresize-mode 1)
+(require 'helm-config)
+
+;; (use-package smex
+;;   :ensure t
+;;   :init
+;;   (smex-initialize)
+;;   :bind
+;;   ("M-x" . 'smex)
+;;   ("M-X" . 'smex-major-mode-commands))
 
 (use-package rainbow-delimiters
   :ensure t
@@ -487,11 +508,11 @@ event of an error or nonlocal exit."
 		   "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n")
 
 		  ("p" "org-protocol" entry (file ,capfile)
-           "* %^{Title}\n%u\n#+BEGIN_QUOTE\n%i\n#+END_QUOTE"
+           "* %^{Title} :\\%note:\n%u\n#+BEGIN_QUOTE\n%i\n#+END_QUOTE"
 		   :immediate-finish t)
 
 		  ("L" "org-protocol link" entry (file ,capfile)
-           "* %^{Title}\n[[%:link][%:description]]\n%U"
+           "* %^{Title} :\\%note:\n[[%:link][%:description]]\n%U"
 		   :immediate-finish t))))
 
 (setq org-refile-targets (quote ((nil :maxlevel . 9)
