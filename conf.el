@@ -84,7 +84,9 @@
 
 (use-package evil-collection
   :ensure t
-  :after evil)
+  :after evil
+  :init
+  (evil-collection-init '(which-key helm minibuffer mu4e)))
 
 (use-package delight
   :ensure t)
@@ -100,6 +102,28 @@
   :delight
   :init
   (which-key-mode))
+
+(use-package helm
+  :ensure t
+  :bind
+  ("C-x C-f" . 'helm-find-files)
+  ("C-x C-b" . 'helm-buffers-list)
+  ("M-x" . 'helm-M-x)
+  ("C-c h" . 'helm-command-prefix)
+  :init
+  (helm-mode 1)
+  :config
+  (setq helm-autoresize-max-height 0
+		helm-autoresize-max-height 40
+		helm-M-x-fuzzy-match t
+		helm-buffers-fuzzy-matching t
+		helm-recentf-fuzzy-match t
+		helm-semantic-fuzzy-match t
+		helm-imenu-fuzzy-match t
+		helm-scroll-amount 8))
+
+(helm-autoresize-mode 1)
+(require 'helm-config)
 
 ;; (use-package ido
 ;;   :ensure t
@@ -121,27 +145,6 @@
 
 
   ;; (setq ido-file-extensions-order '(".org" ".txt" ".py" ".emacs" ".xml" ".el" ".ini" ".cfg" ".cnf"))
-
-(use-package helm
-  :ensure t
-  :bind
-  ("C-x C-f" . 'helm-find-files)
-  ("C-x C-b" . 'helm-buffers-list)
-  ("M-x" . 'helm-M-x)
-  ("C-c h" . 'helm-command-prefix)
-  :init
-  (helm-mode 1)
-  :config
-  (setq helm-autoresize-max-height 0
-		helm-autoresize-max-height 40
-		helm-M-x-fuzzy-match t
-		helm-buffers-fuzzy-matching t
-		helm-recentf-fuzzy-match t
-		helm-semantic-fuzzy-match t
-		helm-imenu-fuzzy-match t))
-
-(helm-autoresize-mode 1)
-(require 'helm-config)
 
 ;; (use-package smex
 ;;   :ensure t
@@ -520,7 +523,7 @@ event of an error or nonlocal exit."
                                  (org-agenda-files :maxlevel . 9))))
 
 (setq org-refile-use-outline-path t)
-(setq org-outline-path-complete-in-steps t)
+(setq org-outline-path-complete-in-steps nil)
 ;; (setq org-completion-use-ido t)
 
 (setq org-refile-allow-creating-parent-nodes 'confirm)
@@ -1329,7 +1332,6 @@ and reverts all todo keywords to TODO"
                 cfw:fchar-top-right-corner ?┓))
 
 (require 'mu4e)
-(evil-collection-init 'mu4e)
 (setq mail-user-agent 'mu4e-user-agent
 	  mu4e-maildir "/mnt/data/Mail"
 	  mu4e-drafts-folder "/gmail/[Gmail].Drafts"

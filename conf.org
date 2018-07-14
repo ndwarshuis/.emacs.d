@@ -122,7 +122,6 @@ These are commands that should work in any mode. Make the assumption that functi
 ** 
 * packages
 ** evil
-*** packages
 #+BEGIN_SRC emacs-lisp
 (use-package evil
   :ensure t
@@ -134,29 +133,9 @@ These are commands that should work in any mode. Make the assumption that functi
 
 (use-package evil-collection
   :ensure t
-  :after evil)
-#+END_SRC
-*** keybindings
-vim is all about escape, not...ctrl+g???
-+BEGIN_SRC emacs-lisp
-  (define-key evil-normal-state-map [escape] 'keyboard-quit)
-  (define-key evil-visual-state-map [escape] 'keyboard-quit)
-
-  ;; since ctrl+g and evil make no sense
-  (defun nd/minibuffer-keyboard-quit ()
-    "Abort recursive edit.
-  In Delete Selection mode, if the mark is active, just deactivate it;
-  then it takes a second \\[keyboard-quit] to abort the minibuffer."
-    (interactive)
-    (if (and delete-selection-mode transient-mark-mode mark-active)
-        (setq deactivate-mark  t)
-      (when (get-buffer "*Completions*") (delete-windows-on "*Completions*"))
-      (abort-recursive-edit)))
-
-  (define-key minibuffer-local-ns-map [escape] 'minibuffer-keyboard-quit)
-  (define-key minibuffer-local-completion-map [escape] 'minibuffer-keyboard-quit)
-  (define-key minibuffer-local-must-match-map [escape] 'minibuffer-keyboard-quit)
-  (define-key minibuffer-local-isearch-map [escape] 'minibuffer-keyboard-quit)
+  :after evil
+  :init
+  (evil-collection-init '(which-key helm minibuffer mu4e)))
 #+END_SRC
 ** delight
 #+BEGIN_SRC emacs-lisp
@@ -178,6 +157,30 @@ vim is all about escape, not...ctrl+g???
     :delight
     :init
     (which-key-mode))
+#+END_SRC
+** helm
+#+BEGIN_SRC emacs-lisp
+(use-package helm
+  :ensure t
+  :bind
+  ("C-x C-f" . 'helm-find-files)
+  ("C-x C-b" . 'helm-buffers-list)
+  ("M-x" . 'helm-M-x)
+  ("C-c h" . 'helm-command-prefix)
+  :init
+  (helm-mode 1)
+  :config
+  (setq helm-autoresize-max-height 0
+		helm-autoresize-max-height 40
+		helm-M-x-fuzzy-match t
+		helm-buffers-fuzzy-matching t
+		helm-recentf-fuzzy-match t
+		helm-semantic-fuzzy-match t
+		helm-imenu-fuzzy-match t
+		helm-scroll-amount 8))
+
+(helm-autoresize-mode 1)
+(require 'helm-config)
 #+END_SRC
 ** ido
 #+BEGIN_SRC emacs-lisp
@@ -201,31 +204,6 @@ vim is all about escape, not...ctrl+g???
 
 
   ;; (setq ido-file-extensions-order '(".org" ".txt" ".py" ".emacs" ".xml" ".el" ".ini" ".cfg" ".cnf"))
-#+END_SRC
-** helm
-#+BEGIN_SRC emacs-lisp
-(use-package helm
-  :ensure t
-  :bind
-  ("C-x C-f" . 'helm-find-files)
-  ("C-x C-b" . 'helm-buffers-list)
-  ("M-x" . 'helm-M-x)
-  ("C-c h" . 'helm-command-prefix)
-  :init
-  (helm-mode 1)
-  :config
-  (setq helm-autoresize-max-height 0
-		helm-autoresize-max-height 40
-		helm-M-x-fuzzy-match t
-		helm-buffers-fuzzy-matching t
-		helm-recentf-fuzzy-match t
-		helm-semantic-fuzzy-match t
-		helm-imenu-fuzzy-match t
-		helm-scroll-amount 8
-		helm-echo-input-in-header-line t))
-
-(helm-autoresize-mode 1)
-(require 'helm-config)
 #+END_SRC
 ** smex
 #+BEGIN_SRC emacs-lisp
@@ -731,8 +709,7 @@ There are several types of tags I use:
 *** completion
 #+BEGIN_SRC emacs-lisp
 (setq org-refile-use-outline-path t)
-(setq org-outline-path-complete-in-steps t)
-;; (setq org-completion-use-ido t)
+(setq org-outline-path-complete-in-steps nil)
 #+END_SRC
 *** node creation
 #+BEGIN_SRC emacs-lisp
@@ -1669,7 +1646,6 @@ only for gmail now
 ** basic
 #+BEGIN_SRC emacs-lisp
 (require 'mu4e)
-(evil-collection-init 'mu4e)
 (setq mail-user-agent 'mu4e-user-agent
 	  mu4e-maildir "/mnt/data/Mail"
 	  mu4e-drafts-folder "/gmail/[Gmail].Drafts"
