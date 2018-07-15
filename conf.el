@@ -99,7 +99,13 @@
 		helm-recentf-fuzzy-match t
 		helm-semantic-fuzzy-match t
 		helm-imenu-fuzzy-match t
-		helm-scroll-amount 8))
+		helm-scroll-amount 8)
+
+  (add-to-list 'display-buffer-alist
+               `(,(rx bos "*helm" (* not-newline) "*" eos)
+                 (display-buffer-in-side-window)
+                 (inhibit-same-window . t)
+                 (window-height . 0.4))))
 
 (helm-autoresize-mode 1)
 (require 'helm-config)
