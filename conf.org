@@ -1613,7 +1613,9 @@ I like being evil. All package and custom bindings go here.
   :ensure t
   :after evil
   :init
-  (evil-collection-init '(which-key helm minibuffer mu4e)))
+  (setq evil-collection-modes-list '(which-key helm minibuffer mu4e))
+  :config
+  (evil-collection-init))
 #+END_SRC
 ** local
 *** org-mode

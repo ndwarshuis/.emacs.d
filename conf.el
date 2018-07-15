@@ -101,6 +101,8 @@
 		helm-imenu-fuzzy-match t
 		helm-scroll-amount 8)
 
+  ;; I liked the way ido-veritcal worked
+  ;; less invasive...
   (add-to-list 'display-buffer-alist
                `(,(rx bos "*helm" (* not-newline) "*" eos)
                  (display-buffer-in-side-window)
@@ -1311,7 +1313,9 @@ and reverts all todo keywords to TODO"
   :ensure t
   :after evil
   :init
-  (evil-collection-init '(which-key helm minibuffer mu4e)))
+  (setq evil-collection-modes-list '(which-key helm minibuffer mu4e))
+  :config
+  (evil-collection-init))
 
 (add-hook 'org-mode-hook
           (lambda ()
