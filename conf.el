@@ -66,28 +66,6 @@
 ;;     (setq dashboard-banner-logo-title "Emacs"))
      ;; (setq dashboard-items '((recents . 10))))
 
-(global-set-key (kbd "C-h a") 'apropos)
-
-(global-set-key (kbd "<f1>") 'org-agenda)
-(global-set-key (kbd "<f2>") 'org-capture)
-(global-set-key (kbd "<f12>") 'global-hl-line-mode)
-(global-set-key (kbd "S-<f12>") 'display-line-numbers-mode)
-(global-set-key (kbd "C-<f12>") 'mu4e)
-
-(use-package evil
-  :ensure t
-  :init
-  ;; this is required to make evil collection work
-  (setq evil-want-integration nil)
-  :config
-  (evil-mode 1))
-
-(use-package evil-collection
-  :ensure t
-  :after evil
-  :init
-  (evil-collection-init '(which-key helm minibuffer mu4e)))
-
 (use-package delight
   :ensure t)
 
@@ -105,6 +83,7 @@
 
 (use-package helm
   :ensure t
+  :delight
   :bind
   ("C-x C-f" . 'helm-find-files)
   ("C-x C-b" . 'helm-buffers-list)
@@ -232,73 +211,30 @@ event of an error or nonlocal exit."
                      (string-prefix-p prefix i)))
               str-list))
 
-(defun split-and-follow-horizontally ()
-    (interactive)
-    (split-window-below)
-    (balance-windows)
-    (other-window 1))
-(global-set-key (kbd "C-x 2") 'split-and-follow-horizontally)
+(defun nd/split-and-follow-horizontally ()
+  (interactive)
+  (split-window-below)
+  (balance-windows)
+  (other-window 1))
 
-(defun split-and-follow-vertically ()
-    (interactive)
-    (split-window-right)
-    (balance-windows)
-    (other-window 1))
-(global-set-key (kbd "C-x 3") 'split-and-follow-vertically)
-
-(defun config-visit ()
-(interactive)
-(find-file "~/.emacs.d/conf.org"))
-(global-set-key (kbd "C-c e") 'config-visit)
-
-(defun config-reload ()
-"Reloads ~/.emacs.d/conf.org at runtime"
-(interactive)
-(org-babel-load-file (expand-file-name "~/.emacs.d/conf.org")))
-(global-set-key (kbd "C-c r") 'config-reload)
-
-(global-set-key (kbd "C-S-w") 'fc/delete-whole-line)
-(defun fc/delete-whole-line ()
-"Delete the whole line without flooding the kill ring"
-(interactive)
-(delete-region (progn (forward-line 0) (point))
-                (progn (forward-line 1) (point))))
-
-(global-set-key (kbd "M-d") 'fc/delete-word-forward)
-(defun fc/delete-word-forward (arg)
-"Delete word forward without flooding the kill ring"
-(interactive "p")
-(delete-region (point) (progn (forward-word arg) (point))))
-
-(global-set-key (kbd "<M-backspace>") 'fc/delete-word-backward)
-(defun fc/delete-word-backward (arg)
-"Delete word backward without flooding the kill ring"
-(interactive "p")
-(delete-region (point) (progn (backward-word arg) (point))))
-
-(global-set-key (kbd "C-c C-d") 'fc/duplicate-current-line-or-region)
-(defun fc/duplicate-current-line-or-region (arg)
-    "Duplicates the current line or region ARG times."
-    (interactive "p")
-    (let (beg end (origin (point)))
-    (if (and mark-active (> (point) (mark)))
-        (exchange-point-and-mark))
-    (setq beg (line-beginning-position))
-    (if mark-active
-        (exchange-point-and-mark))
-    (setq end (line-end-position))
-    (let ((region (buffer-substring-no-properties beg end)))
-        (dotimes (i arg)
-        (goto-char end)
-        (newline)
-        (insert region)
-        (setq end (point))))))
-
+(defun nd/split-and-follow-vertically ()
+  (interactive)
+  (split-window-right)
+  (balance-windows)
+  (other-window 1))
+    
 (defun nd/switch-to-previous-buffer ()
   (interactive)
   (switch-to-buffer (other-buffer (current-buffer) 1)))
   
-(global-set-key (kbd "M-b") 'nd/switch-to-previous-buffer)
+(defun nd/config-reload ()
+  "Reloads ~/.emacs.d/conf.org at runtime"
+  (interactive)
+  (org-babel-load-file (expand-file-name "~/.emacs.d/conf.org")))
+
+(defun nd/config-visit ()
+  (interactive)
+  (find-file "~/.emacs.d/conf.org"))
 
 (setq inferior-R-args "--quiet --no-save")
 (load "ess-site")
@@ -320,16 +256,9 @@ event of an error or nonlocal exit."
 (setq org-modules '(org-habit org-protocol))
 (require 'org-protocol)
 
-(use-package evil-org
-  :ensure t
-  :after evil
-  :after org
-  :delight
-  :config
-  (add-hook 'org-mode-hook 'evil-org-mode)
-  (add-hook 'evil-org-mode-hook (lambda () (evil-org-set-key-theme)))
-  (require 'evil-org-agenda)
-  (evil-org-agenda-set-keys))
+(setq org-special-ctrl-a/e t)
+(setq org-special-ctrl-k t)
+(setq org-yank-adjusted-subtrees t)
 
 (setq org-log-into-drawer "LOGBOOK")
 (setq org-log-done t)
@@ -407,30 +336,6 @@ event of an error or nonlocal exit."
 
 (add-to-list 'org-structure-template-alist
              '("el" "#+BEGIN_SRC emacs-lisp\n?\n#+END_SRC"))
-
-(setq org-special-ctrl-a/e t)
-(setq org-special-ctrl-k t)
-(setq org-yank-adjusted-subtrees t)
-
-(add-hook 'org-mode-hook
-          (lambda ()
-            (local-set-key (kbd "C-c C-x x") 'nd/mark-subtree-done)
-            (local-set-key (kbd "C-c C-x c") 'nd/org-clone-subtree-with-time-shift)))
-
-(evil-define-key 'motion org-agenda-mode-map
-  "t" 'nd/toggle-project-toplevel-display
-  "D" 'org-agenda-day-view
-  "W" 'org-agenda-week-view
-  "M" 'org-agenda-month-view
-  "Y" 'org-agenda-year-view
-  "ct" nil
-  "sC" 'nd/org-agenda-filter-non-context
-  "e" 'org-agenda-set-effort
-  "ce" nil)
-
-(add-hook 'org-agenda-mode-hook
-          (lambda ()
-            (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)))
 
 (setq org-todo-keywords
       '((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d)")
@@ -1364,3 +1269,61 @@ and reverts all todo keywords to TODO"
 (ad-activate 'ansi-term)
 
 (setq ediff-window-setup-function 'ediff-setup-windows-plain)
+
+(use-package evil
+  :ensure t
+  :init
+  ;; this is required to make evil collection work
+  (setq evil-want-integration nil)
+  :config
+  (evil-mode 1))
+
+(use-package evil-org
+  :ensure t
+  :after evil
+  :after org
+  :delight
+  :config
+  (add-hook 'org-mode-hook 'evil-org-mode)
+  (add-hook 'evil-org-mode-hook (lambda () (evil-org-set-key-theme)))
+
+  (require 'evil-org-agenda)
+  (evil-org-agenda-set-keys)
+  ;; some of the defaults bug me...
+  (evil-define-key 'motion org-agenda-mode-map
+	"t" 'nd/toggle-project-toplevel-display
+	"D" 'org-agenda-day-view
+	"W" 'org-agenda-week-view
+	"M" 'org-agenda-month-view
+	"Y" 'org-agenda-year-view
+	"ct" nil
+	"sC" 'nd/org-agenda-filter-non-context
+	"e" 'org-agenda-set-effort
+	"ce" nil))
+
+(use-package evil-collection
+  :ensure t
+  :after evil
+  :init
+  (evil-collection-init '(which-key helm minibuffer mu4e)))
+
+(add-hook 'org-mode-hook
+          (lambda ()
+            (local-set-key (kbd "C-c C-x x") 'nd/mark-subtree-done)
+            (local-set-key (kbd "C-c C-x c") 'nd/org-clone-subtree-with-time-shift)))
+            
+(add-hook 'org-agenda-mode-hook
+          (lambda ()
+            (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)))
+
+(global-set-key (kbd "<f1>") 'org-agenda)
+(global-set-key (kbd "<f2>") 'org-capture)
+(global-set-key (kbd "<f12>") 'global-hl-line-mode)
+(global-set-key (kbd "S-<f12>") 'display-line-numbers-mode)
+(global-set-key (kbd "C-<f12>") 'mu4e)
+
+(global-set-key (kbd "M-b") 'nd/switch-to-previous-buffer)
+(global-set-key (kbd "C-c r") 'nd/config-reload)
+(global-set-key (kbd "C-c e") 'nd/config-visit)
+(global-set-key (kbd "C-x 2") 'nd/split-and-follow-horizontally)
+(global-set-key (kbd "C-x 3") 'nd/split-and-follow-vertically)
