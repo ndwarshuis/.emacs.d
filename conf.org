@@ -85,48 +85,29 @@ NOTE: this only works if we start term after gui, and term has light bg. not big
           (setq my:theme-window-loaded t)
         (setq my:theme-terminal-loaded t))))
 #+END_SRC
-* modeline
-#+BEGIN_SRC emacs-lisp
-  (use-package spaceline
-    :ensure t
-    :config
-      (require 'spaceline-config)
-      (setq powerline-default-separator (quote arrow))
-      (spaceline-spacemacs-theme)
-      (setq spaceline-buffer-size-p nil))
-#+END_SRC
-** dashboard
-#+BEGIN_SRC emacs-lisp
-;;  (use-package dashboard
-;;    :ensure t
-;;    :config
-;;    (dashboard-setup-startup-hook)
-;;     (setq dashboard-banner-logo-title "Emacs"))
-     ;; (setq dashboard-items '((recents . 10))))
-#+END_SRC
 * printing
 ** 
 * packages
 ** delight
 #+BEGIN_SRC emacs-lisp
-  (use-package delight
-    :ensure t)
+(use-package delight
+  :ensure t)
 #+END_SRC
 ** beacon
 #+BEGIN_SRC emacs-lisp
-  (use-package beacon
-    :ensure t
-    :delight
-    :init
-    (beacon-mode 1))
+(use-package beacon
+  :ensure t
+  :delight
+  :init
+  (beacon-mode 1))
 #+END_SRC
 ** whichkey
 #+BEGIN_SRC emacs-lisp
-  (use-package which-key
-    :ensure t
-    :delight
-    :init
-    (which-key-mode))
+(use-package which-key
+  :ensure t
+  :delight
+  :init
+  (which-key-mode))
 #+END_SRC
 ** helm
 #+BEGIN_SRC emacs-lisp
@@ -135,43 +116,41 @@ NOTE: this only works if we start term after gui, and term has light bg. not big
   :delight
   :init
   (helm-mode 1)
+  :custom
+  (helm-autoresize-max-height 0)
+  (helm-autoresize-max-height 40)
+  (helm-M-x-fuzzy-match t)
+  (helm-buffers-fuzzy-matching t)
+  (helm-recentf-fuzzy-match t)
+  (helm-semantic-fuzzy-match t)
+  (helm-imenu-fuzzy-match t)
+  (helm-scroll-amount 8)
   :config
-  (setq helm-autoresize-max-height 0
-		helm-autoresize-max-height 40
-		helm-M-x-fuzzy-match t
-		helm-buffers-fuzzy-matching t
-		helm-recentf-fuzzy-match t
-		helm-semantic-fuzzy-match t
-		helm-imenu-fuzzy-match t
-		helm-scroll-amount 8)
-
-  ;; I liked the way ido-veritcal worked
-  ;; less invasive...
   (add-to-list 'display-buffer-alist
                `(,(rx bos "*helm" (* not-newline) "*" eos)
                  (display-buffer-in-side-window)
                  (inhibit-same-window . t)
-                 (window-height . 0.4))))
+                 (window-height . 0.4)))
 
-(helm-autoresize-mode 1)
-(require 'helm-config)
+  (helm-autoresize-mode 1)
+  (require 'helm-config))
 #+END_SRC
 ** rainbow-delimiters
 #+BEGIN_SRC emacs-lisp
-  (use-package rainbow-delimiters
-    :ensure t
-    :delight
-    :init
-      (add-hook 'prog-mode-hook #'rainbow-delimiters-mode)
-      (add-hook 'inferior-ess-mode-hook #'rainbow-delimiters-mode)
-      (add-hook 'ess-mode-hook #'rainbow-delimiters-mode))
+(use-package rainbow-delimiters
+  :ensure t
+  :delight
+  :hook
+  ((prog-mode . rainbow-delimiters-mode)
+   (inferior-ess-mode . rainbow-delimiters-mode)
+   (ess-mode . rainbow-delimiters-mode)))
 #+END_SRC
 ** ace-window
 #+BEGIN_SRC emacs-lisp
 (use-package ace-window
   :ensure t
-  :config
-  (setq aw-background t)
+  :custom
+  (aw-background t)
   :custom-face
   (aw-leading-char-face ((t (:foreground "#292b2e" :background "#bc6ec5":height 1.0 :box nil)))))
 #+END_SRC
@@ -179,7 +158,8 @@ NOTE: this only works if we start term after gui, and term has light bg. not big
 #+BEGIN_SRC emacs-lisp
   (use-package avy
     :ensure t
-    :config (setq avy-background t))
+    :custom
+    (avy-background t))
 #+END_SRC
 ** sudo edit
 #+BEGIN_SRC emacs-lisp
@@ -200,26 +180,39 @@ NOTE: this only works if we start term after gui, and term has light bg. not big
 #+END_SRC
 ** undo tree
 #+BEGIN_SRC emacs-lisp
-  (use-package undo-tree
-    :ensure t
-    :delight
-    :config
-    (global-undo-tree-mode)
-    (setq undo-tree-visualizer-diff t))
+(use-package undo-tree
+  :ensure t
+  :delight
+  :custom
+  (undo-tree-visualizer-diff t)
+  :config
+  (global-undo-tree-mode))
 #+END_SRC
 ** fill-column-indicator
 #+BEGIN_SRC emacs-lisp
 (use-package fill-column-indicator
   :ensure t
   :init
-  :config
-  (setq fci-rule-use-dashes t)
-  (add-hook 'prog-mode-hook #'fci-mode))
+  :custom
+  (fci-rule-use-dashes t)
+  :hook
+  (prog-mode . fci-mode))
 #+END_SRC
 ** rainbow
 #+BEGIN_SRC emacs-lisp
 (use-package rainbow-mode
   :ensure t)
+#+END_SRC
+** spaceline
+#+BEGIN_SRC emacs-lisp
+(use-package spaceline
+  :ensure t
+  :custom
+  (powerline-default-separator 'arrow)
+  (spaceline-buffer-size-p nil)
+  :config
+  (require 'spaceline-config)
+  (spaceline-spacemacs-theme))
 #+END_SRC
 * library
 A place for duct tape code that I developed (or lovingly stole from others)
@@ -292,7 +285,7 @@ event of an error or nonlocal exit."
 #+END_SRC
 * languages
 ** python
-#+BEGIN_SRC 
+#+BEGIN_SRC
 (elpy-enable)
 
 ;; make python tabs 4 chars
@@ -307,10 +300,11 @@ event of an error or nonlocal exit."
 #+BEGIN_SRC emacs-lisp
 (use-package haskell-mode
   :ensure t
-  :config
-  ;; enable dynamic linking by default
-  (setq haskell-compile-command "ghc -dynamic -Wall -ferror-spans -fforce-recomp -c %s")
-  (setq haskell-interactive-popup-errors nil))
+  :custom
+  (haskell-compile-command
+   "ghc -dynamic -Wall -ferror-spans -fforce-recomp -c %s"
+   "enable dynamic linking by default")
+  (haskell-interactive-popup-errors nil))
 #+END_SRC
 * org-mode
 ** basic
@@ -338,8 +332,8 @@ event of an error or nonlocal exit."
 #+BEGIN_SRC emacs-lisp
 (use-package org-bullets
   :ensure t
-  :config
-    (add-hook 'org-mode-hook (lambda () (org-bullets-mode))))
+  :hook
+  (org-mode . org-bullets-mode))
 #+END_SRC
 *** font height
 The fonts in org headings bug me, make them smaller and less invasive
@@ -1476,17 +1470,17 @@ and reverts all todo keywords to TODO"
 #+END_SRC
 ** calfw
 #+BEGIN_SRC emacs-lisp
-  (use-package calfw-org
-    :init
-    :ensure t
-    :config (setq cfw:fchar-junction ?╋
-                  cfw:fchar-vertical-line ?┃
-                  cfw:fchar-horizontal-line ?━
-                  cfw:fchar-left-junction ?┣
-                  cfw:fchar-right-junction ?┫
-                  cfw:fchar-top-junction ?┯
-                  cfw:fchar-top-left-corner ?┏
-                  cfw:fchar-top-right-corner ?┓))
+(use-package calfw-org
+  :ensure t
+  :custom
+  (cfw:fchar-junction ?╋)
+  (cfw:fchar-vertical-line ?┃)
+  (cfw:fchar-horizontal-line ?━)
+  (cfw:fchar-left-junction ?┣)
+  (cfw:fchar-right-junction ?┫)
+  (cfw:fchar-top-junction ?┯)
+  (cfw:fchar-top-left-corner ?┏)
+  (cfw:fchar-top-right-corner ?┓))
 #+END_SRC
 * mu4e
 only for gmail now

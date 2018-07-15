@@ -51,21 +51,6 @@
         (setq my:theme-window-loaded t)
       (setq my:theme-terminal-loaded t))))
 
-(use-package spaceline
-  :ensure t
-  :config
-    (require 'spaceline-config)
-    (setq powerline-default-separator (quote arrow))
-    (spaceline-spacemacs-theme)
-    (setq spaceline-buffer-size-p nil))
-
-;;  (use-package dashboard
-;;    :ensure t
-;;    :config
-;;    (dashboard-setup-startup-hook)
-;;     (setq dashboard-banner-logo-title "Emacs"))
-     ;; (setq dashboard-items '((recents . 10))))
-
 (use-package delight
   :ensure t)
 
@@ -86,45 +71,44 @@
   :delight
   :init
   (helm-mode 1)
+  :custom
+  (helm-autoresize-max-height 0)
+  (helm-autoresize-max-height 40)
+  (helm-M-x-fuzzy-match t)
+  (helm-buffers-fuzzy-matching t)
+  (helm-recentf-fuzzy-match t)
+  (helm-semantic-fuzzy-match t)
+  (helm-imenu-fuzzy-match t)
+  (helm-scroll-amount 8)
   :config
-  (setq helm-autoresize-max-height 0
-		helm-autoresize-max-height 40
-		helm-M-x-fuzzy-match t
-		helm-buffers-fuzzy-matching t
-		helm-recentf-fuzzy-match t
-		helm-semantic-fuzzy-match t
-		helm-imenu-fuzzy-match t
-		helm-scroll-amount 8)
-
-  ;; I liked the way ido-veritcal worked
-  ;; less invasive...
   (add-to-list 'display-buffer-alist
                `(,(rx bos "*helm" (* not-newline) "*" eos)
                  (display-buffer-in-side-window)
                  (inhibit-same-window . t)
-                 (window-height . 0.4))))
+                 (window-height . 0.4)))
 
-(helm-autoresize-mode 1)
-(require 'helm-config)
+  (helm-autoresize-mode 1)
+  (require 'helm-config))
 
 (use-package rainbow-delimiters
   :ensure t
   :delight
-  :init
-    (add-hook 'prog-mode-hook #'rainbow-delimiters-mode)
-    (add-hook 'inferior-ess-mode-hook #'rainbow-delimiters-mode)
-    (add-hook 'ess-mode-hook #'rainbow-delimiters-mode))
+  :hook
+  ((prog-mode . rainbow-delimiters-mode)
+   (inferior-ess-mode . rainbow-delimiters-mode)
+   (ess-mode . rainbow-delimiters-mode)))
 
 (use-package ace-window
   :ensure t
-  :config
-  (setq aw-background t)
+  :custom
+  (aw-background t)
   :custom-face
   (aw-leading-char-face ((t (:foreground "#292b2e" :background "#bc6ec5":height 1.0 :box nil)))))
 
 (use-package avy
   :ensure t
-  :config (setq avy-background t))
+  :custom
+  (avy-background t))
 
 (use-package sudo-edit
   :ensure t)
@@ -140,19 +124,30 @@
 (use-package undo-tree
   :ensure t
   :delight
+  :custom
+  (undo-tree-visualizer-diff t)
   :config
-  (global-undo-tree-mode)
-  (setq undo-tree-visualizer-diff t))
+  (global-undo-tree-mode))
 
 (use-package fill-column-indicator
   :ensure t
   :init
-  :config
-  (setq fci-rule-use-dashes t)
-  (add-hook 'prog-mode-hook #'fci-mode))
+  :custom
+  (fci-rule-use-dashes t)
+  :hook
+  (prog-mode . fci-mode))
 
 (use-package rainbow-mode
   :ensure t)
+
+(use-package spaceline
+  :ensure t
+  :custom
+  (powerline-default-separator 'arrow)
+  (spaceline-buffer-size-p nil)
+  :config
+  (require 'spaceline-config)
+  (spaceline-spacemacs-theme))
 
 ;; lovingly stolen from aaron harris
 (defmacro nd/with-advice (adlist &rest body)
@@ -215,10 +210,11 @@ event of an error or nonlocal exit."
 
 (use-package haskell-mode
   :ensure t
-  :config
-  ;; enable dynamic linking by default
-  (setq haskell-compile-command "ghc -dynamic -Wall -ferror-spans -fforce-recomp -c %s")
-  (setq haskell-interactive-popup-errors nil))
+  :custom
+  (haskell-compile-command
+   "ghc -dynamic -Wall -ferror-spans -fforce-recomp -c %s"
+   "enable dynamic linking by default")
+  (haskell-interactive-popup-errors nil))
 
 (setq org-startup-indented t)
 (delight 'org-indent-mode)
@@ -236,8 +232,8 @@ event of an error or nonlocal exit."
 
 (use-package org-bullets
   :ensure t
-  :config
-    (add-hook 'org-mode-hook (lambda () (org-bullets-mode))))
+  :hook
+  (org-mode . org-bullets-mode))
 
 (defun nd/org-ui-heading-same-font-height ()
   (let ((heading-height 1.15))
@@ -1201,16 +1197,16 @@ and reverts all todo keywords to TODO"
       (org-remove-empty-drawer-at (point)))))
 
 (use-package calfw-org
-  :init
   :ensure t
-  :config (setq cfw:fchar-junction ?╋
-                cfw:fchar-vertical-line ?┃
-                cfw:fchar-horizontal-line ?━
-                cfw:fchar-left-junction ?┣
-                cfw:fchar-right-junction ?┫
-                cfw:fchar-top-junction ?┯
-                cfw:fchar-top-left-corner ?┏
-                cfw:fchar-top-right-corner ?┓))
+  :custom
+  (cfw:fchar-junction ?╋)
+  (cfw:fchar-vertical-line ?┃)
+  (cfw:fchar-horizontal-line ?━)
+  (cfw:fchar-left-junction ?┣)
+  (cfw:fchar-right-junction ?┫)
+  (cfw:fchar-top-junction ?┯)
+  (cfw:fchar-top-left-corner ?┏)
+  (cfw:fchar-top-right-corner ?┓))
 
 (require 'mu4e)
 (setq mail-user-agent 'mu4e-user-agent
