@@ -1489,9 +1489,13 @@ only for gmail now
 (require 'mu4e)
 (setq mail-user-agent 'mu4e-user-agent
 	  mu4e-maildir "/mnt/data/Mail"
-	  mu4e-drafts-folder "/gmail/[Gmail].Drafts"
-	  mu4e-sent-folder   "/gmail/[Gmail].Sent Mail"
-	  mu4e-trash-folder  "/gmail/[Gmail].Trash")
+	  mu4e-drafts-folder "/gmail/drafts"
+	  mu4e-sent-folder   "/gmail/sent"
+	  mu4e-trash-folder  "/gmail/trash"
+
+	  mu4e-change-filenames-when-moving t
+
+	  mu4e-confirm-quit nil)
 #+END_SRC
 ** smtp
 #+BEGIN_SRC emacs-lisp
@@ -1565,7 +1569,7 @@ I like being evil. All package and custom bindings go here.
   :ensure t
   :after evil
   :init
-  (setq evil-collection-modes-list '(which-key helm minibuffer mu4e))
+  (setq evil-collection-modes-list '(which-key helm minibuffer mu4e ediff))
   :custom
   (evil-collection-setup-minibuffer t)
   :config
