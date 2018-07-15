@@ -1249,8 +1249,8 @@ and reverts all todo keywords to TODO"
   :ensure t
   :after (evil org)
   :delight
-  :hook (org-mode . evil-org-mode)
   :config
+  (add-hook 'org-mode-hook 'evil-org-mode)
   (add-hook 'evil-org-mode-hook 'evil-org-set-key-theme)
 
   (require 'evil-org-agenda)
