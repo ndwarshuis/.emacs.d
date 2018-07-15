@@ -1588,9 +1588,9 @@ I like being evil. All package and custom bindings go here.
   :ensure t
   :after (evil org)
   :delight
-  :hook (org-mode)
+  :hook (org-mode . evil-org-mode)
   :config
-  (add-hook 'evil-org-mode-hook (lambda () (evil-org-set-key-theme)))
+  (add-hook 'evil-org-mode-hook 'evil-org-set-key-theme)
 
   (require 'evil-org-agenda)
   (evil-org-agenda-set-keys)
