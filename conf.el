@@ -294,6 +294,12 @@ event of an error or nonlocal exit."
         (insert region)
         (setq end (point))))))
 
+(defun nd/switch-to-previous-buffer ()
+  (interactive)
+  (switch-to-buffer (other-buffer (current-buffer) 1)))
+  
+(global-set-key (kbd "M-b") 'nd/switch-to-previous-buffer)
+
 (setq inferior-R-args "--quiet --no-save")
 (load "ess-site")
 (setq ess-history-file "session.Rhistory")
@@ -524,7 +530,6 @@ event of an error or nonlocal exit."
 
 (setq org-refile-use-outline-path t)
 (setq org-outline-path-complete-in-steps nil)
-;; (setq org-completion-use-ido t)
 
 (setq org-refile-allow-creating-parent-nodes 'confirm)
 

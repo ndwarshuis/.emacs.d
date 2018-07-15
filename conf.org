@@ -397,6 +397,14 @@ event of an error or nonlocal exit."
         (setq end (point))))))
 #+END_SRC
     (goto-char (+ origin (* (length region) arg) arg)))))
+** previous buffer
+#+BEGIN_SRC emacs-lisp
+(defun nd/switch-to-previous-buffer ()
+  (interactive)
+  (switch-to-buffer (other-buffer (current-buffer) 1)))
+  
+(global-set-key (kbd "M-b") 'nd/switch-to-previous-buffer)
+#+END_SRC
 * ess
 #+begin_src emacs-lisp
 (setq inferior-R-args "--quiet --no-save")
