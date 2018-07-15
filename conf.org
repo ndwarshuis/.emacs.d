@@ -1580,6 +1580,8 @@ I like being evil. All package and custom bindings go here.
   :after evil
   :init
   (setq evil-collection-modes-list '(which-key helm minibuffer mu4e))
+  :custom
+  (evil-collection-setup-minibuffer t)
   :config
   (evil-collection-init))
 #+END_SRC

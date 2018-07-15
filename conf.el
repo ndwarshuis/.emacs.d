@@ -112,35 +112,6 @@
 (helm-autoresize-mode 1)
 (require 'helm-config)
 
-;; (use-package ido
-;;   :ensure t
-;;   :bind
-;;   ("C-x C-b" . 'ido-switch-buffer)
-;;   ("C-x b" . 'ibuffer)
-;;   :config
-;;   (ido-mode 1)
-;;   (setq ido-everywhere t)
-;;   (setq ido-enable-flex-matching t)
-;;   (setq ido-max-directory-size 100000)
-;;   (setq ido-default-file-method 'selected-window)
-;;   (setq ido-default-buffer-method 'selected-window)
-;;   (use-package ido-vertical-mode
-;;     :ensure t
-;;     :init
-;;     (ido-vertical-mode 1)
-;;     (setq ido-vertical-define-keys 'C-n-and-C-p-only)))
-
-
-  ;; (setq ido-file-extensions-order '(".org" ".txt" ".py" ".emacs" ".xml" ".el" ".ini" ".cfg" ".cnf"))
-
-;; (use-package smex
-;;   :ensure t
-;;   :init
-;;   (smex-initialize)
-;;   :bind
-;;   ("M-x" . 'smex)
-;;   ("M-X" . 'smex-major-mode-commands))
-
 (use-package rainbow-delimiters
   :ensure t
   :delight
@@ -1313,6 +1284,8 @@ and reverts all todo keywords to TODO"
   :after evil
   :init
   (setq evil-collection-modes-list '(which-key helm minibuffer mu4e))
+  :custom
+  (evil-collection-setup-minibuffer t)
   :config
   (evil-collection-init))
 
