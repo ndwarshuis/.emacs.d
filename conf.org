@@ -1586,11 +1586,10 @@ I like being evil. All package and custom bindings go here.
 #+BEGIN_SRC emacs-lisp
 (use-package evil-org
   :ensure t
-  :after evil
-  :after org
+  :after (evil org)
   :delight
+  :hook (org-mode)
   :config
-  (add-hook 'org-mode-hook 'evil-org-mode)
   (add-hook 'evil-org-mode-hook (lambda () (evil-org-set-key-theme)))
 
   (require 'evil-org-agenda)
