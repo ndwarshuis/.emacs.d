@@ -84,11 +84,6 @@
 (use-package helm
   :ensure t
   :delight
-  :bind
-  ("C-x C-f" . 'helm-find-files)
-  ("C-x C-b" . 'helm-buffers-list)
-  ("M-x" . 'helm-M-x)
-  ("C-c h" . 'helm-command-prefix)
   :init
   (helm-mode 1)
   :config
@@ -99,15 +94,15 @@
 		helm-recentf-fuzzy-match t
 		helm-semantic-fuzzy-match t
 		helm-imenu-fuzzy-match t
-		helm-scroll-amount 8))
+		helm-scroll-amount 8)
 
   ;; I liked the way ido-veritcal worked
   ;; less invasive...
-  ;; (add-to-list 'display-buffer-alist
-  ;;              `(,(rx bos "*helm" (* not-newline) "*" eos)
-  ;;                (display-buffer-in-side-window)
-  ;;                (inhibit-same-window . t)
-  ;;                (window-height . 0.4))))
+  (add-to-list 'display-buffer-alist
+               `(,(rx bos "*helm" (* not-newline) "*" eos)
+                 (display-buffer-in-side-window)
+                 (inhibit-same-window . t)
+                 (window-height . 0.4))))
 
 (helm-autoresize-mode 1)
 (require 'helm-config)
@@ -122,20 +117,17 @@
 
 (use-package ace-window
   :ensure t
-  :bind ("M-o" . ace-window)
   :config
   (setq aw-background t)
-  (set-face-attribute 'aw-leading-char-face nil :foreground "#292b2e"
-					  :background "#bc6ec5":height 1.0 :box nil))
+  :custom-face
+  (aw-leading-char-face ((t (:foreground "#292b2e" :background "#bc6ec5":height 1.0 :box nil)))))
 
 (use-package avy
   :ensure t
-  :bind ("M-s" . avy-goto-char)
   :config (setq avy-background t))
 
 (use-package sudo-edit
-  :ensure t
-  :bind ("C-c s" . sudo-edit))
+  :ensure t)
 
 (use-package typit
   :init
@@ -1304,8 +1296,17 @@ and reverts all todo keywords to TODO"
 (global-set-key (kbd "S-<f12>") 'display-line-numbers-mode)
 (global-set-key (kbd "C-<f12>") 'mu4e)
 
-(global-set-key (kbd "M-b") 'nd/switch-to-previous-buffer)
-(global-set-key (kbd "C-c r") 'nd/config-reload)
 (global-set-key (kbd "C-c e") 'nd/config-visit)
+(global-set-key (kbd "C-c h") 'helm-command-prefix)
+(global-set-key (kbd "C-c r") 'nd/config-reload)
+(global-set-key (kbd "C-c s") 'sudo-edit)
+
 (global-set-key (kbd "C-x 2") 'nd/split-and-follow-horizontally)
 (global-set-key (kbd "C-x 3") 'nd/split-and-follow-vertically)
+(global-set-key (kbd "C-x C-f") 'helm-find-files)
+(global-set-key (kbd "C-x C-b") 'helm-buffers-list)
+
+(global-set-key (kbd "M-b") 'nd/switch-to-previous-buffer)
+(global-set-key (kbd "M-o") 'ace-window)
+(global-set-key (kbd "M-s") 'avy-goto-char)
+(global-set-key (kbd "M-x") 'helm-M-x)
