@@ -50,40 +50,38 @@ work in progress
 #+BEGIN_SRC emacs-lisp
 (defalias 'yes-or-no-p 'y-or-n-p) ; eliminate yes or no prompt on killing procs
 #+END_SRC
-** theme customizations
+** theme
 #+BEGIN_SRC emacs-lisp
-;; for spacemacs theme
-(setq spacemacs-theme-custom-colors '((lnum . "#64707c")))
-#+END_SRC
-** theme color selection
-need this to:
-a) apply the gui theme if gui is loaded as client and
-b) ensure that the reloaded theme is only applied to the current frame
+(use-package spacemacs-theme
+  :defer t
+  :custom
+  (spacemacs-theme-custom-colors '((lnum . "#64707c"))))
 
-NOTE: this only works if we start term after gui, and term has light bg. not big deal for now since I hardly ever use term as client
-#+BEGIN_SRC emacs-lisp
-  (defvar my:theme 'spacemacs-dark)
-  (defvar my:theme-window-loaded nil)
-  (defvar my:theme-terminal-loaded nil)
-  (if (daemonp)
-      (add-hook 'after-make-frame-functions(lambda (frame)
-                                             (select-frame frame)
-                                             (if (window-system frame)
-                                                 (unless my:theme-window-loaded
-                                                   (if my:theme-terminal-loaded
-                                                       (enable-theme my:theme)
-                                                     (load-theme my:theme t))
-                                                   (setq my:theme-window-loaded t))
-                                               (unless my:theme-terminal-loaded
-                                                 (if my:theme-window-loaded
-                                                     (enable-theme my:theme)
-                                                   (load-theme my:theme t))
-                                                 (setq my:theme-terminal-loaded t)))))
-    (progn
-      (load-theme my:theme t)
-      (if (display-graphic-p)
-          (setq my:theme-window-loaded t)
-        (setq my:theme-terminal-loaded t))))
+(defvar nd/theme 'spacemacs-dark)
+(defvar nd/theme-window-loaded nil)
+(defvar nd/theme-terminal-loaded nil)
+
+;; required for emacsclient/daemon setup
+(if (daemonp)
+    (add-hook 'after-make-frame-functions
+			  (lambda (frame)
+                (select-frame frame)
+                (if (window-system frame)
+                    (unless nd/theme-window-loaded
+                      (if nd/theme-terminal-loaded
+                          (enable-theme nd/theme)
+                        (load-theme nd/theme t))
+                      (setq nd/theme-window-loaded t))
+                  (unless nd/theme-terminal-loaded
+                    (if nd/theme-window-loaded
+                        (enable-theme nd/theme)
+                      (load-theme nd/theme t))
+                    (setq nd/theme-terminal-loaded t)))))
+  (progn
+    (load-theme nd/theme t)
+    (if (display-graphic-p)
+        (setq nd/theme-window-loaded t)
+      (setq nd/theme-terminal-loaded t))))
 #+END_SRC
 * printing
 ** 
@@ -1500,7 +1498,9 @@ only for gmail now
 ** smtp
 #+BEGIN_SRC emacs-lisp
 (require 'smtpmail)
-(setq message-send-mail-function 'smtpmail-send-it
+(setq send-mail-function 'smtpmail-send-it
+	  message-send-mail-function 'smtpmail-send-it
+      
 	  user-mail-address "natedwarshuis@gmail.com"
 	  user-full-name "Nate Dwarshuis"
 
@@ -1508,8 +1508,7 @@ only for gmail now
       
 	  starttls-use-gnutls t
 	  smtpmail-starttls-credentials '(("smtp.gmail.com" 587 nil nil))
-	  smtpmail-auth-credentials '(("smtp.gmail.com" 587
-								   "natedwarshuis@gmail.com" nil))
+      ;; authinfo.gpg for credentials
 	  smtpmail-default-smtp-server "smtp.gmail.com"
 	  smtpmail-smtp-service 587
 	  smtpmail-smtp-server "smtp.gmail.com")
