@@ -1608,4 +1608,5 @@ I like being evil. All package and custom bindings go here.
 (global-set-key (kbd "M-o") 'ace-window)
 (global-set-key (kbd "M-s") 'avy-goto-char)
 (global-set-key (kbd "M-x") 'helm-M-x)
+(global-set-key (kbd "M-y") 'helm-show-kill-ring)
 #+END_SRC
