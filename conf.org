@@ -46,6 +46,11 @@ work in progress
   (add-hook 'inferior-ess-mode-hook #'prettify-symbols-mode)
   (add-hook 'prog-mode-hook #'prettify-symbols-mode)
 #+END_SRC
+*** imagemagick
+#+BEGIN_SRC emacs-lisp
+(when (fboundp 'imagemagick-register-types)
+  (imagemagick-register-types))
+#+END_SRC
 ** yes-no prompt enhancement
 #+BEGIN_SRC emacs-lisp
 (defalias 'yes-or-no-p 'y-or-n-p) ; eliminate yes or no prompt on killing procs
@@ -1491,6 +1496,13 @@ only for gmail now
 	  mu4e-sent-folder   "/gmail/sent"
 	  mu4e-trash-folder  "/gmail/trash"
 
+	  mu4e-attachment-dir "~/Downloads"
+
+	  mu4e-view-show-images t
+      mu4e-headers-show-target nil
+      
+      message-kill-buffer-on-exit t
+      
 	  mu4e-change-filenames-when-moving t
 
 	  mu4e-confirm-quit nil)
