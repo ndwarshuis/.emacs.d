@@ -40,12 +40,6 @@ work in progress
 #+BEGIN_SRC emacs-lisp
 (setq scroll-conservatively 100)
 #+END_SRC
-*** pretty symbols
-#+BEGIN_SRC emacs-lisp
-  (add-hook 'ess-mode-hook #'prettify-symbols-mode)
-  (add-hook 'inferior-ess-mode-hook #'prettify-symbols-mode)
-  (add-hook 'prog-mode-hook #'prettify-symbols-mode)
-#+END_SRC
 *** imagemagick
 #+BEGIN_SRC emacs-lisp
 (when (fboundp 'imagemagick-register-types)
@@ -244,8 +238,8 @@ event of an error or nonlocal exit."
 ** functions
 #+BEGIN_SRC emacs-lisp
 (defun nd/filter-list-prefix (prefix str-list)
-  "Return a subset of tags-list whose first character matches prefix.'
-  tags-list defaults to org-tag-alist if not given"
+  "Return a subset of tags-list whose first character matches prefix.
+  tags-list defaults to org-tag-alist if not given."
   (seq-filter (lambda (i)
                 (and (stringp i)
                      (string-prefix-p prefix i)))
@@ -321,15 +315,38 @@ event of an error or nonlocal exit."
   :config
   (yas-reload-all))
 #+END_SRC
-* ess
-#+begin_src emacs-lisp
-(setq inferior-R-args "--quiet --no-save")
-(load "ess-site")
-(setq ess-history-file "session.Rhistory")
-(setq ess-history-directory
-	  (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
-#+END_SRC
 * languages
+** progmode
+#+BEGIN_SRC emacs-lisp
+(add-hook 'prog-mode-hook #'prettify-symbols-mode)
+#+END_SRC
+** elisp
+#+BEGIN_SRC emacs-lisp
+(add-hook 'emacs-lisp-mode-hook 'company-mode)
+#+END_SRC
+** ess
+#+begin_src emacs-lisp
+(defun nd/init-ess-company ()
+  "Set the company modes for ess modes."
+  (setq-local company-backends '((company-R-objects company-R-args))))
+
+(use-package ess
+  :ensure t
+  :init
+  (load "ess-site")
+  :hook
+  ((ess-mode . company-mode)
+   (ess-mode . nd/init-ess-company)
+   (ess-mode . prettify-symbols-mode)
+
+   (inferior-ess-mode . company-mode)
+   (inferior-ess-mode . nd/init-ess-company)
+   (inferior-ess-mode . prettify-symbols-mode))
+  :config
+  (setq inferior-R-args "--quiet --no-save"
+		ess-history-file "session.Rhistory"
+		ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
+#+END_SRC
 ** python
 #+BEGIN_SRC
 (elpy-enable)
