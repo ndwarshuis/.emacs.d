@@ -254,29 +254,43 @@ event of an error or nonlocal exit."
 ** interactive
 #+BEGIN_SRC emacs-lisp
 (defun nd/split-and-follow-horizontally ()
+  "Split window horizontally and move focus."
   (interactive)
   (split-window-below)
   (balance-windows)
   (other-window 1))
 
 (defun nd/split-and-follow-vertically ()
+  "Split window vertically and move focus."
   (interactive)
   (split-window-right)
   (balance-windows)
   (other-window 1))
     
 (defun nd/switch-to-previous-buffer ()
+  "Switch the buffer to the last opened buffer."
   (interactive)
   (switch-to-buffer (other-buffer (current-buffer) 1)))
   
 (defun nd/config-reload ()
-  "Reloads ~/.emacs.d/conf.org at runtime"
+  "Reloads ~/.emacs.d/conf.org at runtime."
   (interactive)
   (org-babel-load-file (expand-file-name "~/.emacs.d/conf.org")))
 
 (defun nd/config-visit ()
+  "Opens the main conf.org file (the one that really matters)."
   (interactive)
   (find-file "~/.emacs.d/conf.org"))
+
+(defun nd/kill-current-buffer ()
+  "Kill the current buffer."
+  (interactive)
+  (kill-buffer (current-buffer)))
+
+(defun nd/close-all-buffers ()
+  "Kill all buffers without regard for their origin."
+  (interactive)
+  (mapc 'kill-buffer (buffer-list)))
 #+END_SRC
 * completion
 ** company
@@ -1631,9 +1645,9 @@ I like being evil. All package and custom bindings go here.
 #+BEGIN_SRC emacs-lisp
 (global-set-key (kbd "<f1>") 'org-agenda)
 (global-set-key (kbd "<f2>") 'org-capture)
-(global-set-key (kbd "<f12>") 'global-hl-line-mode)
+(global-set-key (kbd "<f12>") 'mu4e)
+(global-set-key (kbd "C-<f12>") 'global-hl-line-mode)
 (global-set-key (kbd "S-<f12>") 'display-line-numbers-mode)
-(global-set-key (kbd "C-<f12>") 'mu4e)
 
 (global-set-key (kbd "C-c e") 'nd/config-visit)
 (global-set-key (kbd "C-c h") 'helm-command-prefix)
@@ -1642,8 +1656,11 @@ I like being evil. All package and custom bindings go here.
 
 (global-set-key (kbd "C-x 2") 'nd/split-and-follow-horizontally)
 (global-set-key (kbd "C-x 3") 'nd/split-and-follow-vertically)
+(global-set-key (kbd "C-x k") 'nd/kill-current-buffer)
 (global-set-key (kbd "C-x C-f") 'helm-find-files)
 (global-set-key (kbd "C-x C-b") 'helm-buffers-list)
+
+(global-set-key (kbd "C-M-s-k") 'nd/close-all-buffers)
 
 (global-set-key (kbd "M-b") 'nd/switch-to-previous-buffer)
 (global-set-key (kbd "M-o") 'ace-window)
