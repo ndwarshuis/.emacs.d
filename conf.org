@@ -334,7 +334,7 @@ event of an error or nonlocal exit."
 ** ess
 NOTES:
 - ess is not considered part of prog-mode for some reason
-- ess-mode requires a running R process for completion/flycheck to work
+- ess-mode requires a running R process for company to work
 - flycheck requries r-lintr
 #+begin_src emacs-lisp
 (defun nd/init-ess-company ()
@@ -350,15 +350,16 @@ NOTES:
    (ess-mode . company-mode)
    (ess-mode . nd/init-ess-company)
    (ess-mode . prettify-symbols-mode)
+   (ess-mode . fci-mode)
 
-   (inferior-ess-mode . flycheck-mode)
    (inferior-ess-mode . company-mode)
    (inferior-ess-mode . nd/init-ess-company)
    (inferior-ess-mode . prettify-symbols-mode))
   :config
   (setq inferior-R-args "--quiet --no-save"
 		ess-history-file "session.Rhistory"
-		ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
+		ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
+  (add-to-list 'evil-motion-state-modes 'ess-help-mode))
 #+END_SRC
 ** python
 #+BEGIN_SRC
