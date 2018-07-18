@@ -30,10 +30,10 @@
  '(cfw:fchar-top-right-corner 9491)
  '(cfw:fchar-vertical-line 9475)
  '(evil-collection-setup-minibuffer t)
- '(fci-rule-use-dashes t t)
+ '(fci-rule-use-dashes t)
  '(haskell-compile-command "ghc -dynamic -Wall -ferror-spans -fforce-recomp -c %s" t)
  '(haskell-interactive-popup-errors nil)
- '(helm-M-x-fuzzy-match t t)
+ '(helm-M-x-fuzzy-match t)
  '(helm-autoresize-max-height 40)
  '(helm-buffers-fuzzy-matching t)
  '(helm-imenu-fuzzy-match t t)
@@ -42,9 +42,10 @@
  '(helm-semantic-fuzzy-match t t)
  '(package-selected-packages
    (quote
-	(rainbow-delimiters-mode helm evil-collection haskell-mode fill-column-indicator gtklp delight browse-kill-ring evil-org-agenda evil-org evil calfw calfw-org yaml-mode which-key use-package typit systemd sudo-edit spaceline rainbow-mode rainbow-delimiters pkgbuild-mode pdf-tools org-bullets lua-mode ess elpy diff-hl beacon ace-window)))
+	(yasnippet-snippets flycheck rainbow-delimiters-mode helm evil-collection haskell-mode fill-column-indicator gtklp delight browse-kill-ring evil-org-agenda evil-org evil calfw calfw-org yaml-mode which-key use-package typit systemd sudo-edit spaceline rainbow-mode rainbow-delimiters pkgbuild-mode pdf-tools org-bullets lua-mode ess elpy diff-hl beacon ace-window)))
  '(powerline-default-separator (quote arrow))
  '(spaceline-buffer-size-p nil t)
+ '(spacemacs-theme-custom-colors (quote ((lnum . "#64707c"))))
  '(undo-tree-visualizer-diff t))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
