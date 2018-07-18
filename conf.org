@@ -300,7 +300,14 @@ event of an error or nonlocal exit."
 (use-package flycheck
   :ensure t
   :hook
-  ((prog-mode . flycheck-mode)))
+  (prog-mode . flycheck-mode)
+  :config
+  (setq flycheck-check-syntax-automatically '(save
+											  idle-change
+											  mode-enabled)
+		flycheck-idle-change-delay 2
+		flycheck-error-list-minimum-level 'warning
+		flycheck-navigation-minimum-level 'warning))
 #+END_SRC
 ** yasnippet
 #+BEGIN_SRC emacs-lisp
@@ -325,7 +332,10 @@ event of an error or nonlocal exit."
 (add-hook 'emacs-lisp-mode-hook 'company-mode)
 #+END_SRC
 ** ess
-NOTE: ess is not considered part of prog-mode for some reason
+NOTES:
+- ess is not considered part of prog-mode for some reason
+- ess-mode requires a running R process for completion/flycheck to work
+- flycheck requries r-lintr
 #+begin_src emacs-lisp
 (defun nd/init-ess-company ()
   "Set the company modes for ess modes."
@@ -1643,7 +1653,7 @@ I like being evil. All package and custom bindings go here.
   :ensure t
   :after evil
   :init
-  (setq evil-collection-modes-list '(company which-key helm minibuffer mu4e ediff))
+  (setq evil-collection-modes-list '(flycheck company which-key helm minibuffer mu4e ediff))
   :custom
   (evil-collection-setup-minibuffer t)
   :config
