@@ -325,6 +325,7 @@ event of an error or nonlocal exit."
 (add-hook 'emacs-lisp-mode-hook 'company-mode)
 #+END_SRC
 ** ess
+NOTE: ess is not considered part of prog-mode for some reason
 #+begin_src emacs-lisp
 (defun nd/init-ess-company ()
   "Set the company modes for ess modes."
@@ -335,10 +336,12 @@ event of an error or nonlocal exit."
   :init
   (load "ess-site")
   :hook
-  ((ess-mode . company-mode)
+  ((ess-mode . flycheck-mode)
+   (ess-mode . company-mode)
    (ess-mode . nd/init-ess-company)
    (ess-mode . prettify-symbols-mode)
 
+   (inferior-ess-mode . flycheck-mode)
    (inferior-ess-mode . company-mode)
    (inferior-ess-mode . nd/init-ess-company)
    (inferior-ess-mode . prettify-symbols-mode))
@@ -1640,7 +1643,7 @@ I like being evil. All package and custom bindings go here.
   :ensure t
   :after evil
   :init
-  (setq evil-collection-modes-list '(which-key helm minibuffer mu4e ediff))
+  (setq evil-collection-modes-list '(company which-key helm minibuffer mu4e ediff))
   :custom
   (evil-collection-setup-minibuffer t)
   :config
@@ -1658,6 +1661,11 @@ I like being evil. All package and custom bindings go here.
           (lambda ()
             (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)))
 #+END_SRC
+*** helm
+#+BEGIN_SRC emacs-lisp
+(define-key helm-map (kbd "<tab>") 'helm-execute-persistent-action)
+(define-key helm-map (kbd "C-<tab>") 'helm-select-action)
+#+END_SRC
 ** global
 #+BEGIN_SRC emacs-lisp
 (global-set-key (kbd "<f1>") 'org-agenda)
@@ -1673,6 +1681,7 @@ I like being evil. All package and custom bindings go here.
 
 (global-set-key (kbd "C-x 2") 'nd/split-and-follow-horizontally)
 (global-set-key (kbd "C-x 3") 'nd/split-and-follow-vertically)
+(global-unset-key (kbd "C-x c"))
 (global-set-key (kbd "C-x k") 'nd/kill-current-buffer)
 (global-set-key (kbd "C-x C-f") 'helm-find-files)
 (global-set-key (kbd "C-x C-b") 'helm-buffers-list)
