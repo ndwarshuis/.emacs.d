@@ -22,3 +22,4 @@
  '(package-selected-packages
    (quote
 	(yasnippet-snippets flycheck rainbow-delimiters-mode helm evil-collection haskell-mode fill-column-indicator gtklp delight browse-kill-ring evil-org-agenda evil-org evil calfw calfw-org yaml-mode which-key use-package typit systemd sudo-edit spaceline rainbow-mode rainbow-delimiters pkgbuild-mode pdf-tools org-bullets lua-mode ess elpy diff-hl beacon ace-window))))
+(put 'dired-find-alternate-file 'disabled nil)

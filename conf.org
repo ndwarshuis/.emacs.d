@@ -1678,6 +1678,8 @@ I like being evil. All package and custom bindings go here.
 **** dired
 Dired makes new buffers by default. Use =find-alternate-file= to avoid this
 #+BEGIN_SRC emacs-lisp
+(put 'dired-find-alternate-file 'disabled nil)
+
 (evil-define-key 'normal dired-mode-map
   "a" 'dired-find-file
   (kbd "<return>") 'dired-find-alternate-file
