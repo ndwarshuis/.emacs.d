@@ -1,54 +1,6 @@
 work in progress
 
 * ui
-** remove garbage
-*** startup screen
-#+BEGIN_SRC emacs-lisp
-(setq inhibit-startup-screen t)
-#+END_SRC
-*** useless mouse widgets
-#+BEGIN_SRC emacs-lisp
-(tool-bar-mode -1)
-(menu-bar-mode -1)
-(scroll-bar-mode -1)
-#+END_SRC
-*** line wrap
-#+BEGIN_SRC emacs-lisp
-(set-default 'truncate-lines t)
-#+END_SRC
-*** autosave/backup files
-#+BEGIN_SRC emacs-lisp
-  (setq make-backup-files nil)
-  (setq auto-save-default nil)
-#+END_SRC
-*** popup windows
-#+BEGIN_SRC emacs-lisp
-(setq pop-up-windows nil) ; no popups (eg ediff)
-#+END_SRC
-** pretty stuff
-*** enable line/column numbering
-#+BEGIN_SRC emacs-lisp
-;; (global-linum-mode t)
-(line-number-mode 1)
-(column-number-mode 1)
-#+END_SRC
-*** tab width
-#+BEGIN_SRC emacs-lisp
-(setq-default tab-width 4)
-#+END_SRC
-*** smooth scrolling
-#+BEGIN_SRC emacs-lisp
-(setq scroll-conservatively 100)
-#+END_SRC
-*** imagemagick
-#+BEGIN_SRC emacs-lisp
-(when (fboundp 'imagemagick-register-types)
-  (imagemagick-register-types))
-#+END_SRC
-** yes-no prompt enhancement
-#+BEGIN_SRC emacs-lisp
-(defalias 'yes-or-no-p 'y-or-n-p) ; eliminate yes or no prompt on killing procs
-#+END_SRC
 ** theme
 #+BEGIN_SRC emacs-lisp
 (use-package spacemacs-theme
@@ -82,14 +34,64 @@ work in progress
         (setq nd/theme-window-loaded t)
       (setq nd/theme-terminal-loaded t))))
 #+END_SRC
-* printing
-** 
-* packages
-** delight
+** modeline
+#+BEGIN_SRC emacs-lisp
+(use-package spaceline
+  :ensure t
+  :config
+  (require 'spaceline-config)
+  (setq powerline-default-separator 'arrow
+		spaceline-buffer-size-p nil)
+  (spaceline-spacemacs-theme))
+
+(line-number-mode 1)
+(column-number-mode 1)
+#+END_SRC
+*** delight
+Used to hide minor modes on the modeline
 #+BEGIN_SRC emacs-lisp
 (use-package delight
   :ensure t)
 #+END_SRC
+** clean the interface
+No need for startup screen, tool/menu/scrollbars, or backups
+#+BEGIN_SRC emacs-lisp
+(setq inhibit-startup-screen t)
+
+(tool-bar-mode -1)
+(menu-bar-mode -1)
+(scroll-bar-mode -1)
+
+(setq make-backup-files nil)
+(setq auto-save-default nil)
+#+END_SRC
+** other enhancements
+*** popup windows
+#+BEGIN_SRC emacs-lisp
+(setq pop-up-windows nil) ; no popups (eg ediff)
+#+END_SRC
+*** line wrap
+#+BEGIN_SRC emacs-lisp
+(set-default 'truncate-lines t)
+#+END_SRC
+*** tab width
+#+BEGIN_SRC emacs-lisp
+(setq-default tab-width 4)
+#+END_SRC
+*** smooth scrolling
+#+BEGIN_SRC emacs-lisp
+(setq scroll-conservatively 100)
+#+END_SRC
+*** imagemagick
+#+BEGIN_SRC emacs-lisp
+(when (fboundp 'imagemagick-register-types)
+  (imagemagick-register-types))
+#+END_SRC
+*** yes-no prompt
+#+BEGIN_SRC emacs-lisp
+(defalias 'yes-or-no-p 'y-or-n-p) ; eliminate yes or no prompt on killing procs
+#+END_SRC
+* packages
 ** beacon
 #+BEGIN_SRC emacs-lisp
 (use-package beacon
@@ -164,12 +166,6 @@ work in progress
   (use-package sudo-edit
     :ensure t)
 #+END_SRC
-** typit
-#+BEGIN_SRC emacs-lisp
-  (use-package typit
-    :init
-    :ensure t)
-#+END_SRC
 ** undo tree
 #+BEGIN_SRC emacs-lisp
 (use-package undo-tree
@@ -192,16 +188,6 @@ work in progress
 #+BEGIN_SRC emacs-lisp
 (use-package rainbow-mode
   :ensure t)
-#+END_SRC
-** spaceline
-#+BEGIN_SRC emacs-lisp
-(use-package spaceline
-  :ensure t
-  :config
-  (require 'spaceline-config)
-  (setq powerline-default-separator 'arrow
-		spaceline-buffer-size-p nil)
-  (spaceline-spacemacs-theme))
 #+END_SRC
 * library
 A place for duct tape code that I developed (or lovingly stole from others)
