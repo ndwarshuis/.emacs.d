@@ -170,20 +170,6 @@ work in progress
     :init
     :ensure t)
 #+END_SRC
-** calfw
-#+BEGIN_SRC emacs-lisp
-(use-package calfw
-  :ensure t
-  :config
-  (setq cfw:fchar-junction ?╋
-		cfw:fchar-vertical-line ?┃
-		cfw:fchar-horizontal-line ?━
-		cfw:fchar-left-junction ?┣
-		cfw:fchar-right-junction ?┫
-		cfw:fchar-top-junction ?┯
-		cfw:fchar-top-left-corner ?┏
-		cfw:fchar-top-right-corner ?┓))
-#+END_SRC
 ** undo tree
 #+BEGIN_SRC emacs-lisp
 (use-package undo-tree
@@ -391,6 +377,14 @@ NOTES:
   :config
   (setq haskell-compile-command "ghc -dynamic -Wall -ferror-spans -fforce-recomp -c %s"
 		haskell-interactive-popup-errors nil))
+#+END_SRC
+* magit
+#+BEGIN_SRC emacs-lisp
+(use-package magit
+  :ensure t
+  :config
+  (setq magit-push-always-verify nil
+		git-commit-summary-max-length 50))
 #+END_SRC
 * org-mode
 ** basic
@@ -1556,17 +1550,17 @@ and reverts all todo keywords to TODO"
 #+END_SRC
 ** calfw
 #+BEGIN_SRC emacs-lisp
-(use-package calfw-org
+(use-package calfw
   :ensure t
-  :custom
-  (cfw:fchar-junction ?╋)
-  (cfw:fchar-vertical-line ?┃)
-  (cfw:fchar-horizontal-line ?━)
-  (cfw:fchar-left-junction ?┣)
-  (cfw:fchar-right-junction ?┫)
-  (cfw:fchar-top-junction ?┯)
-  (cfw:fchar-top-left-corner ?┏)
-  (cfw:fchar-top-right-corner ?┓))
+  :config
+  (setq cfw:fchar-junction ?╋
+		cfw:fchar-vertical-line ?┃
+		cfw:fchar-horizontal-line ?━
+		cfw:fchar-left-junction ?┣
+		cfw:fchar-right-junction ?┫
+		cfw:fchar-top-junction ?┯
+		cfw:fchar-top-left-corner ?┏
+		cfw:fchar-top-right-corner ?┓))
 #+END_SRC
 * mu4e
 only for gmail now
@@ -1670,7 +1664,7 @@ I like being evil. All package and custom bindings go here.
   :after evil
   :init
   (setq evil-collection-modes-list '(dired flycheck company which-key
-										   helm minibuffer mu4e ediff))
+										   helm minibuffer mu4e ediff magit))
   (setq evil-collection-setup-minibuffer t)
   :config
   (evil-collection-init))
