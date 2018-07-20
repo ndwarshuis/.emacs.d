@@ -53,8 +53,8 @@ work in progress
 #+BEGIN_SRC emacs-lisp
 (use-package spacemacs-theme
   :defer t
-  :custom
-  (spacemacs-theme-custom-colors '((lnum . "#64707c"))))
+  :config
+  (setq spacemacs-theme-custom-colors '((lnum . "#64707c"))))
 
 (defvar nd/theme 'spacemacs-dark)
 (defvar nd/theme-window-loaded nil)
@@ -113,22 +113,20 @@ work in progress
   :delight
   :init
   (helm-mode 1)
-  :custom
-  (helm-autoresize-max-height 0)
-  (helm-autoresize-max-height 40)
-  (helm-M-x-fuzzy-match t)
-  (helm-buffers-fuzzy-matching t)
-  (helm-recentf-fuzzy-match t)
-  (helm-semantic-fuzzy-match t)
-  (helm-imenu-fuzzy-match t)
-  (helm-scroll-amount 8)
   :config
+  (setq helm-autoresize-max-height 0
+		helm-autoresize-max-height 40
+		helm-M-x-fuzzy-match t
+		helm-buffers-fuzzy-matching t
+		helm-recentf-fuzzy-match t
+		helm-semantic-fuzzy-match t
+		helm-imenu-fuzzy-match t
+		helm-scroll-amount 8)
   (add-to-list 'display-buffer-alist
                `(,(rx bos "*helm" (* not-newline) "*" eos)
                  (display-buffer-in-side-window)
                  (inhibit-same-window . t)
                  (window-height . 0.4)))
-
   (helm-autoresize-mode 1)
   (require 'helm-config))
 #+END_SRC
@@ -146,17 +144,20 @@ work in progress
 #+BEGIN_SRC emacs-lisp
 (use-package ace-window
   :ensure t
-  :custom
-  (aw-background t)
-  :custom-face
-  (aw-leading-char-face ((t (:foreground "#292b2e" :background "#bc6ec5":height 1.0 :box nil)))))
+  :config
+  (setq aw-background t)
+  (set-face-attribute 'aw-leading-char-face nil
+					  :foreground "#292b2e"
+					  :background "#bc6ec5"
+					  :height 1.0
+					  :box nil))
 #+END_SRC
 ** avy
 #+BEGIN_SRC emacs-lisp
   (use-package avy
     :ensure t
-    :custom
-    (avy-background t))
+    :config
+    (setq avy-background t))
 #+END_SRC
 ** sudo edit
 #+BEGIN_SRC emacs-lisp
@@ -171,27 +172,33 @@ work in progress
 #+END_SRC
 ** calfw
 #+BEGIN_SRC emacs-lisp
-  (use-package calfw
-    :init
-    :ensure t)
+(use-package calfw
+  :ensure t
+  :config
+  (setq cfw:fchar-junction ?╋
+		cfw:fchar-vertical-line ?┃
+		cfw:fchar-horizontal-line ?━
+		cfw:fchar-left-junction ?┣
+		cfw:fchar-right-junction ?┫
+		cfw:fchar-top-junction ?┯
+		cfw:fchar-top-left-corner ?┏
+		cfw:fchar-top-right-corner ?┓))
 #+END_SRC
 ** undo tree
 #+BEGIN_SRC emacs-lisp
 (use-package undo-tree
   :ensure t
   :delight
-  :custom
-  (undo-tree-visualizer-diff t)
   :config
+  (setq undo-tree-visualizer-diff t)
   (global-undo-tree-mode))
 #+END_SRC
 ** fill-column-indicator
 #+BEGIN_SRC emacs-lisp
 (use-package fill-column-indicator
   :ensure t
-  :init
-  :custom
-  (fci-rule-use-dashes t)
+  :config
+  (setq fci-rule-use-dashes t)
   :hook
   (prog-mode . fci-mode))
 #+END_SRC
@@ -204,11 +211,10 @@ work in progress
 #+BEGIN_SRC emacs-lisp
 (use-package spaceline
   :ensure t
-  :custom
-  (powerline-default-separator 'arrow)
-  (spaceline-buffer-size-p nil)
   :config
   (require 'spaceline-config)
+  (setq powerline-default-separator 'arrow
+		spaceline-buffer-size-p nil)
   (spaceline-spacemacs-theme))
 #+END_SRC
 * library
@@ -382,11 +388,9 @@ NOTES:
 #+BEGIN_SRC emacs-lisp
 (use-package haskell-mode
   :ensure t
-  :custom
-  (haskell-compile-command
-   "ghc -dynamic -Wall -ferror-spans -fforce-recomp -c %s"
-   "enable dynamic linking by default")
-  (haskell-interactive-popup-errors nil))
+  :config
+  (setq haskell-compile-command "ghc -dynamic -Wall -ferror-spans -fforce-recomp -c %s"
+		haskell-interactive-popup-errors nil))
 #+END_SRC
 * org-mode
 ** basic
@@ -1667,8 +1671,7 @@ I like being evil. All package and custom bindings go here.
   :init
   (setq evil-collection-modes-list '(dired flycheck company which-key
 										   helm minibuffer mu4e ediff))
-  :custom
-  (evil-collection-setup-minibuffer t)
+  (setq evil-collection-setup-minibuffer t)
   :config
   (evil-collection-init))
 #+END_SRC
