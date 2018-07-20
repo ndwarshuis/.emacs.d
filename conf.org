@@ -1646,6 +1646,12 @@ I like being evil. All package and custom bindings go here.
 	"e" 'org-agenda-set-effort
 	"ce" nil))
 #+END_SRC
+*** evil-magit
+#+BEGIN_SRC emacs-lisp
+(use-package evil-magit
+  :ensure t
+  :after (evil magit))
+#+END_SRC
 *** collection
 #+BEGIN_SRC emacs-lisp
 (use-package evil-collection
@@ -1653,7 +1659,7 @@ I like being evil. All package and custom bindings go here.
   :after evil
   :init
   (setq evil-collection-modes-list '(dired flycheck company which-key
-										   helm minibuffer mu4e ediff magit))
+										   helm minibuffer mu4e ediff))
   (setq evil-collection-setup-minibuffer t)
   :config
   (evil-collection-init))
