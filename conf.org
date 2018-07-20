@@ -375,12 +375,14 @@ NOTES:
 * org-mode
 ** basic
 #+BEGIN_SRC emacs-lisp
-(setq org-startup-indented t)
-(delight 'org-indent-mode)
-(setq org-directory "~/Org")
-(run-at-time "00:59" 3600 'org-save-all-org-buffers)
-(setq org-modules '(org-habit org-protocol))
-(require 'org-protocol)
+(use-package org
+  :delight org-indent-mode
+  :config
+  (setq org-startup-indented t
+		org-directory "~/Org"
+		org-modules '(org-habit org-protocol))
+  (require 'org-protocol)
+  (run-at-time "00:59" 3600 'org-save-all-org-buffers))
 #+END_SRC
 ** navigation
 #+BEGIN_SRC emacs-lisp
