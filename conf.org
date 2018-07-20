@@ -1672,6 +1672,14 @@ I like being evil. All package and custom bindings go here.
   :config
   (evil-collection-init))
 #+END_SRC
+**** dired
+Dired makes new buffers by default. Use =find-alternate-file= to avoid this
+#+BEGIN_SRC emacs-lisp
+(evil-define-key 'normal dired-mode-map
+  "a" 'dired-find-file
+  (kbd "<return>") 'dired-find-alternate-file
+  "^" (lambda () (interactive) (find-alternate-file "..")))
+#+END_SRC
 ** local
 *** org-mode
 #+BEGIN_SRC emacs-lisp
