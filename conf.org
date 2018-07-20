@@ -244,6 +244,11 @@ event of an error or nonlocal exit."
                 (and (stringp i)
                      (string-prefix-p prefix i)))
               str-list))
+          
+(defun nd/move-key (keymap-from keymap-to key)
+  "Move KEY from KEYMAP-FROM keymap to KEYMAP-TO keymap."
+  (define-key keymap-to key (lookup-key keymap-from key))
+  (define-key keymap-from key nil))
 #+END_SRC
 ** interactive
 #+BEGIN_SRC emacs-lisp
@@ -1622,7 +1627,13 @@ I like being evil. All package and custom bindings go here.
   ;; this is required to make evil collection work
   (setq evil-want-integration nil)
   :config
-  (evil-mode 1))
+  (evil-mode 1)
+  ;; some keys that should be in emacs-state instead of global
+  (nd/move-key global-map evil-emacs-state-map (kbd "C-s"))
+  (nd/move-key global-map evil-emacs-state-map (kbd "C-x C-;"))
+  (nd/move-key global-map evil-emacs-state-map (kbd "C-x C-l"))
+  (nd/move-key global-map evil-emacs-state-map (kbd "C-x C-u"))
+  (nd/move-key global-map evil-emacs-state-map (kbd "C-x C-z")))
 #+END_SRC
 *** evil-org
 #+BEGIN_SRC emacs-lisp
@@ -1654,7 +1665,8 @@ I like being evil. All package and custom bindings go here.
   :ensure t
   :after evil
   :init
-  (setq evil-collection-modes-list '(flycheck company which-key helm minibuffer mu4e ediff))
+  (setq evil-collection-modes-list '(dired flycheck company which-key
+										   helm minibuffer mu4e ediff))
   :custom
   (evil-collection-setup-minibuffer t)
   :config
