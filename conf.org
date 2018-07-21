@@ -374,10 +374,18 @@ NOTES:
 		git-commit-summary-max-length 50))
 #+END_SRC
 * org-mode
-** basic
+** major mode
+*** general config
+Enable some straightforward options:
+- visual-line-mode: wrap text since I like to treat long lines as paragraphs
+- org-indent-mode: indent each level for better visualization
+- enable special behavior for header navigation, killing, and yanking (see these docs for details)
+- logs should go in their own drawer called "LOGBOOK"
+- DONE state should log the time
 #+BEGIN_SRC emacs-lisp
 (use-package org
   :delight
+  ;; source of indent-mode required here
   (org-indent-mode nil org-indent)
   (visual-line-mode)
   :hook
@@ -385,23 +393,20 @@ NOTES:
   :config
   (setq org-startup-indented t
 		org-directory "~/Org"
-		org-modules '(org-habit org-protocol))
+		org-modules '(org-habit org-protocol)
+
+		org-special-ctrl-a/e t
+		org-special-ctrl-k t
+		org-yank-adjusted-subtrees t
+
+		org-log-into-drawer "LOGBOOK"
+		org-log-done 'time)
+
   (require 'org-protocol)
   (run-at-time "00:59" 3600 'org-save-all-org-buffers))
 #+END_SRC
-** navigation
-#+BEGIN_SRC emacs-lisp
-(setq org-special-ctrl-a/e t)
-(setq org-special-ctrl-k t)
-(setq org-yank-adjusted-subtrees t)
-#+END_SRC
-** logging
-#+BEGIN_SRC emacs-lisp
-(setq org-log-into-drawer "LOGBOOK")
-(setq org-log-done t)
-#+END_SRC
-** ui
 *** bullets
+These are just so much better to read
 #+BEGIN_SRC emacs-lisp
 (use-package org-bullets
   :ensure t
@@ -411,23 +416,112 @@ NOTES:
 *** font height
 The fonts in org headings bug me, make them smaller and less invasive
 #+BEGIN_SRC emacs-lisp
-  (defun nd/org-ui-heading-same-font-height ()
-    (let ((heading-height 1.15))
-      (set-face-attribute 'org-level-1 nil :weight 'bold :height heading-height)
-      (set-face-attribute 'org-level-2 nil :weight 'semi-bold :height heading-height)
-      (set-face-attribute 'org-level-3 nil :weight 'normal :height heading-height)
-      (set-face-attribute 'org-level-4 nil :weight 'normal :height heading-height)
-      (set-face-attribute 'org-level-5 nil :weight 'normal :height heading-height)))
-
-  (add-hook 'org-mode-hook 'nd/org-ui-heading-same-font-height)
+(add-hook 'org-mode-hook
+		  (lambda ()
+			(let ((heading-height 1.15))
+			  (set-face-attribute 'org-level-1 nil :weight 'bold :height heading-height)
+			  (set-face-attribute 'org-level-2 nil :weight 'semi-bold :height heading-height)
+			  (set-face-attribute 'org-level-3 nil :weight 'normal :height heading-height)
+			  (set-face-attribute 'org-level-4 nil :weight 'normal :height heading-height)
+			  (set-face-attribute 'org-level-5 nil :weight 'normal :height heading-height))))
 #+END_SRC
-*** window splitting
-Org mode is great and all, but the windows never show up in the right place
-The solutions here are simple, but have the downside that the window sizing 
-must be changed when tags/capture templates/todo items are changed.
-This is because the buffer size is not known at window creation time
-and I didn't feel like making a function to predict it
-**** todo selection
+*** src blocks
+#+BEGIN_SRC emacs-lisp
+(setq org-src-window-setup 'current-window
+	  org-src-fontify-natively t
+	  org-edit-src-content-indentation 0)
+
+(add-to-list 'org-structure-template-alist
+             '("el" "#+BEGIN_SRC emacs-lisp\n?\n#+END_SRC"))
+#+END_SRC
+*** interactive commands
+Some useful additional commands for org buffers
+#+BEGIN_SRC emacs-lisp
+(defun nd/mark-subtree-keyword (new-keyword &optional exclude)
+  "marks all tasks in a subtree with keyword unless original keyword
+is in the optional argument exclude"
+  (let ((subtree-end (save-excursion (org-end-of-subtree t))))
+    (if (not (listp exclude))
+        (error "exlude must be a list if provided"))
+    (save-excursion
+      (while (< (point) subtree-end)
+        (let ((keyword (nd/is-todoitem-p)))
+          (if (and keyword (not (member keyword exclude)))
+              (org-todo new-keyword)))
+        (outline-next-heading)))))
+
+(defun nd/mark-subtree-done ()
+  "marks all tasks in subtree as DONE unless they are already canc"
+  (interactive)
+  (nd/mark-subtree-keyword "DONE" '("CANC")))
+
+(defun nd/org-clone-subtree-with-time-shift (n &optional shift)
+  "Like `org-clone-subtree-with-time-shift' except it resets checkboxes
+and reverts all todo keywords to TODO"
+  (interactive "nNumber of clones to produce: ")
+    
+  (let ((shift (or (org-entry-get nil "TIME_SHIFT" 'selective)
+                   (read-from-minibuffer
+                    "Date shift per clone (e.g. +1w, empty to copy unchanged): "))))
+    (condition-case err
+        (progn
+          (save-excursion
+			;; clone once and reset
+			(org-clone-subtree-with-time-shift 1 shift)
+            (org-forward-heading-same-level 1 t)
+            (org-reset-checkbox-state-subtree)
+            (nd/mark-subtree-keyword "TODO")
+            (call-interactively 'nd/org-log-delete)
+            (org-cycle)
+			;; clone reset tree again if we need more than one clone
+			(if (> n 1)
+				(let ((additional-trees (- n 1)))
+				  (org-clone-subtree-with-time-shift additional-trees shift)
+				  (dotimes (i additional-trees)
+					(org-forward-heading-same-level 1 t)
+					(org-cycle))))))
+      (error (message "%s" (error-message-string err))))))
+
+(defun nd/org-log-delete ()
+  "Delete logbook drawer of subtree."
+  (interactive)
+  (save-excursion
+    (goto-char (org-log-beginning))
+    (when (save-excursion
+            (save-match-data
+              (beginning-of-line 0)
+              (search-forward-regexp org-drawer-regexp)
+              (goto-char (match-beginning 1))
+              (looking-at "LOGBOOK")))
+      (org-mark-element)
+      (delete-region (region-beginning) (region-end))
+      (org-remove-empty-drawer-at (point)))))
+#+END_SRC
+** column view
+#+BEGIN_SRC emacs-lisp
+  (setq org-columns-default-format
+        "%25ITEM %4TODO %TAGS %5Effort{:} %OWNER(OWN)")
+
+  (set-face-attribute 'org-column nil :background "#1e2023")
+  ;; org-columns-summary-types
+#+END_SRC
+** calfw
+#+BEGIN_SRC emacs-lisp
+(use-package calfw
+  :ensure t
+  :config
+  (setq cfw:fchar-junction ?╋
+		cfw:fchar-vertical-line ?┃
+		cfw:fchar-horizontal-line ?━
+		cfw:fchar-left-junction ?┣
+		cfw:fchar-right-junction ?┫
+		cfw:fchar-top-junction ?┯
+		cfw:fchar-top-left-corner ?┏
+		cfw:fchar-top-right-corner ?┓))
+#+END_SRC
+** window splitting
+Org mode is great and all, but the windows never show up in the right place. The solutions here are simple, but have the downside that the window sizing must be changed when tags/capture templates/todo items are changed. This is because the buffer size is not known at window creation time and I didn't feel like making a function to predict it
+*** todo selection
 I only need a teeny tiny window below my current window for todo selection
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-todo-position (buffer alist)
@@ -454,7 +548,7 @@ I only need a teeny tiny window below my current window for todo selection
 
 (advice-add #'org-fast-todo-selection :around #'nd/org-todo-window-advice)
 #+END_SRC
-**** tag selection
+*** tag selection
 By default, the tag selection window obliterates all but the current window...how disorienting :/
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-tag-window-advice (orig-fn current inherited table &optional todo-table)
@@ -468,7 +562,7 @@ By default, the tag selection window obliterates all but the current window...ho
 
 (advice-add #'org-fast-tag-selection :around #'nd/org-tag-window-advice)
 #+END_SRC
-**** capture
+*** capture
 Capture should show up in the bottom of any currently active buffer
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-capture-position (buffer alist)
@@ -488,16 +582,8 @@ Capture should show up in the bottom of any currently active buffer
 
 (advice-add #'org-mks :around #'nd/org-capture-window-advice)
 #+END_SRC
-** src blocks
-#+BEGIN_SRC emacs-lisp
-(setq org-src-window-setup 'current-window
-	  org-src-fontify-natively t
-	  org-edit-src-content-indentation 0)
-
-(add-to-list 'org-structure-template-alist
-             '("el" "#+BEGIN_SRC emacs-lisp\n?\n#+END_SRC"))
-#+END_SRC
-** todo states
+** gtd implementation
+*** todo states
 #+BEGIN_SRC emacs-lisp
 (setq org-todo-keywords
       '((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d)")
@@ -511,12 +597,12 @@ Capture should show up in the bottom of any currently active buffer
         ("HOLD" :foreground "violet" :weight bold)
         ("CANC" :foreground "deep sky blue" :weight bold)))
 #+END_SRC
-** tags
+*** tags
 I use tags for agenda filtering. Very fast and simple. Each tag here starts with a symbol to define its group. Some groups are mutually exclusive, and each group has a different color. Any tag that is not part of these groups (eg some filetags in the few cases I use those) is easy to distinguish as it has the default tag color and is all caps.
 
 There are several types of tags I use:
-- location: a GTD contexts; these start with "@"
-- tools: also a GTD contexts; these start with "#"
+- location: a GTD context; these start with "@"
+- tools: also a GTD context; these start with "#"
 - attribute: useful flags for filtering; these start with "%"
 - life areas: key areas of life which define priorities and goals; these start with "_"
 
@@ -563,21 +649,23 @@ NOTE: only these special chars; others make the tag chooser do weird things with
 (nd/add-tag-face "PaleGoldenrod" "%")
 (nd/add-tag-face "violet" "_")
 #+END_SRC
-** properties
+*** properties
+Add some useful properties:
+- PARENT_TYPE: used for special groups of timestamped entries (iterators and periodicals).
+- TIME_SHIFT: usually in conjunction with PARENT_TYPE, used as a shorthand when cloning subtrees to shift the time by a specified amount
+- OWNER and GOAL: not currently used
 #+BEGIN_SRC emacs-lisp
-(add-to-list 'org-default-properties "PARENT_TYPE")
-(add-to-list 'org-default-properties "OWNER")
-(add-to-list 'org-default-properties "GOAL")
-(add-to-list 'org-default-properties "TIME_SHIFT")
+(mapc (lambda (i) (add-to-list 'org-default-properties i))
+	  '("PARENT_TYPE" "OWNER" "GOAL" "TIME_SHIFT"))
 
 (setq org-global-properties
       '(("PARENT_TYPE_ALL" . "periodical iterator")
-        ("Effort_ALL" . "0:05 0:15 0:30 1:00 1:30 2:00 3:00 4:00 5:00 6:00")))
+        ("Effort_ALL" . "0:05 0:15 0:30 1:00 1:30 2:00 3:00 4:00 5:00 6:00"))
 
-;; TODO this may not be needed
-(setq org-use-property-inheritance '("PARENT_TYPE" "TIME_SHIFT"))
+	  org-use-property-inheritance
+	  '("PARENT_TYPE" "TIME_SHIFT"))
 #+END_SRC
-** capture
+*** capture
 #+BEGIN_SRC emacs-lisp
 (let ((capfile "~/Org/capture.org"))
   (setq org-capture-templates
@@ -604,61 +692,65 @@ NOTE: only these special chars; others make the tag chooser do weird things with
            "* %^{Title} :\\%note:\n[[%:link][%:description]]\n%U"
 		   :immediate-finish t))))
 #+END_SRC
-** refile
-*** targets
+*** refile
+**** general
 #+BEGIN_SRC emacs-lisp
-  (setq org-refile-targets (quote ((nil :maxlevel . 9)
-                                   ("~/Org/reference/idea.org" :maxlevel . 9)
-                                   (org-agenda-files :maxlevel . 9))))
+(setq org-refile-targets '((nil :maxlevel . 9)
+                           ("~/Org/reference/idea.org" :maxlevel . 9)
+                           (org-agenda-files :maxlevel . 9))
+	  org-refile-use-outline-path t
+	  org-outline-path-complete-in-steps nil
+	  org-refile-allow-creating-parent-nodes 'confirm
+	  org-indirect-buffer-display 'current-window)
 #+END_SRC
-*** completion
+**** exclude done states
+No need to file under DONE or CANC states
 #+BEGIN_SRC emacs-lisp
-(setq org-refile-use-outline-path t)
-(setq org-outline-path-complete-in-steps nil)
+(setq org-refile-target-verify-function
+	  (lambda () (not (member (nth 2 (org-heading-components)) org-done-keywords))))
 #+END_SRC
-*** node creation
-#+BEGIN_SRC emacs-lisp
-  (setq org-refile-allow-creating-parent-nodes 'confirm)
-#+END_SRC
-*** use current window
-#+BEGIN_SRC emacs-lisp
-  (setq org-indirect-buffer-display 'current-window)
-#+END_SRC
-*** exclude done states
-#+BEGIN_SRC emacs-lisp
-  (defun nd/verify-refile-target ()
-    "Exclude todo keywords with a done state from refile targets"
-    (not (member (nth 2 (org-heading-components)) org-done-keywords)))
-  (setq org-refile-target-verify-function 'nd/verify-refile-target)
-#+END_SRC
-** habits
-#+BEGIN_SRC emacs-lisp
-(setq org-habit-graph-column 50)
-#+END_SRC
-** clocking
+*** clocking
 #+BEGIN_SRC emacs-lisp
 
 #+END_SRC
-** agenda
-*** basic config
+*** agenda
+**** general config
 #+BEGIN_SRC emacs-lisp
-  (setq org-agenda-files '("~/Org"
+(setq org-agenda-files '("~/Org"
                         "~/Org/projects"
-                        "~/Org/reference"))
-  ;; (setq org-agenda-files '("~/Org/reference/agendatest.org"))
-  (setq org-agenda-dim-blocked-tasks nil)
-  (setq org-agenda-compact-blocks t)
-  (setq org-agenda-window-setup 'current-window)
+                        "~/Org/reference")
+	  org-agenda-dim-blocked-tasks nil
+	  org-agenda-compact-blocks t
+	  org-agenda-window-setup 'current-window
+      
+	  org-habit-graph-column 50
+      
+	  org-agenda-start-on-weekday 0
+	  org-agenda-span 'day
+	  org-agenda-current-time-string "### -- NOW -- ###"
+	  org-agenda-time-grid '((daily today remove-match)
+							 (0800 1000 1200 1200 1400 1600)
+                             "......" "-----------------"))
 #+END_SRC
-*** holidays and birthdays
+**** right align tags
+the agenda does not do this by default...it's annoying
 #+BEGIN_SRC emacs-lisp
-(setq holiday-bahai-holidays nil)
-(setq holiday-hebrew-holidays nil)
-(setq holiday-islamic-holidays nil)
+(add-hook 'org-finalize-agenda-hook
+		  (lambda () (setq org-agenda-tags-column (- 4 (window-width)))
+			(org-agenda-align-tags)))
+#+END_SRC 
+**** holidays and birthdays
+#+BEGIN_SRC emacs-lisp
+(setq holiday-bahai-holidays nil
+	  holiday-hebrew-holidays nil
+	  holiday-oriental-holidays nil
+	  holiday-islamic-holidays nil)
 #+END_SRC
-*** task helper functions
+**** library
+Since I am never totally satisfied with how the agenda works, I have a massive library of functions to filter and manipulate tasks (mostly for skip functions). I also have a few variables I set in order to toggle certain views
+***** task helper functions
 These are the building blocks for skip functions.
-**** timestamps
+****** timestamps
 Each of these returns the timestamp if found.
 #+BEGIN_SRC emacs-lisp
 (defun nd/get-date-property (date-property)
@@ -712,7 +804,7 @@ no timestamp is found."
    'nd/is-closed-heading-p
     (- (* 60 60 24 nd/archive-delay-days))))
 #+END_SRC
-**** task level testing
+****** task level testing
 Each of these returns the keyword if true
 Doubles as a way to further test the todostate in downstream functions
 #+BEGIN_SRC emacs-lisp
@@ -733,7 +825,7 @@ Doubles as a way to further test the todostate in downstream functions
   (defun nd/is-atomic-task-p ()
     (and (not (nd/heading-has-parent 'nd/is-todoitem-p)) (nd/is-task-p)))
 #+END_SRC
-**** property testing
+****** property testing
 Returns t is heading matches a certian set of properties
 #+BEGIN_SRC emacs-lisp
   (defun nd/is-periodical-heading-p ()
@@ -753,7 +845,7 @@ Returns t is heading matches a certian set of properties
   (defun nd/heading-has-tag-p (tag)
     (member tag (org-get-tags-at)))
 #+END_SRC
-**** relational testing
+****** relational testing
 Returns t if heading has certain relationship to other headings
 #+BEGIN_SRC emacs-lisp
   (defun nd/heading-has-children (heading-test)
@@ -790,7 +882,7 @@ Returns t if heading has certain relationship to other headings
             (setq has-non-todoitem-parent t))))
       (and has-todoitem-parent has-non-todoitem-parent)))
 #+END_SRC
-**** project level testing
+****** project level testing
 #+BEGIN_SRC emacs-lisp
 (defconst nd/project-invalid-todostates
   '("WAIT" "NEXT")
@@ -896,7 +988,7 @@ Returns t if heading has certain relationship to other headings
 	 
 	 (t (error (concat "invalid keyword detected: " keyword))))))
 #+END_SRC
-**** iterator testing
+****** iterator testing
 #+BEGIN_SRC emacs-lisp
 (defconst nd/iter-future-time (* 7 24 60 60))
 
@@ -926,7 +1018,7 @@ Returns t if heading has certain relationship to other headings
 		(outline-next-heading)))
 	iter-status))
 #+END_SRC
-**** periodical testing
+****** periodical testing
 #+BEGIN_SRC emacs-lisp
 (defconst nd/peri-future-time nd/iter-future-time)
 
@@ -953,10 +1045,10 @@ Returns t if heading has certain relationship to other headings
 		(outline-next-heading)))
 	peri-status))
 #+END_SRC
-*** skip functions
+***** skip functions
 These are the primary means we use to sort through tasks. Note that we could do this with
 tags in the custom commands section but I find this easier to maintain and possibly faster.
-**** helper skip functions and macros
+****** helper skip functions and macros
 Subunits for skip functions. Not meant to be used or called from the custom commands api
 #+BEGIN_SRC emacs-lisp
   (defun nd/skip-heading ()
@@ -985,7 +1077,7 @@ Subunits for skip functions. Not meant to be used or called from the custom comm
          (if (not (and keyword ,test-fun))
              (nd/skip-heading)))))
 #+END_SRC
-**** headings
+****** headings
 Skip functions for headings which may or may
 not be todo-items
 
@@ -1020,7 +1112,7 @@ section)
             (nd/skip-heading)))))
     
 #+END_SRC
-**** atomic tasks
+****** atomic tasks
 By definition these have no parents, so
 I don't need to worry about skipping over projects
 any todo state is valid and we only sort by done/canc
@@ -1045,7 +1137,7 @@ any todo state is valid and we only sort by done/canc
      (and (member keyword org-done-keywords)
           (nd/is-archivable-heading-p))))
 #+END_SRC
-**** periodicals
+****** periodicals
 These are headers marked with PARENT_TYPE=periodical
 property that have timestamped headers as children
 which in turn may or may not have todo keywords.
@@ -1071,7 +1163,7 @@ stale (all children in the past).
                   (not (nd/heading-has-children 'nd/is-periodical-heading-p))))
         (nd/skip-heading))))
 #+END_SRC
-**** iterators
+****** iterators
 iterators are like projects but have additional status codes based on
 when the iterator will run out
 #+BEGIN_SRC emacs-lisp
@@ -1088,7 +1180,7 @@ when the iterator will run out
    (not (or (nd/is-scheduled-heading-p)
 			(nd/is-deadlined-heading-p)))))
 #+END_SRC
-**** project tasks
+****** project tasks
 Since these are part of projects I need to assess
 if the parent project is skippable, in which case
 I jump to the next subtree
@@ -1114,7 +1206,7 @@ which is dealt with similarly)
                 (nd/skip-heading)))
         (nd/skip-heading)))))
 #+END_SRC
-**** header-level errors
+****** header-level errors
 Some headers are invalid under certain conditions
 which I test here
 #+BEGIN_SRC emacs-lisp
@@ -1155,7 +1247,7 @@ which I test here
      nd/is-task-p
      (not (nd/heading-has-effort-p))))
 #+END_SRC
-**** projects
+****** projects
 Projects are handled quite simply. They have statuscodes
 for which I test, and this can all be handled by one function.
 Note that this is used for "normal" projects as well as iterators
@@ -1171,42 +1263,37 @@ Note that this is used for "normal" projects as well as iterators
               (nd/skip-subtree))
         (nd/skip-heading)))))
 #+END_SRC
-*** interactive view functions
+***** variables
 #+BEGIN_SRC emacs-lisp
 (defvar nd/agenda-limit-project-toplevel t
-  "used to filter projects by all levels or top-level only")
+  "If true, filter projects by all levels or top level only.")
 
 (defvar nd/agenda-hide-incubator-tags t
-  "used to filter incubator headings")
-
+  "If true, don't show incubator headings.")
+#+END_SRC
+***** interactive view functions
+#+BEGIN_SRC emacs-lisp
 (defun nd/toggle-project-toplevel-display ()
+  "Toggle all project headings and toplevel only headings in project blocks."
   (interactive)
   (setq nd/agenda-limit-project-toplevel (not nd/agenda-limit-project-toplevel))
   (when (equal major-mode 'org-agenda-mode)
     (org-agenda-redo))
   (message "Showing %s project view in agenda"
            (if nd/agenda-limit-project-toplevel "toplevel" "complete")))
-
-(defun nd/toggle-agenda-var (var msg)
-  (interactive)
-  (set var (not (eval var)))
-  (when (equal major-mode 'org-agenda-mode)
-    (org-agenda-redo))
-  (message msg))
-
+           
 (defun nd/org-agenda-filter-non-context ()
-  "A quick and dirty agenda filter that removes all
-tasks with context tags"
+  "Filter all tasks with context tags."
   (interactive)
   (let* ((tags-list (mapcar #'car org-tag-alist))
          (context-tags (append
                         (nd/filter-list-prefix "@" tags-list)
                         (nd/filter-list-prefix "#" tags-list))))
     (setq org-agenda-tag-filter
-          (mapcar (lambda(tag) (concat "-" tag)) context-tags))
+          (mapcar (lambda (tag) (concat "-" tag)) context-tags))
     (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
 #+END_SRC
-*** agenda aesthetics
+**** agenda aesthetics
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-tags-todo-honor-ignore-options t)
 
@@ -1231,7 +1318,7 @@ tasks with context tags"
                  ((> pa pb) +1)
                  ((< pa pb) -1)))))
 #+END_SRC
-*** custom commands
+**** custom commands
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-agenda-filter-status (filter status-fun a-line)
   "Filter for org-agenda-before-sorting-filter-function intended for
@@ -1423,109 +1510,6 @@ set as a text property for further sorting"
 			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:archivable) a b)))
 		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
 		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep)))))))))
-#+END_SRC
-*** views
-**** calendar display
-#+BEGIN_SRC emacs-lisp
-(setq org-agenda-start-on-weekday 0)
-(setq org-agenda-span 'day)
-(setq org-agenda-current-time-string "### -- NOW -- ###")
-(setq org-agenda-time-grid '((daily today remove-match)
-							 (0800 1000 1200 1200 1400 1600)
-                             "......" "-----------------"))
-#+End_src
-**** right align tags
-the agenda does not do this by default...it's annoying
-#+BEGIN_SRC emacs-lisp
-  (add-hook 'org-finalize-agenda-hook 'place-agenda-tags)
-  (defun place-agenda-tags ()
-    "Put the agenda tags by the right border of the agenda window."
-    (setq org-agenda-tags-column (- 4 (window-width)))
-    (org-agenda-align-tags))
-#+END_SRC 
-** column view
-#+BEGIN_SRC emacs-lisp
-  (setq org-columns-default-format
-        "%25ITEM %4TODO %TAGS %5Effort{:} %OWNER(OWN)")
-
-  (set-face-attribute 'org-column nil :background "#1e2023")
-  ;; org-columns-summary-types
-#+END_SRC
-** interactive commands
-#+BEGIN_SRC emacs-lisp
-(defun nd/mark-subtree-keyword (new-keyword &optional exclude)
-  "marks all tasks in a subtree with keyword unless original keyword
-is in the optional argument exclude"
-  (let ((subtree-end (save-excursion (org-end-of-subtree t))))
-    (if (not (listp exclude))
-        (error "exlude must be a list if provided"))
-    (save-excursion
-      (while (< (point) subtree-end)
-        (let ((keyword (nd/is-todoitem-p)))
-          (if (and keyword (not (member keyword exclude)))
-              (org-todo new-keyword)))
-        (outline-next-heading)))))
-
-(defun nd/mark-subtree-done ()
-  "marks all tasks in subtree as DONE unless they are already canc"
-  (interactive)
-  (nd/mark-subtree-keyword "DONE" '("CANC")))
-
-(defun nd/org-clone-subtree-with-time-shift (n &optional shift)
-  "Like `org-clone-subtree-with-time-shift' except it resets checkboxes
-and reverts all todo keywords to TODO"
-  (interactive "nNumber of clones to produce: ")
-    
-  (let ((shift (or (org-entry-get nil "TIME_SHIFT" 'selective)
-                   (read-from-minibuffer
-                    "Date shift per clone (e.g. +1w, empty to copy unchanged): "))))
-    (condition-case err
-        (progn
-          (save-excursion
-			;; clone once and reset
-			(org-clone-subtree-with-time-shift 1 shift)
-            (org-forward-heading-same-level 1 t)
-            (org-reset-checkbox-state-subtree)
-            (nd/mark-subtree-keyword "TODO")
-            (call-interactively 'nd/org-log-delete)
-            (org-cycle)
-			;; clone reset tree again if we need more than one clone
-			(if (> n 1)
-				(let ((additional-trees (- n 1)))
-				  (org-clone-subtree-with-time-shift additional-trees shift)
-				  (dotimes (i additional-trees)
-					(org-forward-heading-same-level 1 t)
-					(org-cycle))))))
-      (error (message "%s" (error-message-string err))))))
-
-(defun nd/org-log-delete ()
-  "Delete logbook drawer of subtree."
-  (interactive)
-  (save-excursion
-    (goto-char (org-log-beginning))
-    (when (save-excursion
-            (save-match-data
-              (beginning-of-line 0)
-              (search-forward-regexp org-drawer-regexp)
-              (goto-char (match-beginning 1))
-              (looking-at "LOGBOOK")))
-      (org-mark-element)
-      (delete-region (region-beginning) (region-end))
-      (org-remove-empty-drawer-at (point)))))
-#+END_SRC
-** calfw
-#+BEGIN_SRC emacs-lisp
-(use-package calfw
-  :ensure t
-  :config
-  (setq cfw:fchar-junction ?╋
-		cfw:fchar-vertical-line ?┃
-		cfw:fchar-horizontal-line ?━
-		cfw:fchar-left-junction ?┣
-		cfw:fchar-right-junction ?┫
-		cfw:fchar-top-junction ?┯
-		cfw:fchar-top-left-corner ?┏
-		cfw:fchar-top-right-corner ?┓))
 #+END_SRC
 * mu4e
 only for gmail now
