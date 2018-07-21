@@ -1452,17 +1452,6 @@ the agenda does not do this by default...it's annoying
     (setq org-agenda-tags-column (- 4 (window-width)))
     (org-agenda-align-tags))
 #+END_SRC 
-*** auto exclusion
-#+BEGIN_SRC emacs-lisp
-  (defun nd/org-auto-exclude-function (tag)
-    "Automatic task exclusion in the agenda with / RET"
-    (and (cond
-          ((string= tag "hold")
-           t))
-         (concat "-" tag)))
-
-  (setq org-agenda-auto-exclude-function 'nd/org-auto-exclude-function)
-#+END_SRC
 ** column view
 #+BEGIN_SRC emacs-lisp
   (setq org-columns-default-format
@@ -1532,14 +1521,6 @@ and reverts all todo keywords to TODO"
       (org-mark-element)
       (delete-region (region-beginning) (region-end))
       (org-remove-empty-drawer-at (point)))))
-#+END_SRC
-** caldav
-+BEGIN_SRC emacs-lisp
-  (use-package org-caldav
-    :ensure t
-    :config (org-caldav-url "https://portnoy4prez.yavin4.ch/nextcloud/remote.php/dav/calendars/petrucci4prez/concerts/"
-                            org-cladav-calendar-id "testorg"
-                            org-caldav-inbox "~/Org/reference/testcal.org"))
 #+END_SRC
 ** calfw
 #+BEGIN_SRC emacs-lisp
