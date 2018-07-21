@@ -377,7 +377,11 @@ NOTES:
 ** basic
 #+BEGIN_SRC emacs-lisp
 (use-package org
-  :delight org-indent-mode
+  :delight
+  (org-indent-mode nil org-indent)
+  (visual-line-mode)
+  :hook
+  (org-mode . visual-line-mode)
   :config
   (setq org-startup-indented t
 		org-directory "~/Org"
