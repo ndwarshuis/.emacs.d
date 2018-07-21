@@ -1594,10 +1594,10 @@ only for gmail now
 (setq ediff-window-setup-function 'ediff-setup-windows-plain)
 #+END_SRC
 * keybindings
-For the sake of my sanity, all bindings go here.
+For the sake of my sanity, all bindings go here. Note this means I don't use =:bind= in use-package forms.
 ** evil
 I like being evil. All package and custom bindings go here.
-*** basic
+*** base
 #+BEGIN_SRC emacs-lisp
 (use-package evil
   :ensure t
@@ -1605,13 +1605,17 @@ I like being evil. All package and custom bindings go here.
   ;; this is required to make evil collection work
   (setq evil-want-integration nil)
   :config
-  (evil-mode 1)
-  ;; some keys that should be in emacs-state instead of global
-  (nd/move-key global-map evil-emacs-state-map (kbd "C-s"))
-  (nd/move-key global-map evil-emacs-state-map (kbd "C-x C-;"))
-  (nd/move-key global-map evil-emacs-state-map (kbd "C-x C-l"))
-  (nd/move-key global-map evil-emacs-state-map (kbd "C-x C-u"))
-  (nd/move-key global-map evil-emacs-state-map (kbd "C-x C-z")))
+  (evil-mode 1))
+#+END_SRC
+*** unbind emacs keys
+Some of these commands just get in the way of being evil (which really means that I keep pressing them on accident). Rather than nullifying them completely, tuck them away in the emacs state map in case I actually want them.
+#+BEGIN_SRC emacs-lisp
+(mapc (lambda (k) (nd/move-key global-map evil-emacs-state-map (eval k)))
+	  '((kbd "C-s")
+		(kbd "C-x C-;")
+		(kbd "C-x C-l")
+		(kbd "C-x C-u")
+		(kbd "C-x C-z")))
 #+END_SRC
 *** evil-org
 #+BEGIN_SRC emacs-lisp
@@ -1646,13 +1650,14 @@ I like being evil. All package and custom bindings go here.
 *** visual line mode
 This is somewhat strange because all I really care about is moving between lines and to the beginning and end as normal. However, I like the idea of thinking of paragraphs as one line (eg df. deletes a sentence even if on multiple lines). Opinion subject to change.
 #+BEGIN_SRC emacs-lisp
-(evil-define-key 'normal 'visual-line-mode
+(evil-define-key '(normal visual) 'visual-line-mode
   "j" 'evil-next-visual-line
   "k" 'evil-previous-visual-line
   "0" 'beginning-of-visual-line
   "$" 'end-of-visual-line)
 #+END_SRC
 *** collection
+Most packages that don't have an evil version are in this one. I don't like surprises so I set =evil-collection-modes-list= with the modes I actually want. Some of these are further configured below.
 #+BEGIN_SRC emacs-lisp
 (use-package evil-collection
   :ensure t
@@ -1665,16 +1670,25 @@ This is somewhat strange because all I really care about is moving between lines
   (evil-collection-init))
 #+END_SRC
 **** dired
-Dired makes new buffers by default. Use =find-alternate-file= to avoid this
+Dired makes new buffers by default. Use =find-alternate-file= to avoid this.
 #+BEGIN_SRC emacs-lisp
 (put 'dired-find-alternate-file 'disabled nil)
 
 (evil-define-key 'normal dired-mode-map
   "a" 'dired-find-file
   (kbd "<return>") 'dired-find-alternate-file
-  "^" (lambda () (interactive) (find-alternate-file "..")))
+  "^" (lambda () (interactive) (find-alternate-file ".."))
+  (kbd "C-<return>") 'nd/dired-xdg-open)
+#+END_SRC
+**** helm
+I like tab completion...regardless of what the helm zealots say. This is actually easier and faster because I can just scroll through the source list with j/k and mash TAB when I find the right directory.
+#+BEGIN_SRC emacs-lisp
+(evil-define-key '(normal insert) helm-map
+  (kbd "<tab>") 'helm-execute-persistent-action
+  (kbd "C-<tab>") 'helm-select-action)
 #+END_SRC
 ** local
+These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future)
 *** org-mode
 #+BEGIN_SRC emacs-lisp
 (add-hook 'org-mode-hook
@@ -1685,15 +1699,6 @@ Dired makes new buffers by default. Use =find-alternate-file= to avoid this
 (add-hook 'org-agenda-mode-hook
           (lambda ()
             (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)))
-#+END_SRC
-*** helm
-#+BEGIN_SRC emacs-lisp
-(define-key helm-map (kbd "<tab>") 'helm-execute-persistent-action)
-(define-key helm-map (kbd "C-<tab>") 'helm-select-action)
-#+END_SRC
-*** dired
-#+BEGIN_SRC emacs-lisp
-(define-key dired-mode-map (kbd "C-<return>") 'nd/dired-xdg-open)
 #+END_SRC
 ** global
 #+BEGIN_SRC emacs-lisp
