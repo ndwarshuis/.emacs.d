@@ -518,6 +518,13 @@ and reverts all todo keywords to TODO"
 		cfw:fchar-top-junction ?┯
 		cfw:fchar-top-left-corner ?┏
 		cfw:fchar-top-right-corner ?┓))
+
+(use-package calfw-org
+  :ensure t
+  :after calfw
+  :config
+  (setq cfw:org-agenda-schedule-args
+		'(:deadline :timestamp)))
 #+END_SRC
 ** window splitting
 Org mode is great and all, but the windows never show up in the right place. The solutions here are simple, but have the downside that the window sizing must be changed when tags/capture templates/todo items are changed. This is because the buffer size is not known at window creation time and I didn't feel like making a function to predict it
@@ -1655,6 +1662,7 @@ Dired makes new buffers by default. Use =find-alternate-file= to avoid this
 #+BEGIN_SRC emacs-lisp
 (global-set-key (kbd "<f1>") 'org-agenda)
 (global-set-key (kbd "<f2>") 'org-capture)
+(global-set-key (kbd "<f3>") 'cfw:open-org-calendar)
 (global-set-key (kbd "<f12>") 'mu4e)
 (global-set-key (kbd "C-<f12>") 'global-hl-line-mode)
 (global-set-key (kbd "S-<f12>") 'display-line-numbers-mode)
