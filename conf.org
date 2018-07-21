@@ -1584,9 +1584,8 @@ only for gmail now
 #+END_SRC
 * shell
 #+begin_src emacs-lisp
-(defvar nd-term-shell "/bin/bash")
 (defadvice ansi-term (before force-bash)
-  (interactive (list nd-term-shell)))
+  (interactive (list "/bin/zsh")))
 (ad-activate 'ansi-term)
 #+END_SRC
 * ediff
@@ -1663,8 +1662,9 @@ Most packages that don't have an evil version are in this one. I don't like surp
   :ensure t
   :after evil
   :init
-  (setq evil-collection-modes-list '(dired flycheck company which-key
-										   helm minibuffer mu4e ediff))
+  (setq evil-collection-modes-list
+		'(dired flycheck company which-key helm minibuffer mu4e ediff
+				term))
   (setq evil-collection-setup-minibuffer t)
   :config
   (evil-collection-init))
@@ -1686,6 +1686,13 @@ I like tab completion...regardless of what the helm zealots say. This is actuall
 (evil-define-key '(normal insert) helm-map
   (kbd "<tab>") 'helm-execute-persistent-action
   (kbd "C-<tab>") 'helm-select-action)
+#+END_SRC
+**** term
+Since I use vi mode in my terminal emulator, need to preserve the escape key's raw behavior
+#+BEGIN_SRC emacs-lisp
+(evil-define-key 'insert term-raw-map
+  (kbd "<escape>") (lambda () (interactive) (term-send-raw-string "\e"))
+  (kbd "C-<escape>") 'evil-normal-state)
 #+END_SRC
 ** local
 These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future)
