@@ -512,15 +512,15 @@ Capture should show up in the bottom of any currently active buffer
         ("CANC" :foreground "deep sky blue" :weight bold)))
 #+END_SRC
 ** tags
-I use tags for agenda filtering. Very fast and simple.
-Each tag here starts with a symbol to define its group. Some groups are mutually exclusive, and each group has a different color.
-Any tag that is not part of these groups (eg some filetags in the few cases I use those) is easy to distinguish as it has the default tag color and is all caps.
+I use tags for agenda filtering. Very fast and simple. Each tag here starts with a symbol to define its group. Some groups are mutually exclusive, and each group has a different color. Any tag that is not part of these groups (eg some filetags in the few cases I use those) is easy to distinguish as it has the default tag color and is all caps.
 
 There are several types of tags I use:
 - location: a GTD contexts; these start with "@"
 - tools: also a GTD contexts; these start with "#"
 - attribute: useful flags for filtering; these start with "%"
 - life areas: key areas of life which define priorities and goals; these start with "_"
+
+NOTE: only these special chars; others make the tag chooser do weird things with the hotkey
 #+BEGIN_SRC emacs-lisp
 (defun nd/add-tag-face (fg-name prefix)
   "Adds list of cons cells to org-tag-faces with foreground set to fg-name.
@@ -529,8 +529,6 @@ There are several types of tags I use:
   (dolist (tag (nd/filter-list-prefix prefix (mapcar #'car org-tag-alist)))
     (push `(,tag . (:foreground ,fg-name)) org-tag-faces)))
 
-;; for some reason, most special chars don't really
-;; work in org-tag-alist, only #, @, %, and _
 (setq org-tag-alist
       '((:startgroup)
         ("@errand" . ?e)
@@ -564,7 +562,6 @@ There are several types of tags I use:
 (nd/add-tag-face "SkyBlue" "#")
 (nd/add-tag-face "PaleGoldenrod" "%")
 (nd/add-tag-face "violet" "_")
-
 #+END_SRC
 ** properties
 #+BEGIN_SRC emacs-lisp
