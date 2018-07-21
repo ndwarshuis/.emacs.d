@@ -488,28 +488,22 @@ Capture should show up in the bottom of any currently active buffer
 
 (advice-add #'org-mks :around #'nd/org-capture-window-advice)
 #+END_SRC
-** src
-*** basic
+** src blocks
 #+BEGIN_SRC emacs-lisp
-(setq org-src-window-setup 'current-window)
-(setq org-src-fontify-natively t)
-(setq org-edit-src-content-indentation 0)
-#+END_SRC
-*** snippets
-#+BEGIN_SRC emacs-lisp
+(setq org-src-window-setup 'current-window
+	  org-src-fontify-natively t
+	  org-edit-src-content-indentation 0)
+
 (add-to-list 'org-structure-template-alist
              '("el" "#+BEGIN_SRC emacs-lisp\n?\n#+END_SRC"))
 #+END_SRC
 ** todo states
-*** sequences
 #+BEGIN_SRC emacs-lisp
 (setq org-todo-keywords
       '((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d)")
-        (sequence "WAIT(w@/!)" "HOLD(h@/!)" "|" "CANC(c@/!)")))
-#+END_SRC
-*** colors
-#+BEGIN_SRC emacs-lisp
-(setq org-todo-keyword-faces
+        (sequence "WAIT(w@/!)" "HOLD(h@/!)" "|" "CANC(c@/!)"))
+
+	  org-todo-keyword-faces
       '(("TODO" :foreground "light coral" :weight bold)
         ("NEXT" :foreground "khaki" :weight bold)
         ("DONE" :foreground "light green" :weight bold)
