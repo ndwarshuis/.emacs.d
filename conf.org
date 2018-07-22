@@ -282,6 +282,7 @@ event of an error or nonlocal exit."
 #+BEGIN_SRC emacs-lisp
 (use-package company
   :ensure t
+  :delight " ©"
   :config
   (setq company-idle-delay 0
 		company-minimum-prefix-length 3))
@@ -367,9 +368,19 @@ NOTES:
 #+BEGIN_SRC emacs-lisp
 (use-package haskell-mode
   :ensure t
+  :hook
+  (haskell-mode . company-mode)
   :config
   (setq haskell-compile-command "ghc -dynamic -Wall -ferror-spans -fforce-recomp -c %s"
 		haskell-interactive-popup-errors nil))
+
+(use-package company-ghc
+  :ensure t
+  :after
+  (company-mode haskell-mode)
+  :hook
+  (haskell-mode . (lambda () (setq-local company-backends
+									'((company-ghc))))))
 #+END_SRC
 * magit
 #+BEGIN_SRC emacs-lisp
