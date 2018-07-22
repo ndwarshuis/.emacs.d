@@ -381,6 +381,11 @@ NOTES:
 		git-commit-summary-max-length 50))
 #+END_SRC
 * dired
+** no confirm
+Keeping confirmation enabled does weird stuff with helm. Not ideal at the moment but we shall see if I find something better.
+#+BEGIN_SRC emacs-lisp
+(setq dired-no-confirm '(move))
+#+END_SRC
 ** interactive functions
 #+BEGIN_SRC emacs-lisp
 (defun nd/dired-xdg-open ()
