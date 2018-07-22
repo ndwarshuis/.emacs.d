@@ -349,8 +349,7 @@ NOTES:
   :config
   (setq inferior-R-args "--quiet --no-save"
 		ess-history-file "session.Rhistory"
-		ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))
-  (add-to-list 'evil-motion-state-modes 'ess-help-mode))
+		ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
 #+END_SRC
 ** python
 #+BEGIN_SRC
@@ -1654,6 +1653,36 @@ This is somewhat strange because all I really care about is moving between lines
   "k" 'evil-previous-visual-line
   "0" 'beginning-of-visual-line
   "$" 'end-of-visual-line)
+#+END_SRC
+*** ess
+ESS has not joined the dark side. Configure similarly to term (see below) where insert mode goes into "char-mode" where we can type like a normal terminal
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'evil-motion-state-modes 'ess-help-mode)
+(add-to-list 'evil-insert-state-modes 'inferior-ess-mode)
+
+(defun nd/ess-char-mode-insert ()
+  "If not at the last line, go to the end of the buffer and enter insert mode.  Else just enter insert mode."
+  (interactive)
+  (if (/= (line-number-at-pos (point)) (line-number-at-pos (point-max)))
+		(goto-char (point-max))))
+
+(defun nd/inferior-ess-send-input ()
+  "Go into insert mode after `inferior-ess-send-input'."
+  (interactive)
+  (inferior-ess-send-input)
+  (evil-insert 1))
+
+(evil-define-key 'normal inferior-ess-mode-map
+  (kbd "RET") 'nd/inferior-ess-send-input)
+
+(evil-define-key '(normal insert) inferior-ess-mode-map
+  (kbd "C-j") 'comint-previous-input
+  (kbd "C-k") 'comint-next-input)
+
+(add-hook 'inferior-ess-mode-hook
+		  (lambda ()
+			(add-hook 'evil-insert-state-entry-hook
+					  'nd/ess-char-mode-insert nil t)))
 #+END_SRC
 *** collection
 Most packages that don't have an evil version are in this one. I don't like surprises so I set =evil-collection-modes-list= with the modes I actually want. Some of these are further configured below.
