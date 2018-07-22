@@ -737,6 +737,8 @@ Add some useful properties:
 	  org-outline-path-complete-in-steps nil
 	  org-refile-allow-creating-parent-nodes 'confirm
 	  org-indirect-buffer-display 'current-window)
+
+(add-hook 'org-capture-mode-hook (lambda () (evil-append 1)))
 #+END_SRC
 **** exclude done states
 No need to file under DONE or CANC states
