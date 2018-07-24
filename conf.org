@@ -193,7 +193,7 @@ No need for startup screen, tool/menu/scrollbars, or backups
 #+BEGIN_SRC emacs-lisp
 (use-package async
   :ensure t
-  :delight async
+  :delight dired-async-mode
   :init
   (dired-async-mode 1))
 #+END_SRC
@@ -1772,6 +1772,7 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 (global-set-key (kbd "C-x 3") 'nd/split-and-follow-vertically)
 (global-unset-key (kbd "C-x c"))
 (global-set-key (kbd "C-x k") 'nd/kill-current-buffer)
+(global-set-key (kbd "C-x C-d") 'helm-bookmarks)
 (global-set-key (kbd "C-x C-f") 'helm-find-files)
 (global-set-key (kbd "C-x C-b") 'helm-buffers-list)
 
