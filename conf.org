@@ -148,11 +148,11 @@ No need for startup screen, tool/menu/scrollbars, or backups
   :ensure t
   :config
   (setq aw-background t)
-  (set-face-attribute 'aw-leading-char-face nil
-					  :foreground "#292b2e"
-					  :background "#bc6ec5"
-					  :height 1.0
-					  :box nil))
+  (custom-set-faces '(aw-leading-char-face 
+					  ((t (:foreground "#292b2e"
+						   :background "#bc6ec5"
+						   :height 1.0
+						   :box nil))))))
 #+END_SRC
 ** avy
 #+BEGIN_SRC emacs-lisp
