@@ -1673,7 +1673,7 @@ This is somewhat strange because all I really care about is moving between lines
   "$" 'end-of-visual-line)
 #+END_SRC
 *** ess
-ESS has not joined the dark side. Configure similarly to term (see below) where insert mode goes into "char-mode" where we can type like a normal terminal
+ESS has not joined the dark side. Configure similarly to term (see below) where insert mode goes into "char-mode" where I can type like a normal terminal
 #+BEGIN_SRC emacs-lisp
 (add-to-list 'evil-motion-state-modes 'ess-help-mode)
 (add-to-list 'evil-insert-state-modes 'inferior-ess-mode)
@@ -1694,8 +1694,8 @@ ESS has not joined the dark side. Configure similarly to term (see below) where 
   (kbd "RET") 'nd/inferior-ess-send-input)
 
 (evil-define-key '(normal insert) inferior-ess-mode-map
-  (kbd "C-j") 'comint-previous-input
-  (kbd "C-k") 'comint-next-input)
+  (kbd "C-k") 'comint-previous-input
+  (kbd "C-j") 'comint-next-input)
 
 (add-hook 'inferior-ess-mode-hook
 		  (lambda ()
