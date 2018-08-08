@@ -402,7 +402,7 @@ NOTES:
 ** no confirm
 Keeping confirmation enabled does weird stuff with helm. Not ideal at the moment but we shall see if I find something better.
 #+BEGIN_SRC emacs-lisp
-(setq dired-no-confirm '(move))
+(setq dired-no-confirm '(move copy))
 #+END_SRC
 ** interactive functions
 #+BEGIN_SRC emacs-lisp
