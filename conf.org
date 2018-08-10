@@ -204,6 +204,23 @@ No need for startup screen, tool/menu/scrollbars, or backups
   ;; :hook
   ;; (csv-mode . (lambda () (csv-align-fields nil (point-min) (point-max)))))
 #+END_SRC
+** markdown-mode
+#+BEGIN_SRC emacs-lisp
+(use-package markdown-mode
+  :ensure t)
+#+END_SRC
+** polymode
+#+BEGIN_SRC emacs-lisp
+(use-package polymode
+  :ensure t
+  :after markdown-mode
+  :mode
+  (("\\.Rmd\\'" . poly-markdown+r-mode)
+   ("\\.rmd\\'" . poly-markdown+r-mode))
+  :config
+  (require 'poly-R)
+  (require 'poly-markdown))
+#+END_SRC
 * library
 A place for duct tape code that I developed (or lovingly stole from others)
 ** macros
