@@ -339,6 +339,10 @@ event of an error or nonlocal exit."
   (yas-reload-all))
 #+END_SRC
 * languages
+** flyspell
+#+BEGIN_SRC emacs-lisp
+(setq flyspell-issue-message-flag nil)
+#+END_SRC
 ** progmode
 #+BEGIN_SRC emacs-lisp
 (add-hook 'prog-mode-hook #'prettify-symbols-mode)
@@ -1646,6 +1650,14 @@ I like being evil. All package and custom bindings go here.
   (setq evil-want-integration nil)
   :config
   (evil-mode 1))
+#+END_SRC
+*** surround
+#+BEGIN_SRC emacs-lisp
+(use-package evil-surround
+  :ensure t
+  :after evil
+  :config
+  (global-evil-surround-mode 1))
 #+END_SRC
 *** unbind emacs keys
 Some of these commands just get in the way of being evil (which really means that I keep pressing them on accident). Rather than nullifying them completely, tuck them away in the emacs state map in case I actually want them.
