@@ -339,13 +339,11 @@ event of an error or nonlocal exit."
   (yas-reload-all))
 #+END_SRC
 * languages
-** flyspell
-#+BEGIN_SRC emacs-lisp
-(setq flyspell-issue-message-flag nil)
-#+END_SRC
 ** progmode
 #+BEGIN_SRC emacs-lisp
 (add-hook 'prog-mode-hook #'prettify-symbols-mode)
+(add-hook 'prog-mode-hook #'flyspell-prog-mode)
+(setq flyspell-issue-message-flag nil)
 #+END_SRC
 ** elisp
 #+BEGIN_SRC emacs-lisp
