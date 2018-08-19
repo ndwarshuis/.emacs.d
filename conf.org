@@ -339,6 +339,12 @@ event of an error or nonlocal exit."
   (yas-reload-all))
 #+END_SRC
 * languages
+** flyspell
+#+BEGIN_SRC emacs-lisp
+(use-package flyspell-correct-helm
+  :ensure t
+  :after (helm flyspell))
+#+END_SRC
 ** progmode
 #+BEGIN_SRC emacs-lisp
 (add-hook 'prog-mode-hook #'prettify-symbols-mode)
@@ -819,6 +825,9 @@ the agenda does not do this by default...it's annoying
 	  holiday-hebrew-holidays nil
 	  holiday-oriental-holidays nil
 	  holiday-islamic-holidays nil)
+
+(setq calendar-holidays (append holiday-general-holidays
+								holiday-christian-holidays))
 #+END_SRC
 **** library
 Since I am never totally satisfied with how the agenda works, I have a massive library of functions to filter and manipulate tasks (mostly for skip functions). I also have a few variables I set in order to toggle certain views
@@ -1649,7 +1658,9 @@ I like being evil. All package and custom bindings go here.
   :config
   (evil-mode 1))
 #+END_SRC
-*** surround
+*** enhancements
+delightfully ripped off from vim plugins
+**** surround
 #+BEGIN_SRC emacs-lisp
 (use-package evil-surround
   :ensure t
@@ -1735,6 +1746,11 @@ ESS has not joined the dark side. Configure similarly to term (see below) where 
 		  (lambda ()
 			(add-hook 'evil-insert-state-entry-hook
 					  'nd/ess-char-mode-insert nil t)))
+#+END_SRC
+*** flyspell
+#+BEGIN_SRC emacs-lisp
+(evil-define-key 'nornal 'flyspell-mode-map
+  (kbd "C-;") 'flyspell-correct-previous-word-generic)
 #+END_SRC
 *** collection
 Most packages that don't have an evil version are in this one. I don't like surprises so I set =evil-collection-modes-list= with the modes I actually want. Some of these are further configured below.
