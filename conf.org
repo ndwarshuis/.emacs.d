@@ -799,6 +799,8 @@ No need to file under DONE or CANC states
 (setq org-agenda-files '("~/Org"
                         "~/Org/projects"
                         "~/Org/reference")
+	  org-agenda-sticky t
+
 	  org-agenda-dim-blocked-tasks nil
 	  org-agenda-compact-blocks t
 	  org-agenda-window-setup 'current-window
