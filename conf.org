@@ -1377,6 +1377,14 @@ Note that this is used for "normal" projects as well as iterators
     (setq org-agenda-tag-filter
           (mapcar (lambda (tag) (concat "-" tag)) context-tags))
     (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
+
+(defun nd/org-agenda-filter-non-peripheral ()
+  "Filter all tasks with context tags."
+  (interactive)
+  (let* ((peripheral-tags '("PERIPHERAL")))
+    (setq org-agenda-tag-filter
+          (mapcar (lambda (tag) (concat "-" tag)) peripheral-tags))
+    (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
 #+END_SRC
 **** agenda aesthetics
 #+BEGIN_SRC emacs-lisp
@@ -1458,11 +1466,14 @@ set as a text property for further sorting"
        (iter-match (concat actionable "-" periodical "+" iterator "-" habit "/!")))
 
   (setq org-agenda-custom-commands
-        `(("t"
+        `(("a"
+		   "Calendar View"
+		   ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc" "REFILE")))
+						(org-agenda-include-diary t)))))
+
+		  ("t"
            "Task View"
-           ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc" "REFILE")))
-						(org-agenda-include-diary t)))
-            ,(nd/agenda-base-task-cmd act-no-rep-match
+           (,(nd/agenda-base-task-cmd act-no-rep-match
                                           "Project Tasks"
                                           ''nd/skip-non-project-tasks
                                           ''(user-defined-up category-keep))
@@ -1495,41 +1506,7 @@ set as a text property for further sorting"
 		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
 		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
 		  
-          ("P"
-           "Periodical View"
-		   ((tags
-			 ,(concat actionable "-" iterator "+" periodical "-" habit)
-		  	 ((org-agenda-overriding-header "Periodical Status")
-		  	  (org-agenda-skip-function '(nd/skip-non-periodical-parent-headers))
-		  	  (org-agenda-before-sorting-filter-function
-			   (lambda (l) (nd/org-agenda-filter-status
-					   nd/peri-statuscodes 'nd/get-periodical-status l)))
-			  (org-agenda-cmp-user-defined
-			   (lambda (a b) (nd/org-agenda-sort-prop
-						 'project-status nd/peri-statuscodes a b)))
-		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
-		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))
-            ,(nd/agenda-base-header-cmd "-NA-REFILE+PARENT_TYPE=\"periodical\""
-										"Untimestamped"
-										''nd/skip-non-periodical-untimestamped)))
-
           ("i"
-           "Iterator View"
-           ((tags
-			 "-NA-REFILE+PARENT_TYPE=\"iterator\""
-		  	 ((org-agenda-overriding-header "Iterator Status")
-		  	  (org-agenda-skip-function '(nd/skip-non-iterator-parent-headers))
-		  	  (org-agenda-before-sorting-filter-function
-			   (lambda (l) (nd/org-agenda-filter-status nd/iter-statuscodes 'nd/get-iterator-status l)))
-			  (org-agenda-cmp-user-defined
-			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status nd/iter-statuscodes a b)))
-		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
-		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))
-            ,(nd/agenda-base-task-cmd "-NA-REFILE+PARENT_TYPE=\"iterator\"/!"
-									  "Unscheduled or Undeaded"
-									  ''nd/skip-non-iterator-unscheduled)))
-		  
-          ("I"
            "Incubator View"
            ((agenda "" ((org-agenda-span 7)
                         (org-agenda-time-grid nil)
@@ -1559,13 +1536,50 @@ set as a text property for further sorting"
 						 a b)))
 		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
 		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
+		  
+          ("P"
+           "Periodical View"
+		   ((tags
+			 ,(concat actionable "-" iterator "+" periodical "-" habit)
+		  	 ((org-agenda-overriding-header "Periodical Status")
+		  	  (org-agenda-skip-function '(nd/skip-non-periodical-parent-headers))
+		  	  (org-agenda-before-sorting-filter-function
+			   (lambda (l) (nd/org-agenda-filter-status
+					   nd/peri-statuscodes 'nd/get-periodical-status l)))
+			  (org-agenda-cmp-user-defined
+			   (lambda (a b) (nd/org-agenda-sort-prop
+						 'project-status nd/peri-statuscodes a b)))
+		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
+		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))
+            ,(nd/agenda-base-header-cmd "-NA-REFILE+PARENT_TYPE=\"periodical\""
+										"Untimestamped"
+										''nd/skip-non-periodical-untimestamped)))
+
+          ("I"
+           "Iterator View"
+           ((tags
+			 "-NA-REFILE+PARENT_TYPE=\"iterator\""
+		  	 ((org-agenda-overriding-header "Iterator Status")
+		  	  (org-agenda-skip-function '(nd/skip-non-iterator-parent-headers))
+		  	  (org-agenda-before-sorting-filter-function
+			   (lambda (l) (nd/org-agenda-filter-status nd/iter-statuscodes 'nd/get-iterator-status l)))
+			  (org-agenda-cmp-user-defined
+			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status nd/iter-statuscodes a b)))
+		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
+		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep))))
+            ,(nd/agenda-base-task-cmd "-NA-REFILE+PARENT_TYPE=\"iterator\"/!"
+									  "Unscheduled or Undeaded"
+									  ''nd/skip-non-iterator-unscheduled)))
 
           ("r"
-           "Refile and Critical Errors"
+           "Refile"
            ((tags "REFILE"
                   ((org-agenda-overriding-header "Tasks to Refile"))
-                  (org-tags-match-list-sublevels nil))
-            ,(nd/agenda-base-task-cmd task-match
+                  (org-tags-match-list-sublevels nil))))
+
+		  ("e"
+		   "Critical Errors"
+           (,(nd/agenda-base-task-cmd task-match
 									  "Discontinous Project"
 									  ''nd/skip-non-discontinuous-project-tasks)
 			,(nd/agenda-base-header-cmd task-match
@@ -1701,6 +1715,7 @@ Some of these commands just get in the way of being evil (which really means tha
 	"Y" 'org-agenda-year-view
 	"ct" nil
 	"sC" 'nd/org-agenda-filter-non-context
+	"sP" 'nd/org-agenda-filter-non-peripheral
 	"e" 'org-agenda-set-effort
 	"ce" nil))
 #+END_SRC
