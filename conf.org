@@ -264,7 +264,8 @@ event of an error or nonlocal exit."
   "Return all applications that can open a given MIMETYPE. The list
 is comprised of lists of two elements, the first of which is the
 command (Exec) and the second which is the application name"
-  (let* ((mime-regex (concat "^MimeType=.*" mimetype ".*$"))
+  (let* ((case-fold-search nil)
+		 (mime-regex (concat "^MimeType=.*" mimetype ";.*$"))
 		 (app-regex )
 		 (desktop-dirs '("/usr/share/applications"
 						 "/usr/local/share/applications"
@@ -283,6 +284,12 @@ command (Exec) and the second which is the application name"
 								   (match-string 1 tb))
 							exec)))
 				(setq app-list (cons (list exec name) app-list)))))))))
+
+(defun nd/get-apps-bulk-from-mime (mimetype)
+  "Like `nd/get-apps-from-mime' but only includes apps that can open
+multiple files at once for given MIMETYPE."
+  (let ((case-fold-search nil))
+	(seq-filter (lambda (a) (string-match ".*%[FU].*" (car a))) (nd/get-apps-from-mime mimetype))))
 #+END_SRC
 ** interactive
 #+BEGIN_SRC emacs-lisp
