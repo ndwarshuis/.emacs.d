@@ -259,6 +259,30 @@ event of an error or nonlocal exit."
   "Move KEY from KEYMAP-FROM keymap to KEYMAP-TO keymap."
   (define-key keymap-to key (lookup-key keymap-from key))
   (define-key keymap-from key nil))
+
+(defun nd/get-apps-from-mime (mimetype)
+  "Return all applications that can open a given MIMETYPE. The list
+is comprised of lists of two elements, the first of which is the
+command (Exec) and the second which is the application name"
+  (let* ((mime-regex (concat "^MimeType=.*" mimetype ".*$"))
+		 (app-regex )
+		 (desktop-dirs '("/usr/share/applications"
+						 "/usr/local/share/applications"
+						 "~/.local/share/applications"))
+		 (desktop-files (mapcan (lambda (d) (directory-files d t ".*\\.desktop" t)) desktop-dirs))
+		 (app-list))
+	(dolist (file desktop-files app-list)
+	  (with-temp-buffer
+		(insert-file-contents file)
+		(let* ((tb (buffer-string)))
+		  (if (string-match mime-regex tb)
+			  (let* ((exec (progn (string-match "^Exec=\\(.*\\)$" tb)
+								  (match-string 1 tb)))
+					 (name (or
+							(progn (string-match "^Name=\\(.*\\)$" tb)
+								   (match-string 1 tb))
+							exec)))
+				(setq app-list (cons (list exec name) app-list)))))))))
 #+END_SRC
 ** interactive
 #+BEGIN_SRC emacs-lisp
