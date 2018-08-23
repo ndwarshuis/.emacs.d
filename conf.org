@@ -261,12 +261,10 @@ event of an error or nonlocal exit."
   (define-key keymap-from key nil))
 
 (defun nd/get-apps-from-mime (mimetype)
-  "Return all applications that can open a given MIMETYPE. The list
-is comprised of lists of two elements, the first of which is the
-command (Exec) and the second which is the application name"
+  "Return all applications that can open a given MIMETYPE.
+The list is comprised of alists where pairs are of the form (name . command)."
   (let* ((case-fold-search nil)
 		 (mime-regex (concat "^MimeType=.*" mimetype ";.*$"))
-		 (app-regex )
 		 (desktop-dirs '("/usr/share/applications"
 						 "/usr/local/share/applications"
 						 "~/.local/share/applications"))
@@ -283,7 +281,7 @@ command (Exec) and the second which is the application name"
 							(progn (string-match "^Name=\\(.*\\)$" tb)
 								   (match-string 1 tb))
 							exec)))
-				(setq app-list (cons (list exec name) app-list)))))))))
+				(setq app-list (cons `(,name . ,exec) app-list)))))))))
 
 (defun nd/get-apps-bulk-from-mime (mimetype)
   "Like `nd/get-apps-from-mime' but only includes apps that can open
@@ -479,6 +477,25 @@ Keeping confirmation enabled does weird stuff with helm. Not ideal at the moment
 	   (lambda (f) (let ((process-connection-type nil))
 				(start-process "" nil "xdg-open" f)))
 	   file-list))))
+
+(defun nd/dired-open-with ()
+  "Open marked non-text files in external app via open-with dialog
+according to mime types as listed in all available desktop files.mimetype"
+  (interactive)
+  (let* ((file-list
+		  (mapcar
+		   (lambda (f) (list f (replace-regexp-in-string
+						   "\n\\'" ""
+						   (shell-command-to-string (concat "file --mime-type -b " f)))))
+		   (seq-filter #'file-regular-p (dired-get-marked-files)))))
+	(if (= (length file-list) 1)
+		(let* ((file-pair (car file-list))
+			   (file-name (nth 0 file-pair))
+			   (mime-alist (nd/get-apps-from-mime (nth 1 file-pair))))
+		  (helm :sources (helm-build-sync-source "Apps"
+		  				   :candidates mime-alist
+						   :action '(("Open" . (lambda (f) (shell-command (replace-regexp-in-string "%[fuFU]" file-name f t))))))
+		  		:buffer "*helm open with*")))))
 #+END_SRC
 * org-mode
 ** major mode
