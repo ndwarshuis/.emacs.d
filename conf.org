@@ -478,9 +478,13 @@ Keeping confirmation enabled does weird stuff with helm. Not ideal at the moment
 				(start-process "" nil "xdg-open" f)))
 	   file-list))))
 
+(defun nd/execute-desktop-command (cmd file)
+  "Opens FILE using CMD in separate process."
+  (call-process-shell-command (concat (replace-regexp-in-string "%[fuFU]" file cmd t) " &")))
+
 (defun nd/dired-open-with ()
   "Open marked non-text files in external app via open-with dialog
-according to mime types as listed in all available desktop files.mimetype"
+according to mime types as listed in all available desktop files"
   (interactive)
   (let* ((file-list
 		  (mapcar
@@ -488,14 +492,18 @@ according to mime types as listed in all available desktop files.mimetype"
 						   "\n\\'" ""
 						   (shell-command-to-string (concat "file --mime-type -b " f)))))
 		   (seq-filter #'file-regular-p (dired-get-marked-files)))))
-	(if (= (length file-list) 1)
-		(let* ((file-pair (car file-list))
-			   (file-name (nth 0 file-pair))
-			   (mime-alist (nd/get-apps-from-mime (nth 1 file-pair))))
-		  (helm :sources (helm-build-sync-source "Apps"
-		  				   :candidates mime-alist
-						   :action '(("Open" . (lambda (f) (shell-command (replace-regexp-in-string "%[fuFU]" file-name f t))))))
-		  		:buffer "*helm open with*")))))
+	(cond
+	 ((= (length file-list) 0)
+	  (message "No suitable programs found"))
+	 ((= (length file-list) 1)
+	  (let* ((file-pair (car file-list))
+			 (file-name (nth 0 file-pair))
+			 (mime-alist (nd/get-apps-from-mime (nth 1 file-pair))))
+		(helm :sources
+			  (helm-build-sync-source "Apps"
+		  		:candidates mime-alist
+				:action '(("Open" . (lambda (f) (nd/execute-desktop-command f file-name)))))
+		  	  :buffer "*helm open with*")))))) 
 #+END_SRC
 * org-mode
 ** major mode
