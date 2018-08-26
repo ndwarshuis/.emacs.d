@@ -288,6 +288,16 @@ The list is comprised of alists where pairs are of the form (name . command)."
 multiple files at once for given MIMETYPE."
   (let ((case-fold-search nil))
 	(seq-filter (lambda (a) (string-match ".*%[FU].*" (car a))) (nd/get-apps-from-mime mimetype))))
+    
+(defun nd/execute-desktop-command (cmd file)
+  "Opens FILE using CMD in separate process."
+  (call-process-shell-command (concat (replace-regexp-in-string "%[fuFU]" file cmd t) " &")))
+  
+(defun nd/get-mime-type (file)
+  "Get the mime type of FILE."
+  (let* ((cmd (concat "file --mime-type -b " file))
+		 (mt (shell-command-to-string cmd)))
+	(replace-regexp-in-string "\n\\'" "" mt)))
 #+END_SRC
 ** interactive
 #+BEGIN_SRC emacs-lisp
@@ -478,32 +488,35 @@ Keeping confirmation enabled does weird stuff with helm. Not ideal at the moment
 				(start-process "" nil "xdg-open" f)))
 	   file-list))))
 
-(defun nd/execute-desktop-command (cmd file)
-  "Opens FILE using CMD in separate process."
-  (call-process-shell-command (concat (replace-regexp-in-string "%[fuFU]" file cmd t) " &")))
-
 (defun nd/dired-open-with ()
   "Open marked non-text files in external app via open-with dialog
-according to mime types as listed in all available desktop files"
+according to mime types as listed in all available desktop files."
   (interactive)
-  (let* ((file-list
-		  (mapcar
-		   (lambda (f) (list f (replace-regexp-in-string
-						   "\n\\'" ""
-						   (shell-command-to-string (concat "file --mime-type -b " f)))))
-		   (seq-filter #'file-regular-p (dired-get-marked-files)))))
-	(cond
-	 ((= (length file-list) 0)
-	  (message "No suitable programs found"))
-	 ((= (length file-list) 1)
-	  (let* ((file-pair (car file-list))
-			 (file-name (nth 0 file-pair))
-			 (mime-alist (nd/get-apps-from-mime (nth 1 file-pair))))
-		(helm :sources
-			  (helm-build-sync-source "Apps"
-		  		:candidates mime-alist
-				:action '(("Open" . (lambda (f) (nd/execute-desktop-command f file-name)))))
-		  	  :buffer "*helm open with*")))))) 
+  (let* ((marked-files (seq-filter #'file-regular-p (dired-get-marked-files)))
+		 (file-mime-list (mapcar (lambda (f) (list f (nd/get-mime-type f))) marked-files)))
+
+	 (if (= (length file-mime-list) 0)
+		 (message "No files selected")
+
+	   (let* ((first-pair (car file-mime-list))
+			  (last-pairs (cdr file-mime-list))
+			  mime-alist file-list)
+		 (setq file-list (nth 0 first-pair)
+			   mime-alist (nd/get-apps-from-mime (nth 1 first-pair)))
+		 ;; if multiple files selected, add to the selection list
+		 (if last-pairs
+			 (progn
+			   (setq file-list (string-join (mapcar #'car file-mime-list) " "))
+			   (dolist (mime (mapcar (lambda (f) (nth 1 f)) last-pairs))
+				 (setq mime-alist (intersection mime-alist
+												(nd/get-apps-from-mime mime)
+												:test #'equal)))))
+
+		 (helm
+		  :sources (helm-build-sync-source "Apps"
+		  				   :candidates mime-alist
+						   :action '(("Open" . (lambda (f) (nd/execute-desktop-command f file-list)))))
+		  :buffer "*helm open with*")))))
 #+END_SRC
 * org-mode
 ** major mode
