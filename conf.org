@@ -343,7 +343,8 @@ multiple files at once for given MIMETYPE."
 (defun nd/open-urxvt ()
   "Launch urxvt in the current directory."
   (interactive)
-  (call-process "urxvt" nil 0 nil "-cd" default-directory))
+  (let ((cwd (expand-file-name default-directory)))
+	(call-process "urxvt" nil 0 nil "-cd" cwd)))
 #+END_SRC
 * completion
 ** company
