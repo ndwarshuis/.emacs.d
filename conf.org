@@ -512,12 +512,17 @@ according to mime types as listed in all available desktop files."
 				 (setq mime-alist (intersection mime-alist
 												(nd/get-apps-from-mime mime)
 												:test #'equal)))))
-
-		 (helm
-		  :sources (helm-build-sync-source "Apps"
-		  				   :candidates mime-alist
-						   :action '(("Open" . (lambda (f) (nd/execute-desktop-command f file-list)))))
-		  :buffer "*helm open with*")))))
+		 (if (= (length mime-alist) 0)
+			 (let* ((ml (delete-dups (mapcan #'cdr file-mime-list)))
+					(mls (string-join ml ", ")))
+			   (if (= (length ml) 1)
+				   (message (concat "No apps found for mime type: "	mls))
+				 (message (concat "No common apps found for mime types: " mls))))
+		   (helm
+			:sources (helm-build-sync-source "Apps"
+		  			   :candidates mime-alist
+					   :action '(("Open" . (lambda (f) (nd/execute-desktop-command f file-list)))))
+			:buffer "*helm open with*"))))))
 #+END_SRC
 ** compression
 Only supports tar.gz, tar.bz2, tar.xz, and .zip by default. Add support for more fun algos such as lzo and zpaq
