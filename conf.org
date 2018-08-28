@@ -290,8 +290,10 @@ multiple files at once for given MIMETYPE."
 	(seq-filter (lambda (a) (string-match ".*%[FU].*" (car a))) (nd/get-apps-from-mime mimetype))))
     
 (defun nd/execute-desktop-command (cmd file)
-  "Opens FILE using CMD in separate process."
-  (call-process-shell-command (concat (replace-regexp-in-string "%[fuFU]" file cmd t) " &")))
+  "Opens FILE using CMD in separate process where CMD is from a 
+desktop file exec directive."
+  (let* ((cmd-arg (replace-regexp-in-string "%[fuFU]" file cmd t t)))
+	(call-process-shell-command (concat cmd-arg " &"))))
   
 (defun nd/get-mime-type (file)
   "Get the mime type of FILE."
@@ -493,36 +495,37 @@ Keeping confirmation enabled does weird stuff with helm. Not ideal at the moment
   "Open marked non-text files in external app via open-with dialog
 according to mime types as listed in all available desktop files."
   (interactive)
-  (let* ((marked-files (seq-filter #'file-regular-p (dired-get-marked-files)))
-		 (file-mime-list (mapcar (lambda (f) (list f (nd/get-mime-type f))) marked-files)))
+  (let* ((mf (seq-filter #'file-regular-p (dired-get-marked-files)))
+		 (qmf (mapcar #'shell-quote-argument mf))
+		 (file-mime-list (mapcar (lambda (f) (list f (nd/get-mime-type f))) qmf)))
 
-	 (if (= (length file-mime-list) 0)
-		 (message "No files selected")
-
-	   (let* ((first-pair (car file-mime-list))
-			  (last-pairs (cdr file-mime-list))
-			  mime-alist file-list)
-		 (setq file-list (nth 0 first-pair)
-			   mime-alist (nd/get-apps-from-mime (nth 1 first-pair)))
-		 ;; if multiple files selected, add to the selection list
-		 (if last-pairs
-			 (progn
-			   (setq file-list (string-join (mapcar #'car file-mime-list) " "))
-			   (dolist (mime (mapcar (lambda (f) (nth 1 f)) last-pairs))
-				 (setq mime-alist (intersection mime-alist
-												(nd/get-apps-from-mime mime)
-												:test #'equal)))))
-		 (if (= (length mime-alist) 0)
-			 (let* ((ml (delete-dups (mapcan #'cdr file-mime-list)))
-					(mls (string-join ml ", ")))
-			   (if (= (length ml) 1)
-				   (message (concat "No apps found for mime type: "	mls))
-				 (message (concat "No common apps found for mime types: " mls))))
-		   (helm
-			:sources (helm-build-sync-source "Apps"
-		  			   :candidates mime-alist
-					   :action '(("Open" . (lambda (f) (nd/execute-desktop-command f file-list)))))
-			:buffer "*helm open with*"))))))
+	(if (= (length file-mime-list) 0)
+		(message "No files selected")
+	  
+	  (let* ((first-pair (car file-mime-list))
+			 (last-pairs (cdr file-mime-list))
+			 mime-alist file-list)
+		(setq file-list (nth 0 first-pair)
+			  mime-alist (nd/get-apps-from-mime (nth 1 first-pair)))
+		;; if multiple files selected, add to the selection list
+		(if last-pairs
+			(progn
+			  (setq file-list (string-join (mapcar #'car file-mime-list) " "))
+			  (dolist (mime (mapcar (lambda (f) (nth 1 f)) last-pairs))
+				(setq mime-alist (intersection mime-alist
+											   (nd/get-apps-from-mime mime)
+											   :test #'equal)))))
+		(if (= (length mime-alist) 0)
+			(let* ((ml (delete-dups (mapcan #'cdr file-mime-list)))
+				   (mls (string-join ml ", ")))
+			  (if (= (length ml) 1)
+				  (message (concat "No apps found for mime type: "	mls))
+				(message (concat "No common apps found for mime types: " mls))))
+		  (helm
+		   :sources (helm-build-sync-source "Apps"
+		  			  :candidates mime-alist
+					  :action '(("Open" . (lambda (f) (nd/execute-desktop-command f file-list)))))
+		   :buffer "*helm open with*"))))))
 #+END_SRC
 ** compression
 Only supports tar.gz, tar.bz2, tar.xz, and .zip by default. Add support for more fun algos such as lzo and zpaq
