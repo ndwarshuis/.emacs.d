@@ -1799,13 +1799,13 @@ Some of these commands just get in the way of being evil (which really means tha
 #+BEGIN_SRC emacs-lisp
 (mapc (lambda (k) (nd/move-key global-map evil-emacs-state-map (eval k)))
 	  '((kbd "C-s")
-      (kbd "C-p")
-      (kbd "C-n")
-      (kbd "C-f")
-      (kbd "C-b")
-      (kbd "C-a")
-      (kbd "C-e")
-
+		(kbd "C-p")
+		(kbd "C-n")
+		(kbd "C-f")
+		(kbd "C-b")
+		(kbd "C-a")
+		(kbd "C-e")
+		
 		(kbd "C-x C-;")
 		(kbd "C-x C-l")
 		(kbd "C-x C-u")
@@ -1831,7 +1831,7 @@ Some of these commands just get in the way of being evil (which really means tha
 		(kbd "M-z")
 		(kbd "M-v")
 		(kbd "M-/")
-		(kbd "M-backspace")))
+		(kbd "M-DEL")))
 #+END_SRC
 *** evil-org
 #+BEGIN_SRC emacs-lisp
