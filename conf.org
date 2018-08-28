@@ -1932,6 +1932,7 @@ Dired makes new buffers by default. Use =find-alternate-file= to avoid this.
   (kbd "<return>") 'dired-find-alternate-file
   "^" (lambda () (interactive) (find-alternate-file ".."))
   (kbd "C-<return>") 'nd/dired-xdg-open
+  (kbd "M-<return>") 'nd/dired-open-with
   "q" 'nd/kill-current-buffer)
 #+END_SRC
 **** helm
