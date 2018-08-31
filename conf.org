@@ -1,5 +1,11 @@
-work in progress
+* overview
+This is my personal emacs config which currently runs on emacs 26.1 (currently the latest package from the Arch Linux official repos). 
 
+I use this for a variety of purposes:
+- maintaining my todo list/[[https://en.wikipedia.org/wiki/Getting_Things_Done][GTD]] workflow (org mode)
+- unified interface for system administration (dired, shell, git, ediff)
+- email (mu4e, work in progress)
+- editing some of my favorite languages (R, Lisp, Haskell, Lua, Python)
 * ui
 ** theme
 #+BEGIN_SRC emacs-lisp
@@ -432,7 +438,7 @@ NOTES:
 		ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
 #+END_SRC
 ** python
-#+BEGIN_SRC
+#+BEGIN_SRC emacs-lisp
 (elpy-enable)
 
 ;; make python tabs 4 chars
@@ -441,7 +447,6 @@ NOTES:
         (setq indent-tabs-mode t)
         (setq tab-width 4)
         (setq python-indent 4)))
-
 #+END_SRC
 ** haskell
 #+BEGIN_SRC emacs-lisp
@@ -1724,15 +1729,12 @@ set as a text property for further sorting"
 		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep)))))))))
 #+END_SRC
 * mu4e
-only for gmail now
+Work in progress, only for receiving Gmail and work exhange mailboxes
 ** basic
 #+BEGIN_SRC emacs-lisp
 (require 'mu4e)
 (setq mail-user-agent 'mu4e-user-agent
 	  mu4e-maildir "/mnt/data/Mail"
-	  mu4e-drafts-folder "/gmail/drafts"
-	  mu4e-sent-folder   "/gmail/sent"
-	  mu4e-trash-folder  "/gmail/trash"
 
 	  mu4e-attachment-dir "~/Downloads"
 
@@ -1743,7 +1745,29 @@ only for gmail now
       
 	  mu4e-change-filenames-when-moving t
 
-	  mu4e-confirm-quit nil)
+	  mu4e-confirm-quit nil
+
+	  mu4e-contexts
+	  `( ,(make-mu4e-context
+		   :name "Gmail"
+		   :match-func
+		   (lambda (msg)
+           (when msg
+			 (let ((pfx (mu4e-message-field msg :maildir)))
+			   (string-prefix-p "/gmail" pfx))))
+		   :vars '((mu4e-trash-folder . "/gmail/trash")
+				   (mu4e-drafts-folder . "/gmail/drafts")
+				   (mu4e-sent-folder . "/gmail/sent")))
+		 ,(make-mu4e-context
+		   :name "Work"
+		   :match-func
+		   (lambda (msg)
+			 (when msg
+			   (let ((pfx (mu4e-message-field msg :maildir)))
+			     (string-prefix-p "/gatech" pfx))))
+		   :vars '((mu4e-trash-folder . "/gatech/trash")
+				   (mu4e-drafts-folder . "/gatech/drafts")
+				   (mu4e-sent-folder . "/gatech/sent")))))
 #+END_SRC
 ** smtp
 #+BEGIN_SRC emacs-lisp
