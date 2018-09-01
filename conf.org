@@ -559,6 +559,11 @@ Only supports tar.gz, tar.bz2, tar.xz, and .zip by default. Add support for more
 	  (add-to-list 'dired-compress-files-alist
 				   '("\\.tar\\.zpaq\\'" . "lrztar -z -L 9 -o %o %i &"))))
 #+END_SRC
+** formatting for humans
+make sizes human readable
+#+BEGIN_SRC emacs-lisp
+(setq dired-listing-switches "-Alh")
+#+END_SRC
 * org-mode
 ** major mode
 *** general config
