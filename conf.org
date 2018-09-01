@@ -1978,6 +1978,7 @@ Dired makes new buffers by default. Use =find-alternate-file= to avoid this.
 
 (evil-define-key 'normal dired-mode-map
   "a" 'dired-find-file
+  "gs" 'nd/dired-sort-by
   (kbd "<return>") 'dired-find-alternate-file
   "^" (lambda () (interactive) (find-alternate-file ".."))
   (kbd "C-<return>") 'nd/dired-xdg-open
