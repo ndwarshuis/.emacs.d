@@ -1755,6 +1755,10 @@ Work in progress, only for receiving Gmail and work exhange mailboxes
 ** basic
 #+BEGIN_SRC emacs-lisp
 (require 'mu4e)
+(require 'smtpmail)
+
+(add-to-list 'auth-sources (expand-file-name "~/.emacs.d/.authinfo_mu4e.gpg"))
+
 (setq mail-user-agent 'mu4e-user-agent
 	  mu4e-maildir "/mnt/data/Mail"
 
@@ -1768,46 +1772,64 @@ Work in progress, only for receiving Gmail and work exhange mailboxes
 	  mu4e-change-filenames-when-moving t
 
 	  mu4e-confirm-quit nil
+      
+      send-mail-function 'smtpmail-send-it
+	  message-send-mail-function 'smtpmail-send-it
 
-	  mu4e-contexts
+	  user-full-name "Nate Dwarshuis")
+#+END_SRC
+** contexts
+I have current have three contexts, personal and two work accounts. The first is a gmail account and the second/third are office365 accounts.
+#+BEGIN_SRC emacs-lisp
+(setq mu4e-contexts
 	  `( ,(make-mu4e-context
-		   :name "Gmail"
+		   :name "personal"
 		   :match-func
 		   (lambda (msg)
-           (when msg
-			 (let ((pfx (mu4e-message-field msg :maildir)))
-			   (string-prefix-p "/gmail" pfx))))
+			 (when msg
+			   (let ((pfx (mu4e-message-field msg :maildir)))
+				 (string-prefix-p "/gmail" pfx))))
 		   :vars '((mu4e-trash-folder . "/gmail/trash")
-				   (mu4e-drafts-folder . "/gmail/drafts")
-				   (mu4e-sent-folder . "/gmail/sent")))
+				  (mu4e-drafts-folder . "/gmail/drafts")
+				  (mu4e-sent-folder . "/gmail/sent")
+				  (mu4e-sent-messages-behavior . delete)
+				  (smtpmail-stream-type . starttls)
+				  (smtpmail-smtp-server . "smtp.gmail.com")
+				  (smtpmail-smtp-service . 587)
+				  (smtpmail-smtp-user . "natedwarshuis@gmail.com")
+				  (user-mail-address . "natedwarshuis@gmail.com")))
 		 ,(make-mu4e-context
-		   :name "Work"
+		   :name "gatech"
 		   :match-func
 		   (lambda (msg)
 			 (when msg
 			   (let ((pfx (mu4e-message-field msg :maildir)))
 			     (string-prefix-p "/gatech" pfx))))
 		   :vars '((mu4e-trash-folder . "/gatech/trash")
-				   (mu4e-drafts-folder . "/gatech/drafts")
-				   (mu4e-sent-folder . "/gatech/sent")))))
-#+END_SRC
-** smtp
-#+BEGIN_SRC emacs-lisp
-(require 'smtpmail)
-(setq send-mail-function 'smtpmail-send-it
-	  message-send-mail-function 'smtpmail-send-it
-      
-	  user-mail-address "natedwarshuis@gmail.com"
-	  user-full-name "Nate Dwarshuis"
-
-      mu4e-sent-messages-behavior 'delete
-      
-	  starttls-use-gnutls t
-	  smtpmail-starttls-credentials '(("smtp.gmail.com" 587 nil nil))
-      ;; authinfo.gpg for credentials
-	  smtpmail-default-smtp-server "smtp.gmail.com"
-	  smtpmail-smtp-service 587
-	  smtpmail-smtp-server "smtp.gmail.com")
+				  (mu4e-drafts-folder . "/gatech/drafts")
+				  (mu4e-sent-folder . "/gatech/sent")
+				  (mu4e-sent-messages-behavior . sent)
+				  (smtpmail-stream-type . starttls)
+				  (smtpmail-smtp-server . "smtp.office365.com")
+				  (smtpmail-smtp-service . 587)
+				  (smtpmail-smtp-user . "ndwarshuis3@gatech.edu")
+				  (user-mail-address . "ndwarshuis3@gatech.edu")))
+		 ,(make-mu4e-context
+		   :name "emory"
+		   :match-func
+		   (lambda (msg)
+			 (when msg
+			   (let ((pfx (mu4e-message-field msg :maildir)))
+			     (string-prefix-p "/emory" pfx))))
+		   :vars '((mu4e-trash-folder . "/emory/trash")
+				  (mu4e-drafts-folder . "/emory/drafts")
+				  (mu4e-sent-folder . "/emory/sent")
+				  (mu4e-sent-messages-behavior . sent)
+				  (smtpmail-stream-type . starttls)
+				  (smtpmail-smtp-server . "smtp.office365.com")
+				  (smtpmail-smtp-service . 587)
+				  (smtpmail-smtp-user . "ndwarsh@emory.edu")
+				  (user-mail-address . "ndwarsh@emory.edu")))))
 #+END_SRC
 * shell
 #+begin_src emacs-lisp
