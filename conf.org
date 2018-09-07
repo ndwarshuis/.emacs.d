@@ -1919,6 +1919,7 @@ Some of these commands just get in the way of being evil (which really means tha
 		(kbd "M-z")
 		(kbd "M-v")
 		(kbd "M-/")
+		(kbd "M-;")
 		(kbd "M-DEL")))
 #+END_SRC
 *** evil-org
