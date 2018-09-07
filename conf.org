@@ -1800,7 +1800,12 @@ I have current have three contexts, personal and two work accounts. The first is
 				   (smtpmail-smtp-server . "smtp.gmail.com")
 				   (smtpmail-smtp-service . 587)
 				   (smtpmail-smtp-user . "natedwarshuis@gmail.com")
-				   (user-mail-address . "natedwarshuis@gmail.com")))
+				   (user-mail-address . "natedwarshuis@gmail.com")
+				   (mu4e-maildir-shortcuts .
+										   (("/gmail/inbox" . ?i)
+											("/gmail/sent" . ?s)
+											("/gmail/trash" . ?s)
+											("/gmail/archive" . ?a)))))
 		 ,(make-mu4e-context
 		   :name "gatech"
 		   :match-func
@@ -1816,7 +1821,12 @@ I have current have three contexts, personal and two work accounts. The first is
 				   (smtpmail-smtp-server . "smtp.office365.com")
 				   (smtpmail-smtp-service . 587)
 				   (smtpmail-smtp-user . "ndwarshuis3@gatech.edu")
-				   (user-mail-address . "ndwarshuis3@gatech.edu")))
+				   (user-mail-address . "ndwarshuis3@gatech.edu")
+				   (mu4e-maildir-shortcuts .
+										   (("/gatech/inbox" . ?i)
+											("/gatech/sent" . ?s)
+											("/gatech/trash" . ?s)
+											("/gatech/archive" . ?a)))))
 		 ,(make-mu4e-context
 		   :name "emory"
 		   :match-func
@@ -1832,7 +1842,12 @@ I have current have three contexts, personal and two work accounts. The first is
 				   (smtpmail-smtp-server . "smtp.office365.com")
 				   (smtpmail-smtp-service . 587)
 				   (smtpmail-smtp-user . "ndwarsh@emory.edu")
-				   (user-mail-address . "ndwarsh@emory.edu")))))
+				   (user-mail-address . "ndwarsh@emory.edu")
+				   (mu4e-maildir-shortcuts .
+										   (("/emory/inbox" . ?i)
+											("/emory/sent" . ?s)
+											("/emory/trash" . ?s)
+											("/emory/archive" . ?a)))))))
 #+END_SRC
 * shell
 #+begin_src emacs-lisp
