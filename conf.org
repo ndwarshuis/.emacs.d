@@ -1790,14 +1790,14 @@ I have current have three contexts, personal and two work accounts. The first is
 			   (let ((pfx (mu4e-message-field msg :maildir)))
 				 (string-prefix-p "/gmail" pfx))))
 		   :vars '((mu4e-trash-folder . "/gmail/trash")
-				  (mu4e-drafts-folder . "/gmail/drafts")
-				  (mu4e-sent-folder . "/gmail/sent")
-				  (mu4e-sent-messages-behavior . delete)
-				  (smtpmail-stream-type . starttls)
-				  (smtpmail-smtp-server . "smtp.gmail.com")
-				  (smtpmail-smtp-service . 587)
-				  (smtpmail-smtp-user . "natedwarshuis@gmail.com")
-				  (user-mail-address . "natedwarshuis@gmail.com")))
+				   (mu4e-drafts-folder . "/gmail/drafts")
+				   (mu4e-sent-folder . "/gmail/sent")
+				   (mu4e-sent-messages-behavior . delete)
+				   (smtpmail-stream-type . starttls)
+				   (smtpmail-smtp-server . "smtp.gmail.com")
+				   (smtpmail-smtp-service . 587)
+				   (smtpmail-smtp-user . "natedwarshuis@gmail.com")
+				   (user-mail-address . "natedwarshuis@gmail.com")))
 		 ,(make-mu4e-context
 		   :name "gatech"
 		   :match-func
@@ -1806,14 +1806,14 @@ I have current have three contexts, personal and two work accounts. The first is
 			   (let ((pfx (mu4e-message-field msg :maildir)))
 			     (string-prefix-p "/gatech" pfx))))
 		   :vars '((mu4e-trash-folder . "/gatech/trash")
-				  (mu4e-drafts-folder . "/gatech/drafts")
-				  (mu4e-sent-folder . "/gatech/sent")
-				  (mu4e-sent-messages-behavior . sent)
-				  (smtpmail-stream-type . starttls)
-				  (smtpmail-smtp-server . "smtp.office365.com")
-				  (smtpmail-smtp-service . 587)
-				  (smtpmail-smtp-user . "ndwarshuis3@gatech.edu")
-				  (user-mail-address . "ndwarshuis3@gatech.edu")))
+				   (mu4e-drafts-folder . "/gatech/drafts")
+				   (mu4e-sent-folder . "/gatech/sent")
+				   (mu4e-sent-messages-behavior . sent)
+				   (smtpmail-stream-type . starttls)
+				   (smtpmail-smtp-server . "smtp.office365.com")
+				   (smtpmail-smtp-service . 587)
+				   (smtpmail-smtp-user . "ndwarshuis3@gatech.edu")
+				   (user-mail-address . "ndwarshuis3@gatech.edu")))
 		 ,(make-mu4e-context
 		   :name "emory"
 		   :match-func
@@ -1822,14 +1822,14 @@ I have current have three contexts, personal and two work accounts. The first is
 			   (let ((pfx (mu4e-message-field msg :maildir)))
 			     (string-prefix-p "/emory" pfx))))
 		   :vars '((mu4e-trash-folder . "/emory/trash")
-				  (mu4e-drafts-folder . "/emory/drafts")
-				  (mu4e-sent-folder . "/emory/sent")
-				  (mu4e-sent-messages-behavior . sent)
-				  (smtpmail-stream-type . starttls)
-				  (smtpmail-smtp-server . "smtp.office365.com")
-				  (smtpmail-smtp-service . 587)
-				  (smtpmail-smtp-user . "ndwarsh@emory.edu")
-				  (user-mail-address . "ndwarsh@emory.edu")))))
+				   (mu4e-drafts-folder . "/emory/drafts")
+				   (mu4e-sent-folder . "/emory/sent")
+				   (mu4e-sent-messages-behavior . sent)
+				   (smtpmail-stream-type . starttls)
+				   (smtpmail-smtp-server . "smtp.office365.com")
+				   (smtpmail-smtp-service . 587)
+				   (smtpmail-smtp-user . "ndwarsh@emory.edu")
+				   (user-mail-address . "ndwarsh@emory.edu")))))
 #+END_SRC
 * shell
 #+begin_src emacs-lisp
@@ -1864,6 +1864,23 @@ delightfully ripped off from vim plugins
   :after evil
   :config
   (global-evil-surround-mode 1))
+#+END_SRC
+**** commentary
+#+BEGIN_SRC emacs-lisp
+(use-package evil-commentary
+  :ensure t
+  :after evil
+  :delight
+  :config
+  (evil-commentary-mode))
+#+END_SRC
+**** replace with register
+#+BEGIN_SRC emacs-lisp
+(use-package evil-replace-with-register
+  :ensure t
+  :after evil
+  :config
+  (evil-replace-with-register-install))
 #+END_SRC
 *** unbind emacs keys
 Some of these commands just get in the way of being evil (which really means that I keep pressing them on accident). Rather than nullifying them completely, tuck them away in the emacs state map in case I actually want them.
