@@ -1750,6 +1750,10 @@ set as a text property for further sorting"
 		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
 		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep)))))))))
 #+END_SRC
+*** taskjuggler
+#+BEGIN_SRC emacs-lisp
+(require 'ox-taskjuggler)
+#+END_SRC
 * mu4e
 Work in progress, only for receiving Gmail and work exhange mailboxes
 ** basic
