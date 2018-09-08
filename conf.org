@@ -455,7 +455,7 @@ NOTES:
   :hook
   (haskell-mode . company-mode)
   :config
-  (setq haskell-compile-command "ghc -dynamic -Wall -ferror-spans -fforce-recomp -c %s"
+  (setq haskell-compile-command "ghc -dynamic -Wall -ferror-spans -threaded -fforce-recomp %s"
 		haskell-interactive-popup-errors nil))
 
 (use-package company-ghc
