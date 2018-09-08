@@ -2084,6 +2084,14 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 #+BEGIN_SRC emacs-lisp
 (define-key dired-mode-map (kbd "C-x g") 'magit)
 #+END_SRC
+*** haskell-mode
+#+BEGIN_SRC emacs-lisp
+(eval-after-load 'haskell-mode
+  '(define-key haskell-mode-map (kbd "C-c C-c") 'haskell-compile))
+				 
+(eval-after-load 'haskell-cabal
+  '(define-key haskell-cabal-mode-map (kbd "C-c C-c") 'haskell-compile))
+#+END_SRC
 ** global
 #+BEGIN_SRC emacs-lisp
 (global-set-key (kbd "<f1>") 'org-agenda)
