@@ -899,6 +899,9 @@ Add some useful properties:
           ("d" "deadline" entry (file ,capfile)
 		   "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n")
 
+		  ("e" "email" entry (file ,capfile)
+		   "* TODO Respond to %:fromname; Re: %:subject\n%U\n%a\n")
+		  
 		  ("p" "org-protocol" entry (file ,capfile)
            "* %^{Title} :\\%note:\n%u\n#+BEGIN_QUOTE\n%i\n#+END_QUOTE"
 		   :immediate-finish t)
@@ -1808,10 +1811,10 @@ I have current have three contexts, personal and two work accounts. The first is
 				   (smtpmail-smtp-user . "natedwarshuis@gmail.com")
 				   (user-mail-address . "natedwarshuis@gmail.com")
 				   (mu4e-maildir-shortcuts .
-										   (("/gmail/inbox" . ?i)
-											("/gmail/sent" . ?s)
-											("/gmail/trash" . ?s)
-											("/gmail/drafts" . ?d)
+				   						   (("/gmail/inbox" . ?i)
+				   							("/gmail/sent" . ?s)
+				   							("/gmail/trash" . ?t)
+				   							("/gmail/drafts" . ?d)
 											("/gmail/archive" . ?a)))))
 		 ,(make-mu4e-context
 		   :name "gatech"
