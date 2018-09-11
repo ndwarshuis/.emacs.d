@@ -1898,6 +1898,11 @@ I like being evil. All package and custom bindings go here.
   :config
   (evil-mode 1))
 #+END_SRC
+*** motion
+By default, emacs counts a sentence as having at least 2 spaces after punctuation. Make this behave more like vim.
+#+BEGIN_SRC emacs-lisp
+(setq sentence-end-double-space nil)
+#+END_SRC
 *** enhancements
 delightfully ripped off from vim plugins
 **** surround
