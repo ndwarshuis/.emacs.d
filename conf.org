@@ -1755,7 +1755,7 @@ set as a text property for further sorting"
 #+END_SRC
 *** taskjuggler
 #+BEGIN_SRC emacs-lisp
-(require 'ox-taskjuggler)
+;;(require 'ox-taskjuggler)
 #+END_SRC
 * mu4e
 ** basic
