@@ -1786,6 +1786,16 @@ set as a text property for further sorting"
 
 	  user-full-name "Nate Dwarshuis")
 #+END_SRC
+** headers view
+#+BEGIN_SRC emacs-lisp
+(setq mu4e-headers-fields '((:human-date . 11)
+							(:flags . 5)
+							(:from . 22)
+							(:thread-subject))
+	  mu4e-headers-date-format "%F"
+	  mu4e-headers-time-format "%R"
+	  mu4e-use-fancy-chars nil)
+#+END_SRC
 ** contexts
 I have current have three contexts, personal and two work accounts. The first is a gmail account and the second/third are office365 accounts.
 #+BEGIN_SRC emacs-lisp
