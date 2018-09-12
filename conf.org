@@ -1884,6 +1884,16 @@ I have current have three contexts, personal and two work accounts. The first is
    ;; for composing rich-text emails using org mode
    org-mu4e-convert-to-html t))
 #+END_SRC
+* bibtex
+#+BEGIN_SRC emacs-lisp
+(use-package helm-bibtex
+  :ensure t
+  :after helm
+  :config
+  (setq bibtex-completion-bibliography (expand-file-name "~/BibTeX/master.bib")
+		bibtex-completion-library-path (expand-file-name "~/BibTeX/pdf")
+		bibtex-completion-pdf-field "File"))
+#+END_SRC
 * shell
 #+begin_src emacs-lisp
 (defadvice ansi-term (before force-bash)
