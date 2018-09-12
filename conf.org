@@ -354,8 +354,9 @@ desktop file exec directive."
   (let ((cwd (expand-file-name default-directory)))
 	(call-process "urxvt" nil 0 nil "-cd" cwd)))
 #+END_SRC
-* completion
-** company
+* editing
+** completion
+*** company
 #+BEGIN_SRC emacs-lisp
 (use-package company
   :ensure t
@@ -364,7 +365,7 @@ desktop file exec directive."
   (setq company-idle-delay 0
 		company-minimum-prefix-length 3))
 #+END_SRC
-** flycheck
+*** flycheck
 #+BEGIN_SRC emacs-lisp
 (use-package flycheck
   :ensure t
@@ -378,7 +379,7 @@ desktop file exec directive."
 		flycheck-error-list-minimum-level 'warning
 		flycheck-navigation-minimum-level 'warning))
 #+END_SRC
-** yasnippet
+*** yasnippet
 #+BEGIN_SRC emacs-lisp
 (use-package yasnippet
   :ensure t)
@@ -391,7 +392,6 @@ desktop file exec directive."
   :config
   (yas-reload-all))
 #+END_SRC
-* languages
 ** flyspell
 #+BEGIN_SRC emacs-lisp
 (use-package flyspell-correct-helm
@@ -404,11 +404,12 @@ desktop file exec directive."
 (add-hook 'prog-mode-hook #'flyspell-prog-mode)
 (setq flyspell-issue-message-flag nil)
 #+END_SRC
-** elisp
+** languages
+*** elisp
 #+BEGIN_SRC emacs-lisp
 (add-hook 'emacs-lisp-mode-hook 'company-mode)
 #+END_SRC
-** ess
+*** ess
 NOTES:
 - ess is not considered part of prog-mode for some reason
 - ess-mode requires a running R process for company to work
@@ -437,7 +438,7 @@ NOTES:
 		ess-history-file "session.Rhistory"
 		ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
 #+END_SRC
-** python
+*** python
 #+BEGIN_SRC emacs-lisp
 (elpy-enable)
 
@@ -448,7 +449,7 @@ NOTES:
         (setq tab-width 4)
         (setq python-indent 4)))
 #+END_SRC
-** haskell
+*** haskell
 #+BEGIN_SRC emacs-lisp
 (use-package haskell-mode
   :ensure t
