@@ -1836,7 +1836,7 @@ I have current have three contexts, personal and two work accounts. The first is
 				   (mu4e-maildir-shortcuts .
 										   (("/gatech/inbox" . ?i)
 											("/gatech/sent" . ?s)
-											("/gatech/trash" . ?s)
+											("/gatech/trash" . ?t)
 											("/gatech/drafts" . ?d)
 											("/gatech/archive" . ?a)))))
 		 ,(make-mu4e-context
@@ -1859,7 +1859,7 @@ I have current have three contexts, personal and two work accounts. The first is
 				   (mu4e-maildir-shortcuts .
 										   (("/emory/inbox" . ?i)
 											("/emory/sent" . ?s)
-											("/emory/trash" . ?s)
+											("/emory/trash" . ?t)
                                             ("/emory/drafts" . ?d)
 											("/emory/archive" . ?a)))))))
 #+END_SRC
