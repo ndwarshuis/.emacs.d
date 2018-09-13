@@ -683,6 +683,10 @@ Capture should show up in the bottom of any currently active buffer
 
 (advice-add #'org-mks :around #'nd/org-capture-window-advice)
 #+END_SRC
+** latex
+#+BEGIN_SRC emacs-lisp
+(setq org-html-doctype "html5")
+#+END_SRC
 ** gtd implementation
 *** todo states
 #+BEGIN_SRC emacs-lisp
@@ -1888,12 +1892,20 @@ I have current have three contexts, personal and two work accounts. The first is
 #+END_SRC
 ** bibtex
 #+BEGIN_SRC emacs-lisp
+(use-package org-ref
+  :ensure t
+  :after org
+  :config
+  (setq reftex-default-bibliography "~/BibTeX/master.bib"
+		org-ref-bibliography-notes "~/BibTeX/notes.org"
+		org-ref-default-bibliography "~/BibTeX/master.bib"))
+
 (use-package helm-bibtex
   :ensure t
   :after helm
   :config
-  (setq bibtex-completion-bibliography (expand-file-name "~/BibTeX/master.bib")
-		bibtex-completion-library-path (expand-file-name "~/BibTeX/pdf")
+  (setq bibtex-completion-bibliography "~/BibTeX/master.bib"
+		bibtex-completion-library-path "~/BibTeX/pdf"
 		bibtex-completion-pdf-field "File"))
 #+END_SRC
 ** shell
@@ -2134,6 +2146,11 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 (eval-after-load 'haskell-cabal
   '(define-key haskell-cabal-mode-map (kbd "C-c C-c") 'haskell-compile))
 #+END_SRC
+*** helm-prefix
+#+BEGIN_SRC emacs-lisp
+(define-key helm-command-prefix (kbd "b") 'helm-bibtex)
+(define-key helm-command-prefix (kbd "<f8>") 'helm-resume)
+#+END_SRC
 ** global
 #+BEGIN_SRC emacs-lisp
 (global-set-key (kbd "<f1>") 'org-agenda)
@@ -2141,13 +2158,13 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 (global-set-key (kbd "<f3>") 'cfw:open-org-calendar)
 (global-set-key (kbd "<f4>") 'org-clock-goto)
 (global-set-key (kbd "<f5>") 'ansi-term)
+(global-set-key (kbd "<f8>") 'helm-command-prefix)
 (global-set-key (kbd "C-<f5>") 'nd/open-urxvt)
 (global-set-key (kbd "<f12>") 'mu4e)
 (global-set-key (kbd "C-<f12>") 'global-hl-line-mode)
 (global-set-key (kbd "S-<f12>") 'display-line-numbers-mode)
 
 (global-set-key (kbd "C-c e") 'nd/config-visit)
-(global-set-key (kbd "C-c h") 'helm-command-prefix)
 (global-set-key (kbd "C-c r") 'nd/config-reload)
 (global-set-key (kbd "C-c s") 'sudo-edit)
 
