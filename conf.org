@@ -146,7 +146,9 @@ No need for startup screen, tool/menu/scrollbars, or backups
   :hook
   ((prog-mode . rainbow-delimiters-mode)
    (inferior-ess-mode . rainbow-delimiters-mode)
-   (ess-mode . rainbow-delimiters-mode)))
+   (ess-mode . rainbow-delimiters-mode)
+   (LaTeX-mode . rainbow-delimiters-mode)
+   (Tex-latex-mode . rainbow-delimiters-mode)))
 #+END_SRC
 ** ace-window
 #+BEGIN_SRC emacs-lisp
