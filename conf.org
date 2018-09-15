@@ -1811,7 +1811,7 @@ I have current have three contexts, personal and two work accounts. The first is
 #+BEGIN_SRC emacs-lisp
 (setq mu4e-context-policy 'pick-first
 	  mu4e-compose-context-policy 'ask-if-none
-	  mu4e-user-mail-address-list '("natedwarshuis@gmail.com" "ndwarshuis3@gatech.edu" "ndwarsh@emory.edu"))
+	  mu4e-user-mail-address-list '("natedwarshuis@gmail.com" "ndwarshuis3@gatech.edu" "ndwarsh@emory.edu")
       
       mu4e-contexts
 	  `( ,(make-mu4e-context
