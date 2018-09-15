@@ -1794,6 +1794,8 @@ make sizes human readable
       send-mail-function 'smtpmail-send-it
 	  message-send-mail-function 'smtpmail-send-it
 
+	  mu4e-get-mail-command "systemctl --user start mbsync"
+
 	  user-full-name "Nate Dwarshuis")
 #+END_SRC
 *** headers view
