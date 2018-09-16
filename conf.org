@@ -741,6 +741,7 @@ NOTE: only these special chars; others make the tag chooser do weird things with
         ("%note" . ?n)
         ("%inc" . ?i)
         ("%subdiv" . ?s)
+        ("%flag" . ?f)
         
         (:startgroup)
         ("_env" . ?E)
