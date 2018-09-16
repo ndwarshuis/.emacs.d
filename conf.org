@@ -1773,6 +1773,28 @@ make sizes human readable
 #+BEGIN_SRC emacs-lisp
 (setq dired-listing-switches "-Alh")
 #+END_SRC
+*** mu4e attachments
+By default the included gnus-dired package does not understan mu4e, so override the existing =gnus-dired-mail-buffers= function to fix. This allows going to a dired buffer, marking files, and attaching them interactively to mu4e draft buffers.
+#+BEGIN_SRC emacs-lisp
+;; from here:
+;; https://www.djcbsoftware.nl/code/mu/mu4e/Dired.html#Dired
+(require 'gnus-dired)
+
+(eval-after-load 'gnus-dired
+  '(defun gnus-dired-mail-buffers ()
+	 "Return a list of active mu4e message buffers."
+	 (let (buffers)
+       (save-current-buffer
+		 (dolist (buffer (buffer-list t))
+           (set-buffer buffer)
+           (when (and (derived-mode-p 'message-mode)
+					  (null message-sent-message-via))
+			 (push (buffer-name buffer) buffers))))
+       (nreverse buffers))))
+
+(setq gnus-dired-mail-mode 'mu4e-user-agent)
+(add-hook 'dired-mode-hook 'turn-on-gnus-dired-mode)
+#+END_SRC
 ** mu4e
 *** basic
 #+BEGIN_SRC emacs-lisp
