@@ -1802,6 +1802,28 @@ make sizes human readable
 	  mu4e-headers-time-format "%R"
 	  mu4e-use-fancy-chars nil)
 #+END_SRC
+*** quoting
+#+BEGIN_SRC emacs-lisp
+(setq
+ mu4e-compose-pre-hook
+ (lambda ()
+   (let* ((msg mu4e-compose-parent-message)
+		  (html (and msg (plist-get msg :body-html)))
+		  ;; oops, mu4e screwed up
+		  (mu4e-html2text-command
+		   (if (file-exists-p "/usr/bin/html2text")
+			   "html2text --ignore-emphasis --images-to-alt --body-width=0"
+			 'mu4e-shr2text)))
+	 (if (and (member compose-type '(reply forward)) html)
+		 (progn
+		   ;; hackity hack, since the normal mu4e-message-body-text function
+		   ;; does not render the desired html, do it here and force the
+		   ;; aforementioned function to only look at text by removing
+		   ;; the html
+		   (plist-put msg :body-txt (mu4e~html2text-shell msg mu4e-html2text-command))
+		   (plist-put msg :body-html nil))
+	   (message "nada")))))
+#+END_SRC
 *** smtp
 #+BEGIN_SRC emacs-lisp
 (require 'smtpmail)
