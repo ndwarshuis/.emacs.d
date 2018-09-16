@@ -261,7 +261,7 @@ event of an error or nonlocal exit."
                 (and (stringp i)
                      (string-prefix-p prefix i)))
               str-list))
-          
+
 (defun nd/move-key (keymap-from keymap-to key)
   "Move KEY from KEYMAP-FROM keymap to KEYMAP-TO keymap."
   (define-key keymap-to key (lookup-key keymap-from key))
@@ -348,6 +348,11 @@ desktop file exec directive."
   "Kill all buffers without regard for their origin."
   (interactive)
   (mapc 'kill-buffer (buffer-list)))
+
+(defun nd/org-close-all-buffers ()
+  "Kill all org buffers."
+  (interactive)
+  (mapc 'kill-buffer (org-buffer-list)))
 
 (defun nd/open-urxvt ()
   "Launch urxvt in the current directory."
