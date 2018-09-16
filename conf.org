@@ -256,8 +256,7 @@ event of an error or nonlocal exit."
 ** functions
 #+BEGIN_SRC emacs-lisp
 (defun nd/filter-list-prefix (prefix str-list)
-  "Return a subset of tags-list whose first character matches prefix.
-  tags-list defaults to org-tag-alist if not given."
+  "Return a subset of STR-LIST whose first characters are PREFIX."
   (seq-filter (lambda (i)
                 (and (stringp i)
                      (string-prefix-p prefix i)))
