@@ -1769,9 +1769,6 @@ make sizes human readable
 *** basic
 #+BEGIN_SRC emacs-lisp
 (require 'mu4e)
-(require 'smtpmail)
-
-(add-to-list 'auth-sources (expand-file-name "~/.emacs.d/.authinfo_mu4e.gpg"))
 
 (setq mail-user-agent 'mu4e-user-agent
 	  mu4e-maildir "/mnt/data/Mail"
@@ -1791,9 +1788,6 @@ make sizes human readable
 
 	  mu4e-compose-dont-reply-to-self t
       
-      send-mail-function 'smtpmail-send-it
-	  message-send-mail-function 'smtpmail-send-it
-
 	  mu4e-get-mail-command "systemctl --user start mbsync"
 
 	  user-full-name "Nate Dwarshuis")
@@ -1807,6 +1801,17 @@ make sizes human readable
 	  mu4e-headers-date-format "%F"
 	  mu4e-headers-time-format "%R"
 	  mu4e-use-fancy-chars nil)
+#+END_SRC
+*** smtp
+#+BEGIN_SRC emacs-lisp
+(require 'smtpmail)
+(require 'smtpmail-async)
+;; (require 'secrets)
+;; (setq secrets-enabled t)
+(setq send-mail-function 'async-smtpmail-send-it
+	  message-send-mail-function 'async-smtpmail-send-it)
+(add-to-list 'auth-sources (expand-file-name "~/.emacs.d/.authinfo_mu4e.gpg"))
+;; (add-to-list 'auth-sources "secrets:default")
 #+END_SRC
 *** contexts
 I have current have three contexts, personal and two work accounts. The first is a gmail account and the second/third are office365 accounts.
