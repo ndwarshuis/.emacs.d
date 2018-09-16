@@ -784,12 +784,12 @@ Add some useful properties:
 		   "* TODO %?\ndeliverable: \n%U\n")
 
           ("n" "note" entry (file ,capfile)
-		   "* %? :\\%note:\n%U\n")
+		   "* %?  :\\%note:\n%U\n")
 
           ("a" "appointment" entry (file ,capfile)
 		   "* %?\n%U\n%^t\n")
 
-          ("m" "multi-day" entry (file ,capfile)
+          ("s" "appointment-span" entry (file ,capfile)
 		   "* TODO %?\n%U\n%^t--%^t\n")
 
           ("d" "deadline" entry (file ,capfile)
@@ -797,6 +797,9 @@ Add some useful properties:
 
 		  ("e" "email" entry (file ,capfile)
 		   "* TODO Respond to %:fromname; Re: %:subject\n%U\n%a\n")
+
+		  ("m" "meeting" entry (file ,capfile)
+		   "* meeting with%?  :\\%note:\n%U\n")
 		  
 		  ("p" "org-protocol" entry (file ,capfile)
            "* %^{Title} :\\%note:\n%u\n#+BEGIN_QUOTE\n%i\n#+END_QUOTE"
