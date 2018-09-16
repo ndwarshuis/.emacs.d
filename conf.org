@@ -2241,7 +2241,9 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 (global-set-key (kbd "C-x C-f") 'helm-find-files)
 (global-set-key (kbd "C-x C-b") 'helm-buffers-list)
 
-(global-set-key (kbd "C-M-s-k") 'nd/close-all-buffers)
+(global-set-key (kbd "C-M-S-k") 'nd/close-all-buffers)
+(global-set-key (kbd "C-M-S-o") 'nd/org-close-all-buffers)
+(global-set-key (kbd "C-M-S-a") 'org-agenda-kill-all-agenda-buffers)
 
 (global-set-key (kbd "M-b") 'nd/switch-to-previous-buffer)
 (global-set-key (kbd "M-o") 'ace-window)
