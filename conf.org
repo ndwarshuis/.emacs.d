@@ -1680,6 +1680,11 @@ Keeping confirmation enabled does weird stuff with helm. Not ideal at the moment
 #+END_SRC
 *** interactive functions
 #+BEGIN_SRC emacs-lisp
+(defun nd/dired-move-to-parent-directory ()
+  "Move buffer to parent directory (like 'cd ..')."
+  (interactive)
+  (find-alternate-file ".."))
+
 (defun nd/dired-xdg-open ()
   "Open all non-text files in external app using xdg-open. Only regular files are considered"
   (interactive)
@@ -2208,11 +2213,11 @@ Dired makes new buffers by default. Use =find-alternate-file= to avoid this.
 (evil-define-key 'normal dired-mode-map
   "a" 'dired-find-file
   "gs" 'nd/dired-sort-by
+  "^" 'nd/dired-move-to-parent-directory
+  "q" 'nd/kill-current-buffer
   (kbd "<return>") 'dired-find-alternate-file
-  "^" (lambda () (interactive) (find-alternate-file ".."))
   (kbd "C-<return>") 'nd/dired-xdg-open
-  (kbd "M-<return>") 'nd/dired-open-with
-  "q" 'nd/kill-current-buffer)
+  (kbd "M-<return>") 'nd/dired-open-with)
 #+END_SRC
 **** helm
 I like tab completion...regardless of what the helm zealots say. This is actually easier and faster because I can just scroll through the source list with j/k and mash TAB when I find the right directory.
