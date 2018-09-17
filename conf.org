@@ -1621,6 +1621,10 @@ set as a text property for further sorting"
                   ((org-agenda-overriding-header "Tasks to Refile"))
                   (org-tags-match-list-sublevels nil))))
 
+          ("f"
+           "Flagged"
+           ((tags "%flag" ((org-agenda-overriding-header "Flagged Tasks")))))
+
 		  ("e"
 		   "Critical Errors"
            (,(nd/agenda-base-task-cmd task-match
