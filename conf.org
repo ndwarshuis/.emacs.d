@@ -1955,6 +1955,11 @@ Signatures take lots of space and make short messages look needlessly clunky, so
 (defadvice ansi-term (before force-bash)
   (interactive (list "/bin/zsh")))
 (ad-activate 'ansi-term)
+
+(defun nd/term-send-raw-escape ()
+  "Send a raw escape character to the running terminal."
+  (interactive)
+  (term-send-raw-string "\e"))
 #+END_SRC
 ** ediff
 #+BEGIN_SRC emacs-lisp
@@ -2232,7 +2237,7 @@ I like tab completion...regardless of what the helm zealots say. This is actuall
 Since I use vi mode in my terminal emulator, need to preserve the escape key's raw behavior
 #+BEGIN_SRC emacs-lisp
 (evil-define-key 'insert term-raw-map
-  (kbd "<escape>") (lambda () (interactive) (term-send-raw-string "\e"))
+  (kbd "<escape>") 'nd/term-send-raw-escape
   (kbd "C-<escape>") 'evil-normal-state)
 #+END_SRC
 ** local
