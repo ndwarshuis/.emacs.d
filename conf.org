@@ -1678,9 +1678,6 @@ Keeping confirmation enabled does weird stuff with helm. Not ideal at the moment
 #+BEGIN_SRC emacs-lisp
 (setq dired-no-confirm '(move copy))
 #+END_SRC
-*** interactive functions
-#+BEGIN_SRC emacs-lisp
-#+END_SRC
 *** compression
 Only supports tar.gz, tar.bz2, tar.xz, and .zip by default. Add support for more fun algos such as lzo and zpaq
 #+BEGIN_SRC emacs-lisp
