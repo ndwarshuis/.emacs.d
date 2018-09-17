@@ -1680,76 +1680,6 @@ Keeping confirmation enabled does weird stuff with helm. Not ideal at the moment
 #+END_SRC
 *** interactive functions
 #+BEGIN_SRC emacs-lisp
-(defun nd/dired-move-to-parent-directory ()
-  "Move buffer to parent directory (like 'cd ..')."
-  (interactive)
-  (find-alternate-file ".."))
-
-(defun nd/dired-xdg-open ()
-  "Open all non-text files in external app using xdg-open. Only regular files are considered"
-  (interactive)
-  (let* ((file-list (seq-filter #'file-regular-p (dired-get-marked-files)))
-		 (do-it (if (<= (length file-list) 5)
-					t
-				  (y-or-n-p "Open more then 5 files? "))))
-	(when do-it
-	  (mapc
-	   (lambda (f) (let ((process-connection-type nil))
-				(start-process "" nil "xdg-open" f)))
-	   file-list))))
-
-(defun nd/dired-open-with ()
-  "Open marked non-text files in external app via open-with dialog
-according to mime types as listed in all available desktop files."
-  (interactive)
-  (let* ((mf (seq-filter #'file-regular-p (dired-get-marked-files)))
-		 (qmf (mapcar #'shell-quote-argument mf))
-		 (file-mime-list (mapcar (lambda (f) (list f (nd/get-mime-type f))) qmf)))
-
-	(if (= (length file-mime-list) 0)
-		(message "No files selected")
-	  
-	  (let* ((first-pair (car file-mime-list))
-			 (last-pairs (cdr file-mime-list))
-			 mime-alist file-list)
-		(setq file-list (nth 0 first-pair)
-			  mime-alist (nd/get-apps-from-mime (nth 1 first-pair)))
-		;; if multiple files selected, add to the selection list
-		(if last-pairs
-			(progn
-			  (setq file-list (string-join (mapcar #'car file-mime-list) " "))
-			  (dolist (mime (mapcar (lambda (f) (nth 1 f)) last-pairs))
-				(setq mime-alist (intersection mime-alist
-											   (nd/get-apps-from-mime mime)
-											   :test #'equal)))))
-		(if (= (length mime-alist) 0)
-			(let* ((ml (delete-dups (mapcan #'cdr file-mime-list)))
-				   (mls (string-join ml ", ")))
-			  (if (= (length ml) 1)
-				  (message (concat "No apps found for mime type: "	mls))
-				(message (concat "No common apps found for mime types: " mls))))
-		  (helm
-		   :sources (helm-build-sync-source "Apps"
-		  			  :candidates mime-alist
-					  :action '(("Open" . (lambda (f) (nd/execute-desktop-command f file-list)))))
-		   :buffer "*helm open with*"))))))
-
-(defun nd/dired-sort-by ()
-  "Sort current dired buffer by a list of choices presented in helm menu.
-Note this assumes there are no sorting switches on `dired-ls'"
-  (interactive)
-  (let ((sort-alist '(("Name" . "")
-					  ("Date" . "-t")
-					  ("Size" . "-S")
-					  ("Extension" . "-X")
-					  ("Dirs First" . "--group-directories-first"))))
-	(helm
-	 :sources
-	 (helm-build-sync-source "Switches"
-	   :candidates sort-alist
-	   :action
-	   '(("Sort" . (lambda (s) (dired-sort-other (concat dired-listing-switches " " s))))))
-	 :buffer "*helm sort buffer*")))
 #+END_SRC
 *** compression
 Only supports tar.gz, tar.bz2, tar.xz, and .zip by default. Add support for more fun algos such as lzo and zpaq
@@ -2208,6 +2138,78 @@ Most packages that don't have an evil version are in this one. I don't like surp
 **** dired
 Dired makes new buffers by default. Use =find-alternate-file= to avoid this.
 #+BEGIN_SRC emacs-lisp
+(defun nd/dired-move-to-parent-directory ()
+  "Move buffer to parent directory (like 'cd ..')."
+  (interactive)
+  (find-alternate-file ".."))
+
+(defun nd/dired-xdg-open ()
+  "Open all non-text files in external app using xdg-open.
+Only regular files are considered."
+  (interactive)
+  (let* ((file-list (seq-filter #'file-regular-p (dired-get-marked-files)))
+		 (do-it (if (<= (length file-list) 5)
+					t
+				  (y-or-n-p "Open more then 5 files? "))))
+	(when do-it
+	  (mapc
+	   (lambda (f) (let ((process-connection-type nil))
+				(start-process "" nil "xdg-open" f)))
+	   file-list))))
+
+(defun nd/dired-open-with ()
+  "Open marked non-text files in external app via open-with dialog
+according to mime types as listed in all available desktop files."
+  (interactive)
+  (let* ((mf (seq-filter #'file-regular-p (dired-get-marked-files)))
+		 (qmf (mapcar #'shell-quote-argument mf))
+		 (file-mime-list (mapcar (lambda (f) (list f (nd/get-mime-type f))) qmf)))
+
+	(if (= (length file-mime-list) 0)
+		(message "No files selected")
+	  
+	  (let* ((first-pair (car file-mime-list))
+			 (last-pairs (cdr file-mime-list))
+			 mime-alist file-list)
+		(setq file-list (nth 0 first-pair)
+			  mime-alist (nd/get-apps-from-mime (nth 1 first-pair)))
+		;; if multiple files selected, add to the selection list
+		(if last-pairs
+			(progn
+			  (setq file-list (string-join (mapcar #'car file-mime-list) " "))
+			  (dolist (mime (mapcar (lambda (f) (nth 1 f)) last-pairs))
+				(setq mime-alist (intersection mime-alist
+											   (nd/get-apps-from-mime mime)
+											   :test #'equal)))))
+		(if (= (length mime-alist) 0)
+			(let* ((ml (delete-dups (mapcan #'cdr file-mime-list)))
+				   (mls (string-join ml ", ")))
+			  (if (= (length ml) 1)
+				  (message (concat "No apps found for mime type: "	mls))
+				(message (concat "No common apps found for mime types: " mls))))
+		  (helm
+		   :sources (helm-build-sync-source "Apps"
+		  			  :candidates mime-alist
+					  :action '(("Open" . (lambda (f) (nd/execute-desktop-command f file-list)))))
+		   :buffer "*helm open with*"))))))
+
+(defun nd/dired-sort-by ()
+  "Sort current dired buffer by a list of choices presented in helm menu.
+Note this assumes there are no sorting switches on `dired-ls'"
+  (interactive)
+  (let ((sort-alist '(("Name" . "")
+					  ("Date" . "-t")
+					  ("Size" . "-S")
+					  ("Extension" . "-X")
+					  ("Dirs First" . "--group-directories-first"))))
+	(helm
+	 :sources
+	 (helm-build-sync-source "Switches"
+	   :candidates sort-alist
+	   :action
+	   '(("Sort" . (lambda (s) (dired-sort-other (concat dired-listing-switches " " s))))))
+	 :buffer "*helm sort buffer*")))
+
 (put 'dired-find-alternate-file 'disabled nil)
 
 (evil-define-key 'normal dired-mode-map
