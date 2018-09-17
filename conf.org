@@ -1551,7 +1551,8 @@ set as a text property for further sorting"
 		  
           ("i"
            "Incubator View"
-           ((agenda "" ((org-agenda-span 7)
+           ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags nil '("%inc")))
+						(org-agenda-span 7)
                         (org-agenda-time-grid nil)
                         (org-agenda-entry-types '(:deadline :timestamp))))
             ,(nd/agenda-base-task-cmd "-NA-REFILE+%inc/!"
