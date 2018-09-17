@@ -1781,15 +1781,13 @@ By default the included gnus-dired package does not understan mu4e, so override 
 		   (if (file-exists-p "/usr/bin/html2text")
 			   "html2text --ignore-emphasis --images-to-alt --body-width=0"
 			 'mu4e-shr2text)))
-	 (if (and (member compose-type '(reply forward)) html)
-		 (progn
-		   ;; hackity hack, since the normal mu4e-message-body-text function
-		   ;; does not render the desired html, do it here and force the
-		   ;; aforementioned function to only look at text by removing
-		   ;; the html
-		   (plist-put msg :body-txt (mu4e~html2text-shell msg mu4e-html2text-command))
-		   (plist-put msg :body-html nil))
-	   (message "nada")))))
+	 (when (and html mu4e-view-prefer-html (member compose-type '(reply forward)))
+	   ;; hackity hack, since the normal mu4e-message-body-text function
+	   ;; does not render the desired html, do it here and force the
+	   ;; aforementioned function to only look at text by removing
+	   ;; the html
+	   (plist-put msg :body-txt (mu4e~html2text-shell msg mu4e-html2text-command))
+	   (plist-put msg :body-html nil)))))
 #+END_SRC
 *** smtp
 #+BEGIN_SRC emacs-lisp
