@@ -208,9 +208,8 @@ No need for startup screen, tool/menu/scrollbars, or backups
 ** csv-mode
 #+BEGIN_SRC emacs-lisp
 (use-package csv-mode
-  :ensure t)
-  ;; :hook
-  ;; (csv-mode . (lambda () (csv-align-fields nil (point-min) (point-max)))))
+  :ensure t
+  :hook (csv-mode . (lambda () (csv-align-fields nil (point-min) (point-max)))))
 #+END_SRC
 ** markdown-mode
 #+BEGIN_SRC emacs-lisp
