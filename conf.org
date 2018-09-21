@@ -1786,10 +1786,7 @@ The quote string should enable history tabbing in modern viewers such as outlook
 		 (from (concat "From: " (mail-header-from h)))
 		 (date (concat "Sent: " (mail-header-date h)))
 		 (to (concat "To: " user-full-name))
-		 (subj (concat "Subject: " (replace-regexp-in-string
-									"Re: "
-									""
-									(mail-header-subject h)))))
+		 (subj (concat "Subject: " (message-strip-subject-re (mail-header-subject h)))))
 	(insert (string-join `("" ,sep ,from ,date ,to ,subj "") "\n"))))
 	
 (setq message-citation-line-function 'nd/message-insert-citation-header)
