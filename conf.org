@@ -138,6 +138,11 @@ No need for startup screen, tool/menu/scrollbars, or backups
   (helm-autoresize-mode 1)
   (require 'helm-config))
 #+END_SRC
+** helm-swoop
+#+BEGIN_SRC emacs-lisp
+(use-package helm-swoop
+  :ensure t)
+#+END_SRC
 ** rainbow-delimiters
 #+BEGIN_SRC emacs-lisp
 (use-package rainbow-delimiters
