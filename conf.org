@@ -2288,6 +2288,7 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 *** helm-prefix
 #+BEGIN_SRC emacs-lisp
 (define-key helm-command-prefix (kbd "b") 'helm-bibtex)
+(define-key helm-command-prefix (kbd "S") 'helm-swoop)
 (define-key helm-command-prefix (kbd "<f8>") 'helm-resume)
 #+END_SRC
 *** outline-magic
