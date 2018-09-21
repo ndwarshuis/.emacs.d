@@ -1928,6 +1928,12 @@ Signatures take lots of space and make short messages look needlessly clunky, so
 		 "ndwarshuis3@gatech.edu")
 	   "\n"))
 #+END_SRC
+*** compose
+By default mu4e adds breaks after 80-ish chars using auto-fill-mode which makes messages look weird when opened anywhere else. =Visual-line-mode= avoids this probem.
+#+BEGIN_SRC emacs-lisp
+(add-hook 'mu4e-compose-mode-hook 'turn-off-auto-fill)
+(add-hook 'mu4e-compose-mode-hook 'visual-line-mode)
+#+END_SRC
 ** auctex
 #+BEGIN_SRC emacs-lisp
 (load "auctex.el" nil t t)
