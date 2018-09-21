@@ -1774,6 +1774,27 @@ By default the included gnus-dired package does not understan mu4e, so override 
 	  mu4e-use-fancy-chars nil)
 #+END_SRC
 *** quoting
+The quote string should enable history tabbing in modern viewers such as outlook and gmail. This is enabled by using 32 underscores followed by the addressing info of the previous message(s).
+#+BEGIN_SRC emacs-lisp
+;; necessary for the header macros below
+(require 'nnheader)
+
+(defun nd/message-insert-citation-header ()
+  "Insert the header of the reply message."
+  (let* ((h message-reply-headers)
+		 (sep "________________________________")
+		 (from (concat "From: " (mail-header-from h)))
+		 (date (concat "Sent: " (mail-header-date h)))
+		 (to (concat "To: " user-full-name))
+		 (subj (concat "Subject: " (replace-regexp-in-string
+									"Re: "
+									""
+									(mail-header-subject h)))))
+	(insert (string-join `("" ,sep ,from ,date ,to ,subj "") "\n"))))
+	
+(setq message-citation-line-function 'nd/message-insert-citation-header)
+#+END_SRC
+By default the reply string is destroyed if it HTML. Since I only really care about the links when forwarding stuff (these are really the only thing that needs to stay functional in a quoted section) use the html2text command to preserve links while ascii-ifying everything else.
 #+BEGIN_SRC emacs-lisp
 (setq
  mu4e-compose-pre-hook
