@@ -1761,7 +1761,7 @@ By default the included gnus-dired package does not understan mu4e, so override 
       
 	  mu4e-get-mail-command "systemctl --user start mbsync"
 
-	  user-full-name "Nate Dwarshuis")
+	  user-full-name "Dwarshuis, Nathan J")
 #+END_SRC
 *** headers view
 #+BEGIN_SRC emacs-lisp
