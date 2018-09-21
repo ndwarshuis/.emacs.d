@@ -1773,8 +1773,8 @@ By default the included gnus-dired package does not understan mu4e, so override 
 	  mu4e-headers-time-format "%R"
 	  mu4e-use-fancy-chars nil)
 #+END_SRC
-*** quoting
-The quote string should enable history tabbing in modern viewers such as outlook and gmail. This is enabled by using 32 underscores followed by the addressing info of the previous message(s).
+*** citing
+The citation line should enable history filding in outlook. This is enabled by using 32 underscores followed by the addressing info of the previous message(s).
 #+BEGIN_SRC emacs-lisp
 ;; necessary for the header macros below
 (require 'nnheader)
@@ -1791,7 +1791,15 @@ The quote string should enable history tabbing in modern viewers such as outlook
 	
 (setq message-citation-line-function 'nd/message-insert-citation-header)
 #+END_SRC
-By default the reply string is destroyed if it HTML. Since I only really care about the links when forwarding stuff (these are really the only thing that needs to stay functional in a quoted section) use the html2text command to preserve links while ascii-ifying everything else.
+
+The default "> " things are annoying when citing old messages.
+#+BEGIN_SRC emacs-lisp
+(setq message-yank-prefix "")
+(setq message-yank-cited-prefix "")
+(setq message-yank-empty-prefix "")
+#+END_SRC
+
+By default the citation is destroyed (as in totally textified) if it is HTML. I want the links to be preserved, so use html2text and set arguments accordingly. Note that =--body-width=0= is necessary to prevent line breaks from being inserted in the middle of links. 
 #+BEGIN_SRC emacs-lisp
 (setq
  mu4e-compose-pre-hook
