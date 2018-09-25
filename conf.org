@@ -1822,11 +1822,11 @@ By default the citation is destroyed (as in totally textified) if it is HTML. I 
 *** smtp
 #+BEGIN_SRC emacs-lisp
 (require 'smtpmail)
-(require 'smtpmail-async)
+;; (require 'smtpmail-async)
 ;; (require 'secrets)
 ;; (setq secrets-enabled t)
-(setq send-mail-function 'async-smtpmail-send-it
-	  message-send-mail-function 'async-smtpmail-send-it)
+(setq send-mail-function 'smtpmail-send-it
+	  message-send-mail-function 'smtpmail-send-it)
 (add-to-list 'auth-sources (expand-file-name "~/.emacs.d/.authinfo_mu4e.gpg"))
 ;; (add-to-list 'auth-sources "secrets:default")
 #+END_SRC
