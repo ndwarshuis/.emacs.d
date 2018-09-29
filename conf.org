@@ -2162,8 +2162,9 @@ Some of these commands just get in the way of being evil (which really means tha
 	"M" 'org-agenda-month-view
 	"Y" 'org-agenda-year-view
 	"ct" nil
-	"sE" 'nd/org-agenda-filter-non-effort
 	"sC" 'nd/org-agenda-filter-non-context
+	"sE" 'nd/org-agenda-filter-non-effort
+	"sD" 'nd/org-agenda-filter-delegate
 	"sP" 'nd/org-agenda-filter-non-peripheral
 	"e" 'org-agenda-set-effort
 	"ce" nil))
