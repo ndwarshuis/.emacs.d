@@ -604,7 +604,7 @@ and reverts all todo keywords to TODO"
 ** column view
 #+BEGIN_SRC emacs-lisp
   (setq org-columns-default-format
-        "%25ITEM %4TODO %TAGS %5Effort{:} %OWNER(OWN)")
+        "%25ITEM %4TODO %TAGS %5Effort{:} %DELEGATE(DEL)")
 
   (set-face-attribute 'org-column nil :background "#1e2023")
   ;; org-columns-summary-types
@@ -772,7 +772,7 @@ Add some useful properties:
 - OWNER and GOAL: not currently used
 #+BEGIN_SRC emacs-lisp
 (mapc (lambda (i) (add-to-list 'org-default-properties i))
-	  '("PARENT_TYPE" "OWNER" "GOAL" "TIME_SHIFT"))
+	  '("PARENT_TYPE" "DELEGATE" "GOAL" "TIME_SHIFT"))
 
 (setq org-global-properties
       '(("PARENT_TYPE_ALL" . "periodical iterator")
@@ -868,6 +868,12 @@ Some custom filters that are applied to the agenda view. Note that some of these
   "Filter agenda by non-effort tasks."
   (interactive)
   (setq org-agenda-hasprop-filter '("-Effort"))
+  (org-agenda-filter-apply org-agenda-hasprop-filter 'hasprop))
+
+(defun nd/org-agenda-filter-delegate ()
+  "Filter agenda by tasks with an external delegate."
+  (interactive)
+  (setq org-agenda-hasprop-filter '("+DELEGATE"))
   (org-agenda-filter-apply org-agenda-hasprop-filter 'hasprop))
 #+END_SRC
 ***** filter advice
