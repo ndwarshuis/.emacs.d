@@ -841,6 +841,78 @@ No need to file under DONE or CANC states
 	  org-clock-report-include-clocking-task t)
 #+END_SRC
 *** agenda
+**** filters
+***** custom filtering functions
+Some custom filters that are applied to the agenda view. Note that some of these use alternative filter types that are implemented via advising functions (see below).
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-agenda-filter-non-context ()
+  "Filter all tasks with context tags."
+  (interactive)
+  (let* ((tags-list (mapcar #'car org-tag-alist))
+         (context-tags (append
+                        (nd/filter-list-prefix "@" tags-list)
+                        (nd/filter-list-prefix "#" tags-list))))
+    (setq org-agenda-tag-filter
+          (mapcar (lambda (tag) (concat "-" tag)) context-tags))
+    (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
+
+(defun nd/org-agenda-filter-non-peripheral ()
+  "Filter all tasks that don't have peripheral tags."
+  (interactive)
+  (let* ((peripheral-tags '("PERIPHERAL")))
+    (setq org-agenda-tag-filter
+          (mapcar (lambda (tag) (concat "-" tag)) peripheral-tags))
+    (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
+    
+(defun nd/org-agenda-filter-non-effort ()
+  "Filter agenda by non-effort tasks."
+  (interactive)
+  (setq org-agenda-hasprop-filter '("-Effort"))
+  (org-agenda-filter-apply org-agenda-hasprop-filter 'hasprop))
+#+END_SRC
+***** filter advice
+In order to implement the =hasprop= filter the functions, =org-agenda-filter-make-matcher= and =org-agenda-filter-remove-all= need to be advised in order to add the functionality for the =hasprop= filter type. 
+
+As it is, this allows any filter using =hasprop= to be applied and removed using the standard =org-agenda-filter-apply= function with the =org-agenda-hasprop-filter= variable (obviously these can all be extended to different filter types). Note this does not give a shiny indicator at the bottom on spaceline like the built-in filter does...oh well.
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-agenda-filter-make-matcher-prop
+	(filter type &rest args)
+  "Return matching matcher form for FILTER and TYPE where TYPE is not
+in the regular `org-agenda-filter-make-matcher' function. This is
+intended to be uses as :before-until advice and will return nil if
+the type is not valid (which is currently 'prop')"
+  (let (f f1)
+	;; has property
+	(cond
+	 ((eq type 'hasprop)
+      (dolist (x filter)
+		(push (nd/org-agenda-filter-make-matcher-hasprop-exp x) f))))
+    (if f (cons 'and (nreverse f)))))
+
+(defun nd/org-agenda-filter-make-matcher-hasprop-exp (h)
+ "Returns form to test the presence or absence of properties H.
+H is a string like +prop or -prop"
+ (let (op)
+   (let* ((op (string-to-char h))
+		  (h (substring h 1))
+		  (f `(save-excursion
+				(let ((m (org-get-at-bol 'org-hd-marker)))
+				  (with-current-buffer
+					  (marker-buffer m)
+					(goto-char m)
+					(org-entry-get nil ,h))))))
+	 (if (eq op ?-) (list 'not f) f))))
+
+(defun nd/org-agenda-filter-show-all-hasprop nil
+  (org-agenda-remove-filter 'hasprop))
+
+(advice-add #'org-agenda-filter-make-matcher :before-until
+			#'nd/org-agenda-filter-make-matcher-prop)
+
+(advice-add #'org-agenda-filter-remove-all :before
+			(lambda () (when org-agenda-hasprop-filter
+					(nd/org-agenda-filter-show-all-hasprop))))
+#+END_SRC
 **** general config
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-files '("~/Org"
@@ -1413,25 +1485,6 @@ Note that this is used for "normal" projects as well as iterators
     (org-agenda-redo))
   (message "Showing %s project view in agenda"
            (if nd/agenda-limit-project-toplevel "toplevel" "complete")))
-           
-(defun nd/org-agenda-filter-non-context ()
-  "Filter all tasks with context tags."
-  (interactive)
-  (let* ((tags-list (mapcar #'car org-tag-alist))
-         (context-tags (append
-                        (nd/filter-list-prefix "@" tags-list)
-                        (nd/filter-list-prefix "#" tags-list))))
-    (setq org-agenda-tag-filter
-          (mapcar (lambda (tag) (concat "-" tag)) context-tags))
-    (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
-
-(defun nd/org-agenda-filter-non-peripheral ()
-  "Filter all tasks with context tags."
-  (interactive)
-  (let* ((peripheral-tags '("PERIPHERAL")))
-    (setq org-agenda-tag-filter
-          (mapcar (lambda (tag) (concat "-" tag)) peripheral-tags))
-    (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
 #+END_SRC
 **** agenda aesthetics
 #+BEGIN_SRC emacs-lisp
@@ -2103,6 +2156,7 @@ Some of these commands just get in the way of being evil (which really means tha
 	"M" 'org-agenda-month-view
 	"Y" 'org-agenda-year-view
 	"ct" nil
+	"sE" 'nd/org-agenda-filter-non-effort
 	"sC" 'nd/org-agenda-filter-non-context
 	"sP" 'nd/org-agenda-filter-non-peripheral
 	"e" 'org-agenda-set-effort
