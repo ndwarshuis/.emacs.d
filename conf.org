@@ -881,6 +881,9 @@ In order to implement the =hasprop= filter the functions, =org-agenda-filter-mak
 
 As it is, this allows any filter using =hasprop= to be applied and removed using the standard =org-agenda-filter-apply= function with the =org-agenda-hasprop-filter= variable (obviously these can all be extended to different filter types). Note this does not give a shiny indicator at the bottom on spaceline like the built-in filter does...oh well.
 #+BEGIN_SRC emacs-lisp
+;; initialize new filters
+(defvar org-agenda-hasprop-filter nil)
+
 (defun nd/org-agenda-filter-make-matcher-prop
 	(filter type &rest args)
   "Return matching matcher form for FILTER and TYPE where TYPE is not
