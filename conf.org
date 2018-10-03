@@ -1804,6 +1804,14 @@ By default the included gnus-dired package does not understan mu4e, so override 
 (setq gnus-dired-mail-mode 'mu4e-user-agent)
 (add-hook 'dired-mode-hook 'turn-on-gnus-dired-mode)
 #+END_SRC
+*** directory sized
+By default dired uses =ls -whatever= to get its output. This does not have recursive directory contents by default. This nitfy package solves this. This is not on default because navigation is much slower and the du output adds very little in many situations (toggle when needed).
+#+BEGIN_SRC emacs-lisp
+(use-package dired-du
+  :ensure t
+  :config
+  (setq dired-du-size-format t))
+#+END_SRC
 ** mu4e
 *** basic
 #+BEGIN_SRC emacs-lisp
