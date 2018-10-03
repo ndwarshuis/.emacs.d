@@ -694,8 +694,14 @@ Capture should show up in the bottom of any currently active buffer
 (advice-add #'org-mks :around #'nd/org-capture-window-advice)
 #+END_SRC
 ** latex
+The default is XHTML for some reason (which few use and makes certain barbaric word processors complain). Use the much-superior html5.
 #+BEGIN_SRC emacs-lisp
 (setq org-html-doctype "html5")
+#+END_SRC
+
+Need to export the bibliography when using org mode. Use =latexmk= instead of =pdflatex= because it is better at handling this.
+#+BEGIN_SRC emacs-lisp
+(setq org-latex-pdf-process (list "latexmk -shell-escape -bibtex -f -pdf %f"))
 #+END_SRC
 ** gtd implementation
 *** todo states
@@ -2032,16 +2038,16 @@ By default mu4e adds breaks after 80-ish chars using auto-fill-mode which makes 
   :ensure t
   :after org
   :config
-  (setq reftex-default-bibliography "~/BibTeX/master.bib"
-		org-ref-bibliography-notes "~/BibTeX/notes.org"
-		org-ref-default-bibliography "~/BibTeX/master.bib"))
+  (setq reftex-default-bibliography (expand-file-name "~/BibTeX/master.bib")
+		org-ref-bibliography-notes (expand-file-name "~/BibTeX/notes.org")
+		org-ref-default-bibliography (expand-file-name "~/BibTeX/master.bib")))
 
 (use-package helm-bibtex
   :ensure t
   :after helm
   :config
-  (setq bibtex-completion-bibliography "~/BibTeX/master.bib"
-		bibtex-completion-library-path "~/BibTeX/pdf"
+  (setq bibtex-completion-bibliography (expand-file-name "~/BibTeX/master.bib")
+		bibtex-completion-library-path (expand-file-name "~/BibTeX/pdf")
 		bibtex-completion-pdf-field "File"))
 #+END_SRC
 ** shell
