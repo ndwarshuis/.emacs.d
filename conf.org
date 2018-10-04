@@ -789,6 +789,11 @@ Add some useful properties:
 #+END_SRC
 *** capture
 #+BEGIN_SRC emacs-lisp
+(defun nd/org-timestamp-future (days)
+  "Inserts an active org timestamp DAYS after the current time."
+  (format-time-string (org-time-stamp-format nil)
+					  (time-add (current-time) (days-to-time 1))))
+
 (let ((capfile "~/Org/capture.org"))
   (setq org-capture-templates
         `(("t" "todo" entry (file ,capfile)
@@ -807,7 +812,7 @@ Add some useful properties:
 		   "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n")
 
 		  ("e" "email" entry (file ,capfile)
-		   "* TODO Respond to %:fromname; Re: %:subject\n%U\n%a\n")
+		   "* TODO Respond to %:fromname; Re: %:subject\nDEADLINE: %(nd/org-timestamp-future 1)\n%U\n%a\n")
 
 		  ("m" "meeting" entry (file ,capfile)
 		   "* meeting with%?  :\\%note:\n%U\n")
