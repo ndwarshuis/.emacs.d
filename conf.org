@@ -1779,8 +1779,7 @@ For some reason there is no default way to get a "print prompt." Instead one nee
   "Set the printer name using helm-completion to select printer."
   (interactive)
   (let ((pl (or helm-ff-printer-list (helm-ff-find-printers))))
-	(if pl
-		(setq printer-name (helm-comp-read "Printer: " pl)))))
+	(if pl (setq printer-name (helm-comp-read "Printer: " pl)))))
 #+END_SRC
 ** magit
 #+BEGIN_SRC emacs-lisp
