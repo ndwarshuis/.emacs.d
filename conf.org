@@ -1744,7 +1744,7 @@ set as a text property for further sorting"
 For some reason there is no default way to get a "print prompt." Instead one needs to either install some third-party helper or make a function like this.
 #+BEGIN_SRC emacs-lisp
 (defun nd/helm-set-printer-name ()
-  "Set the printer name helm-completion to select printer."
+  "Set the printer name using helm-completion to select printer."
   (interactive)
   (let ((pl (or helm-ff-printer-list (helm-ff-find-printers))))
 	(if pl
