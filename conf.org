@@ -2432,6 +2432,8 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 (define-key outline-minor-mode-map (kbd "<tab>") 'outline-cycle)
 #+END_SRC
 ** global
+*** function
+The function keys are nice because they are almost (not always) free in every mode. Therefore I use these for functions that I need to access anywhere, but not necessary extremely often (because they are out of the way and harder to reach).
 #+BEGIN_SRC emacs-lisp
 (global-set-key (kbd "<f1>") 'org-agenda)
 (global-set-key (kbd "<f2>") 'org-capture)
@@ -2443,7 +2445,9 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 (global-set-key (kbd "<f12>") 'mu4e)
 (global-set-key (kbd "C-<f12>") 'global-hl-line-mode)
 (global-set-key (kbd "S-<f12>") 'display-line-numbers-mode)
-
+#+END_SRC
+*** control/meta
+#+BEGIN_SRC emacs-lisp
 (global-set-key (kbd "C-<SPC>") 'company-complete)
 
 (global-set-key (kbd "C-c e") 'nd/config-visit)
