@@ -426,7 +426,7 @@ NOTES:
 - flycheck requries r-lintr
 #+begin_src emacs-lisp
 (defun nd/init-ess-company ()
-  "Set the company modes for ess modes."
+  "Set the company backends for ess modes."
   (setq-local company-backends '((company-R-objects company-R-args))))
 
 (use-package ess
@@ -472,10 +472,42 @@ NOTES:
 (use-package company-ghc
   :ensure t
   :after
-  (company-mode haskell-mode)
+  (company haskell-mode)
   :hook
   (haskell-mode . (lambda () (setq-local company-backends
 									'((company-ghc))))))
+#+END_SRC
+*** latex
+#+BEGIN_SRC emacs-lisp
+(add-hook 'LaTeX-mode-hook #'flycheck-mode)
+(add-hook 'Tex-latex-mode-hook #'flycheck-mode)
+
+(defun nd/init-company-auctex ()
+  "Set the company backends for auctex modes."
+  (setq-local company-backends '((company-auctex-labels
+								  company-auctex-bibs
+								  company-auctex-macros
+								  company-auctex-symbols
+								  company-auctex-environments
+								  ;; company-latex-commands
+								  company-math-symbols-latex
+								  company-math-symbols-unicode))))
+
+(use-package company-math
+  :ensure t
+  :after company
+  :config
+  (setq company-math-allow-unicode-symbols-in-faces '(font-latex-math-face)
+  		company-math-disallow-latex-symbols-in-faces nil))
+
+(use-package company-auctex
+  :ensure t
+  :after (company company-math)
+  :hook
+  ((LaTeX-mode . company-mode)
+   (LaTeX-mode . nd/init-company-auctex)
+   (Tex-latex-mode . company-mode)
+   (Tex-latex-mode . nd/init-company-auctex)))
 #+END_SRC
 * org-mode
 ** major mode
