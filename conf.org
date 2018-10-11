@@ -478,10 +478,15 @@ NOTES:
 									'((company-ghc))))))
 #+END_SRC
 *** latex
+**** flycheck
+Flycheck should work out of the box.
 #+BEGIN_SRC emacs-lisp
 (add-hook 'LaTeX-mode-hook #'flycheck-mode)
 (add-hook 'Tex-latex-mode-hook #'flycheck-mode)
-
+#+END_SRC
+**** company
+There are two backends which (kinda) complement each other. The =company-math= package should privide completion for math symbols and the =company-auctex= package should cover pretty much everything else.
+#+BEGIN_SRC emacs-lisp
 (defun nd/init-company-auctex ()
   "Set the company backends for auctex modes."
   (setq-local company-backends '((company-auctex-labels
@@ -508,6 +513,17 @@ NOTES:
    (LaTeX-mode . nd/init-company-auctex)
    (Tex-latex-mode . company-mode)
    (Tex-latex-mode . nd/init-company-auctex)))
+#+END_SRC
+**** auto-fill-mode
+I like having my lines short and readable (also easier to git). Turn on autofill here and also make a nice vertical line at 80 chars (=visual-line-mode=).
+#+BEGIN_SRC emacs-lisp
+(defun nd/turn-on-auto-fill-maybe ()
+  "Prompts user to turn on `auto-fill-mode'."
+  (when (y-or-n-p "Activate Auto Fill Mode? ")
+	(turn-on-auto-fill)))
+  
+(add-hook 'LaTeX-mode-hook #'nd/turn-on-auto-fill-maybe)
+(add-hook 'LaTeX-mode-hook #'fci-mode)
 #+END_SRC
 * org-mode
 ** major mode
