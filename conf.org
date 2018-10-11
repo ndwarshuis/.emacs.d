@@ -403,10 +403,16 @@ desktop file exec directive."
   (yas-reload-all))
 #+END_SRC
 ** flyspell
+Obviously I am going to use =helm= when I spellcheck something.
 #+BEGIN_SRC emacs-lisp
 (use-package flyspell-correct-helm
   :ensure t
   :after (helm flyspell))
+#+END_SRC
+
+Additionally, I want to automatically highlight errors whenever =flyspell-mode= is enabled.
+#+BEGIN_SRC emacs-lisp
+(add-hook 'flyspell-mode-hook 'flyspell-buffer)
 #+END_SRC
 ** progmode
 #+BEGIN_SRC emacs-lisp
@@ -524,6 +530,11 @@ I like having my lines short and readable (also easier to git). Turn on autofill
   
 (add-hook 'LaTeX-mode-hook #'nd/turn-on-auto-fill-maybe)
 (add-hook 'LaTeX-mode-hook #'fci-mode)
+#+END_SRC
+**** flyspell
+Spell checking is important for prose
+#+BEGIN_SRC emacs-lisp
+(add-hook 'LaTeX-mode-hook (lambda () (flyspell-mode 1)))
 #+END_SRC
 * org-mode
 ** major mode
@@ -2294,11 +2305,6 @@ ESS has not joined the dark side. Configure similarly to term (see below) where 
 			(add-hook 'evil-insert-state-entry-hook
 					  'nd/ess-char-mode-insert nil t)))
 #+END_SRC
-*** flyspell
-#+BEGIN_SRC emacs-lisp
-(evil-define-key 'nornal 'flyspell-mode-map
-  (kbd "C-;") 'flyspell-correct-previous-word-generic)
-#+END_SRC
 *** collection
 Most packages that don't have an evil version are in this one. I don't like surprises so I set =evil-collection-modes-list= with the modes I actually want. Some of these are further configured below.
 #+BEGIN_SRC emacs-lisp
@@ -2438,10 +2444,17 @@ These are for mode-specific bindings that can/should be outside of the evil maps
   '(define-key haskell-cabal-mode-map (kbd "C-c C-c") 'haskell-compile))
 #+END_SRC
 *** helm-prefix
+Some of these are useful enough that I make give them a direct binding without requiring a prefix. For now this is fine.
 #+BEGIN_SRC emacs-lisp
 (define-key helm-command-prefix (kbd "b") 'helm-bibtex)
 (define-key helm-command-prefix (kbd "S") 'helm-swoop)
 (define-key helm-command-prefix (kbd "<f8>") 'helm-resume)
+#+END_SRC
+
+Give =f= to =nd/helm-flyspell-correct= instead of =helm-multi-files= and give the latter =F= (used much less).
+#+BEGIN_SRC emacs-lisp
+(define-key helm-command-prefix (kbd "f") 'helm-flyspell-correct)
+(define-key helm-command-prefix (kbd "F") 'helm-multi-files)
 #+END_SRC
 *** outline-magic
 #+BEGIN_SRC emacs-lisp
