@@ -402,6 +402,11 @@ desktop file exec directive."
   :config
   (yas-reload-all))
 #+END_SRC
+*** electric pairs
+Complete pairs globally. Maybe will add more mode-specific options in addition to defaults (eg =html-mode=)
+#+BEGIN_SRC emacs-lisp
+(electric-pair-mode t)
+#+END_SRC
 ** flyspell
 Obviously I am going to use =helm= when I spellcheck something.
 #+BEGIN_SRC emacs-lisp
