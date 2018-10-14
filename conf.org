@@ -80,10 +80,6 @@ No need for startup screen, tool/menu/scrollbars, or backups
 #+BEGIN_SRC emacs-lisp
 (set-default 'truncate-lines t)
 #+END_SRC
-*** tab width
-#+BEGIN_SRC emacs-lisp
-(setq-default tab-width 4)
-#+END_SRC
 *** smooth scrolling
 #+BEGIN_SRC emacs-lisp
 (setq scroll-conservatively 100)
@@ -365,6 +361,12 @@ desktop file exec directive."
 	(call-process "urxvt" nil 0 nil "-cd" cwd)))
 #+END_SRC
 * editing
+** tabs and alignment
+First things first, don't use spaces and force tabs to 4 chars by default (because...let's compromise on things that don't matter since I am using spaces anyways)
+#+BEGIN_SRC emacs-lisp
+(setq-default indent-tabs-mode nil
+			  tab-width 4)
+#+END_SRC
 ** completion
 *** company
 #+BEGIN_SRC emacs-lisp
