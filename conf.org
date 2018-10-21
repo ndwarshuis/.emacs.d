@@ -471,6 +471,9 @@ NOTES:
         (setq indent-tabs-mode t)
         (setq tab-width 4)
         (setq python-indent 4)))
+        
+(setq python-shell-interpreter "ipython"
+      python-shell-interpreter-args "--colors=Linux --profile=default")
 #+END_SRC
 *** haskell
 #+BEGIN_SRC emacs-lisp
