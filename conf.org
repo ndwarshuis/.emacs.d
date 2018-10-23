@@ -2085,7 +2085,7 @@ Signatures take lots of space and make short messages look needlessly clunky, so
 
 	  mu4e-compose-signature
 	  (string-join
-	   '("Nate Dwarshuis"
+	   '("Nathan Dwarshuis"
 		 ""
 		 "PhD Student - Biomedical Engineering - Krish Roy Lab"
 		 "Georgia Institute of Technology and Emory University"
