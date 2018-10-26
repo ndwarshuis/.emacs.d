@@ -1602,23 +1602,29 @@ Note that this is used for "normal" projects as well as iterators
 #+END_SRC
 **** custom commands
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-agenda-filter-status (filter status-fun a-line)
+(defun nd/org-agenda-filter-status (filter status-fun a-line
+                                           &optional filter-only)
   "Filter for org-agenda-before-sorting-filter-function intended for
 agenda project views (eg makes the assumption that all entries are
 from projects in the original org buffer)
 
 Will go to the original org buffer and determine the project status
-after which it will check if status is in filter. If true, the flag
+after which it will check if status is in FILTER. If true, the flag
 string in the prefix is replaced with the status and the status is
-set as a text property for further sorting"
+set as a text property for further sorting
+
+If option FILTER-ONLY is t, the only return the unmodified a-line or
+nil to act as a filter (eg does not touch text properties)."
   (let* ((m (get-text-property 1 'org-marker a-line))
 		 (s (with-current-buffer (marker-buffer m)
 			  (goto-char m)
 			  (funcall status-fun))))
 	(if (member s filter)
-		(org-add-props (replace-regexp-in-string
-					   "xxxx" (symbol-name s) a-line)
-					  nil 'project-status s))))
+		(if filter-only
+            a-line
+          (org-add-props (replace-regexp-in-string
+					      "xxxx" (symbol-name s) a-line)
+			  nil 'project-status s)))))
 
 (defun nd/org-agenda-sort-prop (prop order a b)
   (let* ((ta (get-text-property 1 prop a))
@@ -1791,22 +1797,18 @@ set as a text property for further sorting"
             ,(nd/agenda-base-header-cmd (concat actionable "-" habit)
 										"Stale Tasks and Periodicals"
 										''nd/skip-non-stale-headings)
-			(tags-todo
+			(tags
 			 ,(concat actionable "-" periodical "-" iterator "-" habit)
 		  	 ((org-agenda-overriding-header
 		  	   (concat (and	nd/agenda-limit-project-toplevel "Toplevel ")
 		  			   "Archivable Projects"))
 		  	  (org-agenda-skip-function '(nd/skip-non-projects))
 		  	  (org-agenda-before-sorting-filter-function
-			   (lambda (l) (nd/org-agenda-filter-status '(:archivable) 'nd/get-project-status l)))
-			  (org-agenda-cmp-user-defined
-			   (lambda (a b) (nd/org-agenda-sort-prop 'project-status '(:archivable) a b)))
-		  	  (org-agenda-prefix-format '((tags . "  %-12:c %(format \"xxxx: \")")))
-		  	  (org-agenda-sorting-strategy '(user-defined-down category-keep)))))))))
+			   (lambda (l) (nd/org-agenda-filter-status '(:archivable) 'nd/get-project-status l t))))))))))
 #+END_SRC
 *** taskjuggler
 #+BEGIN_SRC emacs-lisp
-;;(require 'ox-taskjuggler)
+(require 'ox-taskjuggler)
 #+END_SRC
 * tools
 ** printing
