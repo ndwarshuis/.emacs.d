@@ -1006,7 +1006,7 @@ H is a string like +prop or -prop"
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-files '("~/Org"
                         "~/Org/projects"
-                        "~/Org/reference")
+                        "~/Org/reference/peripheral.org")
 	  org-agenda-sticky t
 
 	  org-agenda-dim-blocked-tasks nil
