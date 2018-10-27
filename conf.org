@@ -881,7 +881,7 @@ Add some useful properties:
 		   "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n")
 
 		  ("e" "email" entry (file ,capfile)
-		   "* TODO Respond to %:fromname; Re: %:subject\nDEADLINE: %(nd/org-timestamp-future 1)\n%U\n%a\n")
+		   "* TODO Respond to %:fromname; Re: %:subject  :#laptop:\nDEADLINE: %(nd/org-timestamp-future 1)\n%U\n%a\n")
 
 		  ("m" "meeting" entry (file ,capfile)
 		   "* meeting with%?  :\\%note:\n%U\n")
