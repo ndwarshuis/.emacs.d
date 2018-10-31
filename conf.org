@@ -1806,10 +1806,6 @@ nil to act as a filter (eg does not touch text properties)."
 		  	  (org-agenda-before-sorting-filter-function
 			   (lambda (l) (nd/org-agenda-filter-status '(:archivable) 'nd/get-project-status l t))))))))))
 #+END_SRC
-*** taskjuggler
-#+BEGIN_SRC emacs-lisp
-(require 'ox-taskjuggler)
-#+END_SRC
 *** gantt charts
 This is custom, non-MELPA package, so it must be loaded manually. See [[https://github.com/swillner/org-gantt/blob/master/org-gantt-manual.org][here]] for guide.
 #+BEGIN_SRC emacs-lisp
