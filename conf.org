@@ -1810,6 +1810,18 @@ nil to act as a filter (eg does not touch text properties)."
 #+BEGIN_SRC emacs-lisp
 (require 'ox-taskjuggler)
 #+END_SRC
+*** gantt charts
+This is custom, non-MELPA package, so it must be loaded manually. See [[https://github.com/swillner/org-gantt/blob/master/org-gantt-manual.org][here]] for guide.
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'load-path "~/.emacs.d/untracked/org-gantt/")
+(require 'org-gantt)
+#+END_SRC
+
+It is also useful to define a block template for gantt chart creation
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'org-structure-template-alist
+             '("og" "#+BEGIN: org-gantt-chart\n?\n#+END"))
+#+END_SRC
 * tools
 ** printing
 For some reason there is no default way to get a "print prompt." Instead one needs to either install some third-party helper or make a function like this.
