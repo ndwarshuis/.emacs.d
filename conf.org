@@ -307,6 +307,13 @@ desktop file exec directive."
   (let* ((cmd (concat "file --mime-type -b " file))
 		 (mt (shell-command-to-string cmd)))
 	(replace-regexp-in-string "\n\\'" "" mt)))
+
+(defvar nd/device-mount-dir (concat "/media/" (user-login-name)))
+
+(defun nd/get-mounted-directories (&optional mount-path)
+  "Scan MOUNT-PATH (defaults to /media/$USER for devices that have
+been mounted by udevil."
+  (seq-filter #'file-directory-p (directory-files nd/device-mount-dir t "^\\([^.]\\|\\.[^.]\\|\\.\\..\\)")))
 #+END_SRC
 ** interactive
 #+BEGIN_SRC emacs-lisp
@@ -1904,6 +1911,24 @@ By default dired uses =ls -whatever= to get its output. This does not have recur
   :ensure t
   :config
   (setq dired-du-size-format t))
+#+END_SRC
+*** mounted devices
+All my devices should be mounted in =/media/$USER=, so implement a simple help search to navigate this directory after mounting with udevil.
+#+BEGIN_SRC emacs-lisp
+(defun nd/dired-mounted-devices ()
+  "Navigate to a directory for a mounted device."
+  (interactive)
+  (let ((dev (nd/get-mounted-directories)))
+    (if dev
+        (helm
+         :sources
+         (helm-build-sync-source "Devices"
+	       :candidates (mapcar (lambda (d) `(,(file-name-base d) . ,d)) dev)
+	       :action
+	       '(("Open" . (lambda (s) (find-file s)))
+             ("Unmount" . (lambda (s) (start-process "unmount" nil "udevil" "unmount" s)))))
+         :buffer "*helm device buffer*")
+      (message "No devices mounted"))))
 #+END_SRC
 ** mu4e
 *** basic
