@@ -314,6 +314,32 @@ desktop file exec directive."
   "Scan MOUNT-PATH (defaults to /media/$USER for devices that have
 been mounted by udevil."
   (seq-filter #'file-directory-p (directory-files nd/device-mount-dir t "^\\([^.]\\|\\.[^.]\\|\\.\\..\\)")))
+
+(defun nd/device-mountable-p (devpath)
+  "Returns label or uuid if device at DEVPATH is has a readable 
+filesystem and is a usb drive."
+  (let ((devprops (shell-command-to-string (concat "udevadm info --query=property " devpath))))
+    (and (string-match-p (regexp-quote "ID_FS_TYPE") devprops)
+         (string-match-p (regexp-quote "ID_BUS=usb") devprops)
+         (progn
+           (or (string-match "ID_FS_LABEL=\\(.*\\)\n" devprops)
+               (string-match "ID_FS_UUID=\\(.*\\)\n" devprops))
+           (match-string 1 devprops)))))
+
+(defun nd/get-mountable-devices ()
+  "Return paths of all mountable devices. (see `nd/device-mountable-p')."
+  (seq-filter #'car
+              (mapcar (lambda (d) `(,(nd/device-mountable-p d) . ,d))
+                      (directory-files "/dev" t "sd.[0-9]+"))))
+
+(defun nd/mount-device (dev &rest opts)
+  "Mount device DEV using udevil."
+  (call-process "udevil" nil nil nil "mount" s))
+
+(defun nd/get-mountpoint (dev)
+  "Get the filesystem mountpoint for device DEV."
+  (let ((mp (shell-command-to-string (concat "printf %s \"$(findmnt -n -o TARGET " dev ")\""))))
+    (and (not (equal "" mp)) mp)))
 #+END_SRC
 ** interactive
 #+BEGIN_SRC emacs-lisp
@@ -1913,22 +1939,35 @@ By default dired uses =ls -whatever= to get its output. This does not have recur
   (setq dired-du-size-format t))
 #+END_SRC
 *** mounted devices
-All my devices should be mounted in =/media/$USER=, so implement a simple help search to navigate this directory after mounting with udevil.
+If dired is to replace all other file managers it must handle devices. This function assumes all my devices are mounted on =/media/$USER= and that udevil is installed. It provides mount and mount/follow ops for all usb removable media and follow/unmount for all mounted devices (note the latter includes things that are not mounted here such as samba drives, which I normally hotkey to my window manager). This /almost/ replicates the functionality of gvfs that I actually use without the bloat; the only missing piece is MPT for android (which will come later).
 #+BEGIN_SRC emacs-lisp
-(defun nd/dired-mounted-devices ()
-  "Navigate to a directory for a mounted device."
+(defun nd/helm-devices ()
+  "Mount, unmount, and navigate to removable media using helm."
   (interactive)
-  (let ((dev (nd/get-mounted-directories)))
-    (if dev
-        (helm
-         :sources
-         (helm-build-sync-source "Devices"
-	       :candidates (mapcar (lambda (d) `(,(file-name-base d) . ,d)) dev)
-	       :action
-	       '(("Open" . (lambda (s) (find-file s)))
-             ("Unmount" . (lambda (s) (start-process "unmount" nil "udevil" "unmount" s)))))
-         :buffer "*helm device buffer*")
-      (message "No devices mounted"))))
+  (let* ((mounted (mapcar
+                   (lambda (d)
+                     `(,(file-name-base d) . ,d))
+                   (nd/get-mounted-directories)))
+         (mountable (seq-filter
+                     (lambda (d) (not (member (car d) (mapcar #'car mounted))))
+                     (nd/get-mountable-devices))))
+    (helm
+     :sources
+     (list
+      (helm-build-sync-source "Mounted Devices"
+	    :candidates mounted
+	    :action
+	    '(("Open" . (lambda (s) (find-file s)))
+          ("Unmount" . (lambda (s) (start-process "unmount" nil "udevil" "unmount" s)))))
+      (helm-build-sync-source "Mountable Devices"
+	    :candidates mountable
+	    :action
+	    '(("Mount and Follow" . (lambda (s)
+                                  (nd/mount-device s)
+                                  (find-file (nd/get-mountpoint s))))
+          ("Mount" . (lambda (s) (nd/mount-device s))))))
+     :buffer "*helm device buffer*"
+     :prompt "Device: ")))
 #+END_SRC
 ** mu4e
 *** basic
@@ -2533,6 +2572,7 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-unset-key (kbd "C-x c"))
 (global-set-key (kbd "C-x k") 'nd/kill-current-buffer)
 (global-set-key (kbd "C-x C-d") 'helm-bookmarks)
+(global-set-key (kbd "C-x C-c C-d") 'nd/helm-devices)
 (global-set-key (kbd "C-x C-f") 'helm-find-files)
 (global-set-key (kbd "C-x C-b") 'helm-buffers-list)
 
