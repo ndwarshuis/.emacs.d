@@ -509,22 +509,18 @@ NOTES:
       python-shell-interpreter-args "--colors=Linux --profile=default")
 #+END_SRC
 *** haskell
+Haskell is covered just with the basic major mode and intero (provides =company= and =flycheck=) which integrates well with stack.
 #+BEGIN_SRC emacs-lisp
 (use-package haskell-mode
   :ensure t
-  :hook
-  (haskell-mode . company-mode)
   :config
-  (setq haskell-compile-command "ghc -dynamic -Wall -ferror-spans -threaded -fforce-recomp %s"
-		haskell-interactive-popup-errors nil))
-
-(use-package company-ghc
+  (setq haskell-interactive-popup-errors nil))
+  
+(use-package intero
   :ensure t
-  :after
-  (company haskell-mode)
+  :after haskell-mode
   :hook
-  (haskell-mode . (lambda () (setq-local company-backends
-									'((company-ghc))))))
+  (haskell-mode . intero-mode))
 #+END_SRC
 *** latex
 **** flycheck
@@ -2249,6 +2245,12 @@ By default, emacs counts a sentence as having at least 2 spaces after punctuatio
 #+BEGIN_SRC emacs-lisp
 (setq sentence-end-double-space nil)
 #+END_SRC
+*** evil state defaults
+Some modes use primitive emacs bindings by default. Educate them.
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'evil-motion-state-modes 'ess-help-mode)
+(add-to-list 'evil-insert-state-modes 'inferior-ess-mode)
+#+END_SRC
 *** enhancements
 delightfully ripped off from vim plugins
 **** surround
@@ -2359,35 +2361,49 @@ This is somewhat strange because all I really care about is moving between lines
   "0" 'beginning-of-visual-line
   "$" 'end-of-visual-line)
 #+END_SRC
-*** ess
-ESS has not joined the dark side. Configure similarly to term (see below) where insert mode goes into "char-mode" where I can type like a normal terminal
+*** comint
+Comint-based inferior modes often are not evil (eg =intero= and =ESS=). Configure this similarly to term (see below) where C-j/k navigate cmd history and insert mode goes to cmd input line.
+**** interactive functions
+Some common interactive functions for comint-based modes
 #+BEGIN_SRC emacs-lisp
-(add-to-list 'evil-motion-state-modes 'ess-help-mode)
-(add-to-list 'evil-insert-state-modes 'inferior-ess-mode)
-
-(defun nd/ess-char-mode-insert ()
+(defun nd/comint-char-mode-evil-insert ()
   "If not at the last line, go to the end of the buffer and enter insert mode.  Else just enter insert mode."
   (interactive)
   (if (/= (line-number-at-pos (point)) (line-number-at-pos (point-max)))
 		(goto-char (point-max))))
-
-(defun nd/inferior-ess-send-input ()
-  "Go into insert mode after `inferior-ess-send-input'."
+        
+(defun nd/comint-send-input-evil-insert (&optional send-input-cmd)
+  "Go into insert mode after calling SEND-INPUT-CMD which is usually
+the function that send the command to the interactive process in the
+REPL. If no SEND-INPUT-CMD then `comint-send-input' is used."
   (interactive)
-  (inferior-ess-send-input)
+  (if send-input-cmd (funcall send-input-cmd) (comint-send-input))
   (evil-insert 1))
-
-(evil-define-key 'normal inferior-ess-mode-map
-  (kbd "RET") 'nd/inferior-ess-send-input)
-
-(evil-define-key '(normal insert) inferior-ess-mode-map
+        
+(evil-define-key '(normal insert) comint-mode-map
   (kbd "C-k") 'comint-previous-input
   (kbd "C-j") 'comint-next-input)
+#+END_SRC
+**** ess
+#+BEGIN_SRC emacs-lisp
+(evil-define-key 'normal inferior-ess-mode-map
+  (kbd "RET") (lambda () nd/comint-send-input-evil-insert
+                'inferior-ess-send-input))
 
 (add-hook 'inferior-ess-mode-hook
 		  (lambda ()
 			(add-hook 'evil-insert-state-entry-hook
-					  'nd/ess-char-mode-insert nil t)))
+					  'nd/comint-char-mode-evil-insert nil t)))
+#+END_SRC
+**** intero
+#+BEGIN_SRC emacs-lisp
+(evil-define-key 'normal intero-repl-mode-map
+  (kbd "RET") 'nd/comint-send-input-evil-insert)
+  
+(add-hook 'intero-repl-mode-hook
+		  (lambda ()
+			(add-hook 'evil-insert-state-entry-hook
+					  'nd/comint-char-mode-evil-insert nil t)))
 #+END_SRC
 *** collection
 Most packages that don't have an evil version are in this one. I don't like surprises so I set =evil-collection-modes-list= with the modes I actually want. Some of these are further configured below.
@@ -2518,14 +2534,6 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 *** dired
 #+BEGIN_SRC emacs-lisp
 (define-key dired-mode-map (kbd "C-x g") 'magit)
-#+END_SRC
-*** haskell-mode
-#+BEGIN_SRC emacs-lisp
-(eval-after-load 'haskell-mode
-  '(define-key haskell-mode-map (kbd "C-c C-c") 'haskell-compile))
-				 
-(eval-after-load 'haskell-cabal
-  '(define-key haskell-cabal-mode-map (kbd "C-c C-c") 'haskell-compile))
 #+END_SRC
 *** helm-prefix
 Some of these are useful enough that I make give them a direct binding without requiring a prefix. For now this is fine.
