@@ -2170,6 +2170,11 @@ By default mu4e adds breaks after 80-ish chars using auto-fill-mode which makes 
 (add-hook 'mu4e-view-mode-hook 'turn-off-auto-fill)
 (add-hook 'mu4e-view-mode-hook 'visual-line-mode)
 #+END_SRC
+*** flyspell
+Spell checking is generally a good idea when writing to pointy-haired bosses.
+#+BEGIN_SRC emacs-lisp
+(add-hook 'mu4e-compose-mode-hook (lambda () (flyspell-mode 1)))
+#+END_SRC
 ** auctex
 #+BEGIN_SRC emacs-lisp
 (load "auctex.el" nil t t)
