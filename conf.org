@@ -509,6 +509,7 @@ NOTES:
       python-shell-interpreter-args "--colors=Linux --profile=default")
 #+END_SRC
 *** haskell
+**** major mode and intero
 Haskell is covered just with the basic major mode and intero (provides =company= and =flycheck=) which integrates well with stack.
 #+BEGIN_SRC emacs-lisp
 (use-package haskell-mode
@@ -521,6 +522,11 @@ Haskell is covered just with the basic major mode and intero (provides =company=
   :after haskell-mode
   :hook
   (haskell-mode . intero-mode))
+#+END_SRC
+**** camelCase
+The defacto style for haskell mandates camelcase, so use subword mode.
+#+BEGIN_SRC emacs-lisp
+(add-hook 'haskell-mode-hook #'subword-mode)
 #+END_SRC
 *** latex
 **** flycheck
