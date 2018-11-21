@@ -1219,7 +1219,7 @@ Returns t if heading has certain relationship to other headings
 (defmacro nd/compare-statuscodes (op sc1 sc2 sc-list)
   `(,op (position ,sc1 ,sc-list) (position ,sc2 ,sc-list)))
 
-(defun nd/decend-into-project (allowed-statuscodes trans-tbl get-task-status)
+(defun nd/descend-into-project (allowed-statuscodes trans-tbl get-task-status)
   (let ((project-status (first allowed-statuscodes))
 		(breaker-status (car (last allowed-statuscodes)))
 		(previous-point))
@@ -1270,7 +1270,7 @@ Returns t if heading has certain relationship to other headings
 	 
 	 ;; these require descending into the project subtasks
 	 ((equal keyword "CANC")
-	  (nd/decend-into-project
+	  (nd/descend-into-project
 	   '(:archivable :complete)
 	   '((:stuck . 1)
 		 (:held . 1)
@@ -1285,7 +1285,7 @@ Returns t if heading has certain relationship to other headings
 				  (nd/is-archivable-heading-p)) 0 1))))
 	 
 	 ((equal keyword "DONE")
-	  (nd/decend-into-project
+	  (nd/descend-into-project
 	   '(:archivable :complete :done-incomplete)
 	   '((:stuck . 2)
 		 (:held . 2)
@@ -1300,7 +1300,7 @@ Returns t if heading has certain relationship to other headings
 		   2))))
 	 
 	 ((equal keyword "TODO")
-	  (nd/decend-into-project
+	  (nd/descend-into-project
 	   '(:undone-complete :stuck :held :waiting :active)
 	   '((:complete . 0)
 		 (:archivable . 0)
