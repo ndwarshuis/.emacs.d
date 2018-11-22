@@ -824,6 +824,18 @@ By default org export files to the same location as the buffer. Apparently old o
 
 ;; (advice-add 'org-export-output-file-name :around #'nd/org-export-output-file-name)
 #+END_SRC
+** gantt charts
+This is custom, non-MELPA package, so it must be loaded manually. See [[https://github.com/swillner/org-gantt/blob/master/org-gantt-manual.org][here]] for guide.
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'load-path "~/.emacs.d/untracked/org-gantt/")
+(require 'org-gantt)
+#+END_SRC
+
+It is also useful to define a block template for gantt chart creation
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'org-structure-template-alist
+             '("og" "#+BEGIN: org-gantt-chart\n?\n#+END"))
+#+END_SRC
 ** gtd implementation
 *** overview
 This section is meant to be a big-picture overview of how GTD works in this setup. For specifics, see each section following this for further explanation and code. I should also say that most of the ideas for the code came from [[http://doc.norang.ca/org-mode.html#OrgFileStructure][Bernt Hansen's]] very detailed guide.
@@ -1110,18 +1122,6 @@ Clocking is still new and experimental (I'm not a ninja like Bernt yet). I mostl
 	  org-clock-persist t
 	  org-clock-report-include-clocking-task t)
 #+END_SRC
-*** gantt charts
-This is custom, non-MELPA package, so it must be loaded manually. See [[https://github.com/swillner/org-gantt/blob/master/org-gantt-manual.org][here]] for guide.
-#+BEGIN_SRC emacs-lisp
-(add-to-list 'load-path "~/.emacs.d/untracked/org-gantt/")
-(require 'org-gantt)
-#+END_SRC
-
-It is also useful to define a block template for gantt chart creation
-#+BEGIN_SRC emacs-lisp
-(add-to-list 'org-structure-template-alist
-             '("og" "#+BEGIN: org-gantt-chart\n?\n#+END"))
-#+END_SRC
 *** agenda
 **** targets
 The agenda files are limited to as few as possible to keep scanning and startup reasonably fast.
@@ -1260,10 +1260,9 @@ If I don't include this, I actually forget about major holidays.
 (setq calendar-holidays (append holiday-general-holidays
 								holiday-christian-holidays))
 #+END_SRC
-**** block agenda views
-***** library
+**** block agenda library
 These are functions and variables exclusively for agenda block manipulation within the context of =org-custom-agenda-commands=.
-****** variables
+***** variables
 #+BEGIN_SRC emacs-lisp
 (defconst nd/iter-future-time (* 7 24 60 60)
   "Iterators must have at least one task greater into the future to be active.")
@@ -1296,9 +1295,9 @@ These are functions and variables exclusively for agenda block manipulation with
 Currently used to tell skip functions when they can hop over
 entire subtrees to save time and ignore tasks")
 #+END_SRC
-****** task helper functions
+***** task helper functions
 These are the building blocks for skip functions.
-******* timestamps
+****** timestamps
 #+BEGIN_SRC emacs-lisp
 (defun nd/get-date-property (timestamp-property)
   "Get TIMESTAMP-PROPERTY on current heading and convert to a number.
@@ -1357,7 +1356,7 @@ to REF-TIME. Returns nil if no timestamp is found."
    'nd/is-closed-heading-p
     (- (* 60 60 24 nd/archive-delay-days))))
 #+END_SRC
-******* task level testing
+****** task level testing
 #+BEGIN_SRC emacs-lisp
 (defun nd/is-todoitem-p ()
   "Return todo keyword if heading has one."
@@ -1381,7 +1380,7 @@ to REF-TIME. Returns nil if no timestamp is found."
   "Return todo keyword if heading has no todoitem parents or children."
   (and (not (nd/heading-has-parent 'nd/is-todoitem-p)) (nd/is-task-p)))
 #+END_SRC
-******* property testing
+****** property testing
 #+BEGIN_SRC emacs-lisp
 (defun nd/is-periodical-heading-p ()
   "Return t if heading is a periodical."
@@ -1405,7 +1404,7 @@ to REF-TIME. Returns nil if no timestamp is found."
   "Return t if heading has tag TAG."
   (member tag (org-get-tags-at)))
 #+END_SRC
-******* relational testing
+****** relational testing
 Returns t if heading has certain relationship to other headings
 #+BEGIN_SRC emacs-lisp
 (defun nd/heading-has-children (heading-test)
@@ -1439,7 +1438,7 @@ Returns t if heading has certain relationship to other headings
           (setq has-non-todoitem-parent t))))
     (and has-todoitem-parent has-non-todoitem-parent)))
 #+END_SRC
-******* project level testing
+****** project level testing
 Projects are tested according to their statuscodes, which in turn are a function of the todo keywords and timestamps of their individual subtasks.
 #+BEGIN_SRC emacs-lisp
 (defmacro nd/compare-statuscodes (op sc1 sc2 sc-list)
@@ -1571,7 +1570,7 @@ obtain a statuscode-equivalent of the status of the tasks."
 	 
 	 (t (error (concat "invalid keyword detected: " keyword))))))
 #+END_SRC
-******* repeater testing
+****** repeater testing
 Iterators and periodicals are tested similarly to projects in that they have statuscodes.
 #+BEGIN_SRC emacs-lisp
 (defun nd/get-iterator-status ()
@@ -1625,9 +1624,9 @@ earlier ones."
 		(outline-next-heading)))
 	peri-status))
 #+END_SRC
-****** skip functions
+***** skip functions
 These are the primary means used to sort through tasks and build agenda block views
-******* helper skip functions and macros
+****** helper skip functions and macros
 Subunits for skip functions. Not meant to be used or called from the custom commands api
 #+BEGIN_SRC emacs-lisp
 (defun nd/skip-heading ()
@@ -1654,7 +1653,7 @@ HEADING-FUN and TEST-FUN return true"
        (if (not (and keyword ,test-fun))
            (nd/skip-heading)))))
 #+END_SRC
-******* headings
+****** headings
 Skip functions for headings which may or may not be todo-items.
 #+BEGIN_SRC emacs-lisp
 (defun nd/skip-headings-with-tags (pos-tags-list &optional neg-tags-list)
@@ -1679,7 +1678,7 @@ Skip functions for headings which may or may not be todo-items.
                 (not (nd/heading-has-parent 'nd/is-todoitem-p))))
           (nd/skip-heading)))))
 #+END_SRC
-******* atomic tasks
+****** atomic tasks
 By definition these have no parents, so I don't need to worry about skipping over projects. Any todo state is valid and we only sort by done/canc
 #+BEGIN_SRC emacs-lisp
 (defun nd/skip-non-atomic-tasks ()
@@ -1703,7 +1702,7 @@ By definition these have no parents, so I don't need to worry about skipping ove
    (and (member keyword org-done-keywords)
         (nd/is-archivable-heading-p))))
 #+END_SRC
-******* repeaters
+****** repeaters
 These are headings marked with PARENT_TYPE property that have timestamped headings as children. They are to be refilled when all children are stale. Note that I only care about the parent headings as the children should always show up in the agenda simply because they have timestamps. Parents can be either fresh (at least one child in the future) or stale (all children in the past).
 #+BEGIN_SRC emacs-lisp
 (defun nd/skip-non-iterator-parent-headings ()
@@ -1738,7 +1737,7 @@ These are headings marked with PARENT_TYPE property that have timestamped headin
                   (not (nd/heading-has-children 'nd/is-periodical-heading-p))))
         (nd/skip-heading))))
 #+END_SRC
-******* project tasks
+****** project tasks
 Note that I don't care about the timestamp in these cases because I don't archive these; I archive their parent projects. The keywords I care about are NEXT, WAIT, and HOLD because these are definitive project tasks that require/inhibit futher action. (TODO = stuck which I take care of at the project level, and DONE/CANC = archivable which is dealt with similarly)
  
 For performance, I need to assess if the parent project is skippable, in which case I jump to the next subtree.
@@ -1757,7 +1756,7 @@ For performance, I need to assess if the parent project is skippable, in which c
                 (nd/skip-heading)))
         (nd/skip-heading)))))
 #+END_SRC
-******* heading-level errors
+****** heading-level errors
 Some headings are invalid under certain conditions; these are tested here.
 #+BEGIN_SRC emacs-lisp
 (defun nd/skip-non-discontinuous-project-tasks ()
@@ -1780,7 +1779,7 @@ Some headings are invalid under certain conditions; these are tested here.
    (and (not (member keyword org-done-keywords))
         (nd/is-closed-heading-p))))
 #+END_SRC
-******* projects
+****** projects
 Projects are handled quite simply. They have statuscodes for which I test, and this can all be handled by one function. Note that this is used for "normal" projects as well as repeaters.
 #+BEGIN_SRC emacs-lisp
 (defun nd/skip-non-projects (&optional ignore-toplevel)
@@ -1795,7 +1794,7 @@ Projects are handled quite simply. They have statuscodes for which I test, and t
               (nd/skip-subtree))
         (nd/skip-heading)))))
 #+END_SRC
-****** sorting and filtering
+***** sorting and filtering
 These are used to filter and sort within block agendas (note this is different from the other filtering functions above as these are non-interactive).
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-agenda-filter-status (filter status-fun a-line
@@ -1836,7 +1835,7 @@ inputs. To be used with `org-agenda-cmp-user-defined'."
           ((< pa pb) +1)
           ((> pa pb) -1))))
 #+END_SRC
-****** block view building macros
+***** block view building macros
 Some useful shorthands to create block agenda views
 #+BEGIN_SRC emacs-lisp
 (defun nd/agenda-base-heading-cmd (match header skip-fun)
@@ -1884,7 +1883,7 @@ string."
                                            "  %-12:c       "))))
 	 (org-agenda-sorting-strategy '(user-defined-down category-keep)))))
 #+END_SRC
-****** interactive functions
+***** interactive functions
 This is basically a filter but since it is implemented through skip functions it makes more sense to include it here. It allows distinguishing between toplevel projects and projects that are subprojects of the toplevel project (I usually only care about the former).
 #+BEGIN_SRC emacs-lisp
 (defun nd/toggle-project-toplevel-display ()
@@ -1896,6 +1895,7 @@ This is basically a filter but since it is implemented through skip functions it
   (message "Showing %s project view in agenda"
            (if nd/agenda-limit-project-toplevel "toplevel" "complete")))
 #+END_SRC
+**** block agenda views
 ***** default sorting
 This gives more flexibility in ignoring items with timestamps
 #+BEGIN_SRC emacs-lisp
