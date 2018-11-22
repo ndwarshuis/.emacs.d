@@ -21,7 +21,7 @@ I use this for a variety of purposes:
 ;; required for emacsclient/daemon setup
 (if (daemonp)
     (add-hook 'after-make-frame-functions
-			  (lambda (frame)
+              (lambda (frame)
                 (select-frame frame)
                 (if (window-system frame)
                     (unless nd/theme-window-loaded
@@ -47,7 +47,7 @@ I use this for a variety of purposes:
   :config
   (require 'spaceline-config)
   (setq powerline-default-separator 'arrow
-		spaceline-buffer-size-p nil)
+        spaceline-buffer-size-p nil)
   (spaceline-spacemacs-theme))
 
 (line-number-mode 1)
@@ -119,13 +119,13 @@ No need for startup screen, tool/menu/scrollbars, or backups
   (helm-mode 1)
   :config
   (setq helm-autoresize-max-height 0
-		helm-autoresize-max-height 40
-		helm-M-x-fuzzy-match t
-		helm-buffers-fuzzy-matching t
-		helm-recentf-fuzzy-match t
-		helm-semantic-fuzzy-match t
-		helm-imenu-fuzzy-match t
-		helm-scroll-amount 8)
+        helm-autoresize-max-height 40
+        helm-M-x-fuzzy-match t
+        helm-buffers-fuzzy-matching t
+        helm-recentf-fuzzy-match t
+        helm-semantic-fuzzy-match t
+        helm-imenu-fuzzy-match t
+        helm-scroll-amount 8)
   (add-to-list 'display-buffer-alist
                `(,(rx bos "*helm" (* not-newline) "*" eos)
                  (display-buffer-in-side-window)
@@ -158,10 +158,10 @@ No need for startup screen, tool/menu/scrollbars, or backups
   :config
   (setq aw-background t)
   (custom-set-faces '(aw-leading-char-face 
-					  ((t (:foreground "#292b2e"
-						   :background "#bc6ec5"
-						   :height 1.0
-						   :box nil))))))
+                      ((t (:foreground "#292b2e"
+                           :background "#bc6ec5"
+                           :height 1.0
+                           :box nil))))))
 #+END_SRC
 ** avy
 #+BEGIN_SRC emacs-lisp
@@ -271,42 +271,42 @@ event of an error or nonlocal exit."
   "Return all applications that can open a given MIMETYPE.
 The list is comprised of alists where pairs are of the form (name . command)."
   (let* ((case-fold-search nil)
-		 (mime-regex (concat "^MimeType=.*" mimetype ";.*$"))
-		 (desktop-dirs '("/usr/share/applications"
-						 "/usr/local/share/applications"
-						 "~/.local/share/applications"))
-		 (desktop-files (mapcan (lambda (d) (directory-files d t ".*\\.desktop" t)) desktop-dirs))
-		 (app-list))
-	(dolist (file desktop-files app-list)
-	  (with-temp-buffer
-		(insert-file-contents file)
-		(let* ((tb (buffer-string)))
-		  (if (string-match mime-regex tb)
-			  (let* ((exec (progn (string-match "^Exec=\\(.*\\)$" tb)
-								  (match-string 1 tb)))
-					 (name (or
-							(progn (string-match "^Name=\\(.*\\)$" tb)
-								   (match-string 1 tb))
-							exec)))
-				(setq app-list (cons `(,name . ,exec) app-list)))))))))
+         (mime-regex (concat "^MimeType=.*" mimetype ";.*$"))
+         (desktop-dirs '("/usr/share/applications"
+                         "/usr/local/share/applications"
+                         "~/.local/share/applications"))
+         (desktop-files (mapcan (lambda (d) (directory-files d t ".*\\.desktop" t)) desktop-dirs))
+         (app-list))
+    (dolist (file desktop-files app-list)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let* ((tb (buffer-string)))
+          (if (string-match mime-regex tb)
+              (let* ((exec (progn (string-match "^Exec=\\(.*\\)$" tb)
+                                  (match-string 1 tb)))
+                     (name (or
+                            (progn (string-match "^Name=\\(.*\\)$" tb)
+                                   (match-string 1 tb))
+                            exec)))
+                (setq app-list (cons `(,name . ,exec) app-list)))))))))
 
 (defun nd/get-apps-bulk-from-mime (mimetype)
   "Like `nd/get-apps-from-mime' but only includes apps that can open
 multiple files at once for given MIMETYPE."
   (let ((case-fold-search nil))
-	(seq-filter (lambda (a) (string-match ".*%[FU].*" (car a))) (nd/get-apps-from-mime mimetype))))
+    (seq-filter (lambda (a) (string-match ".*%[FU].*" (car a))) (nd/get-apps-from-mime mimetype))))
     
 (defun nd/execute-desktop-command (cmd file)
   "Opens FILE using CMD in separate process where CMD is from a 
 desktop file exec directive."
   (let* ((cmd-arg (replace-regexp-in-string "%[fuFU]" file cmd t t)))
-	(call-process-shell-command (concat cmd-arg " &"))))
+    (call-process-shell-command (concat cmd-arg " &"))))
   
 (defun nd/get-mime-type (file)
   "Get the mime type of FILE."
   (let* ((cmd (concat "file --mime-type -b " file))
-		 (mt (shell-command-to-string cmd)))
-	(replace-regexp-in-string "\n\\'" "" mt)))
+         (mt (shell-command-to-string cmd)))
+    (replace-regexp-in-string "\n\\'" "" mt)))
 
 (defvar nd/device-mount-dir (concat "/media/" (user-login-name)))
 
@@ -391,14 +391,14 @@ filesystem and is a usb drive."
   "Launch urxvt in the current directory."
   (interactive)
   (let ((cwd (expand-file-name default-directory)))
-	(call-process "urxvt" nil 0 nil "-cd" cwd)))
+    (call-process "urxvt" nil 0 nil "-cd" cwd)))
 #+END_SRC
 * editing
 ** tabs and alignment
 First things first, don't use spaces and force tabs to 4 chars by default (because...let's compromise on things that don't matter since I am using spaces anyways)
 #+BEGIN_SRC emacs-lisp
 (setq-default indent-tabs-mode nil
-			  tab-width 4)
+              tab-width 4)
 #+END_SRC
 ** completion
 *** company
@@ -408,7 +408,7 @@ First things first, don't use spaces and force tabs to 4 chars by default (becau
   :delight " ©"
   :config
   (setq company-idle-delay 0
-		company-minimum-prefix-length 3))
+        company-minimum-prefix-length 3))
 #+END_SRC
 *** flycheck
 #+BEGIN_SRC emacs-lisp
@@ -418,11 +418,11 @@ First things first, don't use spaces and force tabs to 4 chars by default (becau
   (prog-mode . flycheck-mode)
   :config
   (setq flycheck-check-syntax-automatically '(save
-											  idle-change
-											  mode-enabled)
-		flycheck-idle-change-delay 2
-		flycheck-error-list-minimum-level 'warning
-		flycheck-navigation-minimum-level 'warning))
+                                              idle-change
+                                              mode-enabled)
+        flycheck-idle-change-delay 2
+        flycheck-error-list-minimum-level 'warning
+        flycheck-navigation-minimum-level 'warning))
 #+END_SRC
 *** yasnippet
 #+BEGIN_SRC emacs-lisp
@@ -452,7 +452,7 @@ Obviously I am going to use =helm= when I spellcheck something.
 
 Additionally, I want to automatically highlight errors whenever =flyspell-mode= is enabled.
 #+BEGIN_SRC emacs-lisp
-(add-hook 'flyspell-mode-hook 'flyspell-buffer)
+;; (add-hook 'flyspell-mode-hook 'flyspell-buffer)
 #+END_SRC
 ** progmode
 #+BEGIN_SRC emacs-lisp
@@ -491,8 +491,8 @@ NOTES:
    (inferior-ess-mode . prettify-symbols-mode))
   :config
   (setq inferior-R-args "--quiet --no-save"
-		ess-history-file "session.Rhistory"
-		ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
+        ess-history-file "session.Rhistory"
+        ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
 #+END_SRC
 *** python
 #+BEGIN_SRC emacs-lisp
@@ -541,20 +541,20 @@ There are two backends which (kinda) complement each other. The =company-math= p
 (defun nd/init-company-auctex ()
   "Set the company backends for auctex modes."
   (setq-local company-backends '((company-auctex-labels
-								  company-auctex-bibs
-								  company-auctex-macros
-								  company-auctex-symbols
-								  company-auctex-environments
-								  ;; company-latex-commands
-								  company-math-symbols-latex
-								  company-math-symbols-unicode))))
+                                  company-auctex-bibs
+                                  company-auctex-macros
+                                  company-auctex-symbols
+                                  company-auctex-environments
+                                  ;; company-latex-commands
+                                  company-math-symbols-latex
+                                  company-math-symbols-unicode))))
 
 (use-package company-math
   :ensure t
   :after company
   :config
   (setq company-math-allow-unicode-symbols-in-faces '(font-latex-math-face)
-  		company-math-disallow-latex-symbols-in-faces nil))
+        company-math-disallow-latex-symbols-in-faces nil))
 
 (use-package company-auctex
   :ensure t
@@ -571,7 +571,7 @@ I like having my lines short and readable (also easier to git). Turn on autofill
 (defun nd/turn-on-auto-fill-maybe ()
   "Prompts user to turn on `auto-fill-mode'."
   (when (y-or-n-p "Activate Auto Fill Mode? ")
-	(turn-on-auto-fill)))
+    (turn-on-auto-fill)))
   
 (add-hook 'LaTeX-mode-hook #'nd/turn-on-auto-fill-maybe)
 (add-hook 'LaTeX-mode-hook #'fci-mode)
@@ -600,15 +600,15 @@ Enable some straightforward options:
   (org-mode . visual-line-mode)
   :config
   (setq org-startup-indented t
-		org-directory "~/Org"
-		org-modules '(org-habit org-protocol)
+        org-directory "~/Org"
+        org-modules '(org-habit org-protocol)
 
-		org-special-ctrl-a/e t
-		org-special-ctrl-k t
-		org-yank-adjusted-subtrees t
+        org-special-ctrl-a/e t
+        org-special-ctrl-k t
+        org-yank-adjusted-subtrees t
 
-		org-log-into-drawer "LOGBOOK"
-		org-log-done 'time)
+        org-log-into-drawer "LOGBOOK"
+        org-log-done 'time)
 
   (require 'org-protocol)
   (run-at-time "00:59" 3600 'org-save-all-org-buffers))
@@ -625,19 +625,19 @@ These are just so much better to read
 The fonts in org headings bug me; make them smaller and less invasive.
 #+BEGIN_SRC emacs-lisp
 (add-hook 'org-mode-hook
-		  (lambda ()
-			(let ((heading-height 1.15))
-			  (set-face-attribute 'org-level-1 nil :weight 'bold :height heading-height)
-			  (set-face-attribute 'org-level-2 nil :weight 'semi-bold :height heading-height)
-			  (set-face-attribute 'org-level-3 nil :weight 'normal :height heading-height)
-			  (set-face-attribute 'org-level-4 nil :weight 'normal :height heading-height)
-			  (set-face-attribute 'org-level-5 nil :weight 'normal :height heading-height))))
+          (lambda ()
+            (let ((heading-height 1.15))
+              (set-face-attribute 'org-level-1 nil :weight 'bold :height heading-height)
+              (set-face-attribute 'org-level-2 nil :weight 'semi-bold :height heading-height)
+              (set-face-attribute 'org-level-3 nil :weight 'normal :height heading-height)
+              (set-face-attribute 'org-level-4 nil :weight 'normal :height heading-height)
+              (set-face-attribute 'org-level-5 nil :weight 'normal :height heading-height))))
 #+END_SRC
 *** src blocks
 #+BEGIN_SRC emacs-lisp
 (setq org-src-window-setup 'current-window
-	  org-src-fontify-natively t
-	  org-edit-src-content-indentation 0)
+      org-src-fontify-natively t
+      org-edit-src-content-indentation 0)
 
 (add-to-list 'org-structure-template-alist
              '("el" "#+BEGIN_SRC emacs-lisp\n?\n#+END_SRC"))
@@ -674,20 +674,20 @@ and reverts all todo keywords to TODO."
     (condition-case err
         (progn
           (save-excursion
-			;; clone once and reset
-			(org-clone-subtree-with-time-shift 1 shift)
+            ;; clone once and reset
+            (org-clone-subtree-with-time-shift 1 shift)
             (org-forward-heading-same-level 1 t)
             (org-reset-checkbox-state-subtree)
             (nd/mark-subtree-keyword "TODO")
             (call-interactively 'nd/org-log-delete)
             (org-cycle)
-			;; clone reset tree again if we need more than one clone
-			(if (> n 1)
-				(let ((additional-trees (- n 1)))
-				  (org-clone-subtree-with-time-shift additional-trees shift)
-				  (dotimes (i additional-trees)
-					(org-forward-heading-same-level 1 t)
-					(org-cycle))))))
+            ;; clone reset tree again if we need more than one clone
+            (if (> n 1)
+                (let ((additional-trees (- n 1)))
+                  (org-clone-subtree-with-time-shift additional-trees shift)
+                  (dotimes (i additional-trees)
+                    (org-forward-heading-same-level 1 t)
+                    (org-cycle))))))
       (error (message "%s" (error-message-string err))))))
 
 (defun nd/org-log-delete ()
@@ -719,20 +719,20 @@ and reverts all todo keywords to TODO."
   :ensure t
   :config
   (setq cfw:fchar-junction ?╋
-		cfw:fchar-vertical-line ?┃
-		cfw:fchar-horizontal-line ?━
-		cfw:fchar-left-junction ?┣
-		cfw:fchar-right-junction ?┫
-		cfw:fchar-top-junction ?┯
-		cfw:fchar-top-left-corner ?┏
-		cfw:fchar-top-right-corner ?┓))
+        cfw:fchar-vertical-line ?┃
+        cfw:fchar-horizontal-line ?━
+        cfw:fchar-left-junction ?┣
+        cfw:fchar-right-junction ?┫
+        cfw:fchar-top-junction ?┯
+        cfw:fchar-top-left-corner ?┏
+        cfw:fchar-top-right-corner ?┓))
 
 (use-package calfw-org
   :ensure t
   :after calfw
   :config
   (setq cfw:org-agenda-schedule-args
-		'(:deadline :timestamp)))
+        '(:deadline :timestamp)))
 #+END_SRC
 ** window splitting
 Org mode is great and all, but the windows never show up in the right place. The solutions here are simple, but have the downside that the window sizing must be changed when tags/capture templates/todo items are changed. This is because the buffer size is not known at window creation time and I didn't feel like making a function to predict it
@@ -797,7 +797,7 @@ Capture should show up in the bottom of any currently active buffer
 
 (advice-add #'org-mks :around #'nd/org-capture-window-advice)
 #+END_SRC
-** latex
+** exporting
 The default is XHTML for some reason (which few use and makes certain barbaric word processors complain). Use the much-superior html5.
 #+BEGIN_SRC emacs-lisp
 (setq org-html-doctype "html5")
@@ -950,7 +950,7 @@ These keywords are used universally for all org files (see below on quick explan
 **** colors
 Aesthetically, I like all my keywords to have bold colors.
 #+BEGIN_SRC emacs-lisp
-(setq	org-todo-keyword-faces
+(setq   org-todo-keyword-faces
       '(("TODO" :foreground "light coral" :weight bold)
         ("NEXT" :foreground "khaki" :weight bold)
         ("DONE" :foreground "light green" :weight bold)
@@ -1025,7 +1025,7 @@ Also here are the properties for repeated tasks and a few others (see comments i
 #+BEGIN_SRC emacs-lisp
 (mapc (lambda (i) (add-to-list 'org-default-properties i))
       ;; defines a repeater group
-	  '("PARENT_TYPE"
+      '("PARENT_TYPE"
         ;; defines the time shift for repeater groups
 
         "TIME_SHIFT"
@@ -1040,8 +1040,8 @@ Also here are the properties for repeated tasks and a few others (see comments i
       '(("PARENT_TYPE_ALL" . "periodical iterator")
         ("Effort_ALL" . "0:05 0:15 0:30 1:00 1:30 2:00 3:00 4:00 5:00 6:00"))
 
-	  org-use-property-inheritance
-	  '("PARENT_TYPE" "TIME_SHIFT"))
+      org-use-property-inheritance
+      '("PARENT_TYPE" "TIME_SHIFT"))
 #+END_SRC
 *** capture
 **** templates
@@ -1050,47 +1050,47 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
 (defun nd/org-timestamp-future (days)
   "Inserts an active org timestamp DAYS after the current time."
   (format-time-string (org-time-stamp-format nil)
-					  (time-add (current-time) (days-to-time 1))))
+                      (time-add (current-time) (days-to-time 1))))
 
 (let ((capfile "~/Org/capture.org"))
   (setq org-capture-templates
         ;; regular TODO task
         `(("t" "todo" entry (file ,capfile)
-		   "* TODO %?\ndeliverable: \n%U\n")
+           "* TODO %?\ndeliverable: \n%U\n")
 
           ;; for useful reference information that may be grouped with tasks
           ("n" "note" entry (file ,capfile)
-		   "* %?  :\\%note:\n%U\n")
+           "* %?  :\\%note:\n%U\n")
 
           ;; for non-actionable events that happen at a certain time
           ("a" "appointment" entry (file ,capfile)
-		   "* %?\n%U\n%^t\n")
+           "* %?\n%U\n%^t\n")
 
           ;; like appointment but multiple days
           ("s" "appointment-span" entry (file ,capfile)
-		   "* TODO %?\n%U\n%^t--%^t\n")
+           "* TODO %?\n%U\n%^t--%^t\n")
 
           ;; task with a deadline
           ("d" "deadline" entry (file ,capfile)
-		   "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n")
+           "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n")
 
           ;; for converting mu4e emails to tasks, defaults to next-day deadline
-		  ("e" "email" entry (file ,capfile)
-		   "* TODO Respond to %:fromname; Re: %:subject  :#laptop:\nDEADLINE: %(nd/org-timestamp-future 1)\n%U\n%a\n")
+          ("e" "email" entry (file ,capfile)
+           "* TODO Respond to %:fromname; Re: %:subject  :#laptop:\nDEADLINE: %(nd/org-timestamp-future 1)\n%U\n%a\n")
 
           ;; for interruptions that produce useful reference material
-		  ("m" "meeting" entry (file ,capfile)
-		   "* meeting with%?  :\\%note:\n%U\n")
-		  
+          ("m" "meeting" entry (file ,capfile)
+           "* meeting with%?  :\\%note:\n%U\n")
+          
           ;; for capturing web pages with web browser
-		  ("p" "org-protocol" entry (file ,capfile)
+          ("p" "org-protocol" entry (file ,capfile)
            "* %^{Title} :\\%note:\n%u\n#+BEGIN_QUOTE\n%i\n#+END_QUOTE"
-		   :immediate-finish t)
+           :immediate-finish t)
 
           ;; or capturing links with web browser
-		  ("L" "org-protocol link" entry (file ,capfile)
+          ("L" "org-protocol link" entry (file ,capfile)
            "* %^{Title} :\\%note:\n[[%:link][%:description]]\n%U"
-		   :immediate-finish t))))
+           :immediate-finish t))))
 #+END_SRC
 **** insert mode
 To save one more keystroke (since I use evil mode), trigger insert mode upon opening capture template.
@@ -1103,24 +1103,24 @@ Refile (like capture) should be fast, and I search all org file simultaneously u
 (setq org-refile-targets '((nil :maxlevel . 9)
                            ("~/Org/reference/idea.org" :maxlevel . 9)
                            (org-agenda-files :maxlevel . 9))
-	  org-refile-use-outline-path t
-	  org-outline-path-complete-in-steps nil
-	  org-refile-allow-creating-parent-nodes 'confirm
-	  org-indirect-buffer-display 'current-window)
+      org-refile-use-outline-path t
+      org-outline-path-complete-in-steps nil
+      org-refile-allow-creating-parent-nodes 'confirm
+      org-indirect-buffer-display 'current-window)
 #+END_SRC
 
 Prevent accidental refiling under tasks with done keywords
 #+BEGIN_SRC emacs-lisp
 (setq org-refile-target-verify-function
-	  (lambda () (not (member (nth 2 (org-heading-components)) org-done-keywords))))
+      (lambda () (not (member (nth 2 (org-heading-components)) org-done-keywords))))
 #+END_SRC
 *** clocking
 Clocking is still new and experimental (I'm not a ninja like Bernt yet). I mostly use clocking now as a way to make clean breaks between tasks (eg to discourage "mixing" tasks which is a slippery multitasking slope). I bound =F4= to =org-clock-goto= as an easy way to find my current/last clocked task in any mode (see keybindigs).
 #+BEGIN_SRC emacs-lisp
 (setq org-clock-history-length 23
-	  org-clock-out-when-done t
-	  org-clock-persist t
-	  org-clock-report-include-clocking-task t)
+      org-clock-out-when-done t
+      org-clock-persist t
+      org-clock-report-include-clocking-task t)
 #+END_SRC
 *** agenda
 **** targets
@@ -1140,8 +1140,8 @@ I personally like having sticky agendas by default so I can use multiple windows
 The agenda does not do this by default...it's annoying
 #+BEGIN_SRC emacs-lisp
 (add-hook 'org-finalize-agenda-hook
-		  (lambda () (setq org-agenda-tags-column (- 4 (window-width)))
-			(org-agenda-align-tags)))
+          (lambda () (setq org-agenda-tags-column (- 4 (window-width)))
+            (org-agenda-align-tags)))
 #+END_SRC 
 ***** prefix format
 This controls what each line on the block agenda looks like. This is reformated to include effort and remove icons.
@@ -1156,11 +1156,11 @@ This controls what each line on the block agenda looks like. This is reformated 
 These are just some options to enable/disable some aesthetic things.
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-dim-blocked-tasks nil
-	  org-agenda-compact-blocks t
-	  org-agenda-window-setup 'current-window
+      org-agenda-compact-blocks t
+      org-agenda-window-setup 'current-window
       org-agenda-start-on-weekday 0
-	  org-agenda-span 'day
-	  org-agenda-current-time-string "### -- NOW -- ###")
+      org-agenda-span 'day
+      org-agenda-current-time-string "### -- NOW -- ###")
 #+END_SRC
 
 Based on my screen size and usage patterns, this seems to be a good value to enable the maximum habit history to be shown without compromising aesthetics.
@@ -1212,17 +1212,17 @@ As it is, this allows any filter using =hasprop= to be applied and removed using
 (defvar org-agenda-hasprop-filter nil)
 
 (defun nd/org-agenda-filter-make-matcher-prop
-	(filter type &rest args)
+    (filter type &rest args)
   "Return matching matcher form for FILTER and TYPE where TYPE is not
 in the regular `org-agenda-filter-make-matcher' function. This is
 intended to be uses as :before-until advice and will return nil if
 the type is not valid (which is currently 'prop')"
   (let (f f1)
-	;; has property
-	(cond
-	 ((eq type 'hasprop)
+    ;; has property
+    (cond
+     ((eq type 'hasprop)
       (dolist (x filter)
-		(push (nd/org-agenda-filter-make-matcher-hasprop-exp x) f))))
+        (push (nd/org-agenda-filter-make-matcher-hasprop-exp x) f))))
     (if f (cons 'and (nreverse f)))))
 
 (defun nd/org-agenda-filter-make-matcher-hasprop-exp (h)
@@ -1230,35 +1230,35 @@ the type is not valid (which is currently 'prop')"
 H is a string like +prop or -prop"
  (let (op)
    (let* ((op (string-to-char h))
-		  (h (substring h 1))
-		  (f `(save-excursion
-				(let ((m (org-get-at-bol 'org-hd-marker)))
-				  (with-current-buffer
-					  (marker-buffer m)
-					(goto-char m)
-					(org-entry-get nil ,h))))))
-	 (if (eq op ?-) (list 'not f) f))))
+          (h (substring h 1))
+          (f `(save-excursion
+                (let ((m (org-get-at-bol 'org-hd-marker)))
+                  (with-current-buffer
+                      (marker-buffer m)
+                    (goto-char m)
+                    (org-entry-get nil ,h))))))
+     (if (eq op ?-) (list 'not f) f))))
 
 (defun nd/org-agenda-filter-show-all-hasprop nil
   (org-agenda-remove-filter 'hasprop))
 
 (advice-add #'org-agenda-filter-make-matcher :before-until
-			#'nd/org-agenda-filter-make-matcher-prop)
+            #'nd/org-agenda-filter-make-matcher-prop)
 
 (advice-add #'org-agenda-filter-remove-all :before
-			(lambda () (when org-agenda-hasprop-filter
-					(nd/org-agenda-filter-show-all-hasprop))))
+            (lambda () (when org-agenda-hasprop-filter
+                    (nd/org-agenda-filter-show-all-hasprop))))
 #+END_SRC
 **** holidays and birthdays
 If I don't include this, I actually forget about major holidays.
 #+BEGIN_SRC emacs-lisp
 (setq holiday-bahai-holidays nil
-	  holiday-hebrew-holidays nil
-	  holiday-oriental-holidays nil
-	  holiday-islamic-holidays nil)
+      holiday-hebrew-holidays nil
+      holiday-oriental-holidays nil
+      holiday-islamic-holidays nil)
 
 (setq calendar-holidays (append holiday-general-holidays
-								holiday-christian-holidays))
+                                holiday-christian-holidays))
 #+END_SRC
 **** block agenda library
 These are functions and variables exclusively for agenda block manipulation within the context of =org-custom-agenda-commands=.
@@ -1306,7 +1306,7 @@ If it does not have a date, it will return nil."
         (if timestamp (float-time (date-to-time timestamp)))))
 
 (defun nd/heading-compare-timestamp (timestamp-fun
-									 &optional ref-time future)
+                                     &optional ref-time future)
   "Returns the timestamp (from TIMESTAMP-FUM on the current heading) 
 if timestamp is futher back in time compared to a REF-TIME (default to 
 0 which is now, where negative is past and positive is future). If the 
@@ -1340,8 +1340,8 @@ to REF-TIME. Returns nil if no timestamp is found."
   "Return timestamp if current heading is stale."
   (nd/heading-compare-timestamp
    (lambda () (let ((ts (org-entry-get nil "TIMESTAMP")))
-		   (if (and ts (not (find ?+ ts)))
-			   (float-time (date-to-time ts)))))))
+           (if (and ts (not (find ?+ ts)))
+               (float-time (date-to-time ts)))))))
 
 (defun nd/is-fresh-heading-p ()
   "Return timestamp if current heading is fresh."
@@ -1465,110 +1465,110 @@ obtain a statuscode-equivalent of the status of the tasks."
   ;; when this is encountered the loop is broken because we are done
   ;; (the last entry trumps all others)
   (let ((project-status (first allowed-statuscodes))
-		(breaker-status (car (last allowed-statuscodes)))
-		(previous-point))
-	(save-excursion
-	  (setq previous-point (point))
-	  (outline-next-heading)
-	  ;; loop through subproject tasks until breaker-status found
-	  (while (and (not (eq project-status breaker-status))
-				  (> (point) previous-point))
-		(let ((keyword (nd/is-todoitem-p)))
-		  (if keyword
-			  (let ((new-status
-					 ;; if project then descend recursively
-					 (if (nd/heading-has-children 'nd/is-todoitem-p)
-						 (let ((n (nd/get-project-status)))
-						   ;; if project returns an allowed status
-						   ;; then use that
-						   (or (and (member n allowed-statuscodes) n)
-							   ;; otherwise look up the value in the
-							   ;; translation table and return error
-							   ;; if not found
-							   (nth (or (alist-get n trans-tbl)
-										(error (concat "status not found: " n)))
-									allowed-statuscodes)))
-					   ;; if tasks then use get-task-status to obtain status
-					   (nth (funcall get-task-status keyword)
-							allowed-statuscodes))))
-				(if (nd/compare-statuscodes > new-status project-status allowed-statuscodes)
-					(setq project-status new-status)))))
-		(setq previous-point (point))
-		(org-forward-heading-same-level 1 t)))
-	project-status))
+        (breaker-status (car (last allowed-statuscodes)))
+        (previous-point))
+    (save-excursion
+      (setq previous-point (point))
+      (outline-next-heading)
+      ;; loop through subproject tasks until breaker-status found
+      (while (and (not (eq project-status breaker-status))
+                  (> (point) previous-point))
+        (let ((keyword (nd/is-todoitem-p)))
+          (if keyword
+              (let ((new-status
+                     ;; if project then descend recursively
+                     (if (nd/heading-has-children 'nd/is-todoitem-p)
+                         (let ((n (nd/get-project-status)))
+                           ;; if project returns an allowed status
+                           ;; then use that
+                           (or (and (member n allowed-statuscodes) n)
+                               ;; otherwise look up the value in the
+                               ;; translation table and return error
+                               ;; if not found
+                               (nth (or (alist-get n trans-tbl)
+                                        (error (concat "status not found: " n)))
+                                    allowed-statuscodes)))
+                       ;; if tasks then use get-task-status to obtain status
+                       (nth (funcall get-task-status keyword)
+                            allowed-statuscodes))))
+                (if (nd/compare-statuscodes > new-status project-status allowed-statuscodes)
+                    (setq project-status new-status)))))
+        (setq previous-point (point))
+        (org-forward-heading-same-level 1 t)))
+    project-status))
 
 (defun nd/get-project-status ()
   "Return project heading statuscode (assumes it is indeed a project)."
   (let ((keyword (nd/is-todoitem-p)))
     ;;
-	;; these first three are easy because they only require
-	;; testing the project headline and nothing underneath
+    ;; these first three are easy because they only require
+    ;; testing the project headline and nothing underneath
     ;;
-	(cond
+    (cond
      ;; it does not make sense for projects to be scheduled
-	 ((nd/is-scheduled-heading-p) :scheduled-project)
+     ((nd/is-scheduled-heading-p) :scheduled-project)
 
      ;; held projects do not care what is underneath them
-	 ((equal keyword "HOLD") :held)
+     ((equal keyword "HOLD") :held)
 
      ;; projects with invalid todostates are nonsense
-	 ((member keyword nd/project-invalid-todostates)
-	  :invalid-todostate)
-	 
+     ((member keyword nd/project-invalid-todostates)
+      :invalid-todostate)
+     
      ;;
-	 ;; these require descending into the project subtasks
+     ;; these require descending into the project subtasks
      ;;
 
      ;; canceled projects can either be archivable or complete
      ;; any errors or undone tasks are irrelevant
-	 ((equal keyword "CANC")
-	  (nd/descend-into-project
-	   '(:archivable :complete)
-	   '((:stuck . 1)
-		 (:held . 1)
-		 (:waiting . 1)
-		 (:active . 1)
-		 (:scheduled-project . 1)
-		 (:invalid-todostate . 1)
-		 (:undone-complete . 1)
-		 (:done-incomplete . 1))
-	   (lambda (k)
-		 (if (and (member k org-done-keywords)
-				  (nd/is-archivable-heading-p)) 0 1))))
-	 
+     ((equal keyword "CANC")
+      (nd/descend-into-project
+       '(:archivable :complete)
+       '((:stuck . 1)
+         (:held . 1)
+         (:waiting . 1)
+         (:active . 1)
+         (:scheduled-project . 1)
+         (:invalid-todostate . 1)
+         (:undone-complete . 1)
+         (:done-incomplete . 1))
+       (lambda (k)
+         (if (and (member k org-done-keywords)
+                  (nd/is-archivable-heading-p)) 0 1))))
+     
      ;; done projects are like canceled projects but can also be incomplete
-	 ((equal keyword "DONE")
-	  (nd/descend-into-project
-	   '(:archivable :complete :done-incomplete)
-	   '((:stuck . 2)
-		 (:held . 2)
-		 (:waiting . 2)
-		 (:active . 2)
-		 (:scheduled-project . 2)
-		 (:invalid-todostate . 2)
-		 (:undone-complete . 2))
-	   (lambda (k)
-		 (if (member k org-done-keywords)
-			 (if (nd/is-archivable-heading-p) 0 1)
-		   2))))
-	 
+     ((equal keyword "DONE")
+      (nd/descend-into-project
+       '(:archivable :complete :done-incomplete)
+       '((:stuck . 2)
+         (:held . 2)
+         (:waiting . 2)
+         (:active . 2)
+         (:scheduled-project . 2)
+         (:invalid-todostate . 2)
+         (:undone-complete . 2))
+       (lambda (k)
+         (if (member k org-done-keywords)
+             (if (nd/is-archivable-heading-p) 0 1)
+           2))))
+     
      ;; project with TODO states could be basically any status
-	 ((equal keyword "TODO")
-	  (nd/descend-into-project
-	   '(:undone-complete :stuck :held :waiting :active)
-	   '((:complete . 0)
-		 (:archivable . 0)
-		 (:scheduled-project . 1)
-		 (:invalid-todostate . 1)
-		 (:done-incomplete . 1))
-	   (lambda (k)
-		 (cond ((equal k "TODO") (if (nd/is-scheduled-heading-p) 4 1))
-			   ((equal k "HOLD") 2)
-			   ((equal k "WAIT") 3)
-			   ((equal k "NEXT") 4)
-			   (t 0)))))
-	 
-	 (t (error (concat "invalid keyword detected: " keyword))))))
+     ((equal keyword "TODO")
+      (nd/descend-into-project
+       '(:undone-complete :stuck :held :waiting :active)
+       '((:complete . 0)
+         (:archivable . 0)
+         (:scheduled-project . 1)
+         (:invalid-todostate . 1)
+         (:done-incomplete . 1))
+       (lambda (k)
+         (cond ((equal k "TODO") (if (nd/is-scheduled-heading-p) 4 1))
+               ((equal k "HOLD") 2)
+               ((equal k "WAIT") 3)
+               ((equal k "NEXT") 4)
+               (t 0)))))
+     
+     (t (error (concat "invalid keyword detected: " keyword))))))
 #+END_SRC
 ****** repeater testing
 Iterators and periodicals are tested similarly to projects in that they have statuscodes.
@@ -1578,51 +1578,51 @@ Iterators and periodicals are tested similarly to projects in that they have sta
  `nd/get-iter-statuscodes.' where latter codes in the list trump 
 earlier ones."
   (let ((iter-status (first nd/iter-statuscodes))
-		(subtree-end (save-excursion (org-end-of-subtree t))))
-	(save-excursion
-	  (setq previous-point (point))
-	  (outline-next-heading)
-	  (while (and (not (eq iter-status :active))
-				  (< (point) subtree-end))
-		(let ((keyword (nd/is-atomic-task-p))
-			  (new-status))
-		  (if keyword
-			  (progn
-				(setq new-status (if (nd/heading-compare-timestamp
-									  (lambda ()
-										(or (nd/is-scheduled-heading-p)
-											(nd/is-deadlined-heading-p)))
-										nd/iter-future-time t)
-									 :active
-								   :empty))
-				(if (nd/compare-statuscodes > new-status iter-status nd/iter-statuscodes)
-					(setq iter-status new-status)))))
-		(outline-next-heading)))
-	iter-status))
+        (subtree-end (save-excursion (org-end-of-subtree t))))
+    (save-excursion
+      (setq previous-point (point))
+      (outline-next-heading)
+      (while (and (not (eq iter-status :active))
+                  (< (point) subtree-end))
+        (let ((keyword (nd/is-atomic-task-p))
+              (new-status))
+          (if keyword
+              (progn
+                (setq new-status (if (nd/heading-compare-timestamp
+                                      (lambda ()
+                                        (or (nd/is-scheduled-heading-p)
+                                            (nd/is-deadlined-heading-p)))
+                                        nd/iter-future-time t)
+                                     :active
+                                   :empty))
+                (if (nd/compare-statuscodes > new-status iter-status nd/iter-statuscodes)
+                    (setq iter-status new-status)))))
+        (outline-next-heading)))
+    iter-status))
     
 (defun nd/get-periodical-status ()
   "Get the status of a periodical where allowed statuscodes are in list
  `nd/get-peri-statuscodes.' where latter codes in the list trump 
 earlier ones."
   (let ((peri-status :uninit)
-		(subtree-end (save-excursion (org-end-of-subtree t))))
-	(save-excursion
-	  (setq previous-point (point))
-	  (outline-next-heading)
-	  (while (and (not (eq peri-status :fresh))
-				  (< (point) subtree-end))
-		(if (and (nd/is-periodical-heading-p)
-				 (not (nd/heading-has-children 'nd/is-periodical-heading-p)))
-			(let ((new-status
-				   (if (nd/heading-compare-timestamp
-						'nd/is-timestamped-heading-p
-						nd/iter-future-time t)
-					   :fresh
-					 :stale)))
-			  (if (nd/compare-statuscodes > new-status peri-status nd/peri-statuscodes)
-				  (setq peri-status new-status))))
-		(outline-next-heading)))
-	peri-status))
+        (subtree-end (save-excursion (org-end-of-subtree t))))
+    (save-excursion
+      (setq previous-point (point))
+      (outline-next-heading)
+      (while (and (not (eq peri-status :fresh))
+                  (< (point) subtree-end))
+        (if (and (nd/is-periodical-heading-p)
+                 (not (nd/heading-has-children 'nd/is-periodical-heading-p)))
+            (let ((new-status
+                   (if (nd/heading-compare-timestamp
+                        'nd/is-timestamped-heading-p
+                        nd/iter-future-time t)
+                       :fresh
+                     :stale)))
+              (if (nd/compare-statuscodes > new-status peri-status nd/peri-statuscodes)
+                  (setq peri-status new-status))))
+        (outline-next-heading)))
+    peri-status))
 #+END_SRC
 ***** skip functions
 These are the primary means used to sort through tasks and build agenda block views
@@ -1718,7 +1718,7 @@ These are headings marked with PARENT_TYPE property that have timestamped headin
   (nd/skip-heading-with
    nd/is-atomic-task-p
    (not (or (nd/is-scheduled-heading-p)
-			(nd/is-deadlined-heading-p)))))
+            (nd/is-deadlined-heading-p)))))
             
 (defun nd/skip-non-periodical-parent-headings ()
   "Skip headings that are not toplevel periodical headings."
@@ -1733,7 +1733,7 @@ These are headings marked with PARENT_TYPE property that have timestamped headin
   (save-restriction
     (widen)
     (if (not (and (nd/is-periodical-heading-p)
-				  (not (nd/is-timestamped-heading-p))
+                  (not (nd/is-timestamped-heading-p))
                   (not (nd/heading-has-children 'nd/is-periodical-heading-p))))
         (nd/skip-heading))))
 #+END_SRC
@@ -1789,7 +1789,7 @@ Projects are handled quite simply. They have statuscodes for which I test, and t
     (let ((keyword (nd/is-project-p)))
       (if keyword
           (if (and nd/agenda-limit-project-toplevel
-				   (not ignore-toplevel)
+                   (not ignore-toplevel)
                    (nd/heading-has-parent 'nd/is-todoitem-p))
               (nd/skip-subtree))
         (nd/skip-heading)))))
@@ -1813,23 +1813,23 @@ text property for further sorting.
 If option FILTER-ONLY is t, function only return the unmodified a-line 
 or nil to act as a filter (eg does not touch text properties)."
   (let* ((m (get-text-property 1 'org-marker a-line))
-		 (s (with-current-buffer (marker-buffer m)
-			  (goto-char m)
-			  (funcall status-fun))))
-	(if (member s filter)
-		(if filter-only
+         (s (with-current-buffer (marker-buffer m)
+              (goto-char m)
+              (funcall status-fun))))
+    (if (member s filter)
+        (if filter-only
             a-line
           (org-add-props (replace-regexp-in-string
-					      "xxxx" (symbol-name s) a-line)
-			  nil 'project-status s)))))
+                          "xxxx" (symbol-name s) a-line)
+              nil 'project-status s)))))
 
 (defun nd/org-agenda-sort-prop (prop order a b)
   "Sort a block agenda view by text property PROP given a list ORDER
 of said text properties in the desired order and lines A and B as 
 inputs. To be used with `org-agenda-cmp-user-defined'."
   (let* ((ta (get-text-property 1 prop a))
-		 (tb (get-text-property 1 prop b))
-		 (pa (position ta order :test (if (stringp ta) #'equal)))
+         (tb (get-text-property 1 prop b))
+         (pa (position ta order :test (if (stringp ta) #'equal)))
          (pb (position tb order :test (if (stringp tb) #'equal))))
     (cond ((or (null pa) (null pb)) nil)
           ((< pa pb) +1)
@@ -1871,17 +1871,17 @@ TODO determines if this is a tags-todo (t) or tags (nil) block, and
 STATUS-PX as t enables the statuscode to be formatted into the prefix
 string."
   `(,(if 'tags-todo 'tags)
-	,match
-	((org-agenda-overriding-header ,header)
+    ,match
+    ((org-agenda-overriding-header ,header)
      (org-agenda-skip-function ,skip-fun)
-	 (org-agenda-before-sorting-filter-function
-	  (lambda (l) (nd/org-agenda-filter-status ,kw-list ,status-fun l)))
-	 (org-agenda-cmp-user-defined
-	  (lambda (a b) (nd/org-agenda-sort-prop 'project-status ,kw-list a b)))
-	 (org-agenda-prefix-format '((tags . ,(if status-px
+     (org-agenda-before-sorting-filter-function
+      (lambda (l) (nd/org-agenda-filter-status ,kw-list ,status-fun l)))
+     (org-agenda-cmp-user-defined
+      (lambda (a b) (nd/org-agenda-sort-prop 'project-status ,kw-list a b)))
+     (org-agenda-prefix-format '((tags . ,(if status-px
                                              "  %-12:c %(format \"xxxx: \")"
                                            "  %-12:c       "))))
-	 (org-agenda-sorting-strategy '(user-defined-down category-keep)))))
+     (org-agenda-sorting-strategy '(user-defined-down category-keep)))))
 #+END_SRC
 ***** interactive functions
 This is basically a filter but since it is implemented through skip functions it makes more sense to include it here. It allows distinguishing between toplevel projects and projects that are subprojects of the toplevel project (I usually only care about the former).
@@ -1921,10 +1921,10 @@ By default I want block agendas to sort based on the todo keyword (with NEXT bei
 These agenda commands are the center of the gtd workflow. Some are slower than dirt but that's ok becuase the load times are far less than the that I would waste rifling through each org file trying to find a task.
 #+BEGIN_SRC emacs-lisp
 (let* ((actionable "-NA-REFILE-%inc")
-	   (periodical "PARENT_TYPE=\"periodical\"")
-	   (iterator "PARENT_TYPE=\"iterator\"")
-	   (habit "STYLE=\"habit\"")
-	   (task-match (concat actionable "-" periodical "-" habit "/!"))
+       (periodical "PARENT_TYPE=\"periodical\"")
+       (iterator "PARENT_TYPE=\"iterator\"")
+       (habit "STYLE=\"habit\"")
+       (task-match (concat actionable "-" periodical "-" habit "/!"))
        (act-no-rep-match (concat actionable "-" periodical "-" iterator "-" habit "/!"))
        (peri-match (concat actionable "+" periodical "-" iterator "-" habit))
        (iter-match (concat actionable "-" periodical "+" iterator "-" habit "/!")))
@@ -1932,11 +1932,11 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
   (setq
    org-agenda-custom-commands
    `(("a"
-	  "Calendar View"
-	  ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc" "REFILE")))
-						(org-agenda-include-diary t)))))
+      "Calendar View"
+      ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc" "REFILE")))
+                        (org-agenda-include-diary t)))))
 
-	 ("t"
+     ("t"
       "Task View"
       (,(nd/agenda-base-task-cmd act-no-rep-match
                                  "Project Tasks"
@@ -1948,87 +1948,87 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
       "Project View"
       (,(nd/agenda-base-project-cmd
          act-no-rep-match
-		 '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Projects")
+         '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Projects")
          ''nd/skip-non-projects
-		 ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
+         ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
                                :stuck :waiting :held :active)
          ''nd/get-project-status t t)))
-		  
+          
      ("i"
       "Incubator View"
       ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags nil '("%inc")))
-				   (org-agenda-span 7)
+                   (org-agenda-span 7)
                    (org-agenda-time-grid nil)
                    (org-agenda-entry-types '(:deadline :timestamp))))
        ,(nd/agenda-base-heading-cmd "-NA-REFILE+%inc"
-								   "Stale Incubated Timestamps"
-								   ''nd/skip-non-stale-headings)
+                                   "Stale Incubated Timestamps"
+                                   ''nd/skip-non-stale-headings)
        ,(nd/agenda-base-task-cmd "-NA-REFILE+%inc/!"
-								 "Stale Incubated Tasks"
-								 ''nd/skip-non-archivable-atomic-tasks)
+                                 "Stale Incubated Tasks"
+                                 ''nd/skip-non-archivable-atomic-tasks)
        ,(nd/agenda-base-task-cmd "-NA-REFILE+%inc/!"
-								 "Incubated Tasks"
-								 ''nd/skip-non-atomic-tasks)
+                                 "Incubated Tasks"
+                                 ''nd/skip-non-atomic-tasks)
        ,(nd/agenda-base-project-cmd
-		 "-NA-REFILE+%inc/!"
-		 '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Incubated Projects")
+         "-NA-REFILE+%inc/!"
+         '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Incubated Projects")
          ''nd/skip-non-projects
-		 ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
+         ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
                                :stuck :waiting :held :active)
          ''nd/get-project-status
          t t)))
-		  
+          
      ("P"
       "Periodical View"
       (,(nd/agenda-base-project-cmd
-		 (concat actionable "-" iterator "+" periodical "-" habit)
+         (concat actionable "-" iterator "+" periodical "-" habit)
          "Periodical Status"
          ''nd/skip-non-periodical-parent-headings
-		 'nd/peri-statuscodes ''nd/get-periodical-status nil t)
+         'nd/peri-statuscodes ''nd/get-periodical-status nil t)
        ,(nd/agenda-base-heading-cmd "-NA-REFILE+PARENT_TYPE=\"periodical\""
-								   "Untimestamped"
-								   ''nd/skip-non-periodical-untimestamped)))
+                                   "Untimestamped"
+                                   ''nd/skip-non-periodical-untimestamped)))
 
      ("I"
       "Iterator View"
       (,(nd/agenda-base-project-cmd
-		 "-NA-REFILE+PARENT_TYPE=\"iterator\""
+         "-NA-REFILE+PARENT_TYPE=\"iterator\""
          "Iterator Status"
          ''nd/skip-non-iterator-parent-headings
-		 'nd/iter-statuscodes ''nd/get-iterator-status nil t)
+         'nd/iter-statuscodes ''nd/get-iterator-status nil t)
        ,(nd/agenda-base-task-cmd "-NA-REFILE+PARENT_TYPE=\"iterator\"/!"
-								 "Unscheduled or Undeaded"
-								 ''nd/skip-non-iterator-unscheduled)))
+                                 "Unscheduled or Undeaded"
+                                 ''nd/skip-non-iterator-unscheduled)))
 
      ("r" "Refile" ((tags "REFILE" ((org-agenda-overriding-header "Tasks to Refile"))
                           (org-tags-match-list-sublevels nil))))
      
      ("f" "Flagged" ((tags "%flag" ((org-agenda-overriding-header "Flagged Tasks")))))
      
-	 ("e"
-	  "Critical Errors"
+     ("e"
+      "Critical Errors"
       (,(nd/agenda-base-task-cmd task-match
-								 "Discontinous Project"
-								 ''nd/skip-non-discontinuous-project-tasks)
-	   ,(nd/agenda-base-heading-cmd task-match
-								    "Undone Closed"
-								    ''nd/skip-non-undone-closed-todoitems)
+                                 "Discontinous Project"
+                                 ''nd/skip-non-discontinuous-project-tasks)
+       ,(nd/agenda-base-heading-cmd task-match
+                                    "Undone Closed"
+                                    ''nd/skip-non-undone-closed-todoitems)
        ,(nd/agenda-base-heading-cmd (concat actionable "-" periodical)
-								    "Done Unclosed"
-								    ''nd/skip-non-done-unclosed-todoitems)))
+                                    "Done Unclosed"
+                                    ''nd/skip-non-done-unclosed-todoitems)))
 
      ("A"
       "Archivable Tasks and Projects"
       (,(nd/agenda-base-heading-cmd (concat actionable "-" periodical "-" habit)
-	                                "Archivable Atomic Tasks and Iterators"
-								    ''nd/skip-non-archivable-atomic-tasks)
+                                    "Archivable Atomic Tasks and Iterators"
+                                    ''nd/skip-non-archivable-atomic-tasks)
        ,(nd/agenda-base-heading-cmd (concat actionable "-" habit)
-								   "Stale Tasks and Periodicals"
-								   ''nd/skip-non-stale-headings)
+                                   "Stale Tasks and Periodicals"
+                                   ''nd/skip-non-stale-headings)
 
        ,(nd/agenda-base-project-cmd
-		 (concat actionable "-" periodical "-" iterator "-" habit)
-		 '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Archivable Projects")
+         (concat actionable "-" periodical "-" iterator "-" habit)
+         '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Archivable Projects")
          ''nd/skip-non-projects ''(:archivable) ''nd/get-project-status))))))
 #+END_SRC
 * tools
@@ -2039,7 +2039,7 @@ For some reason there is no default way to get a "print prompt." Instead one nee
   "Set the printer name using helm-completion to select printer."
   (interactive)
   (let ((pl (or helm-ff-printer-list (helm-ff-find-printers))))
-	(if pl (setq printer-name (helm-comp-read "Printer: " pl)))))
+    (if pl (setq printer-name (helm-comp-read "Printer: " pl)))))
 #+END_SRC
 ** magit
 #+BEGIN_SRC emacs-lisp
@@ -2048,7 +2048,7 @@ For some reason there is no default way to get a "print prompt." Instead one nee
   :config
   :delight auto-revert-mode
   (setq magit-push-always-verify nil
-		git-commit-summary-max-length 50))
+        git-commit-summary-max-length 50))
 #+END_SRC
 ** dired
 *** no confirm
@@ -2060,28 +2060,28 @@ Keeping confirmation enabled does weird stuff with helm. Not ideal at the moment
 Only supports tar.gz, tar.bz2, tar.xz, and .zip by default. Add support for more fun algos such as lzo and zpaq
 #+BEGIN_SRC emacs-lisp
 (if (file-exists-p "/usr/bin/7z")
-	(add-to-list 'dired-compress-files-alist
-					'("\\.7z\\'" . "7z a %o %i")))
+    (add-to-list 'dired-compress-files-alist
+                    '("\\.7z\\'" . "7z a %o %i")))
 
 (if (file-exists-p "/usr/bin/lrzip")
-	(progn
-	  (add-to-list 'dired-compress-files-alist
-				   '("\\.lrz\\'" . "lrzip -L 9 -o %o %i &"))
-	  (add-to-list 'dired-compress-files-alist
-				   '("\\.lzo\\'" . "lrzip -l -L 9 -o %o %i &"))
-	  (add-to-list 'dired-compress-files-alist
-				   '("\\.zpaq\\'" . "lrzip -z -L 9 -o %o %i &"))))
+    (progn
+      (add-to-list 'dired-compress-files-alist
+                   '("\\.lrz\\'" . "lrzip -L 9 -o %o %i &"))
+      (add-to-list 'dired-compress-files-alist
+                   '("\\.lzo\\'" . "lrzip -l -L 9 -o %o %i &"))
+      (add-to-list 'dired-compress-files-alist
+                   '("\\.zpaq\\'" . "lrzip -z -L 9 -o %o %i &"))))
 
 ;; NOTE: this must be after the shorter lrz algos otherwise it will
 ;; always default to .lrz and not .tar.lrz
 (if (file-exists-p "/usr/bin/lrztar")
-	(progn
-	  (add-to-list 'dired-compress-files-alist
-				   '("\\.tar\\.lrz\\'" . "lrztar -L 9 -o %o %i &"))
-	  (add-to-list 'dired-compress-files-alist
-				   '("\\.tar\\.lzo\\'" . "lrztar -l -L 9 -o %o %i &"))
-	  (add-to-list 'dired-compress-files-alist
-				   '("\\.tar\\.zpaq\\'" . "lrztar -z -L 9 -o %o %i &"))))
+    (progn
+      (add-to-list 'dired-compress-files-alist
+                   '("\\.tar\\.lrz\\'" . "lrztar -L 9 -o %o %i &"))
+      (add-to-list 'dired-compress-files-alist
+                   '("\\.tar\\.lzo\\'" . "lrztar -l -L 9 -o %o %i &"))
+      (add-to-list 'dired-compress-files-alist
+                   '("\\.tar\\.zpaq\\'" . "lrztar -z -L 9 -o %o %i &"))))
 #+END_SRC
 *** formatting for humans
 make sizes human readable
@@ -2097,14 +2097,14 @@ By default the included gnus-dired package does not understan mu4e, so override 
 
 (eval-after-load 'gnus-dired
   '(defun gnus-dired-mail-buffers ()
-	 "Return a list of active mu4e message buffers."
-	 (let (buffers)
+     "Return a list of active mu4e message buffers."
+     (let (buffers)
        (save-current-buffer
-		 (dolist (buffer (buffer-list t))
+         (dolist (buffer (buffer-list t))
            (set-buffer buffer)
            (when (and (derived-mode-p 'message-mode)
-					  (null message-sent-message-via))
-			 (push (buffer-name buffer) buffers))))
+                      (null message-sent-message-via))
+             (push (buffer-name buffer) buffers))))
        (nreverse buffers))))
 
 (setq gnus-dired-mail-mode 'mu4e-user-agent)
@@ -2135,14 +2135,14 @@ If dired is to replace all other file managers it must handle devices. This func
      :sources
      (list
       (helm-build-sync-source "Mounted Devices"
-	    :candidates mounted
-	    :action
-	    '(("Open" . (lambda (s) (find-file s)))
+        :candidates mounted
+        :action
+        '(("Open" . (lambda (s) (find-file s)))
           ("Unmount" . (lambda (s) (start-process "unmount" nil "udevil" "unmount" s)))))
       (helm-build-sync-source "Mountable Devices"
-	    :candidates mountable
-	    :action
-	    '(("Mount and Follow" . (lambda (s)
+        :candidates mountable
+        :action
+        '(("Mount and Follow" . (lambda (s)
                                   (nd/mount-device s)
                                   (find-file (nd/get-mountpoint s))))
           ("Mount" . (lambda (s) (nd/mount-device s))))))
@@ -2155,39 +2155,39 @@ If dired is to replace all other file managers it must handle devices. This func
 (require 'mu4e)
 
 (setq mail-user-agent 'mu4e-user-agent
-	  mu4e-maildir "/mnt/data/Mail"
+      mu4e-maildir "/mnt/data/Mail"
 
-	  mu4e-attachment-dir "~/Downloads"
-
-	  mu4e-view-show-images t
-      mu4e-headers-show-target nil
+      mu4e-attachment-dir "~/Downloads"
       
+      mu4e-view-show-images t
+      mu4e-headers-show-target nil
+
       message-kill-buffer-on-exit t
       
-	  mu4e-change-filenames-when-moving t
+      mu4e-change-filenames-when-moving t
 
-	  mu4e-confirm-quit nil
+      mu4e-confirm-quit nil
 
-	  mu4e-view-prefer-html t
+      mu4e-view-prefer-html t
 
-	  mu4e-compose-dont-reply-to-self t
+      mu4e-compose-dont-reply-to-self t
       
-	  mu4e-get-mail-command "systemctl --user start mbsync"
+      mu4e-get-mail-command "systemctl --user start mbsync"
 
-	  user-full-name "Dwarshuis, Nathan J")
+      user-full-name "Dwarshuis, Nathan J")
 #+END_SRC
 *** headers view
 #+BEGIN_SRC emacs-lisp
 (setq mu4e-headers-fields '((:human-date . 11)
-							(:flags . 5)
-							(:from . 22)
-							(:thread-subject))
-	  mu4e-headers-date-format "%F"
-	  mu4e-headers-time-format "%R"
-	  mu4e-use-fancy-chars nil)
+                            (:flags . 5)
+                            (:from . 22)
+                            (:thread-subject))
+      mu4e-headers-date-format "%F"
+      mu4e-headers-time-format "%R"
+      mu4e-use-fancy-chars nil)
 #+END_SRC
 *** citing
-The citation line should enable history filding in outlook. This is enabled by using 32 underscores followed by the addressing info of the previous message(s).
+The citation line should enable history folding in outlook. This is enabled by using 32 underscores followed by the addressing info of the previous message(s).
 #+BEGIN_SRC emacs-lisp
 ;; necessary for the header macros below
 (require 'nnheader)
@@ -2195,13 +2195,13 @@ The citation line should enable history filding in outlook. This is enabled by u
 (defun nd/message-insert-citation-header ()
   "Insert the header of the reply message."
   (let* ((h message-reply-headers)
-		 (sep "________________________________")
-		 (from (concat "From: " (mail-header-from h)))
-		 (date (concat "Sent: " (mail-header-date h)))
-		 (to (concat "To: " user-full-name))
-		 (subj (concat "Subject: " (message-strip-subject-re (mail-header-subject h)))))
-	(insert (string-join `("" ,sep ,from ,date ,to ,subj "") "\n"))))
-	
+         (sep "________________________________")
+         (from (concat "From: " (mail-header-from h)))
+         (date (concat "Sent: " (mail-header-date h)))
+         (to (concat "To: " user-full-name))
+         (subj (concat "Subject: " (message-strip-subject-re (mail-header-subject h)))))
+    (insert (string-join `("" ,sep ,from ,date ,to ,subj "") "\n"))))
+    
 (setq message-citation-line-function 'nd/message-insert-citation-header)
 #+END_SRC
 
@@ -2218,19 +2218,19 @@ By default the citation is destroyed (as in totally textified) if it is HTML. I 
  mu4e-compose-pre-hook
  (lambda ()
    (let* ((msg mu4e-compose-parent-message)
-		  (html (and msg (plist-get msg :body-html)))
-		  ;; oops, mu4e screwed up
-		  (mu4e-html2text-command
-		   (if (file-exists-p "/usr/bin/html2text")
-			   "html2text --ignore-emphasis --images-to-alt --body-width=0"
-			 'mu4e-shr2text)))
-	 (when (and html mu4e-view-prefer-html (member compose-type '(reply forward)))
-	   ;; hackity hack, since the normal mu4e-message-body-text function
-	   ;; does not render the desired html, do it here and force the
-	   ;; aforementioned function to only look at text by removing
-	   ;; the html
-	   (plist-put msg :body-txt (mu4e~html2text-shell msg mu4e-html2text-command))
-	   (plist-put msg :body-html nil)))))
+          (html (and msg (plist-get msg :body-html)))
+          ;; oops, mu4e screwed up
+          (mu4e-html2text-command
+           (if (file-exists-p "/usr/bin/html2text")
+               "html2text --ignore-emphasis --images-to-alt --body-width=0"
+             'mu4e-shr2text)))
+     (when (and html mu4e-view-prefer-html (member compose-type '(reply forward)))
+       ;; hackity hack, since the normal mu4e-message-body-text function
+       ;; does not render the desired html, do it here and force the
+       ;; aforementioned function to only look at text by removing
+       ;; the html
+       (plist-put msg :body-txt (mu4e~html2text-shell msg mu4e-html2text-command))
+       (plist-put msg :body-html nil)))))
 #+END_SRC
 *** smtp
 #+BEGIN_SRC emacs-lisp
@@ -2239,7 +2239,7 @@ By default the citation is destroyed (as in totally textified) if it is HTML. I 
 ;; (require 'secrets)
 ;; (setq secrets-enabled t)
 (setq send-mail-function 'smtpmail-send-it
-	  message-send-mail-function 'smtpmail-send-it)
+      message-send-mail-function 'smtpmail-send-it)
 (add-to-list 'auth-sources (expand-file-name "~/.emacs.d/.authinfo_mu4e.gpg"))
 ;; (add-to-list 'auth-sources "secrets:default")
 #+END_SRC
@@ -2247,79 +2247,79 @@ By default the citation is destroyed (as in totally textified) if it is HTML. I 
 I have current have three contexts, personal and two work accounts. The first is a gmail account and the second/third are office365 accounts.
 #+BEGIN_SRC emacs-lisp
 (setq mu4e-context-policy 'pick-first
-	  mu4e-compose-context-policy 'ask-if-none
-	  mu4e-user-mail-address-list '("natedwarshuis@gmail.com" "ndwarshuis3@gatech.edu" "ndwarsh@emory.edu")
+      mu4e-compose-context-policy 'ask-if-none
+      mu4e-user-mail-address-list '("natedwarshuis@gmail.com" "ndwarshuis3@gatech.edu" "ndwarsh@emory.edu")
       
       mu4e-contexts
-	  `( ,(make-mu4e-context
-		   :name "personal"
-		   :match-func
-		   (lambda (msg)
-			 (when msg
-			   (let ((pfx (mu4e-message-field msg :maildir)))
-				 (string-prefix-p "/gmail" pfx))))
-		   :vars '((mu4e-trash-folder . "/gmail/trash")
-				   (mu4e-drafts-folder . "/gmail/drafts")
-				   (mu4e-sent-folder . "/gmail/sent")
-				   (mu4e-refile-folder . "/gmail/archive")
-				   (mu4e-sent-messages-behavior . delete)
-				   (smtpmail-stream-type . starttls)
-				   (smtpmail-smtp-server . "smtp.gmail.com")
-				   (smtpmail-smtp-service . 587)
-				   (smtpmail-smtp-user . "natedwarshuis@gmail.com")
-				   (user-mail-address . "natedwarshuis@gmail.com")
-				   (mu4e-maildir-shortcuts .
-				   						   (("/gmail/inbox" . ?i)
-				   							("/gmail/sent" . ?s)
-				   							("/gmail/trash" . ?t)
-				   							("/gmail/drafts" . ?d)
-											("/gmail/archive" . ?a)))))
-		 ,(make-mu4e-context
-		   :name "gatech"
-		   :match-func
-		   (lambda (msg)
-			 (when msg
-			   (let ((pfx (mu4e-message-field msg :maildir)))
-			     (string-prefix-p "/gatech" pfx))))
-		   :vars '((mu4e-trash-folder . "/gatech/trash")
-				   (mu4e-drafts-folder . "/gatech/drafts")
-				   (mu4e-sent-folder . "/gatech/sent")
-				   (mu4e-refile-folder . "/gatech/archive")
-				   (mu4e-sent-messages-behavior . sent)
-				   (smtpmail-stream-type . starttls)
-				   (smtpmail-smtp-server . "smtp.office365.com")
-				   (smtpmail-smtp-service . 587)
-				   (smtpmail-smtp-user . "ndwarshuis3@gatech.edu")
-				   (user-mail-address . "ndwarshuis3@gatech.edu")
-				   (mu4e-maildir-shortcuts .
-										   (("/gatech/inbox" . ?i)
-											("/gatech/sent" . ?s)
-											("/gatech/trash" . ?t)
-											("/gatech/drafts" . ?d)
-											("/gatech/archive" . ?a)))))
-		 ,(make-mu4e-context
-		   :name "emory"
-		   :match-func
-		   (lambda (msg)
-			 (when msg
-			   (let ((pfx (mu4e-message-field msg :maildir)))
-			     (string-prefix-p "/emory" pfx))))
-		   :vars '((mu4e-trash-folder . "/emory/trash")
-				   (mu4e-drafts-folder . "/emory/drafts")
-				   (mu4e-sent-folder . "/emory/sent")
-				   (mu4e-refile-folder . "/emory/archive")
-				   (mu4e-sent-messages-behavior . sent)
-				   (smtpmail-stream-type . starttls)
-				   (smtpmail-smtp-server . "smtp.office365.com")
-				   (smtpmail-smtp-service . 587)
-				   (smtpmail-smtp-user . "ndwarsh@emory.edu")
-				   (user-mail-address . "ndwarsh@emory.edu")
-				   (mu4e-maildir-shortcuts .
-										   (("/emory/inbox" . ?i)
-											("/emory/sent" . ?s)
-											("/emory/trash" . ?t)
+      `( ,(make-mu4e-context
+           :name "personal"
+           :match-func
+           (lambda (msg)
+             (when msg
+               (let ((pfx (mu4e-message-field msg :maildir)))
+                 (string-prefix-p "/gmail" pfx))))
+           :vars '((mu4e-trash-folder . "/gmail/trash")
+                   (mu4e-drafts-folder . "/gmail/drafts")
+                   (mu4e-sent-folder . "/gmail/sent")
+                   (mu4e-refile-folder . "/gmail/archive")
+                   (mu4e-sent-messages-behavior . delete)
+                   (smtpmail-stream-type . starttls)
+                   (smtpmail-smtp-server . "smtp.gmail.com")
+                   (smtpmail-smtp-service . 587)
+                   (smtpmail-smtp-user . "natedwarshuis@gmail.com")
+                   (user-mail-address . "natedwarshuis@gmail.com")
+                   (mu4e-maildir-shortcuts .
+                                           (("/gmail/inbox" . ?i)
+                                            ("/gmail/sent" . ?s)
+                                            ("/gmail/trash" . ?t)
+                                            ("/gmail/drafts" . ?d)
+                                            ("/gmail/archive" . ?a)))))
+         ,(make-mu4e-context
+           :name "gatech"
+           :match-func
+           (lambda (msg)
+             (when msg
+               (let ((pfx (mu4e-message-field msg :maildir)))
+                 (string-prefix-p "/gatech" pfx))))
+           :vars '((mu4e-trash-folder . "/gatech/trash")
+                   (mu4e-drafts-folder . "/gatech/drafts")
+                   (mu4e-sent-folder . "/gatech/sent")
+                   (mu4e-refile-folder . "/gatech/archive")
+                   (mu4e-sent-messages-behavior . sent)
+                   (smtpmail-stream-type . starttls)
+                   (smtpmail-smtp-server . "smtp.office365.com")
+                   (smtpmail-smtp-service . 587)
+                   (smtpmail-smtp-user . "ndwarshuis3@gatech.edu")
+                   (user-mail-address . "ndwarshuis3@gatech.edu")
+                   (mu4e-maildir-shortcuts .
+                                           (("/gatech/inbox" . ?i)
+                                            ("/gatech/sent" . ?s)
+                                            ("/gatech/trash" . ?t)
+                                            ("/gatech/drafts" . ?d)
+                                            ("/gatech/archive" . ?a)))))
+         ,(make-mu4e-context
+           :name "emory"
+           :match-func
+           (lambda (msg)
+             (when msg
+               (let ((pfx (mu4e-message-field msg :maildir)))
+                 (string-prefix-p "/emory" pfx))))
+           :vars '((mu4e-trash-folder . "/emory/trash")
+                   (mu4e-drafts-folder . "/emory/drafts")
+                   (mu4e-sent-folder . "/emory/sent")
+                   (mu4e-refile-folder . "/emory/archive")
+                   (mu4e-sent-messages-behavior . sent)
+                   (smtpmail-stream-type . starttls)
+                   (smtpmail-smtp-server . "smtp.office365.com")
+                   (smtpmail-smtp-service . 587)
+                   (smtpmail-smtp-user . "ndwarsh@emory.edu")
+                   (user-mail-address . "ndwarsh@emory.edu")
+                   (mu4e-maildir-shortcuts .
+                                           (("/emory/inbox" . ?i)
+                                            ("/emory/sent" . ?s)
+                                            ("/emory/trash" . ?t)
                                             ("/emory/drafts" . ?d)
-											("/emory/archive" . ?a)))))))
+                                            ("/emory/archive" . ?a)))))))
 #+END_SRC
 *** org-mu4e
 #+BEGIN_SRC emacs-lisp
@@ -2337,14 +2337,14 @@ Signatures take lots of space and make short messages look needlessly clunky, so
 #+BEGIN_SRC emacs-lisp
 (setq mu4e-compose-signature-auto-include nil
 
-	  mu4e-compose-signature
-	  (string-join
-	   '("Nathan Dwarshuis"
-		 ""
-		 "PhD Student - Biomedical Engineering - Krish Roy Lab"
-		 "Georgia Institute of Technology and Emory University"
-		 "ndwarshuis3@gatech.edu")
-	   "\n"))
+      mu4e-compose-signature
+      (string-join
+       '("Nathan Dwarshuis"
+         ""
+         "PhD Student - Biomedical Engineering - Krish Roy Lab"
+         "Georgia Institute of Technology and Emory University"
+         "ndwarshuis3@gatech.edu")
+       "\n"))
 #+END_SRC
 *** visual-line-mode
 By default mu4e adds breaks after 80-ish chars using auto-fill-mode which makes messages look weird when opened. =Visual-line-mode= avoids this problem.
@@ -2365,12 +2365,12 @@ Spell checking is generally a good idea when writing to pointy-haired bosses.
 (require 'tex-mik)
 
 (setq TeX-view-program-selection '(((output-dvi has-no-display-manager)
-									"dvi2tty")
-								   ((output-dvi style-pstricks)
-									"dvips and gv")
-								   (output-dvi "xdvi")
-								   (output-pdf "Okular")
-								   (output-html "xdg-open")))
+                                    "dvi2tty")
+                                   ((output-dvi style-pstricks)
+                                    "dvips and gv")
+                                   (output-dvi "xdvi")
+                                   (output-pdf "Okular")
+                                   (output-html "xdg-open")))
 
 ;; remove ugly section size
 (setq font-latex-fontify-sectioning 'color)
@@ -2389,16 +2389,21 @@ Spell checking is generally a good idea when writing to pointy-haired bosses.
   :after org
   :config
   (setq reftex-default-bibliography (expand-file-name "~/BibTeX/master.bib")
-		org-ref-bibliography-notes (expand-file-name "~/BibTeX/notes.org")
-		org-ref-default-bibliography (expand-file-name "~/BibTeX/master.bib")))
+        org-ref-bibliography-notes (expand-file-name "~/BibTeX/notes.org")
+        org-ref-default-bibliography (expand-file-name "~/BibTeX/master.bib")))
 
 (use-package helm-bibtex
   :ensure t
   :after helm
   :config
   (setq bibtex-completion-bibliography (expand-file-name "~/BibTeX/master.bib")
-		bibtex-completion-library-path (expand-file-name "~/BibTeX/pdf")
-		bibtex-completion-pdf-field "File"))
+        bibtex-completion-library-path (expand-file-name "~/BibTeX/pdf")
+        bibtex-completion-pdf-field "File"))
+#+END_SRC
+** ebib
+#+BEGIN_SRC emacs-lisp
+(use-package ebib
+  :ensure t)
 #+END_SRC
 ** shell
 #+begin_src emacs-lisp
@@ -2471,42 +2476,42 @@ delightfully ripped off from vim plugins
 Some of these commands just get in the way of being evil (which really means that I keep pressing them on accident). Rather than nullifying them completely, tuck them away in the emacs state map in case I actually want them.
 #+BEGIN_SRC emacs-lisp
 (mapc (lambda (k) (nd/move-key global-map evil-emacs-state-map (eval k)))
-	  '((kbd "C-s")
-		(kbd "C-p")
-		(kbd "C-n")
-		(kbd "C-f")
-		(kbd "C-b")
-		(kbd "C-a")
-		(kbd "C-e")
-		(kbd "C-<SPC>")
-		
-		(kbd "C-x C-;")
-		(kbd "C-x C-l")
-		(kbd "C-x C-u")
-		(kbd "C-x C-z")
-		(kbd "C-x C-c")
+      '((kbd "C-s")
+        (kbd "C-p")
+        (kbd "C-n")
+        (kbd "C-f")
+        (kbd "C-b")
+        (kbd "C-a")
+        (kbd "C-e")
+        (kbd "C-<SPC>")
+        
+        (kbd "C-x C-;")
+        (kbd "C-x C-l")
+        (kbd "C-x C-u")
+        (kbd "C-x C-z")
+        (kbd "C-x C-c")
 
-		(kbd "M-c")
-		(kbd "M-d")
-		(kbd "M-e")
-		(kbd "M-r")
-		(kbd "M-f")
-		(kbd "M-h")
-		(kbd "M-j")
-		(kbd "C-M-j")
-		(kbd "M-k")
-		(kbd "M-l")
-		(kbd "M-m")
-		(kbd "M-q")
-		(kbd "M-w")
-		(kbd "M-t")
-		(kbd "M-u")
-		(kbd "M-i")
-		(kbd "M-z")
-		(kbd "M-v")
-		(kbd "M-/")
-		(kbd "M-;")
-		(kbd "M-DEL")))
+        (kbd "M-c")
+        (kbd "M-d")
+        (kbd "M-e")
+        (kbd "M-r")
+        (kbd "M-f")
+        (kbd "M-h")
+        (kbd "M-j")
+        (kbd "C-M-j")
+        (kbd "M-k")
+        (kbd "M-l")
+        (kbd "M-m")
+        (kbd "M-q")
+        (kbd "M-w")
+        (kbd "M-t")
+        (kbd "M-u")
+        (kbd "M-i")
+        (kbd "M-z")
+        (kbd "M-v")
+        (kbd "M-/")
+        (kbd "M-;")
+        (kbd "M-DEL")))
 #+END_SRC
 *** evil-org
 #+BEGIN_SRC emacs-lisp
@@ -2522,18 +2527,18 @@ Some of these commands just get in the way of being evil (which really means tha
   (evil-org-agenda-set-keys)
   ;; some of the defaults bug me...
   (evil-define-key 'motion org-agenda-mode-map
-	"t" 'nd/toggle-project-toplevel-display
-	"D" 'org-agenda-day-view
-	"W" 'org-agenda-week-view
-	"M" 'org-agenda-month-view
-	"Y" 'org-agenda-year-view
-	"ct" nil
-	"sC" 'nd/org-agenda-filter-non-context
-	"sE" 'nd/org-agenda-filter-non-effort
-	"sD" 'nd/org-agenda-filter-delegate
-	"sP" 'nd/org-agenda-filter-non-peripheral
-	"e" 'org-agenda-set-effort
-	"ce" nil))
+    "t" 'nd/toggle-project-toplevel-display
+    "D" 'org-agenda-day-view
+    "W" 'org-agenda-week-view
+    "M" 'org-agenda-month-view
+    "Y" 'org-agenda-year-view
+    "ct" nil
+    "sC" 'nd/org-agenda-filter-non-context
+    "sE" 'nd/org-agenda-filter-non-effort
+    "sD" 'nd/org-agenda-filter-delegate
+    "sP" 'nd/org-agenda-filter-non-peripheral
+    "e" 'org-agenda-set-effort
+    "ce" nil))
 #+END_SRC
 *** evil-magit
 #+BEGIN_SRC emacs-lisp
@@ -2559,7 +2564,7 @@ Some common interactive functions for comint-based modes
   "If not at the last line, go to the end of the buffer and enter insert mode.  Else just enter insert mode."
   (interactive)
   (if (/= (line-number-at-pos (point)) (line-number-at-pos (point-max)))
-		(goto-char (point-max))))
+        (goto-char (point-max))))
         
 (defun nd/comint-send-input-evil-insert (&optional send-input-cmd)
   "Go into insert mode after calling SEND-INPUT-CMD which is usually
@@ -2580,9 +2585,9 @@ REPL. If no SEND-INPUT-CMD then `comint-send-input' is used."
                 'inferior-ess-send-input))
 
 (add-hook 'inferior-ess-mode-hook
-		  (lambda ()
-			(add-hook 'evil-insert-state-entry-hook
-					  'nd/comint-char-mode-evil-insert nil t)))
+          (lambda ()
+            (add-hook 'evil-insert-state-entry-hook
+                      'nd/comint-char-mode-evil-insert nil t)))
 #+END_SRC
 **** intero
 #+BEGIN_SRC emacs-lisp
@@ -2590,9 +2595,9 @@ REPL. If no SEND-INPUT-CMD then `comint-send-input' is used."
   (kbd "RET") 'nd/comint-send-input-evil-insert)
   
 (add-hook 'intero-repl-mode-hook
-		  (lambda ()
-			(add-hook 'evil-insert-state-entry-hook
-					  'nd/comint-char-mode-evil-insert nil t)))
+          (lambda ()
+            (add-hook 'evil-insert-state-entry-hook
+                      'nd/comint-char-mode-evil-insert nil t)))
 #+END_SRC
 *** collection
 Most packages that don't have an evil version are in this one. I don't like surprises so I set =evil-collection-modes-list= with the modes I actually want. Some of these are further configured below.
@@ -2602,7 +2607,7 @@ Most packages that don't have an evil version are in this one. I don't like surp
   :after evil
   :init
   (setq evil-collection-mode-list
-		'(dired ediff flycheck company which-key helm minibuffer mu4e ediff	term))
+        '(company dired ediff flycheck helm minibuffer mu4e term which-key))
   (setq evil-collection-setup-minibuffer t)
   :config
   (evil-collection-init))
@@ -2620,67 +2625,67 @@ Dired makes new buffers by default. Use =find-alternate-file= to avoid this.
 Only regular files are considered."
   (interactive)
   (let* ((file-list (seq-filter #'file-regular-p (dired-get-marked-files)))
-		 (do-it (if (<= (length file-list) 5)
-					t
-				  (y-or-n-p "Open more then 5 files? "))))
-	(when do-it
-	  (mapc
-	   (lambda (f) (let ((process-connection-type nil))
-				(start-process "" nil "xdg-open" f)))
-	   file-list))))
+         (do-it (if (<= (length file-list) 5)
+                    t
+                  (y-or-n-p "Open more then 5 files? "))))
+    (when do-it
+      (mapc
+       (lambda (f) (let ((process-connection-type nil))
+                (start-process "" nil "xdg-open" f)))
+       file-list))))
 
 (defun nd/dired-open-with ()
   "Open marked non-text files in external app via open-with dialog
 according to mime types as listed in all available desktop files."
   (interactive)
   (let* ((mf (seq-filter #'file-regular-p (dired-get-marked-files)))
-		 (qmf (mapcar #'shell-quote-argument mf))
-		 (file-mime-list (mapcar (lambda (f) (list f (nd/get-mime-type f))) qmf)))
+         (qmf (mapcar #'shell-quote-argument mf))
+         (file-mime-list (mapcar (lambda (f) (list f (nd/get-mime-type f))) qmf)))
 
-	(if (= (length file-mime-list) 0)
-		(message "No files selected")
-	  
-	  (let* ((first-pair (car file-mime-list))
-			 (last-pairs (cdr file-mime-list))
-			 mime-alist file-list)
-		(setq file-list (nth 0 first-pair)
-			  mime-alist (nd/get-apps-from-mime (nth 1 first-pair)))
-		;; if multiple files selected, add to the selection list
-		(if last-pairs
-			(progn
-			  (setq file-list (string-join (mapcar #'car file-mime-list) " "))
-			  (dolist (mime (mapcar (lambda (f) (nth 1 f)) last-pairs))
-				(setq mime-alist (intersection mime-alist
-											   (nd/get-apps-from-mime mime)
-											   :test #'equal)))))
-		(if (= (length mime-alist) 0)
-			(let* ((ml (delete-dups (mapcan #'cdr file-mime-list)))
-				   (mls (string-join ml ", ")))
-			  (if (= (length ml) 1)
-				  (message (concat "No apps found for mime type: "	mls))
-				(message (concat "No common apps found for mime types: " mls))))
-		  (helm
-		   :sources (helm-build-sync-source "Apps"
-		  			  :candidates mime-alist
-					  :action '(("Open" . (lambda (f) (nd/execute-desktop-command f file-list)))))
-		   :buffer "*helm open with*"))))))
+    (if (= (length file-mime-list) 0)
+        (message "No files selected")
+      
+      (let* ((first-pair (car file-mime-list))
+             (last-pairs (cdr file-mime-list))
+             mime-alist file-list)
+        (setq file-list (nth 0 first-pair)
+              mime-alist (nd/get-apps-from-mime (nth 1 first-pair)))
+        ;; if multiple files selected, add to the selection list
+        (if last-pairs
+            (progn
+              (setq file-list (string-join (mapcar #'car file-mime-list) " "))
+              (dolist (mime (mapcar (lambda (f) (nth 1 f)) last-pairs))
+                (setq mime-alist (intersection mime-alist
+                                               (nd/get-apps-from-mime mime)
+                                               :test #'equal)))))
+        (if (= (length mime-alist) 0)
+            (let* ((ml (delete-dups (mapcan #'cdr file-mime-list)))
+                   (mls (string-join ml ", ")))
+              (if (= (length ml) 1)
+                  (message (concat "No apps found for mime type: "  mls))
+                (message (concat "No common apps found for mime types: " mls))))
+          (helm
+           :sources (helm-build-sync-source "Apps"
+                      :candidates mime-alist
+                      :action '(("Open" . (lambda (f) (nd/execute-desktop-command f file-list)))))
+           :buffer "*helm open with*"))))))
 
 (defun nd/dired-sort-by ()
   "Sort current dired buffer by a list of choices presented in helm menu.
 Note this assumes there are no sorting switches on `dired-ls'"
   (interactive)
   (let ((sort-alist '(("Name" . "")
-					  ("Date" . "-t")
-					  ("Size" . "-S")
-					  ("Extension" . "-X")
-					  ("Dirs First" . "--group-directories-first"))))
-	(helm
-	 :sources
-	 (helm-build-sync-source "Switches"
-	   :candidates sort-alist
-	   :action
-	   '(("Sort" . (lambda (s) (dired-sort-other (concat dired-listing-switches " " s))))))
-	 :buffer "*helm sort buffer*")))
+                      ("Date" . "-t")
+                      ("Size" . "-S")
+                      ("Extension" . "-X")
+                      ("Dirs First" . "--group-directories-first"))))
+    (helm
+     :sources
+     (helm-build-sync-source "Switches"
+       :candidates sort-alist
+       :action
+       '(("Sort" . (lambda (s) (dired-sort-other (concat dired-listing-switches " " s))))))
+     :buffer "*helm sort buffer*")))
 
 (put 'dired-find-alternate-file 'disabled nil)
 
