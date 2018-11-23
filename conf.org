@@ -1122,6 +1122,108 @@ Clocking is still new and experimental (I'm not a ninja like Bernt yet). I mostl
       org-clock-persist t
       org-clock-report-include-clocking-task t)
 #+END_SRC
+*** conflict detection
+Somehow org-mode has no way to detect conflicts between tasks with timestamps (!!??). Luckily I can make my own.
+
+Steps for this algorithm:
+1. make a list of all entries with timestamps
+2. sort timestamp list
+3. Walk through list and compare entries immediately after (sorting ensures that entries can be skipped once one non-conflict is found). If conflicts are found make a new list of each conflict pair.
+4. Display conflicts in buffer
+
+This should be O(n) (best case/no conflicts) to O(n^2) (worst case/everything conflicts)
+#+BEGIN_SRC emacs-lisp
+(defun nd/are-conflicting-p (ts-a ts-b)
+  "Return t if timestamps TS-A and TS-B conflict."
+  (let* ((earlier-a (car ts-a))
+         (earlier-b (car ts-b))
+         (later-b (+ earlier-b (nth 1 ts-b))))
+    (and (>= earlier-a earlier-b) (<= earlier-a later-b))))
+
+(defun nd/detect-conflict (ts ts-list conlist)
+  "Recursively determine if timestamp TS conflicts with anything in TS-LIST.
+If detected, conflict pair is added to CONLIST."
+  (let ((next-ts (car ts-list))
+        (rem-ts (cdr ts-list)))
+    (if (nd/are-conflicting-p ts next-ts)
+        (progn
+          (setq conlist (cons (list ts next-ts) conlist))
+          (if rem-ts (nd/detect-conflict ts rem-ts conlist) conlist))
+      conlist)))
+  
+(defun nd/build-conlist (ts-list conlist)
+  "Recursively build a list of timestamp conflicts from TS-LIST.
+
+TS-LIST is comprised of entries in the form (staring-ts timerange marker) 
+where timerange is 0 for singular timestamps and a positive number for
+anything with to times or a timestamp range.
+Detected conflicts are stored in CONLIST as pairs of conflicting ts
+entries from the TS-LIST."
+  (let ((cur-ts (car ts-list))
+        (rem-ts (cdr ts-list)))
+    (if rem-ts
+        (nd/build-conlist rem-ts (nd/detect-conflict cur-ts rem-ts conlist))
+      conlist)))
+
+(defconst nd/org-tsm-regexp
+  "\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\} [^]+0-9>\r\n -]+? \\)\\([0-9]\\{1,2\\}:[0-9]\\{2\\}?\\)-\\([0-9]\\{1,2\\}:[0-9]\\{2\\}\\)"
+  "Regular expression for timestamps with two times.")
+
+(defun nd/get-timestamps ()
+  "Get the org-marker and timestamp(s) (multiple if range) or current heading."
+  ;; TODO, what if I care about more than just TIMESTAMPs
+  (let* ((ts (org-entry-get nil "TIMESTAMP"))
+         (marker (point-marker))
+         (ts-range 0)
+         (ts-entry))
+    (when ts
+      (cond
+       ;; match timestamps that have two times
+       ((string-match nd/org-tsm-regexp ts)
+        (let* ((ts1 (concat (match-string 1 ts) (match-string 2 ts)))
+               (ts2 (concat (match-string 1 ts) (match-string 3 ts)))
+               (ft1 (org-2ft ts1))
+               (ft2 (org-2ft ts2)))
+          (setq ts-entry ft1)
+          (setq ts-range (- ft2 ft1))))
+       
+       ;; match timestamps that have a range (eq two timestamps)
+       ((string-match org-tr-regexp ts)
+        (let* ((ts1 (match-string 1 ts))
+               (ts2 (match-string 2 ts))
+               (ft1 (org-2ft ts1))
+               (ft2 (org-2ft ts2)))
+          (setq ts-entry ft1)
+          (setq ts-range (- ft2 ft1))))
+       
+       ;; match timestamps with only one time
+       (t (setq ts-entry (org-2ft ts))))
+      (list ts-entry ts-range marker))))
+
+(defun nd/build-conflict-list ()
+  "Scan all org files and make a list of all timestamps that conflict."
+  (let ((files '("~/Org/reference/testconflict.org"))
+        prev-point ts-list cur-index conflicts)
+    ;; get all timestamps from org buffers
+    (dolist (f files ts-list)
+      (with-current-buffer
+        (find-file-noselect f)
+        (goto-char (point-min))
+        (if (not (outline-on-heading-p)) (outline-next-heading))
+        (setq prev-point -1)
+        (while (> (point) prev-point)
+          (let ((new-ts (nd/get-timestamps)))
+            (if new-ts (setq ts-list (cons new-ts ts-list))))
+          (setq prev-point (point))
+          (outline-next-heading))))
+
+    ;; sort the timestamp list
+    ;; TODO, need to make range-aware
+    (setq ts-list (sort ts-list (lambda (a b) (< (car a) (car b)))))
+
+    ;; build a list of conflicts
+    (nd/build-conlist ts-list conflicts)))
+#+END_SRC
 *** agenda
 **** targets
 The agenda files are limited to as few as possible to keep scanning and startup reasonably fast.
