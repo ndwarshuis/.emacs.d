@@ -1404,8 +1404,8 @@ These are the building blocks for skip functions.
 (defun nd/get-date-property (timestamp-property)
   "Get TIMESTAMP-PROPERTY on current heading and convert to a number.
 If it does not have a date, it will return nil."
-  (let ((timestamp (org-entry-get nil timestamp-property)))
-        (if timestamp (float-time (date-to-time timestamp)))))
+  (let ((ts (org-entry-get nil timestamp-property)))
+        (when ts (org-2ft ts))))
 
 (defun nd/heading-compare-timestamp (timestamp-fun
                                      &optional ref-time future)
