@@ -1568,12 +1568,11 @@ to REF-TIME. Returns nil if no timestamp is found."
   "Get closed timestamp of current heading."
   (nd/get-date-property "CLOSED"))
 
-(defun nd/is-stale-heading-p ()
-  "Return timestamp if current heading is stale."
+(defun nd/is-stale-heading-p (&optional ts-prop)
+  "Return timestamp for TS-PROP (TIMESTAMP by default) if current heading is stale."
   (nd/heading-compare-timestamp
-   (lambda () (let ((ts (org-entry-get nil "TIMESTAMP")))
-           (if (and ts (not (find ?+ ts)))
-               (float-time (date-to-time ts)))))))
+   (lambda () (let ((ts (org-entry-get nil (or ts-prop "TIMESTAMP"))))
+           (when (and ts (not (find ?+ ts))) (org-2ft ts))))))
 
 (defun nd/is-fresh-heading-p ()
   "Return timestamp if current heading is fresh."
@@ -1870,7 +1869,7 @@ Subunits for skip functions. Not meant to be used or called from the custom comm
   (save-excursion (or (org-end-of-subtree t) (point-max))))
 
 
-(defmacro nd/skip-heading-with (heading-fun test-fun)
+(defmacro nd/skip-heading-without (heading-fun test-fun)
   "Skip headings accoring to certain characteristics. 
 
 HEADING-FUN is a function that tests the heading and returns the 
@@ -1922,14 +1921,14 @@ By definition these have no parents, so I don't need to worry about skipping ove
 
 (defun nd/skip-non-closed-atomic-tasks ()
   "Skip headings that are not complete (but not archivable) atomic tasks."
-  (nd/skip-heading-with
+  (nd/skip-heading-without
    nd/is-atomic-task-p
    (and (member keyword org-done-keywords)
         (not (nd/is-archivable-heading-p)))))
 
 (defun nd/skip-non-archivable-atomic-tasks ()
   "Skip headings that are not archivable atomic tasks."
-  (nd/skip-heading-with
+  (nd/skip-heading-without
    nd/is-atomic-task-p
    (and (member keyword org-done-keywords)
         (nd/is-archivable-heading-p))))
@@ -1947,7 +1946,7 @@ These are headings marked with PARENT_TYPE property that have timestamped headin
 
 (defun nd/skip-non-iterator-unscheduled ()
   "Skip all headings that are not unscheduled iterator children."
-  (nd/skip-heading-with
+  (nd/skip-heading-without
    nd/is-atomic-task-p
    (not (or (nd/is-scheduled-heading-p)
             (nd/is-deadlined-heading-p)))))
@@ -1993,20 +1992,20 @@ Some headings are invalid under certain conditions; these are tested here.
 #+BEGIN_SRC emacs-lisp
 (defun nd/skip-non-discontinuous-project-tasks ()
   "Skip headings that are not discontinuous within projects."
-  (nd/skip-heading-with
+  (nd/skip-heading-without
    nd/is-todoitem-p
    (nd/has-discontinuous-parent)))
 
 (defun nd/skip-non-done-unclosed-todoitems ()
   "Skip headings that are not completed without a closed timestamp."
-  (nd/skip-heading-with
+  (nd/skip-heading-without
    nd/is-todoitem-p
    (and (member keyword org-done-keywords)
         (not (nd/is-closed-heading-p)))))
 
 (defun nd/skip-non-undone-closed-todoitems ()
   "Skip headings that are not incomplete with a closed timestamp."
-  (nd/skip-heading-with
+  (nd/skip-heading-without
    nd/is-todoitem-p
    (and (not (member keyword org-done-keywords))
         (nd/is-closed-heading-p))))
