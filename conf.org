@@ -2190,13 +2190,10 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
       ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags nil '("%inc")))
                    (org-agenda-span 7)
                    (org-agenda-time-grid nil)
-                   (org-agenda-entry-types '(:deadline :timestamp))))
+                   (org-agenda-entry-types '(:deadline :timestamp :scheduled))))
        ,(nd/agenda-base-heading-cmd "-NA-REFILE+%inc"
                                    "Stale Incubated Timestamps"
                                    ''nd/skip-non-stale-headings)
-       ,(nd/agenda-base-task-cmd "-NA-REFILE+%inc/!"
-                                 "Stale Incubated Tasks"
-                                 ''nd/skip-non-archivable-atomic-tasks)
        ,(nd/agenda-base-task-cmd "-NA-REFILE+%inc/!"
                                  "Incubated Tasks"
                                  ''nd/skip-non-atomic-tasks)
