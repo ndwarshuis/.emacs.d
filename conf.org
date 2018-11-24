@@ -1124,12 +1124,13 @@ Clocking is still new and experimental (I'm not a ninja like Bernt yet). I mostl
 #+END_SRC
 *** conflict detection
 Somehow org-mode has no way to detect conflicts between tasks with timestamps (!!??). Luckily I can make my own.
+**** backend
+The algoithm to detect conflicts scans all org files and stores conflicts in a list of pairs of each heading with a conflicting timestamp.
 
 Steps for this algorithm:
 1. make a list of all entries with timestamps
 2. sort timestamp list
-3. Walk through list and compare entries immediately after (sorting ensures that entries can be skipped once one non-conflict is found). If conflicts are found make a new list of each conflict pair.
-4. Display conflicts in buffer
+3. Walk through list and compare entries immediately after (sorting ensures that entries can be skipped once one non-conflict is found). If conflicts are found push the pair to a new list (this is what is used to make the display)
 
 This should be O(n) (best case/no conflicts) to O(n^2) (worst case/everything conflicts)
 #+BEGIN_SRC emacs-lisp
@@ -1147,7 +1148,7 @@ If detected, conflict pair is added to CONLIST."
         (rem-ts (cdr ts-list)))
     (if (nd/are-conflicting-p ts next-ts)
         (progn
-          (setq conlist (cons (list ts next-ts) conlist))
+          (setq conlist (cons (list (nth 2 ts) (nth 2 next-ts)) conlist))
           (if rem-ts (nd/detect-conflict ts rem-ts conlist) conlist))
       conlist)))
   
@@ -1223,6 +1224,135 @@ entries from the TS-LIST."
 
     ;; build a list of conflicts
     (nd/build-conlist ts-list conflicts)))
+#+END_SRC
+**** frontend
+To display any conflicts, I could just fetch the org headings and throw them into a new buffer. But that's boring, and quite limiting. I basically want all the perks of an agenda buffer...tab-follow, the nice parent display at the bottom, time adjust hotkeys, etc. So the obvious and hacky solution is to throw together a quick-n-dirty agenda buffer which displays each conflict pair in sequentional fashion.
+#+BEGIN_SRC emacs-lisp
+(defun nd/get-conflict-header-text (conflict-marker)
+  "Return string with text properties representing the org header for
+MARKER for use in the conflict agenda view."
+  (let* ((props (list
+                 'face nil
+		         'done-face 'org-agenda-done
+		         'org-not-done-regexp org-not-done-regexp
+		         'org-todo-regexp org-todo-regexp
+		         'org-complex-heading-regexp org-complex-heading-regexp
+		         'mouse-face 'highlight))
+		         ;; 'help-echo
+		         ;; (format "mouse-2 or RET jump to org file %s"
+			     ;;         (abbreviate-file-name buffer-file-name))))
+	     marker priority category level tags todo-state
+	     ts-date ts-date-type ts-date-pair
+	     txt beg end inherited-tags todo-state-end-pos)
+
+    (with-current-buffer (marker-buffer conflict-marker) 
+      (save-excursion
+	    (goto-char conflict-marker)
+
+	    (setq marker (org-agenda-new-marker (point))
+	          category (org-get-category)
+	          ts-date-pair (org-agenda-entry-get-agenda-timestamp (point))
+	          ts-date (car ts-date-pair)
+	          ts-date-type (cdr ts-date-pair)
+	          txt (org-get-heading t)
+	          inherited-tags
+	          (or (eq org-agenda-show-inherited-tags 'always)
+		          (and (listp org-agenda-show-inherited-tags)
+		               (memq 'todo org-agenda-show-inherited-tags))
+		          (and (eq org-agenda-show-inherited-tags t)
+		               (or (eq org-agenda-use-tag-inheritance t)
+			               (memq 'todo org-agenda-use-tag-inheritance))))
+	          tags (org-get-tags-at nil (not inherited-tags))
+	          level (make-string (org-reduced-level (org-outline-level)) ? )
+	          txt (org-agenda-format-item "" txt level category tags t)
+	          priority (1+ (org-get-priority txt)))
+        
+	    (org-add-props txt props
+	      'org-marker marker 'org-hd-marker marker
+	      'priority priority
+	      'level level
+	      'ts-date ts-date
+	      'type (concat "todo" ts-date-type) 'todo-state todo-state)))))
+
+(defun nd/org-conflicts (&optional arg)
+  (interactive "P")
+
+  (if org-agenda-overriding-arguments
+      (setq arg org-agenda-overriding-arguments))
+
+  (if (and (stringp arg) (not (string-match "\\S-" arg))) (setq arg nil))
+
+  (let* ((today (org-today))
+	     (date (calendar-gregorian-from-absolute today))
+	     (completion-ignore-case t)
+	     rtn rtnall files file pos)
+
+    (catch 'exit
+      (when org-agenda-sticky (setq org-agenda-buffer-name "*Org Conflicts*"))
+
+      (org-agenda-prepare)
+      ;; (org-compile-prefix-format 'todo)
+      (org-compile-prefix-format 'agenda)
+      ;; (org-set-sorting-strategy 'todo)
+
+      ;; this might be the refresh command?
+      (setq org-agenda-redo-command '(nd/org-conflicts))
+
+      ;; (setq org-agenda-redo-command
+	  ;;       `(org-todo-list (or (and (numberp current-prefix-arg)
+	  ;;   		                     current-prefix-arg)
+	  ;;   		                ,org-select-this-todo-keyword
+	  ;;   		                current-prefix-arg ,arg)))
+
+
+      ;; here we start throwing text in the buffer
+      ;; make the header for this block view
+      ;; may consider throwing a header b/t each conflict with the timestamp
+      ;; (if org-agenda-overriding-header
+	  ;;     (insert (org-add-props (copy-sequence org-agenda-overriding-header)
+	  ;;                 nil 'face 'org-agenda-structure) "\n")
+	  (insert "Conflicting Headings: \n")
+	  (add-text-properties (point-min) (1- (point))
+			               (list 'face 'org-agenda-structure
+				                 'short-heading "Conflicts"))
+	  (org-agenda-mark-header-line (point-min))
+	  ;;   (insert (org-agenda-propertize-selected-todo-keywords
+	  ;;            org-select-this-todo-keyword))
+	  ;;   (setq pos (point))
+	  ;;   (unless org-agenda-multi
+	  ;;     (insert (substitute-command-keys "Available with `N \\[org-agenda-redo]': (0)[ALL]"))
+	  ;;     (let ((n 0) s)
+	  ;;       (mapc (lambda (x)
+	  ;;               (setq s (format "(%d)%s" (setq n (1+ n)) x))
+	  ;;               (if (> (+ (current-column) (string-width s) 1) (frame-width))
+	  ;;   	            (insert "\n                     "))
+	  ;;               (insert " " s))
+	  ;;             kwds))
+	  ;;     (insert "\n"))
+	  ;;   (add-text-properties pos (1- (point)) (list 'face 'org-agenda-structure)))
+      ;; (org-agenda-mark-header-line (point-min))
+
+      (setq rtnall (mapcar
+                    (lambda (c) (mapcar #'nd/get-conflict-header-text c))
+                    (nd/build-conflict-list)))
+
+      (when rtnall
+        (insert (mapconcat
+                 (lambda (c) (concat (mapconcat 'identity c "\n") "\n"))
+                 rtnall
+                 "\n")))
+
+      ;; clean up and finalize
+      (goto-char (point-min))
+      (or org-agenda-multi (org-agenda-fit-window-to-buffer))
+      (add-text-properties
+       (point-min) (point-max)
+	   `(org-agenda-type todo
+					     org-last-args ,arg
+					     org-redo-cmd ,org-agenda-redo-command
+					     org-series-cmd ,org-cmd))
+      (org-agenda-finalize)
+      (setq buffer-read-only t))))
 #+END_SRC
 *** agenda
 **** targets
