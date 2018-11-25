@@ -591,6 +591,11 @@ Enable some straightforward options:
 - logs should go in their own drawer called "LOGBOOK"
 - DONE state should log the time
 #+BEGIN_SRC emacs-lisp
+(defun nd/org-save-all-org-buffers ()
+  "Save org buffers without confirmation or message (unlike default)."
+  (save-some-buffers t (lambda () (derived-mode-p 'org-mode)))
+  (when (featurep 'org-id) (org-id-locations-save)))
+
 (use-package org
   :delight
   ;; source of indent-mode required here
@@ -611,7 +616,7 @@ Enable some straightforward options:
         org-log-done 'time)
 
   (require 'org-protocol)
-  (run-at-time "00:59" 3600 'org-save-all-org-buffers))
+  (run-at-time "00:59" 3600 #'nd/org-save-all-org-buffers))
 #+END_SRC
 *** bullets
 These are just so much better to read
@@ -1102,7 +1107,7 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
           ;; for interruptions that produce useful reference material
           ("m" "meeting" entry (file ,capfile)
            "* meeting with%?  :\\%note:\n%U\n")
-          
+
           ;; for capturing web pages with web browser
           ("p" "org-protocol" entry (file ,capfile)
            "* %^{Title} :\\%note:\n%u\n#+BEGIN_QUOTE\n%i\n#+END_QUOTE"
