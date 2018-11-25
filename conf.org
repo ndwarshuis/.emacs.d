@@ -704,6 +704,27 @@ and reverts all todo keywords to TODO."
       (org-mark-element)
       (delete-region (region-beginning) (region-end))
       (org-remove-empty-drawer-at (point)))))
+
+(defun nd/org-agenda-toggle-checkbox ()
+  "Toggle checkboxes in org agenda view using `org-toggle-checkbox'."
+  (interactive)
+  (org-agenda-check-no-diary)
+  (let* ((hdmarker (or (org-get-at-bol 'org-hd-marker)
+			           (org-agenda-error)))
+	     (buffer (marker-buffer hdmarker))
+	     (pos (marker-position hdmarker))
+	     (inhibit-read-only t)
+	     newhead)
+    (org-with-remote-undo buffer
+	  (with-current-buffer buffer
+	    (widen)
+	    (goto-char pos)
+	    (org-show-context 'agenda)
+        (call-interactively #'org-toggle-checkbox)
+	    (end-of-line 1)
+	    (setq newhead (org-get-heading)))
+	  (org-agenda-change-all-lines newhead hdmarker)
+	  (beginning-of-line 1))))
 #+END_SRC
 ** column view
 #+BEGIN_SRC emacs-lisp
@@ -2951,7 +2972,8 @@ These are for mode-specific bindings that can/should be outside of the evil maps
             
 (add-hook 'org-agenda-mode-hook
           (lambda ()
-            (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)))
+            (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)
+            (local-set-key (kbd "C-c C-x C-b") 'nd/org-agenda-toggle-checkbox)))
 #+END_SRC
 *** dired
 #+BEGIN_SRC emacs-lisp
