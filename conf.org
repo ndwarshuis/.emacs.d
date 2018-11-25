@@ -1229,20 +1229,19 @@ entries from the TS-LIST."
 
 (defun nd/build-conflict-list ()
   "Scan all org files and make a list of all timestamps that conflict."
-  (let ((files '("~/Org/reference/testconflict.org"))
-        prev-point ts-list cur-index conflicts)
+  (let ((files (org-agenda-files))
+        max-reached ts-list cur-index conflicts)
     ;; get all timestamps from org buffers
     (dolist (f files ts-list)
       (with-current-buffer
         (find-file-noselect f)
         (goto-char (point-min))
-        (if (not (outline-on-heading-p)) (outline-next-heading))
-        (setq prev-point -1)
-        (while (> (point) prev-point)
+        (when (not (outline-on-heading-p)) (outline-next-heading))
+        (setq max-reached nil)
+        (while (not max-reached)
           (let ((new-ts (nd/get-timestamps)))
             (if new-ts (setq ts-list (cons new-ts ts-list))))
-          (setq prev-point (point))
-          (outline-next-heading))))
+          (unless (outline-next-heading) (setq max-reached t)))))
 
     ;; sort the timestamp list
     ;; TODO, need to make range-aware
