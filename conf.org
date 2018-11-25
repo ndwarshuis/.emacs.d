@@ -1174,7 +1174,7 @@ If detected, conflict pair is added to CONLIST."
         (rem-ts (cdr ts-list)))
     (if (nd/are-conflicting-p ts next-ts)
         (progn
-          (setq conlist (cons (list (nth 2 ts) (nth 2 next-ts)) conlist))
+          (setq conlist (cons (list ts next-ts) conlist))
           (if rem-ts (nd/detect-conflict ts rem-ts conlist) conlist))
       conlist)))
   
@@ -1225,7 +1225,7 @@ entries from the TS-LIST."
        
        ;; match timestamps with only one time
        (t (setq ts-entry (org-2ft ts))))
-      (list ts-entry ts-range marker))))
+      (list ts-entry ts-range marker ts))))
 
 (defun nd/build-conflict-list ()
   "Scan all org files and make a list of all timestamps that conflict."
@@ -1298,7 +1298,7 @@ MARKER for use in the conflict agenda view."
 	      'priority priority
 	      'level level
 	      'ts-date ts-date
-	      'type (concat "todo" ts-date-type) 'todo-state todo-state)))))
+	      'type "timestamp")))))
 
 (defun nd/org-conflicts (&optional arg)
   (interactive "P")
@@ -1311,6 +1311,7 @@ MARKER for use in the conflict agenda view."
   (let* ((today (org-today))
 	     (date (calendar-gregorian-from-absolute today))
 	     (completion-ignore-case t)
+         (org-agenda-prefix-format '((agenda . "  %-12:c %-5:e ")))
 	     rtn rtnall files file pos)
 
     (catch 'exit
@@ -1321,59 +1322,29 @@ MARKER for use in the conflict agenda view."
       (org-compile-prefix-format 'agenda)
       ;; (org-set-sorting-strategy 'todo)
 
-      ;; this might be the refresh command?
       (setq org-agenda-redo-command '(nd/org-conflicts))
 
-      ;; (setq org-agenda-redo-command
-	  ;;       `(org-todo-list (or (and (numberp current-prefix-arg)
-	  ;;   		                     current-prefix-arg)
-	  ;;   		                ,org-select-this-todo-keyword
-	  ;;   		                current-prefix-arg ,arg)))
-
-
-      ;; here we start throwing text in the buffer
-      ;; make the header for this block view
-      ;; may consider throwing a header b/t each conflict with the timestamp
-      ;; (if org-agenda-overriding-header
-	  ;;     (insert (org-add-props (copy-sequence org-agenda-overriding-header)
-	  ;;                 nil 'face 'org-agenda-structure) "\n")
 	  (insert "Conflicting Headings: \n")
 	  (add-text-properties (point-min) (1- (point))
 			               (list 'face 'org-agenda-structure
 				                 'short-heading "Conflicts"))
 	  (org-agenda-mark-header-line (point-min))
-	  ;;   (insert (org-agenda-propertize-selected-todo-keywords
-	  ;;            org-select-this-todo-keyword))
-	  ;;   (setq pos (point))
-	  ;;   (unless org-agenda-multi
-	  ;;     (insert (substitute-command-keys "Available with `N \\[org-agenda-redo]': (0)[ALL]"))
-	  ;;     (let ((n 0) s)
-	  ;;       (mapc (lambda (x)
-	  ;;               (setq s (format "(%d)%s" (setq n (1+ n)) x))
-	  ;;               (if (> (+ (current-column) (string-width s) 1) (frame-width))
-	  ;;   	            (insert "\n                     "))
-	  ;;               (insert " " s))
-	  ;;             kwds))
-	  ;;     (insert "\n"))
-	  ;;   (add-text-properties pos (1- (point)) (list 'face 'org-agenda-structure)))
-      ;; (org-agenda-mark-header-line (point-min))
 
-      (setq rtnall (mapcar
-                    (lambda (c) (mapcar #'nd/get-conflict-header-text c))
-                    (nd/build-conflict-list)))
-
+      (setq rtnall (nd/build-conflict-list))
       (when rtnall
-        (insert (mapconcat
-                 (lambda (c) (concat (mapconcat 'identity c "\n") "\n"))
-                 rtnall
-                 "\n")))
+        (mapc
+         (lambda (c)
+           (insert (concat "Between " (mapconcat (lambda (ts) (nth 3 ts)) c " and ") "\n"))
+           (insert (concat (mapconcat (lambda (ts) (nd/get-conflict-header-text (nth 2 ts))) c "\n") "\n"))
+           (insert "\n"))
+         rtnall))
 
       ;; clean up and finalize
       (goto-char (point-min))
       (or org-agenda-multi (org-agenda-fit-window-to-buffer))
       (add-text-properties
        (point-min) (point-max)
-	   `(org-agenda-type todo
+	   `(org-agenda-type agenda
 					     org-last-args ,arg
 					     org-redo-cmd ,org-agenda-redo-command
 					     org-series-cmd ,org-cmd))
