@@ -583,19 +583,9 @@ Spell checking is important for prose
 #+END_SRC
 * org-mode
 ** major mode
-*** general config
-Enable some straightforward options:
-- visual-line-mode: wrap text since I like to treat long lines as paragraphs
-- org-indent-mode: indent each level for better visualization
-- enable special behavior for header navigation, killing, and yanking (see these docs for details)
-- logs should go in their own drawer called "LOGBOOK"
-- DONE state should log the time
+*** package
+Enable =visual-line-mode= and =org-indent-mode= by default and delight them. Also load =org-protocol= after org is loaded and set default org directory to something obvious.
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-save-all-org-buffers ()
-  "Save org buffers without confirmation or message (unlike default)."
-  (save-some-buffers t (lambda () (derived-mode-p 'org-mode)))
-  (when (featurep 'org-id) (org-id-locations-save)))
-
 (use-package org
   :delight
   ;; source of indent-mode required here
@@ -606,17 +596,44 @@ Enable some straightforward options:
   :config
   (setq org-startup-indented t
         org-directory "~/Org"
-        org-modules '(org-habit org-protocol)
+        org-modules '(org-habit org-protocol))
 
-        org-special-ctrl-a/e t
-        org-special-ctrl-k t
-        org-yank-adjusted-subtrees t
+  (require 'org-protocol))
+#+END_SRC
+*** special key behavior
+These don't work in evil mode (using the usual line commands).
+#+BEGIN_SRC emacs-lisp
+(setq org-special-ctrl-a/e t
+      org-special-ctrl-k t
+      org-yank-adjusted-subtrees t)
+#+END_SRC
+*** autosave
+Save all org buffers 1 minute before the hour. 
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-save-all-org-buffers ()
+  "Save org buffers without confirmation or message (unlike default)."
+  (save-some-buffers t (lambda () (derived-mode-p 'org-mode)))
+  (when (featurep 'org-id) (org-id-locations-save)))
 
-        org-log-into-drawer "LOGBOOK"
-        org-log-done 'time)
-
-  (require 'org-protocol)
-  (run-at-time "00:59" 3600 #'nd/org-save-all-org-buffers))
+(run-at-time "00:59" 3600 #'nd/org-save-all-org-buffers)
+#+END_SRC
+*** logging
+**** drawer
+I prefer all logging to go in a seperate drawer (aptly named) which allows easier navigation and parsing for data analytics.
+#+BEGIN_SRC emacs-lisp
+(setq org-log-into-drawer "LOGBOOK")
+#+END_SRC
+**** events
+Events are nice to record because it enables tracking of my behavior (eg how often I reschedule, which may indicate how well I can predict when things should happen).
+#+BEGIN_SRC emacs-lisp
+(setq org-log-done 'time
+      org-log-redeadline 'time
+      org-log-reschedule 'time)
+#+END_SRC
+**** repeated tasks
+In these cases, it is nice to know what happened during each cycle, so force notes.
+#+BEGIN_SRC emacs-lisp
+(setq org-log-repeat 'note)
 #+END_SRC
 *** bullets
 These are just so much better to read
@@ -639,6 +656,7 @@ The fonts in org headings bug me; make them smaller and less invasive.
               (set-face-attribute 'org-level-5 nil :weight 'normal :height heading-height))))
 #+END_SRC
 *** src blocks
+Enable shortcuts for embedding code in org text bodies.
 #+BEGIN_SRC emacs-lisp
 (setq org-src-window-setup 'current-window
       org-src-fontify-natively t
@@ -648,7 +666,7 @@ The fonts in org headings bug me; make them smaller and less invasive.
              '("el" "#+BEGIN_SRC emacs-lisp\n?\n#+END_SRC"))
 #+END_SRC
 *** interactive commands
-Some useful additional commands for org buffers
+Some useful additional commands for org buffers.
 #+BEGIN_SRC emacs-lisp
 (defun nd/mark-subtree-keyword (new-keyword &optional exclude)
   "Mark all tasks in a subtree with NEW-KEYWORD unless original
@@ -740,6 +758,7 @@ and reverts all todo keywords to TODO."
   ;; org-columns-summary-types
 #+END_SRC
 ** calfw
+This is a nifty calendar...sometimes way faster than the agenda buffer for looking at long term things.
 #+BEGIN_SRC emacs-lisp
 (use-package calfw
   :ensure t
@@ -951,17 +970,19 @@ These conventions are used throughout to be precise when naming functions/variab
 *** todo states
 **** list
 These keywords are used universally for all org files (see below on quick explanation for each, they are all quite straightforward). Note that projects have a more specific meaning for these keywords in defining project status (see the library of agenda function). Also, it looks way better in the agenda buffer when they are all the same number of chars. 
+
+In terms of logging, I like to record the time of each change upon leaving any state, and I like recording information in notes when waiting, holding, or canceling (as these usually have some external trigger or barrier that should be specified).
 #+BEGIN_SRC emacs-lisp
 (setq org-todo-keywords
       '((sequence
          ;; default undone state
-         "TODO(t)"
+         "TODO(t/!)"
 
          ;; undone but available to do now (projects only)
-         "NEXT(n)" "|"
+         "NEXT(n/!)" "|"
 
          ;; done and complete
-         "DONE(d)")
+         "DONE(d/!)")
 
         (sequence
          ;; undone and waiting on some external dependency
