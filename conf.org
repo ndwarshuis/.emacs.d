@@ -1117,7 +1117,7 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
   (setq org-capture-templates
         ;; regular TODO task
         `(("t" "todo" entry (file ,capfile)
-           "* TODO %?\ndeliverable: \n%U\n")
+           "* TODO %?\n%U\ndeliverable: \n")
 
           ;; for useful reference information that may be grouped with tasks
           ("n" "note" entry (file ,capfile)
@@ -1129,7 +1129,7 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
 
           ;; like appointment but multiple days
           ("s" "appointment-span" entry (file ,capfile)
-           "* TODO %?\n%U\n%^t--%^t\n")
+           "* %?\n%U\n%^t--%^t\n")
 
           ;; task with a deadline
           ("d" "deadline" entry (file ,capfile)
