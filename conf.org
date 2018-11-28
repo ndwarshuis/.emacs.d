@@ -665,6 +665,11 @@ Enable shortcuts for embedding code in org text bodies.
 (add-to-list 'org-structure-template-alist
              '("el" "#+BEGIN_SRC emacs-lisp\n?\n#+END_SRC"))
 #+END_SRC
+*** todo insertion
+Make todo insertion respect contents
+#+BEGIN_SRC emacs-lisp
+(setq org-insert-heading-respect-content t)
+#+END_SRC
 *** interactive commands
 Some useful additional commands for org buffers.
 #+BEGIN_SRC emacs-lisp
@@ -748,6 +753,15 @@ and reverts all todo keywords to TODO."
 	    (setq newhead (org-get-heading)))
 	  (org-agenda-change-all-lines newhead hdmarker)
 	  (beginning-of-line 1))))
+
+(defun nd/org-insert-todo-heading-inactive-timestamp ()
+  "Insert a todo heading but also insert inactive timestamp set to now."
+  (interactive)
+  (call-interactively 'org-insert-todo-heading)
+  (insert "\n")
+  (funcall-interactively 'org-time-stamp-inactive '(16))
+  (previous-line))
+  
 #+END_SRC
 ** column view
 #+BEGIN_SRC emacs-lisp
@@ -2963,6 +2977,7 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 #+BEGIN_SRC emacs-lisp
 (add-hook 'org-mode-hook
           (lambda ()
+            (local-set-key (kbd "M-S-<return>") 'nd/org-insert-todo-heading-inactive-timestamp)
             (local-set-key (kbd "C-c C-x x") 'nd/mark-subtree-done)
             (local-set-key (kbd "C-c C-x c") 'nd/org-clone-subtree-with-time-shift)))
             
