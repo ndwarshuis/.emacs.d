@@ -1961,8 +1961,7 @@ By definition these have no parents, so I don't need to worry about skipping ove
   "Skip headings that are not archivable atomic tasks."
   (nd/skip-heading-without
    nd/is-atomic-task-p
-   (and (member keyword org-done-keywords)
-        (nd/is-archivable-heading-p))))
+   (nd/is-archivable-heading-p)))
 #+END_SRC
 ****** repeaters
 These are headings marked with PARENT_TYPE property that have timestamped headings as children. They are to be refilled when all children are stale. Note that I only care about the parent headings as the children should always show up in the agenda simply because they have timestamps. Parents can be either fresh (at least one child in the future) or stale (all children in the past).
@@ -2157,6 +2156,24 @@ This is basically a filter but since it is implemented through skip functions it
   (message "Showing %s project view in agenda"
            (if nd/agenda-limit-project-toplevel "toplevel" "complete")))
 #+END_SRC
+***** advising
+Some org functions don't do exactly what I want. Re-educate them here
+****** org-tags-view done keywords
+The =org-tags-view= can filter tags for only headings with TODO keywords (with type tags-todo), but this automatically excludes keywords in =org-done-keywords=. Therefore, if I want to include these in any custom agenda blocks, I need to use type tags instead and skip the unwanted TODO keywords with a skip function. This is far slower as it applies the skip function to EVERY heading.
+
+Fix that here by nullifying =org--matcher-tags-todo-only= which controls how the matcher is created for tags and tags-todo. Now I can select done keywords using a match string like "+tag/DONE|CANC" (also much clearer in my opinion).
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-tags-view-advice (orig-fn &optional todo-only match)
+  "Advice to include done states in `org-tags-view' for tags-todo agenda types."
+  (nd/with-advice
+      ((#'org-make-tags-matcher
+        :around (lambda (f m)
+                  (let ((org--matcher-tags-todo-only nil))
+                    (funcall f m)))))
+    (funcall orig-fn todo-only match)))
+
+(advice-add #'org-tags-view :around #'nd/org-tags-view-advice)
+#+END_SRC
 **** block agenda views
 ***** default sorting
 This gives more flexibility in ignoring items with timestamps
@@ -2278,13 +2295,13 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
 
      ("A"
       "Archivable Tasks and Projects"
-      (,(nd/agenda-base-heading-cmd (concat actionable "-" periodical "-" habit)
-                                    "Archivable Atomic Tasks and Iterators"
-                                    ''nd/skip-non-archivable-atomic-tasks)
+      ((tags-todo ,(concat actionable "-" periodical "-" habit "/DONE|CANC")
+                  ((org-agenda-overriding-header "Archivable Atomic Tasks and Iterators")
+                   (org-agenda-sorting-strategy '(category-keep))
+                   (org-agenda-skip-function 'nd/skip-non-archivable-atomic-tasks)))
        ,(nd/agenda-base-heading-cmd (concat actionable "-" habit)
                                    "Stale Tasks and Periodicals"
                                    ''nd/skip-non-stale-headings)
-
        ,(nd/agenda-base-project-cmd
          (concat actionable "-" periodical "-" iterator "-" habit)
          '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Archivable Projects")
