@@ -2162,6 +2162,8 @@ Some org functions don't do exactly what I want. Re-educate them here
 The =org-tags-view= can filter tags for only headings with TODO keywords (with type tags-todo), but this automatically excludes keywords in =org-done-keywords=. Therefore, if I want to include these in any custom agenda blocks, I need to use type tags instead and skip the unwanted TODO keywords with a skip function. This is far slower as it applies the skip function to EVERY heading.
 
 Fix that here by nullifying =org--matcher-tags-todo-only= which controls how the matcher is created for tags and tags-todo. Now I can select done keywords using a match string like "+tag/DONE|CANC" (also much clearer in my opinion).
+
+While this is usually more efficient, it may be counterproductive in cases where skip functions can be used to ignore huge sections of an org file (which is rarely for me; most only skip ahead to the next heading).
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-tags-view-advice (orig-fn &optional todo-only match)
   "Advice to include done states in `org-tags-view' for tags-todo agenda types."
@@ -2994,8 +2996,19 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 #+BEGIN_SRC emacs-lisp
 (add-hook 'org-mode-hook
           (lambda ()
+            ;; override default TODO timestamp creation to insert the creation date
             (local-set-key (kbd "M-S-<return>") 'nd/org-insert-todo-heading-inactive-timestamp)
+
+            ;; use the hyper key with the shifters instead of shift
+            (local-set-key (kbd "H-<up>") 'org-shiftup)
+            (local-set-key (kbd "H-<right>") 'org-shiftright)
+            (local-set-key (kbd "H-<down>") 'org-shiftdown)
+            (local-set-key (kbd "H-<left>") 'org-shiftleft)
+
+            ;; this is just a useful function I made (actually I think I stole)
             (local-set-key (kbd "C-c C-x x") 'nd/mark-subtree-done)
+
+            ;; override default org subtree cloning with something that clones and resets
             (local-set-key (kbd "C-c C-x c") 'nd/org-clone-subtree-with-time-shift)))
             
 (add-hook 'org-agenda-mode-hook
