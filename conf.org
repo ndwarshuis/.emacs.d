@@ -3019,10 +3019,10 @@ These are for mode-specific bindings that can/should be outside of the evil maps
             (local-set-key (kbd "M-S-<return>") 'nd/org-insert-todo-heading-inactive-timestamp)
 
             ;; use the hyper key with the shifters instead of shift
-            (local-set-key (kbd "H-<up>") 'org-shiftup)
-            (local-set-key (kbd "H-<right>") 'org-shiftright)
-            (local-set-key (kbd "H-<down>") 'org-shiftdown)
-            (local-set-key (kbd "H-<left>") 'org-shiftleft)
+            (local-set-key (kbd "H-k") 'org-shiftup)
+            (local-set-key (kbd "H-l") 'org-shiftright)
+            (local-set-key (kbd "H-j") 'org-shiftdown)
+            (local-set-key (kbd "H-h") 'org-shiftleft)
 
             ;; this is just a useful function I made (actually I think I stole)
             (local-set-key (kbd "C-c C-x x") 'nd/mark-subtree-done)
