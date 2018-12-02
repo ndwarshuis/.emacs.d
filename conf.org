@@ -1583,6 +1583,10 @@ to REF-TIME. Returns nil if no timestamp is found."
                (<= (- timestamp (float-time)) ref-time)))
         timestamp)))
 
+(defun nd/is-ia-timestamped-heading-p ()
+  "Get active timestamp of current heading."
+  (nd/get-date-property "TIMESTAMP_IA"))
+
 (defun nd/is-timestamped-heading-p ()
   "Get active timestamp of current heading."
   (nd/get-date-property "TIMESTAMP"))
@@ -1940,6 +1944,17 @@ Skip functions for headings which may or may not be todo-items.
                 (not (nd/heading-has-parent 'nd/is-todoitem-p))))
           (nd/skip-heading)))))
 #+END_SRC
+****** tasks
+A few functions apply to both atomic tasks and project tasks the same.
+#+BEGIN_SRC emacs-lisp
+(defun nd/skip-non-ia-timestamped-tasks ()
+  "Skip tasks that do not have an inactive timestamp."
+  (save-excursion
+    (widen)
+    (if (not (and (nd/is-task-p)
+                  (not (nd/is-ia-timestamped-heading-p))))
+        (nd/skip-heading))))
+#+END_SRC
 ****** atomic tasks
 By definition these have no parents, so I don't need to worry about skipping over projects. Any todo state is valid and we only sort by done/canc
 #+BEGIN_SRC emacs-lisp
@@ -2293,7 +2308,11 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
                                     ''nd/skip-non-undone-closed-todoitems)
        ,(nd/agenda-base-heading-cmd (concat actionable "-" periodical)
                                     "Done Unclosed"
-                                    ''nd/skip-non-done-unclosed-todoitems)))
+                                    ''nd/skip-non-done-unclosed-todoitems)
+       ,(nd/agenda-base-task-cmd (concat task-match)
+                                 "Missing Creation Timestamp"
+                                 ''nd/skip-non-ia-timestamped-tasks)))
+       
 
      ("A"
       "Archivable Tasks and Projects"
