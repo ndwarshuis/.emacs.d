@@ -3046,6 +3046,11 @@ These are for mode-specific bindings that can/should be outside of the evil maps
             (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)
             (local-set-key (kbd "C-c C-x C-b") 'nd/org-agenda-toggle-checkbox)))
 #+END_SRC
+*** mu4e
+#+BEGIN_SRC emacs-lisp
+(define-key mu4e-headers-mode-map (kbd "C-c C-l") 'org-store-link)
+(define-key mu4e-view-mode-map (kbd "C-c C-l") 'org-store-link)
+#+END_SRC
 *** dired
 #+BEGIN_SRC emacs-lisp
 (define-key dired-mode-map (kbd "C-x g") 'magit)
