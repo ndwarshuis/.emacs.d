@@ -2999,6 +2999,7 @@ Note this assumes there are no sorting switches on `dired-ls'"
 
 (evil-define-key 'normal dired-mode-map
   "a" 'dired-find-file
+  "za" 'gnus-dired-attach
   "gs" 'nd/dired-sort-by
   "^" 'nd/dired-move-to-parent-directory
   "q" 'nd/kill-current-buffer
