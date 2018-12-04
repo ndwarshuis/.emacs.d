@@ -2719,6 +2719,17 @@ Spell checking is generally a good idea when writing to pointy-haired bosses.
 #+END_SRC
 * keybindings
 For the sake of my sanity, all bindings go here. Note this means I don't use =:bind= in use-package forms.
+** setup
+Most of my modifiers are reloacted using xkb and xcape. Below is a summary where each item is in the form <original key> -> <new key action> (<key release action if used>) 
+- tab -> l_super (tab)
+- backslash -> r_super (backslash)
+- caps -> l_ctrl (escape)
+- return -> r_ctrl (return)
+- l_ctrl -> l_hyper
+- l_super -> iso_l3_shift (xf86search)
+- space -> r_alt (space)
+- r_alt -> r_hyper
+- r_ctrl -> caps
 ** evil
 I like being evil. All package and custom bindings go here.
 *** base
@@ -3010,7 +3021,7 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
   (kbd "C-<escape>") 'evil-normal-state)
 #+END_SRC
 ** local
-These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future)
+These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future).
 *** org-mode
 #+BEGIN_SRC emacs-lisp
 (add-hook 'org-mode-hook
@@ -3018,7 +3029,7 @@ These are for mode-specific bindings that can/should be outside of the evil maps
             ;; override default TODO timestamp creation to insert the creation date
             (local-set-key (kbd "M-S-<return>") 'nd/org-insert-todo-heading-inactive-timestamp)
 
-            ;; use the hyper key with the shifters instead of shift
+            ;; use the hyper keys/vim arrows with the shifters instead of shift/arrows
             (local-set-key (kbd "H-k") 'org-shiftup)
             (local-set-key (kbd "H-l") 'org-shiftright)
             (local-set-key (kbd "H-j") 'org-shiftdown)
