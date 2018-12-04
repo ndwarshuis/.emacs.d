@@ -2458,6 +2458,8 @@ If dired is to replace all other file managers it must handle devices. This func
       
       mu4e-view-show-images t
       mu4e-headers-show-target nil
+      
+      mu4e-view-show-addresses t
 
       message-kill-buffer-on-exit t
       
