@@ -754,6 +754,28 @@ and reverts all todo keywords to TODO."
 	  (org-agenda-change-all-lines newhead hdmarker)
 	  (beginning-of-line 1))))
 
+;; TODO, use a macro here...this is a common idiom
+(defun nd/org-agenda-clone-subtree-with-time-shift ()
+  "Apply `nd/org-clone-subtree-with-time-shift' to an agenda entry.
+It will clone the last entry in the selected subtree."
+  (interactive)
+  (org-agenda-check-no-diary)
+  (let* ((hdmarker (or (org-get-at-bol 'org-hd-marker)
+			           (org-agenda-error)))
+	     (buffer (marker-buffer hdmarker))
+	     (pos (marker-position hdmarker))
+	     (inhibit-read-only t)
+	     newhead)
+    (org-with-remote-undo buffer
+	  (with-current-buffer buffer
+        (widen)
+	    (goto-char pos)
+        (org-show-context 'agenda)
+        (org-end-of-subtree)
+        (call-interactively #'nd/org-clone-subtree-with-time-shift))
+      (beginning-of-line 1)
+      (org-agenda-redo))))
+
 (defun nd/org-insert-todo-heading-inactive-timestamp ()
   "Insert a todo heading but also insert inactive timestamp set to now."
   (interactive)
@@ -761,7 +783,6 @@ and reverts all todo keywords to TODO."
   (insert "\n")
   (funcall-interactively 'org-time-stamp-inactive '(16))
   (previous-line))
-  
 #+END_SRC
 ** column view
 #+BEGIN_SRC emacs-lisp
@@ -3047,6 +3068,7 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 (add-hook 'org-agenda-mode-hook
           (lambda ()
             (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)
+            (local-set-key (kbd "C-c C-x c") 'nd/org-agenda-clone-subtree-with-time-shift)
             (local-set-key (kbd "C-c C-x C-b") 'nd/org-agenda-toggle-checkbox)))
 #+END_SRC
 *** mu4e
