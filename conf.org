@@ -733,11 +733,33 @@ and reverts all todo keywords to TODO."
       (delete-region (region-beginning) (region-end))
       (org-remove-empty-drawer-at (point)))))
 
-(defun nd/org-agenda-toggle-checkbox ()
-  "Toggle checkboxes in org agenda view using `org-toggle-checkbox'."
+(defun nd/org-insert-todo-heading-inactive-timestamp ()
+  "Insert a todo heading but also insert inactive timestamp set to now."
   (interactive)
-  (org-agenda-check-no-diary)
-  (let* ((hdmarker (or (org-get-at-bol 'org-hd-marker)
+  ;; a bit redundant and hacky, with the advantage of being effective
+  (when (not (org-insert-item 'checkbox))
+    (call-interactively 'org-insert-todo-heading)
+    (insert "\n")
+    (funcall-interactively 'org-time-stamp-inactive '(16))
+    (previous-line)))
+
+(defun nd/org-delete-subtree ()
+  "Delete the entire subtree under the current heading without sending to kill ring."
+  (interactive)
+  (org-back-to-heading t)
+  (delete-region (point) (+ 1 (save-excursion (org-end-of-subtree)))))
+
+#+END_SRC
+*** interactive agenda commands
+These are executed directly from agenda views and affect their source org buffers. The trick is that all of them must somehow go back to the heading to which they alude, execute, then update the agenda view with whatever changes have been made.
+#+BEGIN_SRC emacs-lisp
+(defmacro nd/org-agenda-cmd-wrapper (get-head &rest body)
+  "Wraps commands in BODY in necessary code to allow commands to be
+called from the agenda buffer. Particularly, this wrapper will
+navigate to the original header, execute BODY, then update the agenda
+buffer."
+  '(org-agenda-check-no-diary)
+  `(let* ((hdmarker (or (org-get-at-bol 'org-hd-marker)
 			           (org-agenda-error)))
 	     (buffer (marker-buffer hdmarker))
 	     (pos (marker-position hdmarker))
@@ -748,41 +770,35 @@ and reverts all todo keywords to TODO."
 	    (widen)
 	    (goto-char pos)
 	    (org-show-context 'agenda)
-        (call-interactively #'org-toggle-checkbox)
-	    (end-of-line 1)
-	    (setq newhead (org-get-heading)))
-	  (org-agenda-change-all-lines newhead hdmarker)
+        ,@body
+	    (when ,get-head (setq newhead (org-get-heading))))
+	  (if ,get-head
+          (org-agenda-change-all-lines newhead hdmarker)
+        (org-agenda-redo))
 	  (beginning-of-line 1))))
+  
+(defun nd/org-agenda-toggle-checkbox ()
+  "Toggle checkboxes in org agenda view using `org-toggle-checkbox'."
+  (interactive)
+  (nd/org-agenda-cmd-wrapper
+   t
+   (call-interactively #'org-toggle-checkbox)))
 
-;; TODO, use a macro here...this is a common idiom
 (defun nd/org-agenda-clone-subtree-with-time-shift ()
   "Apply `nd/org-clone-subtree-with-time-shift' to an agenda entry.
 It will clone the last entry in the selected subtree."
   (interactive)
-  (org-agenda-check-no-diary)
-  (let* ((hdmarker (or (org-get-at-bol 'org-hd-marker)
-			           (org-agenda-error)))
-	     (buffer (marker-buffer hdmarker))
-	     (pos (marker-position hdmarker))
-	     (inhibit-read-only t)
-	     newhead)
-    (org-with-remote-undo buffer
-	  (with-current-buffer buffer
-        (widen)
-	    (goto-char pos)
-        (org-show-context 'agenda)
-        (org-end-of-subtree)
-        (call-interactively #'nd/org-clone-subtree-with-time-shift))
-      (beginning-of-line 1)
-      (org-agenda-redo))))
+  (nd/org-agenda-cmd-wrapper
+   nil
+   (org-end-of-subtree)
+   (call-interactively #'nd/org-clone-subtree-with-time-shift)))
 
-(defun nd/org-insert-todo-heading-inactive-timestamp ()
-  "Insert a todo heading but also insert inactive timestamp set to now."
+(defun nd/org-agenda-delete-subtree ()
+  "Apply `nd/org-delete-subtree' to an agenda entry."
   (interactive)
-  (call-interactively 'org-insert-todo-heading)
-  (insert "\n")
-  (funcall-interactively 'org-time-stamp-inactive '(16))
-  (previous-line))
+  (nd/org-agenda-cmd-wrapper
+   nil
+   (call-interactively #'nd/org-delete-subtree)))
 #+END_SRC
 ** column view
 #+BEGIN_SRC emacs-lisp
@@ -1532,6 +1548,12 @@ H is a string like +prop or -prop"
 (advice-add #'org-agenda-filter-remove-all :before
             (lambda () (when org-agenda-hasprop-filter
                     (nd/org-agenda-filter-show-all-hasprop))))
+#+END_SRC
+**** bulk actions
+These add to the existing bulk actions in the agenda view.
+#+BEGIN_SRC emacs-lisp
+(setq org-agenda-bulk-custom-functions
+      '((?D nd/org-agenda-delete-subtree)))
 #+END_SRC
 **** holidays and birthdays
 If I don't include this, I actually forget about major holidays.
