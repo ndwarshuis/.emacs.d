@@ -1,19 +1,40 @@
 * overview
-This is my personal emacs config which currently runs on emacs 26.1 (currently the latest package from the Arch Linux official repos). 
+** purpose and usage
+This is my personal emacs config. 
 
 I use this for a variety of purposes:
 - maintaining my todo list/[[https://en.wikipedia.org/wiki/Getting_Things_Done][GTD]] workflow (org mode)
 - unified interface for system administration (dired, shell, git, ediff)
-- email (mu4e, work in progress)
-- editing some of my favorite languages (R, Lisp, Haskell, Lua, Python)
+- email (mu4e)
+- writing some of my favorite languages (R, Lisp, Haskell, Lua, Python)
+- document preparation (latex)
+** for new users
+Feel free to take bits and pieces for your own configuration file. Like many things in emacs, the config file is quite self documenting; however, there are some useful ramblings that decribe why I made some design choices over others. As someone who learned from countless emacs configs of other experienced users, I thought it was extremely beneficial to see the thought process behind their workflow and code, and I hope my annotations pay that forward. Finally, please don't just blindly copy this config into your =~/.emacs.d=. I don't care if you do, but you will learn more if you build from scratch.
+** config structure
+The "config file" is actually several files. 
+
+The "root" is =init.el= which is the file explicitly loaded by emacs. The =init.el= is sometimes the only file people use, but my configuration became so huge I decided to split it in several files to maintain sanity. =init.el= currently has minimum functionality, including setting the repositories, configuring the package =use-package= (which installs all other packages and ensures they are available if I move this config elsewhere), and load paths for the other config files as explained below. Basically, it's a bootloader for bigger, better config files.
+
+Once loaded, the =init.el= pulls in another file called =main.el= from the =conf= directory with the function =org-babel-load-file=. =main.el= is actually sourced from an [[https://en.wikipedia.org/wiki/Org-mode][org]] file, which allows markdown and annotations surrounding each block of lisp code. Since github is awesome and understands org files as a valid markdown format, all readme files (including this one) are actually org file.
+
+After =main.el= is loaded, it may pull in a number of other files that I deemed big enough to separate (again using the =org-babel-load-file= function). Each .el/.org file that is included is stored in a separate directory under =conf=; navigate to these directories to see the file in readme format as you are reading this one.
+* includes
+These is general code that is used throughout the config file. Stored in another file for brevity.
+#+BEGIN_SRC emacs-lisp
+(org-babel-load-file (expand-file-name "lib/lib.org" nd/conf-dir))
+#+END_SRC
 * ui
 ** theme
+This theme has good functionality for many different modes without being over-the-top or overly complex. It also comes with an easy way to set custom colors.
 #+BEGIN_SRC emacs-lisp
 (use-package spacemacs-theme
   :defer t
   :config
   (setq spacemacs-theme-custom-colors '((lnum . "#64707c"))))
+#+END_SRC
 
+Since I run emacs in [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Emacs-Server.html][client/server]] mode, the loaded theme can change depending on if the client is a terminal or server (terminals have far fewer colors). This makes the theme reset when terminal is loaded before gui or vice versa.
+#+BEGIN_SRC emacs-lisp
 (defvar nd/theme 'spacemacs-dark)
 (defvar nd/theme-window-loaded nil)
 (defvar nd/theme-terminal-loaded nil)
@@ -41,6 +62,7 @@ I use this for a variety of purposes:
       (setq nd/theme-terminal-loaded t))))
 #+END_SRC
 ** modeline
+This modeline goes along with the =spacemacs-theme=. It also has nice integration with =evil-mode= (see keybindings below).
 #+BEGIN_SRC emacs-lisp
 (use-package spaceline
   :ensure t
@@ -54,33 +76,32 @@ I use this for a variety of purposes:
 (column-number-mode 1)
 #+END_SRC
 *** delight
-Used to hide minor modes on the modeline
+I like to keep the modeline clean and uncluttered. This package prevents certain mode names from showing in the modeline (it also has support for =use-package= through the =:delight= keyword)
 #+BEGIN_SRC emacs-lisp
 (use-package delight
   :ensure t)
 #+END_SRC
 ** clean the interface
-No need for startup screen, tool/menu/scrollbars, or backups
+Emacs comes with some useless garbage by default. IMHO (in my haughty opinion), text editors should be boxes with text in them. No menu bars, scroll bars, or toolbars (and certainly no ribbons). Also, I don't need the startup screen; scratch buffer is fine.
 #+BEGIN_SRC emacs-lisp
 (setq inhibit-startup-screen t)
-
 (tool-bar-mode -1)
 (menu-bar-mode -1)
 (scroll-bar-mode -1)
-
-(setq make-backup-files nil)
-(setq auto-save-default nil)
 #+END_SRC
 ** other enhancements
 *** popup windows
+Some modes like to make popup windows (eg ediff). This prevents that.
 #+BEGIN_SRC emacs-lisp
-(setq pop-up-windows nil) ; no popups (eg ediff)
+(setq pop-up-windows nil)
 #+END_SRC
 *** line wrap
+I don't like line wrap
 #+BEGIN_SRC emacs-lisp
 (set-default 'truncate-lines t)
 #+END_SRC
 *** smooth scrolling
+This makes scrolling smoother
 #+BEGIN_SRC emacs-lisp
 (setq scroll-conservatively 100)
 #+END_SRC
@@ -90,11 +111,19 @@ No need for startup screen, tool/menu/scrollbars, or backups
   (imagemagick-register-types))
 #+END_SRC
 *** yes-no prompt
+Some prompts require literal "yes" or "no" to decide action. Life is short and I would rather not waste keystrokes typing whole words. This makes all "yes/no" prompts only require "y" or "n."
 #+BEGIN_SRC emacs-lisp
-(defalias 'yes-or-no-p 'y-or-n-p) ; eliminate yes or no prompt on killing procs
+(defalias 'yes-or-no-p 'y-or-n-p)
+#+END_SRC
+*** autosave
+Saving files continuously is actually really annoying and clutters my disk. Turn it off.
+#+BEGIN_SRC emacs-lisp
+(setq make-backup-files nil)
+(setq auto-save-default nil)
 #+END_SRC
 * packages
 ** beacon
+This makes a nice glowy effect on the cursor when switching window focus. Very elegant way of saving time in finding where you left off.
 #+BEGIN_SRC emacs-lisp
 (use-package beacon
   :ensure t
@@ -103,6 +132,7 @@ No need for startup screen, tool/menu/scrollbars, or backups
   (beacon-mode 1))
 #+END_SRC
 ** whichkey
+Everyone forgets keybindings. When typing a key chord, this will display a window with all possible completions and their commands.
 #+BEGIN_SRC emacs-lisp
 (use-package which-key
   :ensure t
@@ -111,6 +141,7 @@ No need for startup screen, tool/menu/scrollbars, or backups
   (which-key-mode))
 #+END_SRC
 ** helm
+One of the best packages for emacs. Helm is basically a search and completion engine (other exanples being =ido-mode= and =ivy-mode=) which is mainly used for finding files and selecting commands (which are obviously used often). It also integrates well with many other modes such as =evil-mode= and =org-mode=.
 #+BEGIN_SRC emacs-lisp
 (use-package helm
   :ensure t
@@ -140,6 +171,7 @@ No need for startup screen, tool/menu/scrollbars, or backups
   :ensure t)
 #+END_SRC
 ** rainbow-delimiters
+This color-codes matching parenthesis. Enable pretty much everywhere.
 #+BEGIN_SRC emacs-lisp
 (use-package rainbow-delimiters
   :ensure t
@@ -152,6 +184,7 @@ No need for startup screen, tool/menu/scrollbars, or backups
    (Tex-latex-mode . rainbow-delimiters-mode)))
 #+END_SRC
 ** ace-window
+This is an elegant window selector. It displays a number in the corner when activated, and windows may be chosen by pressing the corresponding number. Note that spacemacs fails to make the numbers look nice so the theme code is a workaround to make them smaller and prettier.
 #+BEGIN_SRC emacs-lisp
 (use-package ace-window
   :ensure t
@@ -164,6 +197,7 @@ No need for startup screen, tool/menu/scrollbars, or backups
                            :box nil))))))
 #+END_SRC
 ** avy
+Allows jumping to any character in any window with a few keystrokes. Goodbye mouse :)
 #+BEGIN_SRC emacs-lisp
   (use-package avy
     :ensure t
@@ -171,11 +205,13 @@ No need for startup screen, tool/menu/scrollbars, or backups
     (setq avy-background t))
 #+END_SRC
 ** sudo edit
+Allows opening a file with sudo elevation.
 #+BEGIN_SRC emacs-lisp
   (use-package sudo-edit
     :ensure t)
 #+END_SRC
 ** undo tree
+Displays undo history in a nice tree. Also dislays diff information.
 #+BEGIN_SRC emacs-lisp
 (use-package undo-tree
   :ensure t
@@ -185,6 +221,7 @@ No need for startup screen, tool/menu/scrollbars, or backups
   (global-undo-tree-mode))
 #+END_SRC
 ** fill-column-indicator
+Displays a line at 80 characters as a guide for column width. 
 #+BEGIN_SRC emacs-lisp
 (use-package fill-column-indicator
   :ensure t
@@ -194,11 +231,13 @@ No need for startup screen, tool/menu/scrollbars, or backups
   (prog-mode . fci-mode))
 #+END_SRC
 ** rainbow
+Overlays hex color codes with matching colors in certain modes like css and html. 
 #+BEGIN_SRC emacs-lisp
 (use-package rainbow-mode
   :ensure t)
 #+END_SRC
 ** async
+Allows certain processes to run in multithreaded manner. For things like IO this makes sense.
 #+BEGIN_SRC emacs-lisp
 (use-package async
   :ensure t
@@ -207,17 +246,20 @@ No need for startup screen, tool/menu/scrollbars, or backups
   (dired-async-mode 1))
 #+END_SRC
 ** csv-mode
+This adds support for csv files. Almost makes them editable like a spreadsheet. The lambda function enables alignment by default.
 #+BEGIN_SRC emacs-lisp
 (use-package csv-mode
   :ensure t
   :hook (csv-mode . (lambda () (csv-align-fields nil (point-min) (point-max)))))
 #+END_SRC
 ** markdown-mode
+Added support for standard markdown files.
 #+BEGIN_SRC emacs-lisp
 (use-package markdown-mode
   :ensure t)
 #+END_SRC
 ** polymode
+This allows multiple modes in one buffer. This may sound totally crazy...but it actually is. Despite it's hackiness, it actually makes alot of sense for some situations such as R markdown which requires yaml, markdown, and R code in one buffer.
 #+BEGIN_SRC emacs-lisp
 (use-package polymode
   :ensure t
@@ -228,11 +270,6 @@ No need for startup screen, tool/menu/scrollbars, or backups
   :config
   (require 'poly-R)
   (require 'poly-markdown))
-#+END_SRC
-* library
-These is general code that is used throughout the config file. Stored in another file for brevity.
-#+BEGIN_SRC emacs-lisp
-(org-babel-load-file (expand-file-name "lib/lib.org" nd/conf-dir))
 #+END_SRC
 * editing
 ** tabs and alignment
