@@ -267,7 +267,7 @@ filesystem and is a usb drive."
 
 (defun nd/mount-device (dev &rest opts)
   "Mount device DEV using udevil."
-  (call-process "udevil" nil nil nil "mount" s))
+  (call-process "udevil" nil nil nil "mount" dev))
 
 (defun nd/get-mountpoint (dev)
   "Get the filesystem mountpoint for device DEV."
@@ -401,7 +401,7 @@ filesystem and is a usb drive."
       (lambda ()
         (setq indent-tabs-mode t)
         (setq tab-width 4)
-        (setq python-indent 4)))
+        (setq python-offset 4)))
         
 (setq python-shell-interpreter "ipython"
       python-shell-interpreter-args "--colors=Linux --profile=default")
@@ -583,7 +583,7 @@ and reverts all todo keywords to TODO."
     (call-interactively 'org-insert-todo-heading)
     (insert "\n")
     (funcall-interactively 'org-time-stamp-inactive '(16))
-    (previous-line)))
+    (forward-line -1)))
 
 (defun nd/org-delete-subtree ()
   "Delete the entire subtree under the current heading without sending to kill ring."
