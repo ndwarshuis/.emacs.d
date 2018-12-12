@@ -1,6 +1,6 @@
 /*
 !.gitignore
-!conf.org
+!conf
+!conf/*
 !README.org
-conf.el
 !init.el

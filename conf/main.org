@@ -363,14 +363,14 @@ filesystem and is a usb drive."
   (switch-to-buffer (other-buffer (current-buffer) 1)))
   
 (defun nd/config-reload ()
-  "Reloads ~/.emacs.d/conf.org at runtime."
+  "Reloads main configuration file at runtime."
   (interactive)
-  (org-babel-load-file (expand-file-name "~/.emacs.d/conf.org")))
+  (org-babel-load-file (expand-file-name "~/.emacs.d/conf/main.org")))
 
 (defun nd/config-visit ()
   "Opens the main conf.org file (the one that really matters)."
   (interactive)
-  (find-file "~/.emacs.d/conf.org"))
+  (find-file "~/.emacs.d/conf/main.org"))
 
 (defun nd/kill-current-buffer ()
   "Kill the current buffer."
@@ -1211,6 +1211,19 @@ Prevent accidental refiling under tasks with done keywords
 #+BEGIN_SRC emacs-lisp
 (setq org-refile-target-verify-function
       (lambda () (not (member (nth 2 (org-heading-components)) org-done-keywords))))
+
+;; TODO this no work, although does work if var is global
+;; redfining the targets works for now
+(add-hook 'org-agenda-mode-hook
+          (lambda ()
+            (when (equal (buffer-name) "*Org Agenda(A)*")
+              (setq-local org-refile-targets
+                          '(("~/Org/journal/goals.org" :maxlevel . 9))))))
+;;                           (lambda () (when (org-entry-get nil "GOAL") t))))))
+;; (setq org-refile-targets '((nil :maxlevel . 9)
+;;                            ("~/Org/reference/idea.org" :maxlevel . 9)
+;;                            ("~/Org/journal/goals.org" :maxlevel . 9)
+;;                            (org-agenda-files :maxlevel . 9))
 #+END_SRC
 *** clocking
 Clocking is still new and experimental (I'm not a ninja like Bernt yet). I mostly use clocking now as a way to make clean breaks between tasks (eg to discourage "mixing" tasks which is a slippery multitasking slope). I bound =F4= to =org-clock-goto= as an easy way to find my current/last clocked task in any mode (see keybindigs).
