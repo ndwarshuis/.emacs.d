@@ -1,3 +1,5 @@
+My complete org mode configuration
+
 * major mode
 ** package
 Enable =visual-line-mode= and =org-indent-mode= by default and delight them. Also load =org-protocol= after org is loaded and set default org directory to something obvious.
