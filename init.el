@@ -7,7 +7,13 @@
   (package-refresh-contents)
   (package-install 'use-package))
 
-(org-babel-load-file (expand-file-name "~/.emacs.d/conf/main.org"))
+(defvar nd/conf-dir "~/.emacs.d/conf/"
+  "The absolute path to the EMACS configuration directory.")
+
+(defvar nd/conf-main (expand-file-name "main.org" nd/conf-dir)
+  "The absolute path the main EMACS configuration file.")
+
+(org-babel-load-file nd/conf-main)
 
 ;; (custom-set-variables
 ;;  ;; custom-set-variables was added by Custom.

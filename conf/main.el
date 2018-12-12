@@ -296,12 +296,12 @@ filesystem and is a usb drive."
 (defun nd/config-reload ()
   "Reloads main configuration file at runtime."
   (interactive)
-  (org-babel-load-file (expand-file-name "~/.emacs.d/conf/main.org")))
+  (org-babel-load-file nd/conf-main))
 
 (defun nd/config-visit ()
   "Opens the main conf.org file (the one that really matters)."
   (interactive)
-  (find-file "~/.emacs.d/conf/main.org"))
+  (find-file nd/conf-main))
 
 (defun nd/kill-current-buffer ()
   "Kill the current buffer."
