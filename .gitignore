@@ -2,5 +2,7 @@
 !.gitignore
 !conf
 !conf/*
+conf/*.el
+conf/*/*.el
 !README.org
 !init.el
