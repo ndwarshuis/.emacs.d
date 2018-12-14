@@ -218,6 +218,14 @@ It will clone the last entry in the selected subtree."
    nil
    (call-interactively #'nd/org-delete-subtree)))
 #+END_SRC
+* table of contents
+Since I use org mode as my config file, makes sense to have a table of contents so others can easily naviagate this crazy empire I have created :)
+#+BEGIN_SRC emacs-lisp
+(use-package toc-org
+  :ensure t
+  :hook
+  (org-mode . toc-org-mode))
+#+END_SRC
 * column view
 #+BEGIN_SRC emacs-lisp
   (setq org-columns-default-format
