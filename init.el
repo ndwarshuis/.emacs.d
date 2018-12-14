@@ -7,10 +7,10 @@
   (package-refresh-contents)
   (package-install 'use-package))
 
-(defvar nd/conf-dir "~/.emacs.d/conf/"
+(defvar nd/conf-dir "~/.emacs.d/"
   "The absolute path to the EMACS configuration directory.")
 
-(defvar nd/conf-main (expand-file-name "main.org" nd/conf-dir)
+(defvar nd/conf-main (expand-file-name "conf.org" nd/conf-dir)
   "The absolute path the main EMACS configuration file.")
 
 (org-babel-load-file nd/conf-main)

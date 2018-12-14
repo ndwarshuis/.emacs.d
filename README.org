@@ -1,1 +1,1 @@
-conf/main.org
+conf.org
