@@ -241,11 +241,13 @@ filesystem and is a usb drive."
   (let ((cwd (expand-file-name default-directory)))
     (call-process "urxvt" nil 0 nil "-cd" cwd)))
 #+END_SRC
-* ui
+* user interface
+The general look and feel, as well as interactive functionality
 ** theme
 This theme has good functionality for many different modes without being over-the-top or overly complex. It also comes with an easy way to set custom colors.
 #+BEGIN_SRC emacs-lisp
 (use-package spacemacs-theme
+  :ensure t
   :defer t
   :config
   (setq spacemacs-theme-custom-colors '((lnum . "#64707c"))))
