@@ -1,4 +1,5 @@
 This is my personal emacs config. It is quite massive. Please use the table of contents below for easy navigation ;)
+
 * table of contents                                                     :TOC:
 - [[#overview][overview]]
   - [[#features-and-use-cases][features and use cases]]
@@ -8,33 +9,25 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#macros][macros]]
   - [[#functions][functions]]
   - [[#interactive][interactive]]
-- [[#ui][ui]]
+- [[#user-interface][user interface]]
   - [[#theme][theme]]
   - [[#modeline][modeline]]
-  - [[#clean-the-interface][clean the interface]]
-  - [[#other-enhancements][other enhancements]]
-- [[#packages][packages]]
-  - [[#beacon][beacon]]
-  - [[#whichkey][whichkey]]
-  - [[#helm][helm]]
-  - [[#helm-swoop][helm-swoop]]
-  - [[#rainbow-delimiters][rainbow-delimiters]]
-  - [[#ace-window][ace-window]]
-  - [[#avy][avy]]
-  - [[#sudo-edit][sudo edit]]
-  - [[#undo-tree][undo tree]]
-  - [[#fill-column-indicator][fill-column-indicator]]
-  - [[#rainbow][rainbow]]
+  - [[#remove-interface-bars][remove interface bars]]
+  - [[#startup-screen][startup screen]]
+  - [[#windows][windows]]
+  - [[#navigation][navigation]]
+  - [[#cursor][cursor]]
+  - [[#misc][misc]]
+- [[#low-level-config][low-level config]]
+  - [[#autosave][autosave]]
   - [[#async][async]]
-  - [[#csv-mode][csv-mode]]
-  - [[#markdown-mode][markdown-mode]]
-  - [[#polymode][polymode]]
 - [[#editing][editing]]
-  - [[#tabs-and-alignment][tabs and alignment]]
-  - [[#completion][completion]]
-  - [[#flyspell][flyspell]]
-  - [[#progmode][progmode]]
-  - [[#languages][languages]]
+  - [[#standardization][standardization]]
+  - [[#auto-completion][auto completion]]
+  - [[#undo][undo]]
+  - [[#parenthesis-matching][parenthesis matching]]
+  - [[#sudo-edit][sudo edit]]
+  - [[#formats-and-languages][formats and languages]]
 - [[#org-mode][org-mode]]
   - [[#major-mode][major mode]]
   - [[#table-of-contents][table of contents]]
@@ -49,13 +42,11 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#magit][magit]]
   - [[#dired][dired]]
   - [[#mu4e][mu4e]]
-  - [[#auctex][auctex]]
-  - [[#bibtex][bibtex]]
-  - [[#ebib][ebib]]
   - [[#shell][shell]]
   - [[#ediff][ediff]]
 - [[#keybindings][keybindings]]
   - [[#setup][setup]]
+  - [[#whichkey][whichkey]]
   - [[#evil][evil]]
   - [[#local][local]]
   - [[#global][global]]
@@ -301,66 +292,39 @@ I like to keep the modeline clean and uncluttered. This package prevents certain
 (use-package delight
   :ensure t)
 #+END_SRC
-** clean the interface
-Emacs comes with some useless garbage by default. IMHO (in my haughty opinion), text editors should be boxes with text in them. No menu bars, scroll bars, or toolbars (and certainly no ribbons). Also, I don't need the startup screen; scratch buffer is fine.
+** remove interface bars
+Emacs comes with some useless garbage by default. IMHO (in my haughty opinion), text editors should be boxes with text in them. No menu bars, scroll bars, or toolbars (and certainly no ribbons). 
 #+BEGIN_SRC emacs-lisp
-(setq inhibit-startup-screen t)
 (tool-bar-mode -1)
 (menu-bar-mode -1)
 (scroll-bar-mode -1)
 #+END_SRC
-** other enhancements
+** startup screen
+I don't need the startup screen; scratch buffer is fine. This may change in the future.
+#+BEGIN_SRC emacs-lisp
+(setq inhibit-startup-screen t)
+#+END_SRC
+** windows
 *** popup windows
 Some modes like to make popup windows (eg ediff). This prevents that.
 #+BEGIN_SRC emacs-lisp
 (setq pop-up-windows nil)
 #+END_SRC
-*** line wrap
-I don't like line wrap
+*** ace-window
+This is an elegant window selector. It displays a number in the corner when activated, and windows may be chosen by pressing the corresponding number. Note that spacemacs fails to make the numbers look nice so the theme code is a workaround to make them smaller and prettier.
 #+BEGIN_SRC emacs-lisp
-(set-default 'truncate-lines t)
-#+END_SRC
-*** smooth scrolling
-This makes scrolling smoother
-#+BEGIN_SRC emacs-lisp
-(setq scroll-conservatively 100)
-#+END_SRC
-*** imagemagick
-#+BEGIN_SRC emacs-lisp
-(when (fboundp 'imagemagick-register-types)
-  (imagemagick-register-types))
-#+END_SRC
-*** yes-no prompt
-Some prompts require literal "yes" or "no" to decide action. Life is short and I would rather not waste keystrokes typing whole words. This makes all "yes/no" prompts only require "y" or "n."
-#+BEGIN_SRC emacs-lisp
-(defalias 'yes-or-no-p 'y-or-n-p)
-#+END_SRC
-*** autosave
-Saving files continuously is actually really annoying and clutters my disk. Turn it off.
-#+BEGIN_SRC emacs-lisp
-(setq make-backup-files nil)
-(setq auto-save-default nil)
-#+END_SRC
-* packages
-** beacon
-This makes a nice glowy effect on the cursor when switching window focus. Very elegant way of saving time in finding where you left off.
-#+BEGIN_SRC emacs-lisp
-(use-package beacon
+(use-package ace-window
   :ensure t
-  :delight
-  :init
-  (beacon-mode 1))
+  :config
+  (setq aw-background t)
+  (custom-set-faces '(aw-leading-char-face 
+                      ((t (:foreground "#292b2e"
+                           :background "#bc6ec5"
+                           :height 1.0
+                           :box nil))))))
 #+END_SRC
-** whichkey
-Everyone forgets keybindings. When typing a key chord, this will display a window with all possible completions and their commands.
-#+BEGIN_SRC emacs-lisp
-(use-package which-key
-  :ensure t
-  :delight
-  :init
-  (which-key-mode))
-#+END_SRC
-** helm
+** navigation
+*** helm
 One of the best packages for emacs. Helm is basically a search and completion engine (other exanples being =ido-mode= and =ivy-mode=) which is mainly used for finding files and selecting commands (which are obviously used often). It also integrates well with many other modes such as =evil-mode= and =org-mode=.
 #+BEGIN_SRC emacs-lisp
 (use-package helm
@@ -385,38 +349,12 @@ One of the best packages for emacs. Helm is basically a search and completion en
   (helm-autoresize-mode 1)
   (require 'helm-config))
 #+END_SRC
-** helm-swoop
+*** helm-swoop
 #+BEGIN_SRC emacs-lisp
 (use-package helm-swoop
   :ensure t)
 #+END_SRC
-** rainbow-delimiters
-This color-codes matching parenthesis. Enable pretty much everywhere.
-#+BEGIN_SRC emacs-lisp
-(use-package rainbow-delimiters
-  :ensure t
-  :delight
-  :hook
-  ((prog-mode . rainbow-delimiters-mode)
-   (inferior-ess-mode . rainbow-delimiters-mode)
-   (ess-mode . rainbow-delimiters-mode)
-   (LaTeX-mode . rainbow-delimiters-mode)
-   (Tex-latex-mode . rainbow-delimiters-mode)))
-#+END_SRC
-** ace-window
-This is an elegant window selector. It displays a number in the corner when activated, and windows may be chosen by pressing the corresponding number. Note that spacemacs fails to make the numbers look nice so the theme code is a workaround to make them smaller and prettier.
-#+BEGIN_SRC emacs-lisp
-(use-package ace-window
-  :ensure t
-  :config
-  (setq aw-background t)
-  (custom-set-faces '(aw-leading-char-face 
-                      ((t (:foreground "#292b2e"
-                           :background "#bc6ec5"
-                           :height 1.0
-                           :box nil))))))
-#+END_SRC
-** avy
+*** avy
 Allows jumping to any character in any window with a few keystrokes. Goodbye mouse :)
 #+BEGIN_SRC emacs-lisp
   (use-package avy
@@ -424,37 +362,43 @@ Allows jumping to any character in any window with a few keystrokes. Goodbye mou
     :config
     (setq avy-background t))
 #+END_SRC
-** sudo edit
-Allows opening a file with sudo elevation.
+** cursor
+This makes a nice glowy effect on the cursor when switching window focus. Very elegant way of saving time in finding where you left off.
 #+BEGIN_SRC emacs-lisp
-  (use-package sudo-edit
-    :ensure t)
-#+END_SRC
-** undo tree
-Displays undo history in a nice tree. Also dislays diff information.
-#+BEGIN_SRC emacs-lisp
-(use-package undo-tree
+(use-package beacon
   :ensure t
   :delight
-  :config
-  (setq undo-tree-visualizer-diff t)
-  (global-undo-tree-mode))
+  :init
+  (beacon-mode 1))
 #+END_SRC
-** fill-column-indicator
-Displays a line at 80 characters as a guide for column width. 
+** misc
+*** line wrap
+I don't like line wrap
 #+BEGIN_SRC emacs-lisp
-(use-package fill-column-indicator
-  :ensure t
-  :config
-  (setq fci-rule-use-dashes t)
-  :hook
-  (prog-mode . fci-mode))
+(set-default 'truncate-lines t)
 #+END_SRC
-** rainbow
-Overlays hex color codes with matching colors in certain modes like css and html. 
+*** smooth scrolling
+This makes scrolling smoother
 #+BEGIN_SRC emacs-lisp
-(use-package rainbow-mode
-  :ensure t)
+(setq scroll-conservatively 100)
+#+END_SRC
+*** imagemagick
+#+BEGIN_SRC emacs-lisp
+(when (fboundp 'imagemagick-register-types)
+  (imagemagick-register-types))
+#+END_SRC
+*** yes-no prompt
+Some prompts require literal "yes" or "no" to decide action. Life is short and I would rather not waste keystrokes typing whole words. This makes all "yes/no" prompts only require "y" or "n."
+#+BEGIN_SRC emacs-lisp
+(defalias 'yes-or-no-p 'y-or-n-p)
+#+END_SRC
+* low-level config
+General configuation for behind-the-scenes behavior
+** autosave
+Saving files continuously is actually really annoying and clutters my disk. Turn it off.
+#+BEGIN_SRC emacs-lisp
+(setq make-backup-files nil)
+(setq auto-save-default nil)
 #+END_SRC
 ** async
 Allows certain processes to run in multithreaded manner. For things like IO this makes sense.
@@ -465,50 +409,45 @@ Allows certain processes to run in multithreaded manner. For things like IO this
   :init
   (dired-async-mode 1))
 #+END_SRC
-** csv-mode
-This adds support for csv files. Almost makes them editable like a spreadsheet. The lambda function enables alignment by default.
-#+BEGIN_SRC emacs-lisp
-(use-package csv-mode
-  :ensure t
-  :hook (csv-mode . (lambda () (csv-align-fields nil (point-min) (point-max)))))
-#+END_SRC
-** markdown-mode
-Added support for standard markdown files.
-#+BEGIN_SRC emacs-lisp
-(use-package markdown-mode
-  :ensure t)
-#+END_SRC
-** polymode
-This allows multiple modes in one buffer. This may sound totally crazy...but it actually is. Despite it's hackiness, it actually makes alot of sense for some situations such as R markdown which requires yaml, markdown, and R code in one buffer.
-#+BEGIN_SRC emacs-lisp
-(use-package polymode
-  :ensure t
-  :after markdown-mode
-  :mode
-  (("\\.Rmd\\'" . poly-markdown+r-mode)
-   ("\\.rmd\\'" . poly-markdown+r-mode))
-  :config
-  (require 'poly-R)
-  (require 'poly-markdown))
-#+END_SRC
 * editing
-** tabs and alignment
-First things first, don't use spaces and force tabs to 4 chars by default (because...let's compromise on things that don't matter since I am using spaces anyways)
+For options that specifically affect programming or editing modes
+** standardization
+*** tabs and alignment
+Who uses tabs in their programs? Make tabs actually equal 4 spaces. Also, alledgedly I could [[https://stackoverflow.blog/2017/06/15/developers-use-spaces-make-money-use-tabs/][make more money]] if I use spaces :)
 #+BEGIN_SRC emacs-lisp
 (setq-default indent-tabs-mode nil
               tab-width 4)
 #+END_SRC
-** completion
-*** company
+*** short column width
+Alot of languages at least semi-adhere to the 80-characters-per-line rule. =fci-mode= displays a line as a guide for column width.
 #+BEGIN_SRC emacs-lisp
-(use-package company
+(use-package fill-column-indicator
   :ensure t
-  :delight " ©"
   :config
-  (setq company-idle-delay 0
-        company-minimum-prefix-length 3))
+  (setq fci-rule-use-dashes t)
+  :hook
+  (prog-mode . fci-mode))
 #+END_SRC
-*** flycheck
+*** spell checking
+I use the built-in =flyspell-mode= to handle spellchecking. Obviously I am going to use =helm= when I spellcheck something.
+#+BEGIN_SRC emacs-lisp
+(use-package flyspell-correct-helm
+  :ensure t
+  :after (helm flyspell))
+#+END_SRC
+
+This will spell-check comments in programming languages.
+#+BEGIN_SRC emacs-lisp
+(add-hook 'prog-mode-hook #'flyspell-prog-mode)
+(setq flyspell-issue-message-flag nil)
+#+END_SRC
+
+Additionally, I want to automatically highlight errors whenever =flyspell-mode= is enabled.
+#+BEGIN_SRC emacs-lisp
+;; (add-hook 'flyspell-mode-hook 'flyspell-buffer)
+#+END_SRC
+*** syntax checking
+Flycheck will highlight and explain syntax errors in code and formatting.
 #+BEGIN_SRC emacs-lisp
 (use-package flycheck
   :ensure t
@@ -521,6 +460,16 @@ First things first, don't use spaces and force tabs to 4 chars by default (becau
         flycheck-idle-change-delay 2
         flycheck-error-list-minimum-level 'warning
         flycheck-navigation-minimum-level 'warning))
+#+END_SRC
+** auto completion
+Company provides a dropdown of completion options. It has many backends which are configured in each language and format elsewhere.
+#+BEGIN_SRC emacs-lisp
+(use-package company
+  :ensure t
+  :delight " ©"
+  :config
+  (setq company-idle-delay 0
+        company-minimum-prefix-length 3))
 #+END_SRC
 *** yasnippet
 #+BEGIN_SRC emacs-lisp
@@ -535,39 +484,52 @@ First things first, don't use spaces and force tabs to 4 chars by default (becau
   :config
   (yas-reload-all))
 #+END_SRC
-*** electric pairs
-Complete pairs globally. Maybe will add more mode-specific options in addition to defaults (eg =html-mode=)
-#+BEGIN_SRC emacs-lisp
-;; (electric-pair-mode t)
-#+END_SRC
-** flyspell
-Obviously I am going to use =helm= when I spellcheck something.
-#+BEGIN_SRC emacs-lisp
-(use-package flyspell-correct-helm
-  :ensure t
-  :after (helm flyspell))
-#+END_SRC
+** undo
+I find it weird that most programs do not have a tree-like tool to navigate undo information...because this is literally how most programs store this data.
 
-Additionally, I want to automatically highlight errors whenever =flyspell-mode= is enabled.
+=undo-tree= package adds a nice undo tree buffer to visualize history and also displays diffs to easily show what changed.
 #+BEGIN_SRC emacs-lisp
-;; (add-hook 'flyspell-mode-hook 'flyspell-buffer)
+(use-package undo-tree
+  :ensure t
+  :delight
+  :config
+  (setq undo-tree-visualizer-diff t)
+  (global-undo-tree-mode))
 #+END_SRC
-** progmode
+** parenthesis matching
+This color-codes matching parenthesis. Enable pretty much everywhere.
+#+BEGIN_SRC emacs-lisp
+(use-package rainbow-delimiters
+  :ensure t
+  :delight
+  :hook
+  ((prog-mode . rainbow-delimiters-mode)
+   (inferior-ess-mode . rainbow-delimiters-mode)
+   (ess-mode . rainbow-delimiters-mode)
+   (LaTeX-mode . rainbow-delimiters-mode)
+   (Tex-latex-mode . rainbow-delimiters-mode)))
+#+END_SRC
+Use pretty symbols (like lambda in lisp)
 #+BEGIN_SRC emacs-lisp
 (add-hook 'prog-mode-hook #'prettify-symbols-mode)
-(add-hook 'prog-mode-hook #'flyspell-prog-mode)
-(setq flyspell-issue-message-flag nil)
 #+END_SRC
-** languages
-*** elisp
+** sudo edit
+Allows opening a file with sudo elevation.
+#+BEGIN_SRC emacs-lisp
+  (use-package sudo-edit
+    :ensure t)
+#+END_SRC
+** formats and languages
+*** Elisp
 #+BEGIN_SRC emacs-lisp
 (add-hook 'emacs-lisp-mode-hook 'company-mode)
 #+END_SRC
-*** ess
-NOTES:
-- ess is not considered part of prog-mode for some reason
-- ess-mode requires a running R process for company to work
-- flycheck requries r-lintr
+*** ESS (Emacs Speaks Statistics)
+For me this means R but ess also supports S-plus, SAS, Stata, and other statistical black-magic languages. Note that ESS is not part of =prog-mode= so it must be added manually to hooks.
+
+A few caveats when using =R=
+- =ess-mode= requires a running R process for =company-mode= to work
+- =flycheck-mode= requries =r-lintr=
 #+begin_src emacs-lisp
 (defun nd/init-ess-company ()
   "Set the company backends for ess modes."
@@ -592,7 +554,7 @@ NOTES:
         ess-history-file "session.Rhistory"
         ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
 #+END_SRC
-*** python
+*** Python
 #+BEGIN_SRC emacs-lisp
 (elpy-enable)
 
@@ -606,7 +568,7 @@ NOTES:
 (setq python-shell-interpreter "ipython"
       python-shell-interpreter-args "--colors=Linux --profile=default")
 #+END_SRC
-*** haskell
+*** Haskell
 **** major mode and intero
 Haskell is covered just with the basic major mode and intero (provides =company= and =flycheck=) which integrates well with stack.
 #+BEGIN_SRC emacs-lisp
@@ -626,14 +588,40 @@ The defacto style for haskell mandates camelcase, so use subword mode.
 #+BEGIN_SRC emacs-lisp
 (add-hook 'haskell-mode-hook #'subword-mode)
 #+END_SRC
-*** latex
-**** flycheck
-Flycheck should work out of the box.
+*** TeX
+**** AUCTeX
+This is the official TeX (and friends) emacs package. I installed this outside of emacs on my system, so just need to load it here. Even if you do install through emacs, you will still need all the TeX packages which are bundled on Arch Linux through TeX-Live.
 #+BEGIN_SRC emacs-lisp
-(add-hook 'LaTeX-mode-hook #'flycheck-mode)
-(add-hook 'Tex-latex-mode-hook #'flycheck-mode)
+(load "auctex.el" nil t t)
+(require 'tex-mik)
 #+END_SRC
-**** company
+**** external viewers
+AUCTeX can launch external viewers to show compiled documents. I use Okular for PDFs.
+#+BEGIN_SRC emacs-lisp
+(setq TeX-view-program-selection '(((output-dvi has-no-display-manager)
+                                    "dvi2tty")
+                                   ((output-dvi style-pstricks)
+                                    "dvips and gv")
+                                   (output-dvi "xdvi")
+                                   (output-pdf "Okular")
+                                   (output-html "xdg-open")))
+#+END_SRC
+**** folding and outlining
+I like how =org-mode= folds with the TAB key, so bring the same thing to AUCTeX here with =outline-magic=.
+#+BEGIN_SRC emacs-lisp
+(add-hook 'LaTeX-mode-hook (lambda () (outline-minor-mode 1)))
+(add-hook 'Tex-latex-mode-hook (lambda () (outline-minor-mode 1)))
+
+(use-package outline-magic
+  :ensure t
+  :after outline)
+#+END_SRC
+
+Also, the section fonts are too big by default. Now the sizes are all kept equal with hatchet, axe, and saw :)
+#+BEGIN_SRC emacs-lisp
+(setq font-latex-fontify-sectioning 'color)
+#+END_SRC
+**** auto completion
 There are two backends which (kinda) complement each other. The =company-math= package should privide completion for math symbols and the =company-auctex= package should cover pretty much everything else.
 #+BEGIN_SRC emacs-lisp
 (defun nd/init-company-auctex ()
@@ -663,7 +651,18 @@ There are two backends which (kinda) complement each other. The =company-math= p
    (Tex-latex-mode . company-mode)
    (Tex-latex-mode . nd/init-company-auctex)))
 #+END_SRC
-**** auto-fill-mode
+**** syntax check
+Flycheck should work out of the box.
+#+BEGIN_SRC emacs-lisp
+(add-hook 'LaTeX-mode-hook #'flycheck-mode)
+(add-hook 'Tex-latex-mode-hook #'flycheck-mode)
+#+END_SRC
+**** spell check
+Spell checking is important for prose
+#+BEGIN_SRC emacs-lisp
+(add-hook 'LaTeX-mode-hook (lambda () (flyspell-mode 1)))
+#+END_SRC
+**** line wrap
 I like having my lines short and readable (also easier to git). Turn on autofill here and also make a nice vertical line at 80 chars (=visual-line-mode=).
 #+BEGIN_SRC emacs-lisp
 (defun nd/turn-on-auto-fill-maybe ()
@@ -674,10 +673,65 @@ I like having my lines short and readable (also easier to git). Turn on autofill
 (add-hook 'LaTeX-mode-hook #'nd/turn-on-auto-fill-maybe)
 (add-hook 'LaTeX-mode-hook #'fci-mode)
 #+END_SRC
-**** flyspell
-Spell checking is important for prose
+**** BibTeX
+***** database management
 #+BEGIN_SRC emacs-lisp
-(add-hook 'LaTeX-mode-hook (lambda () (flyspell-mode 1)))
+(use-package ebib
+  :ensure t
+  :config
+  (setq ebib-autogenerate-keys t
+        ebib-uniquify-keys t))
+#+END_SRC
+***** citation search and insertion
+Together, =org-ref= and =helm-bibtex= provide a nice pipeline to search a BibTex database and insert citations.
+#+BEGIN_SRC emacs-lisp
+(use-package org-ref
+  :ensure t
+  :after org
+  :config
+  (setq reftex-default-bibliography (expand-file-name "~/BibTeX/master.bib")
+        org-ref-bibliography-notes (expand-file-name "~/BibTeX/notes.org")
+        org-ref-default-bibliography (expand-file-name "~/BibTeX/master.bib")))
+        
+(use-package helm-bibtex
+  :ensure t
+  :after helm
+  :config
+  (setq bibtex-completion-bibliography (expand-file-name "~/BibTeX/master.bib")
+        bibtex-completion-library-path (expand-file-name "~/BibTeX/pdf")
+        bibtex-completion-pdf-field "File"))
+#+END_SRC
+*** CSS
+Overlays hex color codes with matching colors in certain modes like css and html. 
+#+BEGIN_SRC emacs-lisp
+(use-package rainbow-mode
+  :ensure t)
+#+END_SRC
+*** Markdown
+Added support for standard markdown files. Also used in R-markdown.
+#+BEGIN_SRC emacs-lisp
+(use-package markdown-mode
+  :ensure t)
+#+END_SRC
+*** polymode
+This allows multiple modes in one buffer. This may sound totally crazy...but it actually is. Despite it's hackiness, it makes alot of sense for some situations such as R markdown which requires yaml, markdown, and R code in one buffer.
+#+BEGIN_SRC emacs-lisp
+(use-package polymode
+  :ensure t
+  :after markdown-mode
+  :mode
+  (("\\.Rmd\\'" . poly-markdown+r-mode)
+   ("\\.rmd\\'" . poly-markdown+r-mode))
+  :config
+  (require 'poly-R)
+  (require 'poly-markdown))
+#+END_SRC
+*** csv files
+This adds support for csv files. Almost makes them editable like a spreadsheet. The lambda function enables alignment by default.
+#+BEGIN_SRC emacs-lisp
+(use-package csv-mode
+  :ensure t
+  :hook (csv-mode . (lambda () (csv-align-fields nil (point-min) (point-max)))))
 #+END_SRC
 * org-mode
 ** major mode
@@ -2820,52 +2874,6 @@ Spell checking is generally a good idea when writing to pointy-haired bosses.
 #+BEGIN_SRC emacs-lisp
 (add-hook 'mu4e-compose-mode-hook (lambda () (flyspell-mode 1)))
 #+END_SRC
-** auctex
-#+BEGIN_SRC emacs-lisp
-(load "auctex.el" nil t t)
-(require 'tex-mik)
-
-(setq TeX-view-program-selection '(((output-dvi has-no-display-manager)
-                                    "dvi2tty")
-                                   ((output-dvi style-pstricks)
-                                    "dvips and gv")
-                                   (output-dvi "xdvi")
-                                   (output-pdf "Okular")
-                                   (output-html "xdg-open")))
-
-;; remove ugly section size
-(setq font-latex-fontify-sectioning 'color)
-
-(add-hook 'LaTeX-mode-hook (lambda () (outline-minor-mode 1)))
-(add-hook 'Tex-latex-mode-hook (lambda () (outline-minor-mode 1)))
-
-(use-package outline-magic
-  :ensure t
-  :after outline)
-#+END_SRC
-** bibtex
-#+BEGIN_SRC emacs-lisp
-(use-package org-ref
-  :ensure t
-  :after org
-  :config
-  (setq reftex-default-bibliography (expand-file-name "~/BibTeX/master.bib")
-        org-ref-bibliography-notes (expand-file-name "~/BibTeX/notes.org")
-        org-ref-default-bibliography (expand-file-name "~/BibTeX/master.bib")))
-
-(use-package helm-bibtex
-  :ensure t
-  :after helm
-  :config
-  (setq bibtex-completion-bibliography (expand-file-name "~/BibTeX/master.bib")
-        bibtex-completion-library-path (expand-file-name "~/BibTeX/pdf")
-        bibtex-completion-pdf-field "File"))
-#+END_SRC
-** ebib
-#+BEGIN_SRC emacs-lisp
-(use-package ebib
-  :ensure t)
-#+END_SRC
 ** shell
 #+begin_src emacs-lisp
 (defadvice ansi-term (before force-bash)
@@ -2894,6 +2902,15 @@ Most of my modifiers are reloacted using xkb and xcape. Below is a summary where
 - space -> r_alt (space)
 - r_alt -> r_hyper
 - r_ctrl -> caps
+** whichkey
+Everyone forgets keybindings. When typing a key chord, this will display a window with all possible completions and their commands.
+#+BEGIN_SRC emacs-lisp
+(use-package which-key
+  :ensure t
+  :delight
+  :init
+  (which-key-mode))
+#+END_SRC
 ** evil
 I like being evil. All package and custom bindings go here.
 *** base
