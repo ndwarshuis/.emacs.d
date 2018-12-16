@@ -29,14 +29,15 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#sudo-edit][sudo edit]]
   - [[#formats-and-languages][formats and languages]]
 - [[#org-mode][org-mode]]
-  - [[#major-mode][major mode]]
-  - [[#table-of-contents][table of contents]]
-  - [[#column-view][column view]]
+  - [[#low-level-config-1][low-level config]]
+  - [[#buffer-interface][buffer interface]]
+  - [[#extra-commands][extra commands]]
   - [[#calfw][calfw]]
   - [[#window-splitting][window splitting]]
   - [[#exporting][exporting]]
   - [[#gantt-charts][gantt charts]]
   - [[#gtd-implementation][gtd implementation]]
+  - [[#gtd-next-generation][gtd next generation]]
 - [[#tools][tools]]
   - [[#printing][printing]]
   - [[#magit][magit]]
@@ -734,30 +735,17 @@ This adds support for csv files. Almost makes them editable like a spreadsheet. 
   :hook (csv-mode . (lambda () (csv-align-fields nil (point-min) (point-max)))))
 #+END_SRC
 * org-mode
-** major mode
-*** package
-Enable =visual-line-mode= and =org-indent-mode= by default and delight them. Also load =org-protocol= after org is loaded and set default org directory to something obvious.
+** low-level config
+*** directory
+I keep all my org files in one place.
 #+BEGIN_SRC emacs-lisp
-(use-package org
-  :delight
-  ;; source of indent-mode required here
-  (org-indent-mode nil org-indent)
-  (visual-line-mode)
-  :hook
-  (org-mode . visual-line-mode)
-  :config
-  (setq org-startup-indented t
-        org-directory "~/Org"
-        org-modules '(org-habit org-protocol))
-
-  (require 'org-protocol))
+(setq org-directory "~/Org")
 #+END_SRC
-*** special key behavior
-These don't work in evil mode (using the usual line commands).
+*** modules
+Org has several extensions in the form of loadable modules. =org-protocol= is used as a backend for external programs to communicate with =org-mode=. =org-habit= allows the habit todoitem which is used as a more flexible recurring task.
 #+BEGIN_SRC emacs-lisp
-(setq org-special-ctrl-a/e t
-      org-special-ctrl-k t
-      org-yank-adjusted-subtrees t)
+(setq org-modules '(org-habit org-protocol))
+(require 'org-protocol)
 #+END_SRC
 *** autosave
 Save all org buffers 1 minute before the hour. 
@@ -769,23 +757,25 @@ Save all org buffers 1 minute before the hour.
 
 (run-at-time "00:59" 3600 #'nd/org-save-all-org-buffers)
 #+END_SRC
-*** logging
-**** drawer
-I prefer all logging to go in a seperate drawer (aptly named) which allows easier navigation and parsing for data analytics.
+** buffer interface
+*** line wrap
+I often write long, lengthy prose in org buffers, so use =visual-line-mode= to make lines wrap in automatic and sane manner.
 #+BEGIN_SRC emacs-lisp
-(setq org-log-into-drawer "LOGBOOK")
+(add-hook 'org-mode-hook #'visual-line-mode)
+(delight 'visual-line-mode nil 'simple)
 #+END_SRC
-**** events
-Events are nice to record because it enables tracking of my behavior (eg how often I reschedule, which may indicate how well I can predict when things should happen).
+*** indentation
+By default all org content is squished to the left side of the buffer regardless of its level in the outline. This is annoying and I would rather have content indented based on its level just like most bulleted lists. This is what =org-indent-mode= does.
 #+BEGIN_SRC emacs-lisp
-(setq org-log-done 'time
-      org-log-redeadline 'time
-      org-log-reschedule 'time)
+(setq org-startup-indented t)
+(delight 'org-indent-mode nil "org-indent")
 #+END_SRC
-**** repeated tasks
-In these cases, it is nice to know what happened during each cycle, so force notes.
+*** special key behavior
+TODO: These don't work in evil mode (using the usual line commands).
 #+BEGIN_SRC emacs-lisp
-(setq org-log-repeat 'note)
+(setq org-special-ctrl-a/e t
+      org-special-ctrl-k t
+      org-yank-adjusted-subtrees t)
 #+END_SRC
 *** bullets
 These are just so much better to read
@@ -822,7 +812,24 @@ Make todo insertion respect contents
 #+BEGIN_SRC emacs-lisp
 (setq org-insert-heading-respect-content t)
 #+END_SRC
-*** interactive commands
+*** table of contents
+Since I use org mode as my config file, makes sense to have a table of contents so others can easily naviagate this crazy empire I have created :)
+#+BEGIN_SRC emacs-lisp
+(use-package toc-org
+  :ensure t
+  :hook
+  (org-mode . toc-org-mode))
+#+END_SRC
+*** column view
+#+BEGIN_SRC emacs-lisp
+  (setq org-columns-default-format
+        "%25ITEM %4TODO %TAGS %5Effort{:} %DELEGATE(DEL)")
+
+  (set-face-attribute 'org-column nil :background "#1e2023")
+  ;; org-columns-summary-types
+#+END_SRC
+** extra commands
+*** org buffer
 Some useful additional commands for org buffers.
 #+BEGIN_SRC emacs-lisp
 (defun nd/mark-subtree-keyword (new-keyword &optional exclude)
@@ -902,8 +909,8 @@ and reverts all todo keywords to TODO."
   (delete-region (point) (+ 1 (save-excursion (org-end-of-subtree)))))
 
 #+END_SRC
-*** interactive agenda commands
-These are executed directly from agenda views and affect their source org buffers. The trick is that all of them must somehow go back to the heading to which they alude, execute, then update the agenda view with whatever changes have been made.
+*** org agenda
+These are executed directly from agenda views and affect their source org buffers. The trick is that all of them must somehow go back to the heading to which they allude, execute, then update the agenda view with whatever changes have been made.
 #+BEGIN_SRC emacs-lisp
 (defmacro nd/org-agenda-cmd-wrapper (get-head &rest body)
   "Wraps commands in BODY in necessary code to allow commands to be
@@ -951,22 +958,6 @@ It will clone the last entry in the selected subtree."
   (nd/org-agenda-cmd-wrapper
    nil
    (call-interactively #'nd/org-delete-subtree)))
-#+END_SRC
-** table of contents
-Since I use org mode as my config file, makes sense to have a table of contents so others can easily naviagate this crazy empire I have created :)
-#+BEGIN_SRC emacs-lisp
-(use-package toc-org
-  :ensure t
-  :hook
-  (org-mode . toc-org-mode))
-#+END_SRC
-** column view
-#+BEGIN_SRC emacs-lisp
-  (setq org-columns-default-format
-        "%25ITEM %4TODO %TAGS %5Effort{:} %DELEGATE(DEL)")
-
-  (set-face-attribute 'org-column nil :background "#1e2023")
-  ;; org-columns-summary-types
 #+END_SRC
 ** calfw
 This is a nifty calendar...sometimes way faster than the agenda buffer for looking at long term things.
@@ -1096,40 +1087,58 @@ It is also useful to define a block template for gantt chart creation
 *** overview
 This section is meant to be a big-picture overview of how GTD works in this setup. For specifics, see each section following this for further explanation and code. I should also say that most of the ideas for the code came from [[http://doc.norang.ca/org-mode.html#OrgFileStructure][Bernt Hansen's]] very detailed guide.
 **** workflow
-GTD as described in its [[https://en.wikipedia.org/wiki/Getting_Things_Done][original form]] is divided into asynchronous and synchronous workflows where the asynchronous components happen at any given time and the synchronous components happen on a set schedule. Org mode lends itself quite well to this, and the feature I primarily use in this implementation are custom agenda views (with lots of skip functions).
+GTD as described in its [[https://en.wikipedia.org/wiki/Getting_Things_Done][original form]] is divided into five steps as explained further below. Here I attempt to explain how I implement each of these into =org-mode=.
+***** collect
+The whole point of GTD is to get stuff out of one's head, and this is purpose of the /collect/ step. Basically if a thought or task pops in my head or interrupts me, I record it somewhere. These thoughts can happen any time and anywhere, so it is important to keep them out of consciousness so that I can concentrate on whatever I am doing.
 
-async:
-1. capture (see =org-capture-templates= below)
-   - emails as I read them (mu4e)
-   - ideas that pop into my head
-   - tasks that I remember to do
-   - appointments/deadlines in the future
-   - interruptions from pointy-haired bosses
+When =org-mode= is in front of me, I use =org-capture= (see below for =org-capture-templates=). The "things" that could be collected include anything from random ideas, things I remember to do, appointments I need to attend, etc. I also capture emails with =mu4e= (which links to =org-mode= through =org-protocol=). Everythign collected with =org-capture= gets sent to a dedicated file where I deal with it later (see /process/ step).
 
-sync:
-1. process (daily)
-   - decide if actionable/not
-   - assign to incubator, references, specific project, or general task file
-2. organize (daily)
-   - add tags (context or resources)
-   - add properties (effort and delegation)
-   - note that some tags are automatically added in the proces stage above (mostly priority buckets used for the 7 areas of life, see tags below)
-3. review (weekly)
-   - check project status
-   - check for scheduling conflicts
-   - move to/from incubator depending on how adevnturous I feel
-4. doing (as planned)
-   - work through scheduled tasks and deadlines for day
-   - work through project tasks depending on context/effort/piority
-   - use clocking to track progress and encourage clean breaks b/t tasks
+When =org-mode= is not in front of me, I record my thoughts in the Orgzly app on my android. It doesn't really sync so I transfer everything manually.
+***** process
+Collecting only records things; it doesn't make decisions. The point of the /process/ step is to decide if the task/note is worth my time and when. This involves several key questions.
+
+The first question to ask is if the task is actionable. If yes, it gets moved to a project file or a general task file. If not, I ask it can either be moved to the "incubator" (a place for things I might do), be moved any number of reference files (for storing inportant information), or flat-out deleted if I think it is stupid or no longer relevant.
+
+In =org-mode= these decisions are made and recorded by moving headings between files with =org-refile=. To facilitate this process I have an agenda view to filter out captured tasks. From there it is easy to refile to wherever the headers need to go.
+
+This step happens daily along with /organize/ below.
+***** organize
+The /organize/ step is basically the second half of the /process/ step (I honestly think of these as a single task because that's how they are implemented in =org-mode=, but the original GTD workflow describes them seperately).
+
+After refiling with =org-refile=, the next step is to add any remaining meta information to each task, which is later used to decide what to do and when. This information includes context, effort, delegation, and timestamps. In the case of projects this also includes choosing a NEXT tasks if one hasn't been chosen already. 
+
+Delegation (assingning something to someone else) is simple and is represented by a simple property which is filled with the initials of the person doing the work. It filter and view this with =org-columns= and =org-agenda-columns=.
+
+When tasks don't have a specific date, GTD outlines a four-criteria model for deciding what to do: context, required time, available energy, and priority. Context describes required locations and resources for tasks, and I represent them with tags (see =org-tags-alist=). Required time is represented by the =Effort= property (see =org-default-properties= below). Available energy is subjective and not represented in =org-mode=. Priority is again represented with tags, here chosen from one of seven "life categories."
+
+In assigning timestamps, =org-mode= offers several possibilities out of the box. Putting a plain active timestamp denotes an appointment (something at which I need to show up). A scheduled timestamp denotes a task that I want to work on starting at a certain time. A deadline denotes a task that must be finished by a certain time. I try to only use these for "hard" times as anything "soft" risks me not fulfilling to the timestamp and hence diminishing the value of timestamps in general.
+
+I have three main agenda views for handling this. The first is a daily view that shows the tasks needed for today, including anything with a timestamp. The second has all tasks that are not timestamps (eg things that can be done at any time). The third is a project view that shows the top level headings for collections of tasks (this is where I find any projects that need a NEXT task).
+
+The /organize/ step may seem like it requires alot of work but luckily =org-mode= allows enough automation that some of this meta information can be added in the /collect/ and /process/ phases. For instance, timestamps and tags can be added (forcibly) in =org-capture= depending on what template is used. Furthermore, the priority tag and some context tags are added when the task is refiled to its proper file or project; this happens via tag inheritance, defined at either the file level or a parent heading (for instance, a computer-related tasks may be filed under =environmental/computer= where =environment= has the =_env= tag and =computer= has the =#laptop= tag).
+***** review
+In order to keep the entire workflow moving smoothly, it is necessary to do a high-level /review/. 
+
+This happens weekly and involves several things.
+- Scheduling important tasks and resolve conflicts. For this I use =calfw= (basically a calendar) to look at the next week and check if anything overlaps and move things around. I also "reload" repeater tasks using =nd/org-clone-subtree-with-timeshift=.
+- Moving tasks to the archive as they are available. This keeps =org-mode= fast and uncluttered.
+- Reviewing the incubator and moving tasks out that I actually decide to do.
+- Reviewing reference material and moving it to appropriate tasks.
+- Assessing projects based on their status (see below for the definition of "status"). Ideally all projects are "active," and if they are not I try to make them active by assigning NEXT.
+
+I have specialized agenda views and commands for facilitating all of this.
+***** execute
+/Execute/ involves doing the predefined work laid out in the previous four steps. Generally I work through two agenda views (in order). The first being all my tasks that need to get done in the day, and the second being all tasks with no specific timestamp.
+
+Besides physically doing the tasks here, the other special thing in =org-mode= that I use is clocking. In addition to tracking time spent, it also encourages clean breaks between tasks (eg no multitasking).
 **** file hierarchy and structure
-All org files are kept in one directory in =$HOME=. This is futher subdivided into directories for project (as per terms and definitions, these are any tasks that involve at least on subtask) and reference files. At the top level are files for incubated tasks, captured tasks, and catchall general tasks (which also includes small projects that don't fit anywhere else).
+All org files are kept in one place (see =org-directory=). This is futher subdivided into directories for project (as per terms and definitions, these are any tasks that involve at least on subtask) and reference files. At the top level are files for incubated tasks, captured tasks, and catchall general tasks (which also includes small projects that don't fit anywhere else).
 
 In order to make sorting easier and minimize work during processing, the files are further subdivided using tags at the file level and heading level that will automatically categorize tasks when they are refiled to a certain location. For example, some project may be to create a computer program, so I would set =#+FILETAGS: #laptop= because every task in this project will require a laptop. See the tags section below for more information on tags.
 **** repetition
 This deserves special attention because it comprises a significant percentage of tasks I do (and likely everyone does). I personally never liked the org's repeated task functionality. It is way too temporally rigid to be useful to me, and offers very little flexibility in mutating a task as it moves forward. Habits (which I use) are a partial fix for the first problem but do not aleviate the mutability problem.
 
-My (somewhat convoluted) solution was to use =org-clone-subtree-with-time-shift=, which creates an easy way to make repeated tasks from some template, but also allows modification. The only problem with the vanilla implementation is that it lacks automation and agenda-block awareness (they all get treated as regular tasks which I don't want). This is partially fixed with =nd/org-clone-subtree-with-time-shift= (modifed original) which automaticlly cleans tasks which are cloned (for some reason the original does not clear checkboxes and such). The remainding problems I fixed by defining several properties to be applied to repeated groupings under a heading (see properties).
+My (somewhat convoluted) solution was to use =org-clone-subtree-with-time-shift=, which creates an easy way to make repeated tasks from some template, but also allows modification. The only problem with the vanilla implementation is that it lacks automation and agenda-block awareness (they all get treated as regular tasks which I don't want). This is partially fixed with my own =nd/org-clone-subtree-with-time-shift= which automaticlly resets tasks which are cloned (eg clearing checkboxes and resetting todo state). The remainding problems I fixed by defining several properties to be applied to repeated groupings under a heading (see properties).
 
 The first property is called =PARENT_TYPE= and has two values =iterator= and =periodical=. The first applies to repeated tasks and second which applies to timestamped headings such as appointments. These are mostly useful for agenda sorting, where I have views specifically for managing repeated tasks. The second property is =TIME_SHIFT=; =nd/org-clone-subtree-with-time-shift= is aware of this value and automatically shifts cloned tasks accordingly if available.
 
@@ -1179,7 +1188,7 @@ These conventions are used throughout to be precise when naming functions/variab
   - archivable: further specifies that the timestamp is older than some cutoff that defines when tasks can be archived (usually 30 days)
 - fresh: refers to timestamps that are in the future
 *** todo states
-**** list
+**** sequences
 These keywords are used universally for all org files (see below on quick explanation for each, they are all quite straightforward). Note that projects have a more specific meaning for these keywords in defining project status (see the library of agenda function). Also, it looks way better in the agenda buffer when they are all the same number of chars. 
 
 In terms of logging, I like to record the time of each change upon leaving any state, and I like recording information in notes when waiting, holding, or canceling (as these usually have some external trigger or barrier that should be specified).
@@ -1247,16 +1256,16 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
         ;; catchall to mark important headings, usually for meetings
         ("%flag" . ?f)
         
-        ;; (_) life categories, used for gtd priority context 
+        ;; (_) life categories, used for gtd priorities
         (:startgroup)
-        ("_env" . ?E)
-        ("_fin" . ?F)
-        ("_int" . ?I)
-        ("_met" . ?M)
-        ("_phy" . ?H)
-        ("_pro" . ?P)
-        ("_rec" . ?R)
-        ("_soc" . ?S)
+        ("_env" . ?E) ;; environmental
+        ("_fin" . ?F) ;; financial
+        ("_int" . ?I) ;; intellectual
+        ("_met" . ?M) ;; metaphysical
+        ("_phy" . ?H) ;; physical
+        ("_pro" . ?P) ;; professional
+        ("_rec" . ?R) ;; recreational
+        ("_soc" . ?S) ;; social
         (:endgroup)))
 #+END_SRC
 **** colors
@@ -2544,6 +2553,28 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
          '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Archivable Projects")
          ''nd/skip-non-projects ''(:archivable) ''nd/get-project-status))))))
 #+END_SRC
+** gtd next generation
+GTD is great but has many limitations...mostly due to the fact that it was originally made on paper. This is meant to extend the GTD workflow into a comprehensive tracking engine that can be used and analyze and project long-term plans and goals.
+*** logging
+**** drawer
+I prefer all logging to go in a seperate drawer (aptly named) which allows easier navigation and parsing for data analytics.
+#+BEGIN_SRC emacs-lisp
+(setq org-log-into-drawer "LOGBOOK")
+#+END_SRC
+**** events
+Events are nice to record because it enables tracking of my behavior (eg how often I reschedule, which may indicate how well I can predict when things should happen).
+#+BEGIN_SRC emacs-lisp
+(setq org-log-done 'time
+      org-log-redeadline 'time
+      org-log-reschedule 'time)
+#+END_SRC
+**** repeated tasks
+In these cases, it is nice to know what happened during each cycle, so force notes.
+#+BEGIN_SRC emacs-lisp
+(setq org-log-repeat 'note)
+#+END_SRC
+*** sqlite backend
+TODO
 * tools
 ** printing
 For some reason there is no default way to get a "print prompt." Instead one needs to either install some third-party helper or make a function like this.
