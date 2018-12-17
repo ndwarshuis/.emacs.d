@@ -2595,7 +2595,18 @@ In these cases, it is nice to know what happened during each cycle, so force not
 (setq org-log-repeat 'note)
 #+END_SRC
 *** sqlite backend
-TODO
+Org mode is great and all, but in many cases, text files just won't cut it. Hardcore data analysis is one of them, so make functions to shove org files (specifically archive files) into a sqlite database
+#+BEGIN_SRC emacs-lisp
+(require 'sql)
+
+(defconst nd/org-sqlite-db-path
+  (expand-file-name "archive.db" org-directory)
+  "Path for the sqlite database that holds archive data.")
+
+(defun nd/org-init-db ()
+  "Make a sqlite database for org archive files if it does not exits already."
+  (process-file-shell-command (concat "touch " nd/org-sqlite-db-path)))
+#+END_SRC
 * tools
 ** printing
 For some reason there is no default way to get a "print prompt." Instead one needs to either install some third-party helper or make a function like this.
