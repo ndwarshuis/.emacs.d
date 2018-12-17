@@ -180,6 +180,11 @@ filesystem and is a usb drive."
   "Get the filesystem mountpoint for device DEV."
   (let ((mp (shell-command-to-string (concat "printf %s \"$(findmnt -n -o TARGET " dev ")\""))))
     (and (not (equal "" mp)) mp)))
+
+(defun nd/print-args (orig-fun &rest args)
+  "Prints ARGS of ORIG-FUN. Intended as :around advice."
+  (print args)
+  (apply orig-fun args))
 #+END_SRC
 ** interactive
 #+BEGIN_SRC emacs-lisp
@@ -1045,31 +1050,32 @@ Capture should show up in the bottom of any currently active buffer
 (advice-add #'org-mks :around #'nd/org-capture-window-advice)
 #+END_SRC
 ** exporting
+*** latex to pdf command
+Use =latexmk= instead of =pdflatex= as it is more flexible and doesn't require running the process zillion times just to make a bibliography work. Importantly, add support here for BibTeX as well as the custom output directory (see below).
+#+BEGIN_SRC emacs-lisp
+(setq org-latex-pdf-process (list "latexmk -output-directory=%o -shell-escape -bibtex -f -pdf %f"))
+#+END_SRC
+*** custom output directory
+By default org export files to the same location as the buffer. This is insanity and clutters my org directory with =.tex= and friends. Force org to export to a separate location.
+#+BEGIN_SRC emacs-lisp
+(defvar nd/org-export-publishing-directory
+  (expand-file-name "~/Downloads/org-exports")
+  "The target directory to for all org exports.")
+
+(defun nd/org-export-output-file-name (orig-fun extension &optional subtreep pub-dir)
+  "Change the target export directory for org exports."
+  (unless pub-dir
+    (setq pub-dir nd/org-export-publishing-directory)
+    (unless (file-directory-p pub-dir)
+      (make-directory pub-dir)))
+  (apply orig-fun extension subtreep pub-dir nil))
+
+(advice-add 'org-export-output-file-name :around #'nd/org-export-output-file-name)
+#+END_SRC
+*** html5
 The default is XHTML for some reason (which few use and makes certain barbaric word processors complain). Use the much-superior html5.
 #+BEGIN_SRC emacs-lisp
 (setq org-html-doctype "html5")
-#+END_SRC
-
-Need to export the bibliography when using org mode. Use =latexmk= instead of =pdflatex= because it is better at handling this.
-#+BEGIN_SRC emacs-lisp
-(setq org-latex-pdf-process (list "latexmk -shell-escape -bibtex -f -pdf %f"))
-#+END_SRC
-
-By default org export files to the same location as the buffer. Apparently old org versions used to have =org-export-publishing-directory=, but they took it out. Oh well.
-#+BEGIN_SRC emacs-lisp
-;; (defvar nd/org-export-publishing-directory
-;;   (expand-file-name "~/Downloads/org-exports")
-;;   "The target directory to for all org exports.")
-
-;; (defun nd/org-export-output-file-name (orig-fun extension &optional subtreep pub-dir)
-;;   "Change the target export directory for org exports."
-;;   (unless pub-dir
-;;     (setq pub-dir nd/org-export-publishing-directory)
-;;     (unless (file-directory-p pub-dir)
-;;       (make-directory pub-dir)))
-;;   (apply orig-fun extension subtreep pub-dir nil))
-
-;; (advice-add 'org-export-output-file-name :around #'nd/org-export-output-file-name)
 #+END_SRC
 ** gantt charts
 This is custom, non-MELPA package, so it must be loaded manually. See [[https://github.com/swillner/org-gantt/blob/master/org-gantt-manual.org][here]] for guide.
