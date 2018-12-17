@@ -3159,7 +3159,8 @@ Most packages that don't have an evil version are in this one. I don't like surp
   :after evil
   :init
   (setq evil-collection-mode-list
-        '(company dired ediff flycheck helm minibuffer mu4e term which-key))
+        '(company dired ediff flycheck helm minibuffer mu4e
+                  package-menu term which-key))
   (setq evil-collection-setup-minibuffer t)
   :config
   (evil-collection-init))
