@@ -1059,7 +1059,7 @@ Use =latexmk= instead of =pdflatex= as it is more flexible and doesn't require r
 By default org export files to the same location as the buffer. This is insanity and clutters my org directory with =.tex= and friends. Force org to export to a separate location.
 #+BEGIN_SRC emacs-lisp
 (defvar nd/org-export-publishing-directory
-  (expand-file-name "~/Downloads/org-exports")
+  (expand-file-name "org-exports" (getenv "XDG_CACHE_HOME"))
   "The target directory to for all org exports.")
 
 (defun nd/org-export-output-file-name (orig-fun extension &optional subtreep pub-dir)
