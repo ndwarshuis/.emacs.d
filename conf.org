@@ -741,16 +741,19 @@ This adds support for csv files. Almost makes them editable like a spreadsheet. 
 #+END_SRC
 * org-mode
 ** low-level config
-*** directory
-I keep all my org files in one place.
-#+BEGIN_SRC emacs-lisp
-(setq org-directory "~/Org")
-#+END_SRC
 *** modules
 Org has several extensions in the form of loadable modules. =org-protocol= is used as a backend for external programs to communicate with =org-mode=. =org-habit= allows the habit todoitem which is used as a more flexible recurring task.
 #+BEGIN_SRC emacs-lisp
 (setq org-modules '(org-habit org-protocol))
+(require 'org)
+(require 'org-agenda)
 (require 'org-protocol)
+(require 'org-habit)
+#+END_SRC
+*** directory
+I keep all my org files in one place.
+#+BEGIN_SRC emacs-lisp
+(setq org-directory "~/Org")
 #+END_SRC
 *** autosave
 Save all org buffers 1 minute before the hour. 
@@ -1639,6 +1642,19 @@ This controls what each line on the block agenda looks like. This is reformated 
         (todo . "  %-12:c")
         (tags . "  %-12:c %-5:e ")
         (search . "  %-12:c")))
+#+END_SRC
+***** modeline
+Hide the various modules that may be present
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-agenda-trim-modeline (orig-fn &rest args)
+  "Advice to remove extra information from agenda modeline name."
+  (let ((org-agenda-include-diary nil)
+        (org-agenda-include-deadlines nil)
+        (org-agenda-use-time-grid nil)
+        (org-habit-show-habits nil))
+    (apply orig-fn args)))
+
+(advice-add #'org-agenda-set-mode-name :around #'nd/org-agenda-trim-modeline)
 #+END_SRC
 ***** misc
 These are just some options to enable/disable some aesthetic things.
