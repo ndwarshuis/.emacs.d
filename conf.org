@@ -1756,11 +1756,17 @@ If I don't include this, I actually forget about major holidays.
 #+END_SRC
 **** block agenda library
 These are functions and variables exclusively for agenda block manipulation within the context of =org-custom-agenda-commands=.
-***** variables
+***** constants
 #+BEGIN_SRC emacs-lisp
 (defconst nd/iter-future-time (* 7 24 60 60)
   "Iterators must have at least one task greater into the future to be active.")
+  
+(defconst nd/archive-delay-days 30
+  "The number of days to wait before tasks are considered archivable.")
 
+(defconst nd/inert-delay-days 90
+  "The number of days to wait before tasks are considered inert.")
+  
 (defconst nd/iter-statuscodes '(:uninit :empty :active)
   "Iterators can have these statuscodes.")
  
@@ -1773,12 +1779,6 @@ These are functions and variables exclusively for agenda block manipulation with
   '("WAIT" "NEXT")
   "Projects cannot have these todostates.")
   
-(defvar nd/agenda-limit-project-toplevel t
-  "If true, filter projects by all levels or top level only.")
-
-(defvar nd/agenda-hide-incubator-tags t
-  "If true, don't show incubator headings.")
-  
 (defconst nd/org-agenda-todo-sort-order
   '("NEXT" "WAIT" "HOLD" "TODO")
   "Defines the order in which todo keywords should be sorted.")
@@ -1789,10 +1789,22 @@ These are functions and variables exclusively for agenda block manipulation with
 Currently used to tell skip functions when they can hop over
 entire subtrees to save time and ignore tasks")
 #+END_SRC
+***** variables
+#+BEGIN_SRC emacs-lisp
+(defvar nd/agenda-limit-project-toplevel t
+  "If true, filter projects by all levels or top level only.")
+
+(defvar nd/agenda-hide-incubator-tags t
+  "If true, don't show incubator headings.")
+#+END_SRC
 ***** task helper functions
 These are the building blocks for skip functions.
 ****** timestamps
 #+BEGIN_SRC emacs-lisp
+(defun nd/org-entry-get-ia-timestamp ()
+  "Get the inactive timestamp of the current entry but skip those in logbooks."
+  (let (( (re-search-forward regexp end t)))))
+
 (defun nd/get-date-property (timestamp-property)
   "Get TIMESTAMP-PROPERTY on current heading and convert to a number.
 If it does not have a date, it will return nil."
@@ -1844,14 +1856,17 @@ to REF-TIME. Returns nil if no timestamp is found."
   "Return timestamp if current heading is fresh."
   (nd/heading-compare-timestamp 'nd/is-timestamped-heading-p nil t))
 
-(defvar nd/archive-delay-days 30
-  "The number of days to wait before tasks show up in the archive view.")
-
 (defun nd/is-archivable-heading-p ()
   "Return timestamp if current heading is archivable."
   (nd/heading-compare-timestamp
    'nd/is-closed-heading-p
     (- (* 60 60 24 nd/archive-delay-days))))
+
+(defun nd/is-inert-heading-p ()
+  "Return timestamp if current heading is inert."
+  (nd/heading-compare-timestamp
+   'nd/is-ia-timestamped-heading-p
+   (- (* 60 60 24 nd/inert-delay-days))))
 #+END_SRC
 ****** task level testing
 #+BEGIN_SRC emacs-lisp
