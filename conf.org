@@ -286,7 +286,8 @@ This modeline goes along with the =spacemacs-theme=. It also has nice integratio
   :config
   (require 'spaceline-config)
   (setq powerline-default-separator 'arrow
-        spaceline-buffer-size-p nil)
+        spaceline-buffer-size-p nil
+        spaceline-buffer-encoding-abbrev-p nil)
   (spaceline-spacemacs-theme))
 
 (line-number-mode 1)
@@ -533,6 +534,7 @@ Allows opening a file with sudo elevation.
 #+END_SRC
 ** formats and languages
 *** Elisp
+Elisp can use vanilla company with no plugins
 #+BEGIN_SRC emacs-lisp
 (add-hook 'emacs-lisp-mode-hook 'company-mode)
 #+END_SRC
