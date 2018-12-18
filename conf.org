@@ -1412,12 +1412,30 @@ Prevent accidental refiling under tasks with done keywords
 ;;                            (org-agenda-files :maxlevel . 9))
 #+END_SRC
 *** clocking
+**** general
 Clocking is still new and experimental (I'm not a ninja like Bernt yet). I mostly use clocking now as a way to make clean breaks between tasks (eg to discourage "mixing" tasks which is a slippery multitasking slope). I bound =F4= to =org-clock-goto= as an easy way to find my current/last clocked task in any mode (see keybindigs).
 #+BEGIN_SRC emacs-lisp
 (setq org-clock-history-length 23
       org-clock-out-when-done t
       org-clock-persist t
       org-clock-report-include-clocking-task t)
+#+END_SRC
+**** modeline
+The modeline is a nice place to indicate if something is clocked in or out. Unfortunately, sometimes is is so crowded that I can't see the text for the currently clocked task. Solution, use colors.
+#+BEGIN_SRC emacs-lisp
+(defface nd/spaceline-highlight-clocked-face
+  `((t (:background "chartreuse3"
+        :foreground "#3E3D31"
+        :inherit 'mode-line)))
+  "Default highlight face for spaceline.")
+  
+(defun nd/spaceline-highlight-face-clocked ()
+  "Set the spaceline highlight color depending on if the clock is running."
+  (if (and (fboundp 'org-clocking-p) (org-clocking-p))
+      'nd/spaceline-highlight-clocked-face
+    'spaceline-highlight-face))
+
+(setq spaceline-highlight-face-func 'nd/spaceline-highlight-face-clocked)
 #+END_SRC
 *** conflict detection
 Somehow org-mode has no way to detect conflicts between tasks with timestamps (!!??). Luckily I can make my own.
