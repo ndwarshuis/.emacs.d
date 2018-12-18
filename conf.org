@@ -448,6 +448,11 @@ This will spell-check comments in programming languages.
 (setq flyspell-issue-message-flag nil)
 #+END_SRC
 
+Since flyspell mode is enabled in so many buffers, use a short modeline alias.
+#+BEGIN_SRC emacs-lisp
+(delight 'flyspell-mode "λ" "flyspell")
+#+END_SRC
+
 Additionally, I want to automatically highlight errors whenever =flyspell-mode= is enabled.
 #+BEGIN_SRC emacs-lisp
 ;; (add-hook 'flyspell-mode-hook 'flyspell-buffer)
@@ -465,7 +470,8 @@ Flycheck will highlight and explain syntax errors in code and formatting.
                                               mode-enabled)
         flycheck-idle-change-delay 2
         flycheck-error-list-minimum-level 'warning
-        flycheck-navigation-minimum-level 'warning))
+        flycheck-navigation-minimum-level 'warning)
+  (delight 'flycheck-mode "γ" "flycheck"))
 #+END_SRC
 ** auto completion
 Company provides a dropdown of completion options. It has many backends which are configured in each language and format elsewhere.
