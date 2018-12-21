@@ -601,6 +601,7 @@ Haskell is covered just with the basic major mode and intero (provides =company=
 The defacto style for haskell mandates camelcase, so use subword mode.
 #+BEGIN_SRC emacs-lisp
 (add-hook 'haskell-mode-hook #'subword-mode)
+(delight 'subword-mode nil "subword")
 #+END_SRC
 *** TeX
 **** AUCTeX
