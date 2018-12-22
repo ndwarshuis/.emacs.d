@@ -909,18 +909,6 @@ and reverts all todo keywords to TODO."
       (delete-region (region-beginning) (region-end))
       (org-remove-empty-drawer-at (point)))))
 
-(defun nd/org-insert-todo-heading-inactive-timestamp ()
-  "Insert a todo heading but also insert inactive timestamp set to now."
-  (interactive)
-  ;; a bit redundant and hacky, with the advantage of being effective
-  (when (not (org-insert-item 'checkbox))
-    (call-interactively 'org-insert-todo-heading)
-    ;; (insert "\n")
-    ;; (funcall-interactively 'org-time-stamp-inactive '(16))
-    (let* ((ts (format-time-string (cdr org-time-stamp-formats)))
-           (ts-ia (concat "[" (substring ts 1 -1) "]")))
-      (funcall-interactively 'org-set-property "CREATED" ts-ia))))
-
 (defun nd/org-delete-subtree ()
   "Delete the entire subtree under the current heading without sending to kill ring."
   (interactive)
@@ -1929,7 +1917,7 @@ to REF-TIME. Returns nil if no timestamp is found."
   (and (nd/heading-has-children 'nd/is-todoitem-p) (nd/is-todoitem-p)))
 
 (defun nd/is-task-p ()
-  "Return todo keyword if heading has todoitem children."
+  "Return todo keyword if heading has no todoitem children."
   (and (not (nd/heading-has-children 'nd/is-todoitem-p)) (nd/is-todoitem-p)))
 
 (defun nd/is-project-task-p ()
@@ -2641,6 +2629,31 @@ Events are nice to record because it enables tracking of my behavior (eg how oft
 In these cases, it is nice to know what happened during each cycle, so force notes.
 #+BEGIN_SRC emacs-lisp
 (setq org-log-repeat 'note)
+#+END_SRC
+**** creation time
+=org-mode= has no good way out of the box to add creation time to todo entries or headings. This is nice to have as I can use them to see which tasks are bein ignored or neglected.
+
+And yes, there is =org-expiry=, but it does more than I need and I don't feel like installing the extra contrib libraries.
+
+This function adds the =CREATED= property. Note that I only really care about TODO entries, as anything else is either not worth tracking or an appointment which already have timestamps.
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-set-creation-time (&optional always)
+  "Set the creation time property of the current heading.
+Applies only to todo entries unless ALWAYS is t."
+  (when (or always (nd/is-todoitem-p))
+    (let* ((ts (format-time-string (cdr org-time-stamp-formats)))
+           (ts-ia (concat "[" (substring ts 1 -1) "]")))
+      (funcall-interactively 'org-set-property "CREATED" ts-ia))))
+#+END_SRC
+
+Advise the =org-insert-todo-entry= function. Advice here is necessary as there is only a hook for =org-insert-heading= and it fires before the TODO info is added.
+#+BEGIN_SRC emacs-lisp
+(advice-add 'org-insert-todo-heading :after #'nd/org-set-creation-time)
+#+END_SRC
+
+Add hook for =org-capture=.
+#+BEGIN_SRC emacs-lisp
+(add-hook 'org-capture-before-finalize-hook #'nd/org-set-creation-time)
 #+END_SRC
 *** sqlite backend
 Org mode is great and all, but in many cases, text files just won't cut it. Hardcore data analysis is one of them, so make functions to shove org files (specifically archive files) into a sqlite database
@@ -3434,9 +3447,6 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 #+BEGIN_SRC emacs-lisp
 (add-hook 'org-mode-hook
           (lambda ()
-            ;; override default TODO timestamp creation to insert the creation date
-            (local-set-key (kbd "M-S-<return>") 'nd/org-insert-todo-heading-inactive-timestamp)
-
             ;; use the hyper keys/vim arrows with the shifters instead of shift/arrows
             (local-set-key (kbd "H-k") 'org-shiftup)
             (local-set-key (kbd "H-l") 'org-shiftright)
