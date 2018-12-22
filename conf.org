@@ -2651,16 +2651,118 @@ Org mode is great and all, but in many cases, text files just won't cut it. Hard
   "Path for the sqlite database that holds archive data.")
 
 (defun nd/org-init-db ()
-  "Make a sqlite database for org archive files if it does not exits already."
+  "Make a sqlite database for org archive files if it does not exist already."
   (unless (file-exists-p nd/org-sqlite-db-path)
     (process-file-shell-command (concat "touch " nd/org-sqlite-db-path))
-    (nd/sql-cmd nd/org-sqlite-db-path "create table test(one smallint);")))
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-header-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-state-changes-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-clocking-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-notes-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-deadline-changes-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-schedule-changes-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-properties-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-tags-schema)))
 
 (defun nd/sql-cmd (db sql)
-  "Execute string SQL on database DB using sqlite3 shell command.
+  "Execute string SQL on database DB executing `sql-sqlite-program'.
 Returns the output of CMD. SQL should not contain any quotes as if it
 were entered on the shell."
-  (shell-command-to-string (concat nd/sqlite3-cmd " " db " \"" sql "\"")))
+  (shell-command-to-string (concat sql-sqlite-program " " db " '" sql "'")))
+
+(defun nd/sql-insert (db tbl data)
+  "Insert list DATA into TBL in sqlite database DB.
+Note that in list DATA, numbers will be converted to strings,
+strings will be flanked with '\"', and any other symbols will be
+converted to their symbol name."
+  (let* ((data-str (mapcar
+                   (lambda (d)
+                     (cond ((stringp d) (concat "\"" d "\""))
+                           ((numberp d) (number-to-string d))
+                           (t (symbol-name d))))
+                   data))
+         (data-joined (string-join data-str ",")))
+    (nd/sql-cmd db (concat "insert into " tbl " values(" data-joined ");"))))
+#+END_SRC
+**** schemas
+The database is going to hold all header information in the archive files according to these schemas. The data structure consists of one master table =headers= for all headers and and one layer of auxilary tables for information in the property and logging drawers.
+#+BEGIN_SRC emacs-lisp
+(defconst nd/org-sqlite-header-schema
+  "CREATE TABLE headers (
+archive_path TEXT,
+archive_offset INTEGER,
+header TEXT NOT NULL,
+time_created DATE,
+time_closed DATE,
+parent_tree INTEGER,
+source_path TEXT NOT NULL,
+content TEXT,
+PRIMARY KEY (archive_path, archive_offset ASC));"
+  "Schema to build the headers table in the org archive db.")
+
+(defconst nd/org-sqlite-clocking-schema
+  "CREATE TABLE clocking (
+path TEXT,
+\"offset\" INTEGER,
+time_in DATE NOT NULL,
+time_out DATE NOT NULL,
+FOREIGN KEY (path, \"offset\") REFERENCES header (archive_path, archive_offset));"
+  "Schema to build the clocking table in the org archive db.")
+
+(defconst nd/org-sqlite-state-changes-schema
+  "CREATE TABLE state_changes (
+path TEXT,
+\"offset\" INTEGER,
+state_old TEXT NOT NULL,
+state_new TEXT NOT NULL,
+time_changed DATE NOT NULL,
+FOREIGN KEY (path, \"offset\") REFERENCES header (archive_path, archive_offset));"
+  "Schema to build the state changes table in the org archive db.")
+
+(defconst nd/org-sqlite-tags-schema
+  "CREATE TABLE tags (
+path TEXT,
+\"offset\" INTEGER,
+tag TEXT NOT NULL,
+inherit BOOLEAN NOT NULL,
+FOREIGN KEY (path, \"offset\") REFERENCES header (archive_path, archive_offset));"
+  "Schema to build the tags table in the org archive db.")
+
+(defconst nd/org-sqlite-properties-schema
+  "CREATE TABLE properties (
+path TEXT,
+\"offset\" INTEGER,
+\"key\" TEXT NOT NULL,
+value TEXT NOT NULL,
+FOREIGN KEY (path, \"offset\") REFERENCES header (archive_path, archive_offset));"
+  "Schema to build the properties table in the org archive db.")
+
+(defconst nd/org-sqlite-deadline-changes-schema
+  "CREATE TABLE deadline_changes (
+path TEXT, \"offset\" INTEGER,
+time_old DATE NOT NULL,
+time_new DATE NOT NULL,
+time_changed DATE NOT NULL,
+FOREIGN KEY (path, \"offset\") REFERENCES header (archive_path, archive_offset));"
+  "Schema to build the deadline changes table in the org archive db.")
+
+(defconst nd/org-sqlite-schedule-changes-schema
+  "CREATE TABLE schedule_changes (
+path TEXT,
+\"offset\" INTEGER,
+time_old DATE NOT NULL,
+time_new DATE NOT NULL,
+time_changed DATE NOT NULL,
+FOREIGN KEY (path, \"offset\") REFERENCES header (archive_path, archive_offset));"
+  "Schema to build the schedule changes table in the org archive db.")
+
+(defconst nd/org-sqlite-notes-schema
+  "CREATE TABLE notes (
+path TEXT,
+\"offset\" INTEGER,
+contents TEXT,
+time_written DATE NOT NULL,
+FOREIGN KEY (path, \"offset\") REFERENCES header (archive_path, archive_offset));"
+  "Schema to build the notes table in the org archive db.")
 #+END_SRC
 * tools
 ** printing
