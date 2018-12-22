@@ -915,9 +915,11 @@ and reverts all todo keywords to TODO."
   ;; a bit redundant and hacky, with the advantage of being effective
   (when (not (org-insert-item 'checkbox))
     (call-interactively 'org-insert-todo-heading)
-    (insert "\n")
-    (funcall-interactively 'org-time-stamp-inactive '(16))
-    (forward-line -1)))
+    ;; (insert "\n")
+    ;; (funcall-interactively 'org-time-stamp-inactive '(16))
+    (let* ((ts (format-time-string (cdr org-time-stamp-formats)))
+           (ts-ia (concat "[" (substring ts 1 -1) "]")))
+      (funcall-interactively 'org-set-property "CREATED" ts-ia))))
 
 (defun nd/org-delete-subtree ()
   "Delete the entire subtree under the current heading without sending to kill ring."
@@ -1318,8 +1320,11 @@ Also here are the properties for repeated tasks and a few others (see comments i
 
         "DELEGATE"
 
-        ;; defines a goal (not currently used)
-        "GOAL"))
+        ;; defines a goal
+        "GOAL"
+
+        ;; date of header creation
+        "CREATED"))
 
 (setq org-global-properties
       '(("PARENT_TYPE_ALL" . "periodical iterator")
