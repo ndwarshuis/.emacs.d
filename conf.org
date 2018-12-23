@@ -2677,12 +2677,12 @@ Org mode is great and all, but in many cases, text files just won't cut it. Hard
   (unless (file-exists-p nd/org-sqlite-db-path)
     (process-file-shell-command (concat "touch " nd/org-sqlite-db-path))
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-header-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-clocking-schema)))
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-clocking-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-properties-schema)))
     ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-state-changes-schema)
     ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-notes-schema)
     ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-deadline-changes-schema)
     ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-schedule-changes-schema)
-    ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-properties-schema)
     ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-tags-schema)))
 
 (defun nd/sql-cmd (db sql)
@@ -2841,6 +2841,30 @@ ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
                                 time-start
                                 time-end))))
 
+(defconst nd/org-sql-ignored-properties
+  '("ARCHIVE_TIME" "ARCHIVE_FILE" "ARCHIVE_OLPATH" "ARCHIVE_CATEGORY"
+    "ARCHIVE_ITAGS" "ARCHIVE_TODO" "Effort" "CREATED")
+  "Property keys to be ignored when inserting in properties table. 
+It is assumed these are used elsewhere and thus it would be redundant 
+to store them.")
+
+(defun nd/org-element-property-to-sql (db tbl np archive-file-path)
+  "Parse node-property element NP and insert data into TBL in sqlite DB.
+ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
+  (let ((key-text (org-element-property :key np)))
+    (unless (member key-text nd/org-sql-ignored-properties)
+      (let* ((parent-headline (nd/org-element-get-parent-headline np))
+             (headline-file-offset (org-element-property :begin parent-headline))
+             (property-file-offset (org-element-property :begin np))
+             (val-text (org-element-property :value np)))
+        (nd/sql-insert db tbl (list archive-file-path
+                                    headline-file-offset
+                                    property-file-offset
+                                    key-text
+                                    val-text
+                                    ;; TODO add inherited flag
+                                    nil))))))
+
 (defun nd/org-archive-to-db ()
   "Transfer archive files to sqlite database."
   (let* ((db nd/org-sqlite-db-path)
@@ -2853,7 +2877,10 @@ ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
               nd/org-sqlite-db-path "headlines" h rxv-path)))
     (org-element-map tree 'clock
       (lambda (c) (nd/org-element-clock-to-sql
-              nd/org-sqlite-db-path "clocking" c rxv-path)))))
+              nd/org-sqlite-db-path "clocking" c rxv-path)))
+    (org-element-map tree 'node-property
+      (lambda (n) (nd/org-element-property-to-sql
+              nd/org-sqlite-db-path "properties" n rxv-path)))))
     ;; (write-region "" nil dump-path)
     ;; (with-temp-file dump-path
       ;; (insert-file-contents dump-path)
@@ -2912,11 +2939,14 @@ FOREIGN KEY (path, \"offset\") REFERENCES header (archive_path, archive_offset))
 
 (defconst nd/org-sqlite-properties-schema
   "CREATE TABLE properties (
-path TEXT,
-\"offset\" INTEGER,
-\"key\" TEXT NOT NULL,
-value TEXT NOT NULL,
-FOREIGN KEY (path, \"offset\") REFERENCES header (archive_path, archive_offset));"
+archive_file_path TEXT,
+headline_file_offset INTEGER,
+property_file_offset INTEGER PRIMARY KEY,
+key_text TEXT NOT NULL,
+val_text TEXT NOT NULL,
+inherited BOOLEAN,
+FOREIGN KEY (archive_file_path, headline_file_offset)
+REFERENCES headlines (archive_file_path, headline_file_offset));"
   "Schema to build the properties table in the org archive db.")
 
 (defconst nd/org-sqlite-deadline-changes-schema
