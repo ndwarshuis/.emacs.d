@@ -2678,12 +2678,12 @@ Org mode is great and all, but in many cases, text files just won't cut it. Hard
     (process-file-shell-command (concat "touch " nd/org-sqlite-db-path))
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-header-schema)
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-clocking-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-properties-schema)))
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-properties-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-tags-schema)))
     ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-state-changes-schema)
     ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-notes-schema)
     ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-deadline-changes-schema)
     ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-schedule-changes-schema)
-    ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-tags-schema)))
 
 (defun nd/sql-cmd (db sql)
   "Execute string SQL on database DB executing `sql-sqlite-program'.
@@ -2750,6 +2750,17 @@ headline."
           (nd/org-element-get-parent-tree parent acc-new))
       acc)))
 
+(defun nd/org-element-get-parent-tags (obj &optional acc)
+  "Get all tags from parent headlines of OBJ and concat to ACC.
+ACC is treated as a set; therefore no duplicates are retained."
+  (let ((parent-hl (nd/org-element-get-parent-headline obj)))
+    (if parent-hl
+        (let* ((tags (org-element-property :tags parent-hl))
+               (i-tags (split-string (org-element-property :ARCHIVE_ITAGS parent-hl)))
+               (all-tags (delete-dups (append acc tags i-tags))))
+          (nd/org-element-get-parent-tags parent-hl all-tags))
+      acc)))
+
 (defun nd/org-element-property-inherited (prop obj)
   "Return the PROP value of the current org element or object OBJ.
 If it is not available in the current obj, recursively go up to 
@@ -2786,11 +2797,16 @@ This includes everything except drawers, subheadings, and planning."
       ;;           (t (error (concat "unknown type: " (org-element-type e))))))
       ;;   contents-list)))))
 
-(defun nd/org-element-header-to-sql (db tbl headline archive-file-path)
+(defvar nd/org-sql-use-tag-inheritance t
+  "Use tag inheritance when constructing sql databases for org.
+See `org-use-tag-inheritance'.")
+
+(defun nd/org-element-header-to-sql (headline archive-file-path)
   "Parse org-element HEADLINE and insert data into TBL in sqlite DB.
 ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
   (let* ((headline-file-offset (org-element-property :begin headline))
          (archive-tree-path (nd/org-element-get-parent-tree headline))
+         ;; headline table
          (source-file-path (nd/org-element-property-inherited :ARCHIVE_FILE headline))
          (source-tree-path (nd/org-element-property-inherited :ARCHIVE_OLPATH headline))
          (headline-text (org-element-property :raw-value headline))
@@ -2799,21 +2815,38 @@ ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
          (time-scheduled (nd/org-element-timestamp-raw :scheduled headline))
          (time-deadline (nd/org-element-timestamp-raw :deadline headline))
          (effort (org-element-property :EFFORT headline))
-         (priority (org-element-property :priority headline)))
-    (nd/sql-insert db tbl (list archive-file-path
-                                headline-file-offset
-                                archive-tree-path
-                                source-file-path
-                                source-tree-path
-                                headline-text
-                                time-created
-                                time-closed
-                                time-scheduled
-                                time-deadline
-                                effort
-                                priority
-                                ;; TODO add contents
-                                nil))))
+         (priority (org-element-property :priority headline))
+         (headline-data (list archive-file-path
+                                      headline-file-offset
+                                      archive-tree-path
+                                      source-file-path
+                                      source-tree-path
+                                      headline-text
+                                      time-created
+                                      time-closed
+                                      time-scheduled
+                                      time-deadline
+                                      effort
+                                      priority
+                                      ;; TODO add contents
+                                      nil))
+         ;; tags table
+         (tags (org-element-property :tags headline))
+         (i-tags (org-element-property :ARCHIVE_ITAGS headline))
+         (insert-tags (lambda (tags afp hfo)
+                        (while tags
+                          (nd/sql-insert nd/org-sqlite-db-path
+                                         "tags"
+                                         (list afp hfo (car tags) 1))
+                          (setq tags (cdr tags))))))
+
+    (nd/sql-insert nd/org-sqlite-db-path "headers" headline-data)
+    (insert-tags tags archive-file-path headline-file-offset)
+    (when i-tags (setq i-tags (split-string i-tags)))
+    ;; retrieve parent tags if we want inheritance
+    (when nd/org-sql-use-tag-inheritance
+      (setq i-tags (nd/org-element-get-parent-tags headline i-tags)))
+    (insert-tags i-tags archive-file-path headline-file-offset))
 
 (defun nd/org-element-clock-to-sql (db tbl clock archive-file-path)
   "Parse org-element CLOCK and insert data into TBL in sqlite DB.
@@ -2873,8 +2906,7 @@ ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
         (tree (with-current-buffer (find-file-noselect rxv-path)
                 (org-element-parse-buffer))))
     (org-element-map tree 'headline
-      (lambda (h) (nd/org-element-header-to-sql
-              nd/org-sqlite-db-path "headlines" h rxv-path)))
+      (lambda (h) (nd/org-element-header-to-sql h rxv-path)))
     (org-element-map tree 'clock
       (lambda (c) (nd/org-element-clock-to-sql
               nd/org-sqlite-db-path "clocking" c rxv-path)))
@@ -2930,11 +2962,13 @@ FOREIGN KEY (path, \"offset\") REFERENCES header (archive_path, archive_offset))
 
 (defconst nd/org-sqlite-tags-schema
   "CREATE TABLE tags (
-path TEXT,
-\"offset\" INTEGER,
-tag TEXT NOT NULL,
-inherit BOOLEAN NOT NULL,
-FOREIGN KEY (path, \"offset\") REFERENCES header (archive_path, archive_offset));"
+archive_file_path TEXT,
+headline_file_offset INTEGER,
+tag TEXT,
+inherited BOOLEAN,
+FOREIGN KEY (archive_file_path, headline_file_offset)
+REFERENCES headlines (archive_file_path, headline_file_offset),
+PRIMARY KEY (archive_file_path, headline_file_offset, tag, inherited));"
   "Schema to build the tags table in the org archive db.")
 
 (defconst nd/org-sqlite-properties-schema
