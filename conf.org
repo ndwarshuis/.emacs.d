@@ -1861,6 +1861,10 @@ to REF-TIME. Returns nil if no timestamp is found."
                  (> (- timestamp (float-time)) ref-time)
                (<= (- timestamp (float-time)) ref-time)))
         timestamp)))
+        
+(defun nd/is-created-heading-p ()
+  "Return heading's CREATED property timestamp or nil."
+  (nd/get-date-property "CREATED"))
 
 (defun nd/is-ia-timestamped-heading-p ()
   "Get active timestamp of current heading."
@@ -2229,12 +2233,12 @@ Skip functions for headings which may or may not be todo-items.
 ****** tasks
 A few functions apply to both atomic tasks and project tasks the same.
 #+BEGIN_SRC emacs-lisp
-(defun nd/skip-non-ia-timestamped-tasks ()
-  "Skip tasks that do not have an inactive timestamp."
+(defun nd/skip-non-created-tasks ()
+  "Skip tasks that do not have CREATED timestamp properties."
   (save-excursion
     (widen)
     (if (not (and (nd/is-task-p)
-                  (not (nd/is-ia-timestamped-heading-p))))
+                  (not (nd/is-created-heading-p))))
         (nd/skip-heading))))
 #+END_SRC
 ****** atomic tasks
@@ -2593,7 +2597,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
                                     ''nd/skip-non-done-unclosed-todoitems)
        ,(nd/agenda-base-task-cmd (concat task-match)
                                  "Missing Creation Timestamp"
-                                 ''nd/skip-non-ia-timestamped-tasks)))
+                                 ''nd/skip-non-created-tasks)))
        
 
      ("A"
