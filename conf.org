@@ -2689,8 +2689,16 @@ Org mode is great and all, but in many cases, text files just won't cut it. Hard
   "Execute string SQL on database DB executing `sql-sqlite-program'.
 Returns the output of CMD. SQL should not contain any quotes as if it
 were entered on the shell."
-  (shell-command-to-string (concat sql-sqlite-program " " db " '" sql "'")))
+  (shell-command-to-string (concat sql-sqlite-program " " db " \"" sql "\"")))
 
+(defun nd/sql-escape-text (txt)
+  "Escape and quote TXT in order to insert into sqlite db via 'insert'.
+This assumes the insertion command will be run on a shell where the
+sql command string is in double quotes."
+  (let* ((txt-single (replace-regexp-in-string "'" "''" txt nil t))
+         (txt-double (replace-regexp-in-string "\"" "\\\"" txt-single nil t)))
+    (concat "'" txt-double "'")))
+    
 (defun nd/sql-insert (db tbl data)
   "Insert list DATA into TBL in sqlite database DB.
 Note that in list DATA, numbers will be converted to strings,
