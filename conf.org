@@ -2677,13 +2677,13 @@ Org mode is great and all, but in many cases, text files just won't cut it. Hard
   (unless (file-exists-p nd/org-sqlite-db-path)
     (process-file-shell-command (concat "touch " nd/org-sqlite-db-path))
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-header-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-state-changes-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-clocking-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-notes-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-deadline-changes-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-schedule-changes-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-properties-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-tags-schema)))
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-clocking-schema)))
+    ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-state-changes-schema)
+    ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-notes-schema)
+    ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-deadline-changes-schema)
+    ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-schedule-changes-schema)
+    ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-properties-schema)
+    ;; (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-tags-schema)))
 
 (defun nd/sql-cmd (db sql)
   "Execute string SQL on database DB executing `sql-sqlite-program'.
@@ -2714,39 +2714,30 @@ converted to their symbol name."
          (data-joined (string-join data-str ",")))
     (nd/sql-cmd db (concat "insert into " tbl " values(" data-joined ");"))))
 
-(defun nd/org-element-header-to-sql (db tbl headline)
-  "Parses org-element HEADLINE and inserts data into TBL in sqlite DB."
-  (let* ((src-path (nd/org-element-property-inherited :ARCHIVE_OLPATH headline))
-         (src (nd/org-element-property-inherited :ARCHIVE_FILE headline))
-         (offset (org-element-property :begin headline))
-         (header-txt (org-element-property :raw-value headline))
-         (parent-tree (nd/org-element-get-parent-tree headline))
-         (creation-time (org-element-property :CREATED headline))
-         ;; TODO get higher level source tree
-         ;; TODO add contents
-         (closed-ts (org-element-property :closed headline))
-         (closed-time (org-element-property :raw-value closed-ts)) 
-         (rxv-file rxv-path)
-         (parent (org-element-property :parent headline))
-         (sql-data (list rxv-file offset parent-tree header-txt
-                         creation-time closed-time src-path src nil)))
-    (nd/sql-insert db tbl sql-data)))
+(defun nd/org-element-timestamp-raw (prop obj)
+  "Return the raw-value of the timestamp PROP in OBJ if exists."
+  (when obj
+    (let ((ts (org-element-property prop obj)))
+      (when ts (org-element-property :raw-value ts)))))
 
-(defun nd/org-archive-to-db ()
-  "Transfer archive files to sqlite database."
-  (let* ((db nd/org-sqlite-db-path)
-        (rxv-path (expand-file-name "test.org_archive" org-directory))
-        ;; (dump-path (expand-file-name "dump.el" org-directory))
-        (tree (with-current-buffer (find-file-noselect rxv-path)
-                (org-element-parse-buffer))))
-    (org-element-map tree 'headline
-      (lambda (h) (nd/org-element-header-to-sql
-              nd/org-sqlite-db-path "headers" h)))))
-    ;; (write-region "" nil dump-path)
-    ;; (with-temp-file dump-path
-      ;; (insert-file-contents dump-path)
-      ;; (prin1 buf-data (current-buffer)))))
+(defun nd/org-element-find-type (type obj)
+  "Find and return the first instance of TYPE in OBJ.
+TYPE is an org element type symbol and OBJ is a list of elements/objects."
+  (let ((obj-cur (car obj))
+        (obj-rem (cdr obj)))
+    (if (eq type (org-element-type obj-cur))
+        obj-cur
+      (nd/org-element-find-type type obj-rem))))
 
+(defun nd/org-element-get-parent-headline (obj)
+  "Get the parent headline element (if any) of org-element OBJ."
+  (when obj
+    (let ((parent (org-element-property :parent obj)))
+      (if (eq 'headline (org-element-type parent))
+          parent
+        (nd/org-element-get-parent-headline parent)))))
+
+;; TODO merge thing above with thing below
 (defun nd/org-element-get-parent-tree (obj &optional acc)
   "Construct parent tree path for object OBJ and concatenate to ACC.
 Returns '/' delimited path of headlines or nil if obj is in a toplevel
@@ -2794,31 +2785,110 @@ This includes everything except drawers, subheadings, and planning."
       ;;           ((stringp (car e)) (car e))
       ;;           (t (error (concat "unknown type: " (org-element-type e))))))
       ;;   contents-list)))))
+
+(defun nd/org-element-header-to-sql (db tbl headline archive-file-path)
+  "Parse org-element HEADLINE and insert data into TBL in sqlite DB.
+ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
+  (let* ((headline-file-offset (org-element-property :begin headline))
+         (archive-tree-path (nd/org-element-get-parent-tree headline))
+         (source-file-path (nd/org-element-property-inherited :ARCHIVE_FILE headline))
+         (source-tree-path (nd/org-element-property-inherited :ARCHIVE_OLPATH headline))
+         (headline-text (org-element-property :raw-value headline))
+         (time-created (org-element-property :CREATED headline))
+         (time-closed (nd/org-element-timestamp-raw :closed headline))
+         (time-scheduled (nd/org-element-timestamp-raw :scheduled headline))
+         (time-deadline (nd/org-element-timestamp-raw :deadline headline))
+         (effort (org-element-property :EFFORT headline))
+         (priority (org-element-property :priority headline)))
+    (nd/sql-insert db tbl (list archive-file-path
+                                headline-file-offset
+                                archive-tree-path
+                                source-file-path
+                                source-tree-path
+                                headline-text
+                                time-created
+                                time-closed
+                                time-scheduled
+                                time-deadline
+                                effort
+                                priority
+                                ;; TODO add contents
+                                nil))))
+
+(defun nd/org-element-clock-to-sql (db tbl clock archive-file-path)
+  "Parse org-element CLOCK and insert data into TBL in sqlite DB.
+ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
+  (let* ((parent-headline (nd/org-element-get-parent-headline clock))
+         (headline-file-offset (org-element-property :begin parent-headline))
+         (clock-file-offset (org-element-property :begin clock))
+         (timestamp-obj (org-element-property :value clock))
+         (timestamp-type (org-element-property :type timestamp-obj))
+         time-start time-end)
+    ;; process timestamp depending on if it is a range or singular
+    (cond ((eq 'inactive-range timestamp-type)
+           (setq time-start (org-timestamp-split-range timestamp-obj)
+                 time-end (org-timestamp-split-range timestamp-obj t)))
+          ((eq 'inactive timestamp-type)
+           (setq time-start timestamp-obj))
+          ;; should never happen
+          (t (error (concat "unknown timestamp type: "
+                            (symbol-name timestamp-type)))))
+    (setq time-start (org-element-property :raw-value time-start)
+          time-end (org-element-property :raw-value time-end))
+    (nd/sql-insert db tbl (list archive-file-path
+                                headline-file-offset
+                                clock-file-offset
+                                time-start
+                                time-end))))
+
+(defun nd/org-archive-to-db ()
+  "Transfer archive files to sqlite database."
+  (let* ((db nd/org-sqlite-db-path)
+        (rxv-path (expand-file-name "test.org_archive" org-directory))
+        ;; (dump-path (expand-file-name "dump.el" org-directory))
+        (tree (with-current-buffer (find-file-noselect rxv-path)
+                (org-element-parse-buffer))))
+    (org-element-map tree 'headline
+      (lambda (h) (nd/org-element-header-to-sql
+              nd/org-sqlite-db-path "headlines" h rxv-path)))
+    (org-element-map tree 'clock
+      (lambda (c) (nd/org-element-clock-to-sql
+              nd/org-sqlite-db-path "clocking" c rxv-path)))))
+    ;; (write-region "" nil dump-path)
+    ;; (with-temp-file dump-path
+      ;; (insert-file-contents dump-path)
+      ;; (prin1 buf-data (current-buffer)))))
 #+END_SRC
 **** schemas
 The database is going to hold all header information in the archive files according to these schemas. The data structure consists of one master table =headers= for all headers and and one layer of auxilary tables for information in the property and logging drawers.
 #+BEGIN_SRC emacs-lisp
 (defconst nd/org-sqlite-header-schema
-  "CREATE TABLE headers (
-archive_path TEXT,
-archive_offset INTEGER,
-archive_tree INTEGER,
-header TEXT NOT NULL,
+  "CREATE TABLE headlines (
+archive_file_path TEXT,
+headline_file_offset INTEGER,
+archive_tree_path TEXT,
+source_file_path TEXT NOT NULL,
+source_tree_path TEXT,
+headline_text TEXT NOT NULL,
 time_created DATE,
 time_closed DATE,
-source_tree TEXT,
-source_path TEXT,
+time_scheduled DATE,
+time_deadlined DATE,
+effort TIME,
+priority INTEGER,
 content TEXT,
-PRIMARY KEY (archive_path, archive_offset ASC));"
+PRIMARY KEY (archive_file_path, headline_file_offset ASC));"
   "Schema to build the headers table in the org archive db.")
 
 (defconst nd/org-sqlite-clocking-schema
   "CREATE TABLE clocking (
-path TEXT,
-\"offset\" INTEGER,
-time_in DATE NOT NULL,
-time_out DATE NOT NULL,
-FOREIGN KEY (path, \"offset\") REFERENCES header (archive_path, archive_offset));"
+archive_file_path TEXT,
+headline_file_offset INTEGER,
+clock_file_offset INTEGER PRIMARY KEY,
+time_start DATE NOT NULL,
+time_end DATE,
+FOREIGN KEY (archive_file_path, headline_file_offset)
+REFERENCES headlines (archive_file_path, headline_file_offset));"
   "Schema to build the clocking table in the org archive db.")
 
 (defconst nd/org-sqlite-state-changes-schema
