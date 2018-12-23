@@ -2706,12 +2706,94 @@ strings will be flanked with '\"', and any other symbols will be
 converted to their symbol name."
   (let* ((data-str (mapcar
                    (lambda (d)
-                     (cond ((stringp d) (concat "\"" d "\""))
+                     (cond ((stringp d) (nd/sql-escape-text d))
                            ((numberp d) (number-to-string d))
-                           (t (symbol-name d))))
+                           (d (symbol-name d))
+                           (t "NULL")))
                    data))
          (data-joined (string-join data-str ",")))
     (nd/sql-cmd db (concat "insert into " tbl " values(" data-joined ");"))))
+
+(defun nd/org-element-header-to-sql (db tbl headline)
+  "Parses org-element HEADLINE and inserts data into TBL in sqlite DB."
+  (let* ((src-path (nd/org-element-property-inherited :ARCHIVE_OLPATH headline))
+         (src (nd/org-element-property-inherited :ARCHIVE_FILE headline))
+         (offset (org-element-property :begin headline))
+         (header-txt (org-element-property :raw-value headline))
+         (parent-tree (nd/org-element-get-parent-tree headline))
+         (creation-time (org-element-property :CREATED headline))
+         ;; TODO get higher level source tree
+         ;; TODO add contents
+         (closed-ts (org-element-property :closed headline))
+         (closed-time (org-element-property :raw-value closed-ts)) 
+         (rxv-file rxv-path)
+         (parent (org-element-property :parent headline))
+         (sql-data (list rxv-file offset parent-tree header-txt
+                         creation-time closed-time src-path src nil)))
+    (nd/sql-insert db tbl sql-data)))
+
+(defun nd/org-archive-to-db ()
+  "Transfer archive files to sqlite database."
+  (let* ((db nd/org-sqlite-db-path)
+        (rxv-path (expand-file-name "test.org_archive" org-directory))
+        ;; (dump-path (expand-file-name "dump.el" org-directory))
+        (tree (with-current-buffer (find-file-noselect rxv-path)
+                (org-element-parse-buffer))))
+    (org-element-map tree 'headline
+      (lambda (h) (nd/org-element-header-to-sql
+              nd/org-sqlite-db-path "headers" h)))))
+    ;; (write-region "" nil dump-path)
+    ;; (with-temp-file dump-path
+      ;; (insert-file-contents dump-path)
+      ;; (prin1 buf-data (current-buffer)))))
+
+(defun nd/org-element-get-parent-tree (obj &optional acc)
+  "Construct parent tree path for object OBJ and concatenate to ACC.
+Returns '/' delimited path of headlines or nil if obj is in a toplevel
+headline."
+  (let ((parent (org-element-property :parent obj)))
+    (if parent
+        (let* ((txt (and (eq 'headline (org-element-type parent))
+                         (org-element-property :raw-value parent)))
+               (acc-new (if txt (concat "/" txt acc) acc)))
+          (nd/org-element-get-parent-tree parent acc-new))
+      acc)))
+
+(defun nd/org-element-property-inherited (prop obj)
+  "Return the PROP value of the current org element or object OBJ.
+If it is not available in the current obj, recursively go up to 
+parent until found or return nil if unfruitful."
+  (when obj
+    (let ((prop-val (org-element-property prop obj)))
+      (or
+       prop-val
+       (let ((parent (org-element-property :parent obj)))
+         (nd/org-element-property-inherited prop parent))))))
+
+;; this won't work yet unless I implement the org-element interpreters manually
+(defun nd/org-element-headline-contents (headline)
+  "Gets the contents of HEADLINE greater element as a string.
+This includes everything except drawers, subheadings, and planning."
+  (when (eq 'headline (org-element-type headline))
+    (let* ((section (car
+                     (seq-filter
+                      (lambda (e) (eq 'section (org-element-type e)))
+                      (cdr headline))))
+           (paragraph (car
+                       (seq-filter 
+                        (lambda (e) (eq 'paragraph (org-element-type e)))
+                        (cdr section))))
+           (contents-list (cddr paragraph)))
+      (org-element-interpret-data paragraph))))
+      ;; contents-list)))
+      ;; (string-join
+      ;;  (mapcar
+      ;;   (lambda (e)
+      ;;     (cond ((eq 'link (org-element-type e)) (org-element-property :raw-link e))
+      ;;           ((eq 'timestamp (org-element-type e)) (org-element-property :raw-value e))
+      ;;           ((stringp (car e)) (car e))
+      ;;           (t (error (concat "unknown type: " (org-element-type e))))))
+      ;;   contents-list)))))
 #+END_SRC
 **** schemas
 The database is going to hold all header information in the archive files according to these schemas. The data structure consists of one master table =headers= for all headers and and one layer of auxilary tables for information in the property and logging drawers.
@@ -2720,11 +2802,12 @@ The database is going to hold all header information in the archive files accord
   "CREATE TABLE headers (
 archive_path TEXT,
 archive_offset INTEGER,
+archive_tree INTEGER,
 header TEXT NOT NULL,
 time_created DATE,
 time_closed DATE,
-parent_tree INTEGER,
-source_path TEXT NOT NULL,
+source_tree TEXT,
+source_path TEXT,
 content TEXT,
 PRIMARY KEY (archive_path, archive_offset ASC));"
   "Schema to build the headers table in the org archive db.")
