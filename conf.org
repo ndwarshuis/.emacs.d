@@ -2865,7 +2865,7 @@ If RIGHT is t, get the right half instead of the left."
                  (if (equal 'line-break (org-element-type cur))
                      (if right rem acc)
                    (funcall scan rem (append acc (list cur)))))
-             acc))))
+             (unless right acc)))))
     (funcall scan contents)))
 #+END_SRC
 **** org sql constants and variables
@@ -3098,6 +3098,8 @@ ARCHIVE-FILE-PATH is the path to the archive file."
              ;; split entry into right / left components via linebreak
              (left (nd/org-element-split-linebreak contents))
              (right (nd/org-element-split-linebreak contents t))
+             (note (string-trim (substring-no-properties
+                                 (org-element-interpret-data right))))
              (entry-str (string-trim (substring-no-properties
                                      (org-element-interpret-data left))))
              (note-parsed (nd/org-logbook-match-entry entry-str))
@@ -3106,14 +3108,15 @@ ARCHIVE-FILE-PATH is the path to the archive file."
              time-index time-logged logbook-data)
 
         ;; get time recorded based on note type
-        (set-match-data note-match)
-        (setq time-index
-              (cond
-               ((memq note-type '(done note refile)) 1)
-               ((memq note-type '(reschedule delschedule redeadline deldeadline)) 3)
-               ((eq note-type 'state) 5)
-               (t (error (concat "Unknown type: " (symbol-name note-type))))))
-        (setq time-logged (match-string time-index entry-str))
+        (when note-type
+          (set-match-data note-match)
+          (setq time-index
+                (cond
+                 ((memq note-type '(done note refile)) 1)
+                 ((memq note-type '(reschedule delschedule redeadline deldeadline)) 3)
+                 ((eq note-type 'state) 5)
+                 (t (error (concat "Unknown type: " (symbol-name note-type))))))
+          (setq time-logged (match-string time-index entry-str)))
 
         ;; insert into general logbook table first
         (nd/sql-insert nd/org-sqlite-db-path
@@ -3122,43 +3125,43 @@ ARCHIVE-FILE-PATH is the path to the archive file."
                              headline-file-offset
                              entry-file-offset
                              time-logged
-                             ;; TODO add contents
-                             nil))
+                             note))
 
         ;; insert into auxiliary logging tables
-        (cond
-         ((eq note-type 'state)
-          (let* ((state-old (or (match-string 3 entry-str)
-                                (match-string 4 entry-str)))
-                 (state-new (or (match-string 1 entry-str)
-                                (match-string 2 entry-str))))
-            (nd/sql-insert nd/org-sqlite-db-path
-                           "state_changes"
-                           (list archive-file-path
-                                 entry-file-offset
-                                 state-old
-                                 state-new))))
+        (when note-type
+          (cond
+           ((eq note-type 'state)
+            (let* ((state-old (or (match-string 3 entry-str)
+                                  (match-string 4 entry-str)))
+                   (state-new (or (match-string 1 entry-str)
+                                  (match-string 2 entry-str))))
+              (nd/sql-insert nd/org-sqlite-db-path
+                             "state_changes"
+                             (list archive-file-path
+                                   entry-file-offset
+                                   state-old
+                                   state-new))))
 
-         ((memq note-type '(reschedule delschedule redeadline deldeadline))
-          (let* ((time-old (match-string 1 entry-str))
-                 (schedule (memq note-type '(reschedule delschedule)))
-                 (time-new (nd/org-element-timestamp-raw
-                            (if schedule :scheduled :deadline)
-                            parent-headline))
-                 (planning-type (if schedule "s" "d")))
-            (nd/sql-insert nd/org-sqlite-db-path
-                           "planning_changes"
-                           (list archive-file-path
-                                 entry-file-offset
-                                 time-old
-                                 time-new
-                                 planning-type))))
+           ((memq note-type '(reschedule delschedule redeadline deldeadline))
+            (let* ((time-old (match-string 1 entry-str))
+                   (schedule (memq note-type '(reschedule delschedule)))
+                   (time-new (nd/org-element-timestamp-raw
+                              (if schedule :scheduled :deadline)
+                              parent-headline))
+                   (planning-type (if schedule "s" "d")))
+              (nd/sql-insert nd/org-sqlite-db-path
+                             "planning_changes"
+                             (list archive-file-path
+                                   entry-file-offset
+                                   time-old
+                                   time-new
+                                   planning-type))))
 
          ;; no action required for these
-         ((memq note-type '(done refile note)) (ignore))
+           ((memq note-type '(done refile note)) (ignore))
 
          ;; this shouldn't happen
-         (t (error (concat "Unknown entry type: " (symbol-name note-type)))))))))
+           (t (error (concat "Unknown entry type: " (symbol-name note-type))))))))))
 
 (defun nd/org-archive-to-db ()
   "Transfer archive files to sqlite database."
