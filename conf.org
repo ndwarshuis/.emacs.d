@@ -2661,35 +2661,17 @@ Add hook for =org-capture=.
 #+END_SRC
 *** sqlite backend
 Org mode is great and all, but in many cases, text files just won't cut it. Hardcore data analysis is one of them, so make functions to shove org files (specifically archive files) into a sqlite database
+**** basic functions
+These are =org-mode=-agnostic functions that pertain to sql. They are basically just simple interfaces for shell commands.
 #+BEGIN_SRC emacs-lisp
 (require 'sql)
-
-(defconst nd/sqlite3-cmd
-  "sqlite3"
-  "The shell command to summon sqlite3.")
-
-(defconst nd/org-sqlite-db-path
-  (expand-file-name "archive.db" org-directory)
-  "Path for the sqlite database that holds archive data.")
-
-(defun nd/org-init-db ()
-  "Make a sqlite database for org archive files if it does not exist already."
-  (unless (file-exists-p nd/org-sqlite-db-path)
-    (process-file-shell-command (concat "touch " nd/org-sqlite-db-path))
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-header-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-properties-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-tags-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-clocking-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-logbook-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-state-changes-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-planning-changes-schema)))
 
 (defun nd/sql-cmd (db sql)
   "Execute string SQL on database DB executing `sql-sqlite-program'.
 Returns the output of CMD. SQL should not contain any quotes as if it
 were entered on the shell."
   (shell-command-to-string (concat sql-sqlite-program " " db " \"" sql "\"")))
-
+  
 (defun nd/sql-escape-text (txt)
   "Escape and quote TXT in order to insert into sqlite db via 'insert'.
 This assumes the insertion command will be run on a shell where the
@@ -2712,413 +2694,8 @@ converted to their symbol name."
                    data))
          (data-joined (string-join data-str ",")))
     (nd/sql-cmd db (concat "insert into " tbl " values(" data-joined ");"))))
-
-(defun nd/org-element-timestamp-raw (prop obj)
-  "Return the raw-value of the timestamp PROP in OBJ if exists."
-  (when obj
-    (let ((ts (org-element-property prop obj)))
-      (when ts (org-element-property :raw-value ts)))))
-
-(defun nd/org-element-find-type (type obj)
-  "Find and return the first instance of TYPE in OBJ.
-TYPE is an org element type symbol and OBJ is a list of elements/objects."
-  (let ((obj-cur (car obj))
-        (obj-rem (cdr obj)))
-    (if (eq type (org-element-type obj-cur))
-        obj-cur
-      (nd/org-element-find-type type obj-rem))))
-
-(defun nd/org-element-get-parent-type (type obj)
-  "Return parent element of type TYPE for obj or nil if not found."
-  (when obj
-    (let ((parent (org-element-property :parent obj)))
-      (if (eq type (org-element-type parent))
-          parent
-        (nd/org-element-get-parent-type type parent)))))
-
-(defun nd/org-element-get-parent-headline (obj)
-  "Get the parent headline element (if any) of org-element OBJ."
-  (when obj
-    (let ((parent (org-element-property :parent obj)))
-      (if (eq 'headline (org-element-type parent))
-          parent
-        (nd/org-element-get-parent-headline parent)))))
-
-;; TODO merge thing above with thing below
-(defun nd/org-element-get-parent-tree (obj &optional acc)
-  "Construct parent tree path for object OBJ and concatenate to ACC.
-Returns '/' delimited path of headlines or nil if obj is in a toplevel
-headline."
-  (let ((parent (org-element-property :parent obj)))
-    (if parent
-        (let* ((txt (and (eq 'headline (org-element-type parent))
-                         (org-element-property :raw-value parent)))
-               (acc-new (if txt (concat "/" txt acc) acc)))
-          (nd/org-element-get-parent-tree parent acc-new))
-      acc)))
-
-(defun nd/org-element-get-parent-tags (obj &optional acc)
-  "Get all tags from parent headlines of OBJ and concat to ACC.
-ACC is treated as a set; therefore no duplicates are retained."
-  (let ((parent-hl (nd/org-element-get-parent-headline obj)))
-    (if parent-hl
-        (let* ((tags (org-element-property :tags parent-hl))
-               (i-tags (split-string (org-element-property :ARCHIVE_ITAGS parent-hl)))
-               (all-tags (delete-dups (append acc tags i-tags))))
-          (nd/org-element-get-parent-tags parent-hl all-tags))
-      acc)))
-
-(defun nd/org-element-property-inherited (prop obj)
-  "Return the PROP value of the current org element or object OBJ.
-If it is not available in the current obj, recursively go up to 
-parent until found or return nil if unfruitful."
-  (when obj
-    (let ((prop-val (org-element-property prop obj)))
-      (or
-       prop-val
-       (let ((parent (org-element-property :parent obj)))
-         (nd/org-element-property-inherited prop parent))))))
-
-;; this won't work yet unless I implement the org-element interpreters manually
-(defun nd/org-element-headline-contents (headline)
-  "Gets the contents of HEADLINE greater element as a string.
-This includes everything except drawers, subheadings, and planning."
-  (when (eq 'headline (org-element-type headline))
-    (let* ((section (car
-                     (seq-filter
-                      (lambda (e) (eq 'section (org-element-type e)))
-                      (cdr headline))))
-           (paragraph (car
-                       (seq-filter 
-                        (lambda (e) (eq 'paragraph (org-element-type e)))
-                        (cdr section))))
-           (contents-list (cddr paragraph)))
-      (org-element-interpret-data paragraph))))
-      ;; contents-list)))
-      ;; (string-join
-      ;;  (mapcar
-      ;;   (lambda (e)
-      ;;     (cond ((eq 'link (org-element-type e)) (org-element-property :raw-link e))
-      ;;           ((eq 'timestamp (org-element-type e)) (org-element-property :raw-value e))
-      ;;           ((stringp (car e)) (car e))
-      ;;           (t (error (concat "unknown type: " (org-element-type e))))))
-      ;;   contents-list)))))
-
-(defvar nd/org-sql-use-tag-inheritance t
-  "Use tag inheritance when constructing sql databases for org.
-See `org-use-tag-inheritance'.")
-
-(defun nd/org-element-header-to-sql (headline archive-file-path)
-  "Parse org-element HEADLINE and insert data into TBL in sqlite DB.
-ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
-  (let* ((headline-file-offset (org-element-property :begin headline))
-         (archive-tree-path (nd/org-element-get-parent-tree headline))
-         ;; headline table
-         (source-file-path (nd/org-element-property-inherited :ARCHIVE_FILE headline))
-         (source-tree-path (nd/org-element-property-inherited :ARCHIVE_OLPATH headline))
-         (headline-text (org-element-property :raw-value headline))
-         (time-created (org-element-property :CREATED headline))
-         (time-closed (nd/org-element-timestamp-raw :closed headline))
-         (time-scheduled (nd/org-element-timestamp-raw :scheduled headline))
-         (time-deadline (nd/org-element-timestamp-raw :deadline headline))
-         (effort (org-element-property :EFFORT headline))
-         (priority (org-element-property :priority headline))
-         (headline-data (list archive-file-path
-                                      headline-file-offset
-                                      archive-tree-path
-                                      source-file-path
-                                      source-tree-path
-                                      headline-text
-                                      time-created
-                                      time-closed
-                                      time-scheduled
-                                      time-deadline
-                                      effort
-                                      priority
-                                      ;; TODO add contents
-                                      nil))
-         ;; tags table
-         (tags (org-element-property :tags headline))
-         (i-tags (org-element-property :ARCHIVE_ITAGS headline))
-         (insert-tags (lambda (tags afp hfo inh)
-                        (while tags
-                          (nd/sql-insert nd/org-sqlite-db-path
-                                         "tags"
-                                         (list afp hfo (car tags) inh))
-                          (setq tags (cdr tags))))))
-
-    (nd/sql-insert nd/org-sqlite-db-path "headlines" headline-data)
-    (funcall insert-tags tags archive-file-path headline-file-offset 0)
-    (when i-tags (setq i-tags (split-string i-tags)))
-    ;; retrieve parent tags if we want inheritance
-    (when nd/org-sql-use-tag-inheritance
-      (setq i-tags (nd/org-element-get-parent-tags headline i-tags)))
-    (funcall insert-tags i-tags archive-file-path headline-file-offset 1)))
-
-(defun nd/org-element-clock-to-sql (clock archive-file-path)
-  "Parse org-element CLOCK and insert data into TBL in sqlite DB.
-ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
-  (let* ((parent-headline (nd/org-element-get-parent-headline clock))
-         (headline-file-offset (org-element-property :begin parent-headline))
-         (clock-file-offset (org-element-property :begin clock))
-         (timestamp-obj (org-element-property :value clock))
-         (timestamp-type (org-element-property :type timestamp-obj))
-         time-start time-end)
-    ;; process timestamp depending on if it is a range or singular
-    (cond ((eq 'inactive-range timestamp-type)
-           (setq time-start (org-timestamp-split-range timestamp-obj)
-                 time-end (org-timestamp-split-range timestamp-obj t)))
-          ((eq 'inactive timestamp-type)
-           (setq time-start timestamp-obj))
-          ;; should never happen
-          (t (error (concat "unknown timestamp type: "
-                            (symbol-name timestamp-type)))))
-    (setq time-start (org-element-property :raw-value time-start)
-          time-end (org-element-property :raw-value time-end))
-    (nd/sql-insert nd/org-sqlite-db-path
-                   "clocking"
-                   (list archive-file-path
-                         headline-file-offset
-                         clock-file-offset
-                         time-start
-                         time-end
-                         ;; TODO add clocking note
-                         nil))))
-
-(defconst nd/org-sql-ignored-properties
-  '("ARCHIVE_TIME" "ARCHIVE_FILE" "ARCHIVE_OLPATH" "ARCHIVE_CATEGORY"
-    "ARCHIVE_ITAGS" "ARCHIVE_TODO" "Effort" "CREATED")
-  "Property keys to be ignored when inserting in properties table. 
-It is assumed these are used elsewhere and thus it would be redundant 
-to store them.")
-
-(defun nd/org-element-property-to-sql (np archive-file-path)
-  "Parse node-property element NP and insert data into TBL in sqlite DB.
-ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
-  (let ((key-text (org-element-property :key np)))
-    (unless (member key-text nd/org-sql-ignored-properties)
-      (let* ((parent-headline (nd/org-element-get-parent-headline np))
-             (headline-file-offset (org-element-property :begin parent-headline))
-             (property-file-offset (org-element-property :begin np))
-             (val-text (org-element-property :value np)))
-        (nd/sql-insert nd/org-sqlite-db-path
-                       "properties"
-                       (list archive-file-path
-                             headline-file-offset
-                             property-file-offset
-                             key-text
-                             val-text
-                             ;; TODO add inherited flag
-                             nil))))))
-
-(defun nd/org-logbook-match-entry (entry-str)
-  "Test if ENTRY-STR matches `nd/org-log-note-headings-regexp'.
-If found, returns list where car is the type and cdr is match data."
-  (let* ((scan
-          (lambda (str note-regex-alist)
-            (when note-regex-alist
-              (let* ((cur (car note-regex-alist))
-                     (rem (cdr note-regex-alist))
-                     (type (car cur))
-                     (re (cdr cur)))
-                (if (string-match re str)
-                    type
-                  (funcall scan str rem))))))
-         (type (funcall scan entry-str nd/org-log-note-headings-regexp)))
-    (when type (cons type (match-data)))))
-
-(defun nd/org-element-split-linebreak (contents &optional right)
-  "Split org-element sequence of objects CONTENTS by a linebreak.
-If RIGHT is t, get the right half instead of the left."
-  (let ((scan
-         (lambda (c &optional acc)
-           (if c
-               (let ((cur (car c))
-                     (rem (cdr c)))
-                 (if (equal 'line-break (org-element-type cur))
-                     (if right rem acc)
-                   (funcall scan rem (append acc (list cur)))))
-             acc))))
-    (funcall scan contents)))
-
-;; (defun nd/org-element-logbook-note-concat (entry-str &optional acc)
-;;   "Concat list ENTRY-STR which can be mix of strings and timestamps.
-;; Timestamps are converted to their raw values upon concatenation."
-;;   (if entry-str
-;;       (let ((cur (car entry-str))
-;;             (rem (cdr entry-str)))
-;;         (cond ((eq 'timestamp (org-element-type cur))
-;;                (concat acc (org-element-property :raw-value cur)))
-;;               ;; if not a timestamp assume string
-;;               (t (concat acc cur)))
-;;         (nd/org-element-logbook-note-concat rem acc))
-;;     acc))
-
-;; this function doesn't exist in vanilla org mode >:(
-(defun nd/org-todo-keywords-stripped ()
- "Return `org-todo-keywords' as string list w/o selectors.
-Will likely match the value of `org-todo-keywords-1' in many cases,
-but this has the advantage of being always available and comprehensive."
- (mapcar
-  (lambda (s) (replace-regexp-in-string "(.*)" "" s))
-  (remove "|" (mapcan #'cdr (copy-tree org-todo-keywords)))))
-
-(defun nd/org-log-note-headings-matcher ()
-  "Convert `org-log-note-headings' to a regex matcher.
-See `org-log-note-headings' for escape sequences that are matched
-and replaces by regexps that match what would be inserted in place
-of the escapes."
-  ;; no pipes :( so sad for mario bros
-  (let* ((escapes '("%u" "%U" "%t" "%T" "%d" "%D" "%s" "%S"))
-         (todo-list (nd/org-todo-keywords-stripped))
-         (todo-regexp (mapconcat #'regexp-quote todo-list "\\|"))
-         (ts-or-todo-regexp (concat "\"\\(" org-ts-regexp-inactive "\\|"
-                                    todo-regexp "\\)\""))
-         (org-ts-regexp-cap (concat "\\(" org-ts-regexp "\\)")) 
-         (org-ts-regexp-inactive-cap (concat "\\(" org-ts-regexp-inactive "\\)")) 
-         (re-matchers (list ".*"
-                            ".*"
-                            org-ts-regexp-inactive-cap
-                            org-ts-regexp-cap
-                            org-ts-regexp-inactive-cap
-                            org-ts-regexp-cap
-                            ts-or-todo-regexp
-                            ts-or-todo-regexp))
-         (re-matchers-pad (mapcar
-                           (lambda (s)
-                             (concat "[[:space:]]*" s "[[:space:]]*"))
-                           re-matchers))
-         (re-no-pad-alist (mapcar* #'cons escapes escapes))
-         (re-match-alist (mapcar* #'cons escapes re-matchers-pad))
-         (apply2note
-          (lambda (n f)
-            (let ((note-type (car n))
-                  (note-str (cdr n)))
-              (cons note-type (funcall f note-str)))))
-         (replace-esc
-          (lambda (n re)
-            (funcall apply2note
-                     n
-                     (lambda (s) (org-replace-escapes s re)))))
-         (shrink-space
-          (lambda (n)
-            (funcall apply2note
-                     n
-                     (lambda (s) (replace-regexp-in-string "\s+" " " s)))))
-         (new org-log-note-headings))
-    ;; remove padding information by replacing all escape sequences
-    ;; with their non-padded version and then removing extra spaces
-    (setq new (mapcar (lambda (n) (funcall replace-esc n re-no-pad-alist)) new))
-    (setq new (mapcar (lambda (n) (funcall shrink-space n)) new))
-    ;; replace all escape sequences with regexps that match
-    ;; the data to be inserted via the escape sequences
-    (setq new (mapcar (lambda (n) (funcall replace-esc n re-match-alist)) new))
-    ;; filter out anything that is blank (eg default clock-in)
-    (seq-filter (lambda (s) (not (equal (cdr s) ""))) new)))
-
-(defconst nd/org-log-note-headings-regexp
-  (nd/org-log-note-headings-matcher)
-  "Like `org-log-note-headings' but has regexp's instead of
-escape sequences.")
-
-(defun nd/org-element-logbook-item-to-sql (item archive-file-path)
-  "Parse ITEM if in log drawer and add notes and log entries to db.
-ARCHIVE-FILE-PATH is the path to the archive file."
-  (let* ((parent-drawer (nd/org-element-get-parent-type 'drawer item))
-         (pd-name (org-element-property :drawer-name parent-drawer)))
-    (when (equal org-log-into-drawer pd-name)
-      (let* ((parent-headline (nd/org-element-get-parent-headline item))
-             (headline-file-offset (org-element-property :begin parent-headline))
-             (entry-file-offset (org-element-property :begin item))
-             (paragraph (nd/org-element-find-type 'paragraph item))
-             (contents (org-element-contents paragraph))
-             ;; split entry into right / left components via linebreak
-             (left (nd/org-element-split-linebreak contents))
-             (right (nd/org-element-split-linebreak contents t))
-             (entry-str (string-trim (substring-no-properties
-                                     (org-element-interpret-data left))))
-             (note-parsed (nd/org-logbook-match-entry entry-str))
-             (note-type (car note-parsed))
-             (note-match (cdr note-parsed))
-             time-index time-logged logbook-data)
-
-        ;; get time recorded based on note type
-        (set-match-data note-match)
-        (setq time-index
-              (cond
-               ((memq note-type '(done note refile)) 1)
-               ((memq note-type '(reschedule delschedule redeadline deldeadline)) 3)
-               ((eq note-type 'state) 5)
-               (t (error (concat "Unknown type: " (symbol-name note-type))))))
-        (setq time-logged (match-string time-index entry-str))
-
-        ;; insert into general logbook table first
-        (nd/sql-insert nd/org-sqlite-db-path
-                       "logbook"
-                       (list archive-file-path
-                             headline-file-offset
-                             entry-file-offset
-                             time-logged
-                             ;; TODO add contents
-                             nil))
-
-        ;; insert into auxiliary logging tables
-        (cond
-         ((eq note-type 'state)
-          (let* ((state-old (or (match-string 3 entry-str)
-                                (match-string 4 entry-str)))
-                 (state-new (or (match-string 1 entry-str)
-                                (match-string 2 entry-str))))
-            (nd/sql-insert nd/org-sqlite-db-path
-                           "state_changes"
-                           (list archive-file-path
-                                 entry-file-offset
-                                 state-old
-                                 state-new))))
-
-         ((memq note-type '(reschedule delschedule redeadline deldeadline))
-          (let* ((time-old (match-string 1 entry-str))
-                 (schedule (memq note-type '(reschedule delschedule)))
-                 (time-new (nd/org-element-timestamp-raw
-                            (if schedule :scheduled :deadline)
-                            parent-headline))
-                 (planning-type (if schedule "s" "d")))
-            (nd/sql-insert nd/org-sqlite-db-path
-                           "planning_changes"
-                           (list archive-file-path
-                                 entry-file-offset
-                                 time-old
-                                 time-new
-                                 planning-type))))
-
-         ;; no action required for these
-         ((memq note-type '(done refile note)) (ignore))
-
-         ;; this shouldn't happen
-         (t (error (concat "Unknown entry type: " (symbol-name note-type)))))))))
-
-(defun nd/org-archive-to-db ()
-  "Transfer archive files to sqlite database."
-  (let* ((db nd/org-sqlite-db-path)
-        (rxv-path (expand-file-name "test.org_archive" org-directory))
-        ;; (dump-path (expand-file-name "dump.el" org-directory))
-        (tree (with-current-buffer (find-file-noselect rxv-path)
-                (org-element-parse-buffer))))
-    (org-element-map tree 'headline
-      (lambda (h) (nd/org-element-header-to-sql h rxv-path)))
-    (org-element-map tree 'clock
-      (lambda (c) (nd/org-element-clock-to-sql c rxv-path)))
-    (org-element-map tree 'node-property
-      (lambda (n) (nd/org-element-property-to-sql n rxv-path)))
-    (org-element-map tree 'item
-      (lambda (i) (nd/org-element-logbook-item-to-sql i rxv-path)))))
-    ;; (write-region "" nil dump-path)
-    ;; (with-temp-file dump-path
-      ;; (insert-file-contents dump-path)
-      ;; (prin1 buf-data (current-buffer)))))
 #+END_SRC
-**** schemas
-The database is going to hold all header information in the archive files according to these schemas. The data structure consists of one master table =headers= for all headers and and one layer of auxilary tables for information in the property and logging drawers.
+**** org sql schemas
 #+BEGIN_SRC emacs-lisp
 (defconst nd/org-sqlite-header-schema
   "CREATE TABLE headlines (
@@ -3208,6 +2785,394 @@ FOREIGN KEY (archive_file_path, entry_file_offset)
 REFERENCES logbook (archive_file_path, entry_file_offset),
 PRIMARY KEY (archive_file_path ASC, entry_file_offset ASC));"
   "Schema to build the planning_changes table in the org archive db.")
+#+END_SRC
+**** org element functions
+These are functions that operate on org-element objects to parse for insertion into the db.
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-element-timestamp-raw (prop obj)
+  "Return the raw-value of the timestamp PROP in OBJ if exists."
+  (when obj
+    (let ((ts (org-element-property prop obj)))
+      (when ts (org-element-property :raw-value ts)))))
+      
+(defun nd/org-element-find-type (type obj)
+  "Find and return the first instance of TYPE in OBJ.
+TYPE is an org element type symbol and OBJ is a list of elements/objects."
+  (let ((obj-cur (car obj))
+        (obj-rem (cdr obj)))
+    (if (eq type (org-element-type obj-cur))
+        obj-cur
+      (nd/org-element-find-type type obj-rem))))
+      
+(defun nd/org-element-get-parent-type (type obj)
+  "Return parent element of type TYPE for obj or nil if not found."
+  (when obj
+    (let ((parent (org-element-property :parent obj)))
+      (if (eq type (org-element-type parent))
+          parent
+        (nd/org-element-get-parent-type type parent)))))
+        
+(defun nd/org-element-get-parent-headline (obj)
+  "Get the parent headline element (if any) of org-element OBJ."
+  (when obj
+    (let ((parent (org-element-property :parent obj)))
+      (if (eq 'headline (org-element-type parent))
+          parent
+        (nd/org-element-get-parent-headline parent)))))
+        
+;; TODO merge thing above with thing below
+(defun nd/org-element-get-parent-tree (obj &optional acc)
+  "Construct parent tree path for object OBJ and concatenate to ACC.
+Returns '/' delimited path of headlines or nil if obj is in a toplevel
+headline."
+  (let ((parent (org-element-property :parent obj)))
+    (if parent
+        (let* ((txt (and (eq 'headline (org-element-type parent))
+                         (org-element-property :raw-value parent)))
+               (acc-new (if txt (concat "/" txt acc) acc)))
+          (nd/org-element-get-parent-tree parent acc-new))
+      acc)))
+      
+(defun nd/org-element-get-parent-tags (obj &optional acc)
+  "Get all tags from parent headlines of OBJ and concat to ACC.
+ACC is treated as a set; therefore no duplicates are retained."
+  (let ((parent-hl (nd/org-element-get-parent-headline obj)))
+    (if parent-hl
+        (let* ((tags (org-element-property :tags parent-hl))
+               (i-tags (split-string (org-element-property :ARCHIVE_ITAGS parent-hl)))
+               (all-tags (delete-dups (append acc tags i-tags))))
+          (nd/org-element-get-parent-tags parent-hl all-tags))
+      acc)))
+      
+(defun nd/org-element-property-inherited (prop obj)
+  "Return the PROP value of the current org element or object OBJ.
+If it is not available in the current obj, recursively go up to 
+parent until found or return nil if unfruitful."
+  (when obj
+    (let ((prop-val (org-element-property prop obj)))
+      (or
+       prop-val
+       (let ((parent (org-element-property :parent obj)))
+         (nd/org-element-property-inherited prop parent))))))
+         
+(defun nd/org-element-split-linebreak (contents &optional right)
+  "Split org-element sequence of objects CONTENTS by a linebreak.
+If RIGHT is t, get the right half instead of the left."
+  (let ((scan
+         (lambda (c &optional acc)
+           (if c
+               (let ((cur (car c))
+                     (rem (cdr c)))
+                 (if (equal 'line-break (org-element-type cur))
+                     (if right rem acc)
+                   (funcall scan rem (append acc (list cur)))))
+             acc))))
+    (funcall scan contents)))
+#+END_SRC
+**** org sql constants and variables
+#+BEGIN_SRC emacs-lisp
+(defconst nd/org-sqlite-db-path
+  (expand-file-name "archive.db" org-directory)
+  "Path for the sqlite database that holds archive data.")
+  
+(defconst nd/org-sql-ignored-properties
+  '("ARCHIVE_TIME" "ARCHIVE_FILE" "ARCHIVE_OLPATH" "ARCHIVE_CATEGORY"
+    "ARCHIVE_ITAGS" "ARCHIVE_TODO" "Effort" "CREATED")
+  "Property keys to be ignored when inserting in properties table. 
+It is assumed these are used elsewhere and thus it would be redundant 
+to store them.")
+
+(defvar nd/org-sql-use-tag-inheritance t
+  "Use tag inheritance when constructing sql databases for org.
+See `org-use-tag-inheritance'.")
+#+END_SRC
+**** org logbook parsing functions
+The logbook takes some extra work to parse as there is little/no information to distinguish the "type" of any given log entry (outside of clocking). Therefore, need to go down to the string level and match using regular expressions.
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-logbook-match-entry (entry-str)
+  "Test if ENTRY-STR matches `nd/org-log-note-headings-regexp'.
+If found, returns list where car is the type and cdr is match data."
+  (let* ((scan
+          (lambda (str note-regex-alist)
+            (when note-regex-alist
+              (let* ((cur (car note-regex-alist))
+                     (rem (cdr note-regex-alist))
+                     (type (car cur))
+                     (re (cdr cur)))
+                (if (string-match re str)
+                    type
+                  (funcall scan str rem))))))
+         (type (funcall scan entry-str nd/org-log-note-headings-regexp)))
+    (when type (cons type (match-data)))))
+    
+;; this function doesn't exist in vanilla org mode >:(
+(defun nd/org-todo-keywords-stripped ()
+ "Return `org-todo-keywords' as string list w/o selectors.
+Will likely match the value of `org-todo-keywords-1' in many cases,
+but this has the advantage of being always available and comprehensive."
+ (mapcar
+  (lambda (s) (replace-regexp-in-string "(.*)" "" s))
+  (remove "|" (mapcan #'cdr (copy-tree org-todo-keywords)))))
+
+(defun nd/org-log-note-headings-matcher ()
+  "Convert `org-log-note-headings' to a regex matcher.
+See `org-log-note-headings' for escape sequences that are matched
+and replaces by regexps that match what would be inserted in place
+of the escapes."
+  ;; no pipes :( so sad for mario bros
+  (let* ((escapes '("%u" "%U" "%t" "%T" "%d" "%D" "%s" "%S"))
+         (todo-list (nd/org-todo-keywords-stripped))
+         (todo-regexp (mapconcat #'regexp-quote todo-list "\\|"))
+         (ts-or-todo-regexp (concat "\"\\(" org-ts-regexp-inactive "\\|"
+                                    todo-regexp "\\)\""))
+         (org-ts-regexp-cap (concat "\\(" org-ts-regexp "\\)")) 
+         (org-ts-regexp-inactive-cap (concat "\\(" org-ts-regexp-inactive "\\)")) 
+         (re-matchers (list ".*"
+                            ".*"
+                            org-ts-regexp-inactive-cap
+                            org-ts-regexp-cap
+                            org-ts-regexp-inactive-cap
+                            org-ts-regexp-cap
+                            ts-or-todo-regexp
+                            ts-or-todo-regexp))
+         (re-matchers-pad (mapcar
+                           (lambda (s)
+                             (concat "[[:space:]]*" s "[[:space:]]*"))
+                           re-matchers))
+         (re-no-pad-alist (mapcar* #'cons escapes escapes))
+         (re-match-alist (mapcar* #'cons escapes re-matchers-pad))
+         (apply2note
+          (lambda (n f)
+            (let ((note-type (car n))
+                  (note-str (cdr n)))
+              (cons note-type (funcall f note-str)))))
+         (replace-esc
+          (lambda (n re)
+            (funcall apply2note
+                     n
+                     (lambda (s) (org-replace-escapes s re)))))
+         (shrink-space
+          (lambda (n)
+            (funcall apply2note
+                     n
+                     (lambda (s) (replace-regexp-in-string "\s+" " " s)))))
+         (new org-log-note-headings))
+    ;; remove padding information by replacing all escape sequences
+    ;; with their non-padded version and then removing extra spaces
+    (setq new (mapcar (lambda (n) (funcall replace-esc n re-no-pad-alist)) new))
+    (setq new (mapcar (lambda (n) (funcall shrink-space n)) new))
+    ;; replace all escape sequences with regexps that match
+    ;; the data to be inserted via the escape sequences
+    (setq new (mapcar (lambda (n) (funcall replace-esc n re-match-alist)) new))
+    ;; filter out anything that is blank (eg default clock-in)
+    (seq-filter (lambda (s) (not (equal (cdr s) ""))) new)))
+
+(defconst nd/org-log-note-headings-regexp
+  (nd/org-log-note-headings-matcher)
+  "Like `org-log-note-headings' but has regexp's instead of
+escape sequences.")
+#+END_SRC
+**** org sql db function
+These are the main functions to populate the db.
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-init-db ()
+  "Make a sqlite database for org archive files if it does not exist already."
+  (unless (file-exists-p nd/org-sqlite-db-path)
+    (process-file-shell-command (concat "touch " nd/org-sqlite-db-path))
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-header-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-properties-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-tags-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-clocking-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-logbook-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-state-changes-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-planning-changes-schema)))
+
+(defun nd/org-element-header-to-sql (headline archive-file-path)
+  "Parse org-element HEADLINE and insert data into TBL in sqlite DB.
+ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
+  (let* ((headline-file-offset (org-element-property :begin headline))
+         (archive-tree-path (nd/org-element-get-parent-tree headline))
+         ;; headline table
+         (source-file-path (nd/org-element-property-inherited :ARCHIVE_FILE headline))
+         (source-tree-path (nd/org-element-property-inherited :ARCHIVE_OLPATH headline))
+         (headline-text (org-element-property :raw-value headline))
+         (time-created (org-element-property :CREATED headline))
+         (time-closed (nd/org-element-timestamp-raw :closed headline))
+         (time-scheduled (nd/org-element-timestamp-raw :scheduled headline))
+         (time-deadline (nd/org-element-timestamp-raw :deadline headline))
+         (effort (org-element-property :EFFORT headline))
+         (priority (org-element-property :priority headline))
+         (headline-data (list archive-file-path
+                                      headline-file-offset
+                                      archive-tree-path
+                                      source-file-path
+                                      source-tree-path
+                                      headline-text
+                                      time-created
+                                      time-closed
+                                      time-scheduled
+                                      time-deadline
+                                      effort
+                                      priority
+                                      ;; TODO add contents
+                                      nil))
+         ;; tags table
+         (tags (org-element-property :tags headline))
+         (i-tags (org-element-property :ARCHIVE_ITAGS headline))
+         (insert-tags (lambda (tags afp hfo inh)
+                        (while tags
+                          (nd/sql-insert nd/org-sqlite-db-path
+                                         "tags"
+                                         (list afp hfo (car tags) inh))
+                          (setq tags (cdr tags))))))
+
+    (nd/sql-insert nd/org-sqlite-db-path "headlines" headline-data)
+    (funcall insert-tags tags archive-file-path headline-file-offset 0)
+    (when i-tags (setq i-tags (split-string i-tags)))
+    ;; retrieve parent tags if we want inheritance
+    (when nd/org-sql-use-tag-inheritance
+      (setq i-tags (nd/org-element-get-parent-tags headline i-tags)))
+    (funcall insert-tags i-tags archive-file-path headline-file-offset 1)))
+
+(defun nd/org-element-clock-to-sql (clock archive-file-path)
+  "Parse org-element CLOCK and insert data into TBL in sqlite DB.
+ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
+  (let* ((parent-headline (nd/org-element-get-parent-headline clock))
+         (headline-file-offset (org-element-property :begin parent-headline))
+         (clock-file-offset (org-element-property :begin clock))
+         (timestamp-obj (org-element-property :value clock))
+         (timestamp-type (org-element-property :type timestamp-obj))
+         time-start time-end)
+    ;; process timestamp depending on if it is a range or singular
+    (cond ((eq 'inactive-range timestamp-type)
+           (setq time-start (org-timestamp-split-range timestamp-obj)
+                 time-end (org-timestamp-split-range timestamp-obj t)))
+          ((eq 'inactive timestamp-type)
+           (setq time-start timestamp-obj))
+          ;; should never happen
+          (t (error (concat "unknown timestamp type: "
+                            (symbol-name timestamp-type)))))
+    (setq time-start (org-element-property :raw-value time-start)
+          time-end (org-element-property :raw-value time-end))
+    (nd/sql-insert nd/org-sqlite-db-path
+                   "clocking"
+                   (list archive-file-path
+                         headline-file-offset
+                         clock-file-offset
+                         time-start
+                         time-end
+                         ;; TODO add clocking note
+                         nil))))
+
+(defun nd/org-element-property-to-sql (np archive-file-path)
+  "Parse node-property element NP and insert data into TBL in sqlite DB.
+ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
+  (let ((key-text (org-element-property :key np)))
+    (unless (member key-text nd/org-sql-ignored-properties)
+      (let* ((parent-headline (nd/org-element-get-parent-headline np))
+             (headline-file-offset (org-element-property :begin parent-headline))
+             (property-file-offset (org-element-property :begin np))
+             (val-text (org-element-property :value np)))
+        (nd/sql-insert nd/org-sqlite-db-path
+                       "properties"
+                       (list archive-file-path
+                             headline-file-offset
+                             property-file-offset
+                             key-text
+                             val-text
+                             ;; TODO add inherited flag
+                             nil))))))
+
+(defun nd/org-element-logbook-item-to-sql (item archive-file-path)
+  "Parse ITEM if in log drawer and add notes and log entries to db.
+ARCHIVE-FILE-PATH is the path to the archive file."
+  (let* ((parent-drawer (nd/org-element-get-parent-type 'drawer item))
+         (pd-name (org-element-property :drawer-name parent-drawer)))
+    (when (equal org-log-into-drawer pd-name)
+      (let* ((parent-headline (nd/org-element-get-parent-headline item))
+             (headline-file-offset (org-element-property :begin parent-headline))
+             (entry-file-offset (org-element-property :begin item))
+             (paragraph (nd/org-element-find-type 'paragraph item))
+             (contents (org-element-contents paragraph))
+             ;; split entry into right / left components via linebreak
+             (left (nd/org-element-split-linebreak contents))
+             (right (nd/org-element-split-linebreak contents t))
+             (entry-str (string-trim (substring-no-properties
+                                     (org-element-interpret-data left))))
+             (note-parsed (nd/org-logbook-match-entry entry-str))
+             (note-type (car note-parsed))
+             (note-match (cdr note-parsed))
+             time-index time-logged logbook-data)
+
+        ;; get time recorded based on note type
+        (set-match-data note-match)
+        (setq time-index
+              (cond
+               ((memq note-type '(done note refile)) 1)
+               ((memq note-type '(reschedule delschedule redeadline deldeadline)) 3)
+               ((eq note-type 'state) 5)
+               (t (error (concat "Unknown type: " (symbol-name note-type))))))
+        (setq time-logged (match-string time-index entry-str))
+
+        ;; insert into general logbook table first
+        (nd/sql-insert nd/org-sqlite-db-path
+                       "logbook"
+                       (list archive-file-path
+                             headline-file-offset
+                             entry-file-offset
+                             time-logged
+                             ;; TODO add contents
+                             nil))
+
+        ;; insert into auxiliary logging tables
+        (cond
+         ((eq note-type 'state)
+          (let* ((state-old (or (match-string 3 entry-str)
+                                (match-string 4 entry-str)))
+                 (state-new (or (match-string 1 entry-str)
+                                (match-string 2 entry-str))))
+            (nd/sql-insert nd/org-sqlite-db-path
+                           "state_changes"
+                           (list archive-file-path
+                                 entry-file-offset
+                                 state-old
+                                 state-new))))
+
+         ((memq note-type '(reschedule delschedule redeadline deldeadline))
+          (let* ((time-old (match-string 1 entry-str))
+                 (schedule (memq note-type '(reschedule delschedule)))
+                 (time-new (nd/org-element-timestamp-raw
+                            (if schedule :scheduled :deadline)
+                            parent-headline))
+                 (planning-type (if schedule "s" "d")))
+            (nd/sql-insert nd/org-sqlite-db-path
+                           "planning_changes"
+                           (list archive-file-path
+                                 entry-file-offset
+                                 time-old
+                                 time-new
+                                 planning-type))))
+
+         ;; no action required for these
+         ((memq note-type '(done refile note)) (ignore))
+
+         ;; this shouldn't happen
+         (t (error (concat "Unknown entry type: " (symbol-name note-type)))))))))
+
+(defun nd/org-archive-to-db ()
+  "Transfer archive files to sqlite database."
+  (let* ((db nd/org-sqlite-db-path)
+        (rxv-path (expand-file-name "test.org_archive" org-directory))
+        (tree (with-current-buffer (find-file-noselect rxv-path)
+                (org-element-parse-buffer))))
+    (org-element-map tree 'headline
+      (lambda (h) (nd/org-element-header-to-sql h rxv-path)))
+    (org-element-map tree 'clock
+      (lambda (c) (nd/org-element-clock-to-sql c rxv-path)))
+    (org-element-map tree 'node-property
+      (lambda (n) (nd/org-element-property-to-sql n rxv-path)))
+    (org-element-map tree 'item
+      (lambda (i) (nd/org-element-logbook-item-to-sql i rxv-path)))))
 #+END_SRC
 * tools
 ** printing
