@@ -2805,7 +2805,7 @@ TYPE is an org element type symbol and OBJ is a list of elements/objects."
       (nd/org-element-find-type type obj-rem))))
       
 (defun nd/org-element-get-parent-type (type obj)
-  "Return parent element of type TYPE for obj or nil if not found."
+  "Return parent element of type TYPE for OBJ or nil if not found."
   (when obj
     (let ((parent (org-element-property :parent obj)))
       (if (eq type (org-element-type parent))
@@ -2820,17 +2820,15 @@ TYPE is an org element type symbol and OBJ is a list of elements/objects."
           parent
         (nd/org-element-get-parent-headline parent)))))
         
-;; TODO merge thing above with thing below
 (defun nd/org-element-get-parent-tree (obj &optional acc)
   "Construct parent tree path for object OBJ and concatenate to ACC.
 Returns '/' delimited path of headlines or nil if obj is in a toplevel
 headline."
-  (let ((parent (org-element-property :parent obj)))
-    (if parent
-        (let* ((txt (and (eq 'headline (org-element-type parent))
-                         (org-element-property :raw-value parent)))
-               (acc-new (if txt (concat "/" txt acc) acc)))
-          (nd/org-element-get-parent-tree parent acc-new))
+  (let ((parent-hl (nd/org-element-get-parent-headline obj)))
+    (if parent-hl
+        (let* ((txt (org-element-property :raw-value parent-hl))
+               (new-acc (concat "/" txt acc)))
+          (nd/org-element-get-parent-tree parent-hl new-acc))
       acc)))
       
 (defun nd/org-element-get-parent-tags (obj &optional acc)
