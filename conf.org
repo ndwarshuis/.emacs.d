@@ -2705,16 +2705,22 @@ convert the final number to a string of the number. If IGNORE-ERR is t,
 do not throw an error if the string is not recognized."
   (when effort-str
     (let ((effort-str (string-trim effort-str)))
-      (cond
-       ((string-match "^\\([0-9]+\\):\\([0-6][0-9]\\)$" effort-str)
-        (let* ((hours (string-to-number (match-string 1 effort-str)))
-               (minutes (string-to-number (match-string 2 effort-str)))
-               (sum (+ (* 60 hours) minutes)))
-          (if to-string (number-to-string sum) sum)))
-       ((string-match-p "^[0-9]+$" effort-str)
-        (if to-string effort-str (string-to-number effort-str)))
-       (t (unless ignore-err
-            (error (concat "Unknown effort format: '" effort-str "'"))))))))
+      (save-match-data
+        (cond
+         ((string-match "^\\([0-9]+\\):\\([0-6][0-9]\\)$" effort-str)
+          (let* ((hours (string-to-number (match-string 1 effort-str)))
+                 (minutes (string-to-number (match-string 2 effort-str)))
+                 (sum (+ (* 60 hours) minutes)))
+            (if to-string (number-to-string sum) sum)))
+         ((string-match-p "^[0-9]+$" effort-str)
+          (if to-string effort-str (string-to-number effort-str)))
+         (t (unless ignore-err
+              (error (concat "Unknown effort format: '" effort-str "'")))))))))
+
+(defun nd/org-ts-format-to-iso (ts)
+  "Return org timestamp TS to as string in ISO 8601 format."
+  ;; org-parse-time-string (used in org-2ft) does not save match data
+  (when ts (format-time-string "%Y-%m-%dT%H:%M:00" (save-match-data (org-2ft ts)))))
 #+END_SRC
 **** org sql schemas
 #+BEGIN_SRC emacs-lisp
@@ -2811,11 +2817,14 @@ PRIMARY KEY (archive_file_path ASC, entry_file_offset ASC));"
 **** org element functions
 These are functions that operate on org-element objects to parse for insertion into the db.
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-element-timestamp-raw (prop obj)
-  "Return the raw-value of the timestamp PROP in OBJ if exists."
+(defun nd/org-element-timestamp-raw (prop obj &optional iso)
+  "Return the raw-value of the timestamp PROP in OBJ if exists.
+If ISO is t, return the timestamp in ISO 8601 format."
   (when obj
     (let ((ts (org-element-property prop obj)))
-      (when ts (org-element-property :raw-value ts)))))
+      (when ts
+        (let ((raw-ts (org-element-property :raw-value ts)))
+          (if iso (nd/org-ts-format-to-iso raw-ts) raw-ts))))))
       
 (defun nd/org-element-find-type (type obj)
   "Find and return the first instance of TYPE in OBJ.
@@ -3018,9 +3027,10 @@ ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
          (source-tree-path (nd/org-element-property-inherited :ARCHIVE_OLPATH headline))
          (headline-text (org-element-property :raw-value headline))
          (time-created (org-element-property :CREATED headline))
-         (time-closed (nd/org-element-timestamp-raw :closed headline))
-         (time-scheduled (nd/org-element-timestamp-raw :scheduled headline))
-         (time-deadline (nd/org-element-timestamp-raw :deadline headline))
+         (time-created (nd/org-ts-format-to-iso time-created))
+         (time-closed (nd/org-element-timestamp-raw :closed headline t))
+         (time-scheduled (nd/org-element-timestamp-raw :scheduled headline t))
+         (time-deadline (nd/org-element-timestamp-raw :deadline headline t))
          (keyword (org-element-property :todo-keyword headline))
          (effort (org-element-property :EFFORT headline))
          (effort (nd/org-effort-to-int effort t))
@@ -3083,8 +3093,10 @@ ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
           ;; should never happen
           (t (error (concat "unknown timestamp type: "
                             (symbol-name timestamp-type)))))
-    (setq time-start (org-element-property :raw-value time-start)
-          time-end (org-element-property :raw-value time-end))
+    (setq time-start (nd/org-ts-format-to-iso
+                      (org-element-property :raw-value time-start))
+          time-end (nd/org-ts-format-to-iso
+                    (org-element-property :raw-value time-end)))
     (nd/sql-insert nd/org-sqlite-db-path
                    "clocking"
                    (list archive-file-path
@@ -3146,7 +3158,8 @@ ARCHIVE-FILE-PATH is the path to the archive file."
                  ((memq note-type '(reschedule delschedule redeadline deldeadline)) 3)
                  ((eq note-type 'state) 5)
                  (t (error (concat "Unknown type: " (symbol-name note-type))))))
-          (setq time-logged (match-string time-index entry-str)))
+          (setq time-logged (nd/org-ts-format-to-iso
+                             (match-string time-index entry-str))))
 
         ;; insert into general logbook table first
         (nd/sql-insert nd/org-sqlite-db-path
@@ -3161,10 +3174,8 @@ ARCHIVE-FILE-PATH is the path to the archive file."
         (when note-type
           (cond
            ((eq note-type 'state)
-            (let* ((state-old (or (match-string 3 entry-str)
-                                  (match-string 4 entry-str)))
-                   (state-new (or (match-string 1 entry-str)
-                                  (match-string 2 entry-str))))
+            (let* ((state-old (match-string 3 entry-str))
+                   (state-new (match-string 1 entry-str)))
               (nd/sql-insert nd/org-sqlite-db-path
                              "state_changes"
                              (list archive-file-path
@@ -3173,11 +3184,14 @@ ARCHIVE-FILE-PATH is the path to the archive file."
                                    state-new))))
 
            ((memq note-type '(reschedule delschedule redeadline deldeadline))
-            (let* ((time-old (match-string 1 entry-str))
+            (let* ((time-old (nd/org-ts-format-to-iso
+                              (match-string 1 entry-str)))
                    (schedule (memq note-type '(reschedule delschedule)))
                    (time-new (nd/org-element-timestamp-raw
                               (if schedule :scheduled :deadline)
-                              parent-headline))
+                              parent-headline
+                              t))
+                   (time-new (nd/org-ts-format-to-iso time-new))
                    (planning-type (if schedule "s" "d")))
               (nd/sql-insert nd/org-sqlite-db-path
                              "planning_changes"
