@@ -2842,6 +2842,20 @@ TYPE is an org element type symbol and OBJ is a list of elements/objects."
       (if (eq type (org-element-type parent))
           parent
         (nd/org-element-get-parent-type type parent)))))
+
+(defun nd/org-element-split-by-type (type contents &optional right)
+  "Split org-element sequence of objects CONTENTS by first instance of TYPE.
+If RIGHT is t, get the right half instead of the left."
+  (let ((scan
+         (lambda (c &optional acc)
+           (if c
+               (let ((cur (car c))
+                     (rem (cdr c)))
+                 (if (equal type (org-element-type cur))
+                     (if right rem acc)
+                   (funcall scan rem (append acc (list cur)))))
+             (unless right acc)))))
+    (funcall scan contents)))
         
 (defun nd/org-element-get-parent-headline (obj)
   "Get the parent headline element (if any) of org-element OBJ."
@@ -2885,19 +2899,6 @@ parent until found or return nil if unfruitful."
        (let ((parent (org-element-property :parent obj)))
          (nd/org-element-property-inherited prop parent))))))
          
-(defun nd/org-element-split-linebreak (contents &optional right)
-  "Split org-element sequence of objects CONTENTS by a linebreak.
-If RIGHT is t, get the right half instead of the left."
-  (let ((scan
-         (lambda (c &optional acc)
-           (if c
-               (let ((cur (car c))
-                     (rem (cdr c)))
-                 (if (equal 'line-break (org-element-type cur))
-                     (if right rem acc)
-                   (funcall scan rem (append acc (list cur)))))
-             (unless right acc)))))
-    (funcall scan contents)))
 #+END_SRC
 **** org sql constants and variables
 #+BEGIN_SRC emacs-lisp
@@ -3138,8 +3139,8 @@ ARCHIVE-FILE-PATH is the path to the archive file."
              (paragraph (nd/org-element-find-type 'paragraph item))
              (contents (org-element-contents paragraph))
              ;; split entry into right / left components via linebreak
-             (left (nd/org-element-split-linebreak contents))
-             (right (nd/org-element-split-linebreak contents t))
+             (left (nd/org-element-split-by-type 'line-break contents))
+             (right (nd/org-element-split-by-type 'line-break contents t))
              (note (string-trim (substring-no-properties
                                  (org-element-interpret-data right))))
              (entry-str (string-trim (substring-no-properties
