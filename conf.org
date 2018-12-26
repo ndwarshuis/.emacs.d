@@ -2838,7 +2838,8 @@ ACC is treated as a set; therefore no duplicates are retained."
   (let ((parent-hl (nd/org-element-get-parent-headline obj)))
     (if parent-hl
         (let* ((tags (org-element-property :tags parent-hl))
-               (i-tags (split-string (org-element-property :ARCHIVE_ITAGS parent-hl)))
+               (i-tags (org-element-property :ARCHIVE_ITAGS parent-hl))
+               (i-tags (when i-tags (split-string i-tags)))
                (all-tags (delete-dups (append acc tags i-tags))))
           (nd/org-element-get-parent-tags parent-hl all-tags))
       acc)))
@@ -2991,7 +2992,7 @@ These are the main functions to populate the db.
 ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
   (let* ((headline-file-offset (org-element-property :begin headline))
          (archive-tree-path (nd/org-element-get-parent-tree headline))
-         ;; headline table
+         ;; headline table data
          (source-file-path (nd/org-element-property-inherited :ARCHIVE_FILE headline))
          (source-tree-path (nd/org-element-property-inherited :ARCHIVE_OLPATH headline))
          (headline-text (org-element-property :raw-value headline))
@@ -3002,34 +3003,41 @@ ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
          (keyword (org-element-property :todo-keyword headline))
          (effort (org-element-property :EFFORT headline))
          (priority (org-element-property :priority headline))
-         (headline-data (list archive-file-path
-                                      headline-file-offset
-                                      archive-tree-path
-                                      source-file-path
-                                      source-tree-path
-                                      headline-text
-                                      time-created
-                                      time-closed
-                                      time-scheduled
-                                      time-deadline
-                                      keyword
-                                      effort
-                                      priority
-                                      ;; TODO add contents
-                                      nil))
-         ;; tags table
+         tags table data
          (tags (org-element-property :tags headline))
          (i-tags (org-element-property :ARCHIVE_ITAGS headline))
-         (insert-tags (lambda (tags afp hfo inh)
-                        (while tags
-                          (nd/sql-insert nd/org-sqlite-db-path
-                                         "tags"
-                                         (list afp hfo (car tags) inh))
-                          (setq tags (cdr tags))))))
+         (i-tags (when i-tags (split-string i-tags)))
+         (insert-tags
+          (lambda (tags archive-file-path headline-file-offset inherited)
+            (while tags
+              (nd/sql-insert nd/org-sqlite-db-path
+                             "tags"
+                             (list archive-file-path
+                                   headline-file-offset
+                                   (car tags)
+                                   inherited))
+              (setq tags (cdr tags))))))
 
-    (nd/sql-insert nd/org-sqlite-db-path "headlines" headline-data)
+    ;; (unless source-file-path (print headline-text))))
+    (nd/sql-insert nd/org-sqlite-db-path
+                   "headlines"
+                   (list archive-file-path
+                         headline-file-offset
+                         archive-tree-path
+                         source-file-path
+                         source-tree-path
+                         headline-text
+                         time-created
+                         time-closed
+                         time-scheduled
+                         time-deadline
+                         keyword
+                         effort
+                         priority
+                         ;; TODO add contents
+                         nil))
+
     (funcall insert-tags tags archive-file-path headline-file-offset 0)
-    (when i-tags (setq i-tags (split-string i-tags)))
     ;; retrieve parent tags if we want inheritance
     (when nd/org-sql-use-tag-inheritance
       (setq i-tags (nd/org-element-get-parent-tags headline i-tags)))
@@ -3165,10 +3173,10 @@ ARCHIVE-FILE-PATH is the path to the archive file."
 
 (defun nd/org-archive-to-db ()
   "Transfer archive files to sqlite database."
-  (let* ((db nd/org-sqlite-db-path)
-        (rxv-path (expand-file-name "test.org_archive" org-directory))
-        (tree (with-current-buffer (find-file-noselect rxv-path)
-                (org-element-parse-buffer))))
+  (let* ((rxv-path (expand-file-name "general.org_archive" org-directory))
+         (tree (with-current-buffer (find-file-noselect rxv-path)
+                 (org-element-parse-buffer))))
+
     (org-element-map tree 'headline
       (lambda (h) (nd/org-element-header-to-sql h rxv-path)))
     (org-element-map tree 'clock
