@@ -2695,6 +2695,27 @@ converted to their symbol name."
          (data-joined (string-join data-str ",")))
     (nd/sql-cmd db (concat "insert into " tbl " values(" data-joined ");"))))
 #+END_SRC
+**** org parsing function
+Basic functions to parse org strings
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-effort-to-int (effort-str &optional to-string ignore-err)
+  "Convert EFFORT-STR into an integer from HH:MM format.
+If it is already an integer, nothing is changed. If TO-STRING is t,
+convert the final number to a string of the number. If IGNORE-ERR is t,
+do not throw an error if the string is not recognized."
+  (when effort-str
+    (let ((effort-str (string-trim effort-str)))
+      (cond
+       ((string-match "^\\([0-9]+\\):\\([0-6][0-9]\\)$" effort-str)
+        (let* ((hours (string-to-number (match-string 1 effort-str)))
+               (minutes (string-to-number (match-string 2 effort-str)))
+               (sum (+ (* 60 hours) minutes)))
+          (if to-string (number-to-string sum) sum)))
+       ((string-match-p "^[0-9]+$" effort-str)
+        (if to-string effort-str (string-to-number effort-str)))
+       (t (unless ignore-err
+            (error (concat "Unknown effort format: '" effort-str "'"))))))))
+#+END_SRC
 **** org sql schemas
 #+BEGIN_SRC emacs-lisp
 (defconst nd/org-sqlite-header-schema
@@ -2710,7 +2731,7 @@ time_closed DATE,
 time_scheduled DATE,
 time_deadlined DATE,
 keyword TEXT,
-effort TIME,
+effort INTEGER,
 priority INTEGER,
 content TEXT,
 PRIMARY KEY (archive_file_path ASC, headline_file_offset ASC));"
@@ -3002,6 +3023,7 @@ ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
          (time-deadline (nd/org-element-timestamp-raw :deadline headline))
          (keyword (org-element-property :todo-keyword headline))
          (effort (org-element-property :EFFORT headline))
+         (effort (nd/org-effort-to-int effort t))
          (priority (org-element-property :priority headline))
          tags table data
          (tags (org-element-property :tags headline))
