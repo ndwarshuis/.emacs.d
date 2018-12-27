@@ -185,6 +185,24 @@ filesystem and is a usb drive."
   "Prints ARGS of ORIG-FUN. Intended as :around advice."
   (print args)
   (apply orig-fun args))
+
+(defun nd/plist-put-append (plist prop value &optional front)
+  "Like `plist-put' but append VALUE to current values in PLIST for PROP.
+If FRONT is t, append to the front of current values instead of the back."
+  (let* ((cur (plist-get plist prop))
+         (new (if front (append value cur) (append cur value))))
+    (plist-put plist prop new)))
+
+(defun nd/plist-put-list (plist prop value &optional front)
+  "Like `plist-put' but append (list VALUE) to current values in PLIST for PROP.
+If FRONT is t, do to the front of current values instead of the back."
+  (let* ((cur (plist-get plist prop))
+         (new (if front (append (list value) cur) (append cur (list value)))))
+    (plist-put plist prop new)))
+
+(defun nd/strip-string (str)
+  "Remove text properties and trim STR and return the result."
+  (when str (string-trim (substring-no-properties str))))
 #+END_SRC
 ** interactive
 #+BEGIN_SRC emacs-lisp
@@ -2676,33 +2694,59 @@ were entered on the shell."
   "Escape and quote TXT in order to insert into sqlite db via 'insert'.
 This assumes the insertion command will be run on a shell where the
 sql command string is in double quotes."
-  (let* ((txt-single (replace-regexp-in-string "'" "''" txt nil t))
-         (txt-double (replace-regexp-in-string "\"" "\\\"" txt-single nil t)))
-    (concat "'" txt-double "'")))
+  (let* ((new-txt (replace-regexp-in-string "'" "''" txt nil t))
+         (new-txt (replace-regexp-in-string "\"" "\\\"" new-txt nil t)))
+    (concat "'" new-txt "'")))
+
+(defun nd/sql-to-string (entry)
+  "Convert ENTRY to a string suitable for insertion into SQLite db.
+Converts numbers to strings, flanks strings with '\"', and converts 
+any other symbols to their symbol name."
+  (cond ((stringp entry) (nd/sql-escape-text entry))
+        ((numberp entry) (number-to-string entry))
+        (entry (symbol-name entry))
+        (t "NULL")))
     
+(defun nd/sql-construct-insertion (tbl data)
+  "Concatenate DATA into escaped comma-separated string for SQL insertion."
+  (let* ((data-str (mapcar #'nd/sql-to-string data))
+         (data-str (string-join data-str ",")))
+    (concat "insert into " tbl " values(" data-str ");")))
+
 (defun nd/sql-insert (db tbl data)
-  "Insert list DATA into TBL in sqlite database DB.
-Note that in list DATA, numbers will be converted to strings,
-strings will be flanked with '\"', and any other symbols will be
-converted to their symbol name."
-  (let* ((data-str (mapcar
-                   (lambda (d)
-                     (cond ((stringp d) (nd/sql-escape-text d))
-                           ((numberp d) (number-to-string d))
-                           (d (symbol-name d))
-                           (t "NULL")))
-                   data))
-         (data-joined (string-join data-str ",")))
-    (nd/sql-cmd db (concat "insert into " tbl " values(" data-joined ");"))))
+  "Insert list DATA into TBL in sqlite database DB."
+  (nd/sql-cmd db (nd/sql-construct-insertion tbl data)))
+
+(defun nd/sql-insert-multi (db tbl-data &optional acc)
+  "Insert TBL-DATA into sqlite database DB using transactions.
+TBL-DATA is a plist with each key as the table and the value as a
+list of lists holding data for that table."
+  (if (not tbl-data)
+      (concat acc "commit;")
+    (let* ((acc (or acc "begin transaction;"))
+           (tbl-name (car tbl-data))
+           (row-data (cdr tbl-data))
+           (rem (cddr tbl-data))
+           (concat-tbl
+            (lambda (tbl data &optional acc)
+              (if data
+                  (let* ((cur (car data))
+                         (rem (cdr data))
+                         (acc-new (nd/sql-construct-insertion tbl cur))
+                         (acc-new (concat acc acc-new)))
+                    (funcall concat-tbl tbl rem acc-new))
+                acc)))
+           (new-acc (funcall concat-tbl tbl row-data)))
+      (nd/sql-insert-multi (db rem new-acc)))))
 #+END_SRC
 **** org parsing function
 Basic functions to parse org strings
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-effort-to-int (effort-str &optional to-string ignore-err)
+(defun nd/org-effort-to-int (effort-str &optional to-string throw-err)
   "Convert EFFORT-STR into an integer from HH:MM format.
 If it is already an integer, nothing is changed. If TO-STRING is t,
-convert the final number to a string of the number. If IGNORE-ERR is t,
-do not throw an error if the string is not recognized."
+convert the final number to a string of the number. If THROW-ERR is t,
+throw an error if the string is not recognized."
   (when effort-str
     (let ((effort-str (string-trim effort-str)))
       (save-match-data
@@ -2714,13 +2758,18 @@ do not throw an error if the string is not recognized."
             (if to-string (number-to-string sum) sum)))
          ((string-match-p "^[0-9]+$" effort-str)
           (if to-string effort-str (string-to-number effort-str)))
-         (t (unless ignore-err
+         (t (when throw-err
               (error (concat "Unknown effort format: '" effort-str "'")))))))))
 
 (defun nd/org-ts-format-to-iso (ts)
-  "Return org timestamp TS to as string in ISO 8601 format."
-  ;; org-parse-time-string (used in org-2ft) does not save match data
-  (when ts (format-time-string "%Y-%m-%dT%H:%M:00" (save-match-data (org-2ft ts)))))
+  "Return org timestamp TS to as string in ISO 8601 format.
+If TS is nil or TS cannot be understood, nil will be returned."
+  (when ts
+    ;; org-parse-time-string (used in org-2ft) does not save match data
+    (let ((ft (save-match-data (org-2ft ts))))
+      ;; assume that nobody is going to need jan 1 1970
+      (when (> ft 0)
+        (format-time-string "%Y-%m-%dT%H:%M:00" ft)))))
 #+END_SRC
 **** org sql schemas
 #+BEGIN_SRC emacs-lisp
@@ -2784,7 +2833,7 @@ PRIMARY KEY (archive_file_path ASC, clock_file_offset ASC));"
 archive_file_path TEXT,
 headline_file_offset INTEGER,
 entry_file_offset INTEGER,
-time_logged DATE NOT NULL,
+time_logged DATE,
 note TEXT,
 FOREIGN KEY (archive_file_path, headline_file_offset)
 REFERENCES headlines (archive_file_path, headline_file_offset),
@@ -2899,14 +2948,15 @@ parent until found or return nil if unfruitful."
        (let ((parent (org-element-property :parent obj)))
          (nd/org-element-property-inherited prop parent))))))
          
-(defun nd/org-element-sort-headline-contents (headline)
+(defun nd/org-element-partition-headline (headline)
   "For a given org-element HEADLINE, return a sorted plist.
 The plist will be structured as such:
 
-(:planning '(data)
- :logbook-drawer '(data)
- :property-drawer '(data)
- :other-contents '(data))
+:planning '(data)
+:logbook-drawer '(data)
+:property-drawer '(data)
+:headline-contents '(data)
+:subheadings (list of subheadings)
 
 The planning entry will have the list of data associated with the
 :planning property, and likewise with property-drawer. logbook-drawer
@@ -2915,36 +2965,33 @@ nil if not set. other-contents includes all other elements including
 other drawers, list, paragraph elements, etc. If any of these groups 
 are missing, nil will be returned."
   (when headline
-    ;; assume there is only one section under one headline
-    (let* ((section (car (org-element-contents headline)))
-           (contents (org-element-contents section))
-           (plist-put-append
-            (lambda (plist property value)
-              (let* ((cur (plist-get plist property))
-                     (new (append cur value)))
-                (plist-put plist property new))))
-           (get-pkey
-            (lambda (obj)
-              (let ((type (org-element-type obj)))
-                (cond
-                 ((eq 'planning type) :planning)
-                 ((eq 'property-drawer type) :property-drawer)
-                 ((and (eq 'drawer type)
-                       (equal (org-element-property :drawer-name obj)
-                              org-log-into-drawer))
-                  :logbook-drawer)
-               (t :other-contents)))))
-           (sort-contents
-            (lambda (contents &optional acc)
-              (if (not contents)
-                  acc
-                (let*
-                    ((cur (car contents))
-                     (rem (cdr contents))
-                     (pkey (funcall get-pkey cur))
-                     (new-acc (funcall plist-put-append acc pkey cur)))
-                  (funcall sort-contents rem new-acc))))))
-    (funcall sort-contents contents))))
+    (let ((hl-contents (org-element-contents headline)))
+      (if (eq 'headline (org-element-type (car hl-contents)))
+          ;; return just a plist of subheadings if there is no section
+          (list :subheadings hl-contents)
+        (let* ((sec-contents (org-element-contents (car hl-contents)))
+               (subheadings (cdr hl-contents))
+               (init-plist (list :subheadings subheadings))
+               (get-pkey
+                (lambda (obj)
+                  (let ((type (org-element-type obj)))
+                    (cond
+                     ((eq 'planning type) :planning)
+                     ((eq 'property-drawer type) :property-drawer)
+                     ((and (eq 'drawer type)
+                           (equal (org-element-property :drawer-name obj)
+                                  org-log-into-drawer))
+                      :logbook-drawer)
+                     (t :headline-contents)))))
+               (sort-contents
+                (lambda (contents &optional acc)
+                  (let*
+                      ((cur (car contents))
+                       (rem (cdr contents))
+                       (pkey (funcall get-pkey cur))
+                       (new-acc (nd/plist-put-append acc pkey cur)))
+                    (if rem (funcall sort-contents rem new-acc) new-acc)))))
+          (funcall sort-contents sec-contents init-plist))))))
 #+END_SRC
 **** org sql constants and variables
 #+BEGIN_SRC emacs-lisp
@@ -2966,9 +3013,13 @@ See `org-use-tag-inheritance'.")
 **** org logbook parsing functions
 The logbook takes some extra work to parse as there is little/no information to distinguish the "type" of any given log entry (outside of clocking). Therefore, need to go down to the string level and match using regular expressions.
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-logbook-match-entry (entry-str)
+(defun nd/org-logbook-match-header (header-text)
   "Test if ENTRY-STR matches `nd/org-log-note-headings-regexp'.
-If found, returns list where car is the type and cdr is match data."
+If match successful, returns plist with the following:
+
+:type - the type of the header, which is the car to the corresponding
+  cell in `nd/org-log-note-headings-regexp'
+:match-data - the match data for the search to find the type"
   (let* ((scan
           (lambda (str note-regex-alist)
             (when note-regex-alist
@@ -2979,8 +3030,45 @@ If found, returns list where car is the type and cdr is match data."
                 (if (string-match re str)
                     type
                   (funcall scan str rem))))))
-         (type (funcall scan entry-str nd/org-log-note-headings-regexp)))
-    (when type (cons type (match-data)))))
+         (type (funcall scan header-text nd/org-log-note-headings-regexp)))
+    (when type (list :type type :match-data (match-data)))))
+  
+(defun nd/org-logbook-parse-item (item archive-file-path headline-file-offset)
+  "Parse an org-element ITEM which is assumed to be part of a logbook.
+Returns a plist with the following structure:
+
+:item - the original item element
+:parent-headline - the headline immediately encapsulating the item
+:header-text - the first line of the note which is standardized using
+  `org-log-note-headings' as a trimmed string with no text properties.
+:note-text - the remainder of the note text as a trimmed string with
+  no text properties (will be nil if item has no line-break element)
+:offset - the file offset of the item
+:type - the type of the item (may be nil if undetermined)
+:match-data - match data associated with finding the type as done
+  using `nd/org-log-note-headings-regexp' (may be nil if undetermined)
+:archive-file-path - the value of ARCHIVE-FILE-PATH
+:headline-file-offset - the value of HEADLINE-FILE-OFFSET."
+  (let* ((parent-hl (nd/org-element-get-parent-headline item))
+         (item-offset (org-element-property :begin item))
+         (paragraph (nd/org-element-find-type 'paragraph item))
+         (contents (org-element-contents paragraph))
+         ;; split entry into right / left components via linebreak
+         (left (nd/org-element-split-by-type 'line-break contents))
+         (right (nd/org-element-split-by-type 'line-break contents t))
+         (header-text (string-trim (substring-no-properties
+                                  (org-element-interpret-data left))))
+         (note-text (string-trim (substring-no-properties
+                                  (org-element-interpret-data right))))
+         (type-plist (nd/org-logbook-match-header header-text))
+         (parse-plist (list :item item
+                            :parent-headline parent-hl
+                            :header-text header-text
+                            :note-text note-text
+                            :offset item-offset
+                            :archive-file-path archive-file-path
+                            :headline-file-offset headline-file-offset)))
+    (append parse-plist type-plist)))
     
 ;; this function doesn't exist in vanilla org mode >:(
 (defun nd/org-todo-keywords-stripped ()
@@ -3064,248 +3152,323 @@ These are the main functions to populate the db.
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-state-changes-schema)
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-planning-changes-schema)))
 
-(defun nd/org-element-header-to-sql (headline archive-file-path)
-  "Parse org-element HEADLINE and insert data into TBL in sqlite DB.
-ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
-  (let* ((headline-file-offset (org-element-property :begin headline))
-         (archive-tree-path (nd/org-element-get-parent-tree headline))
-         ;; headline table data
-         (source-file-path (nd/org-element-property-inherited :ARCHIVE_FILE headline))
-         (source-tree-path (nd/org-element-property-inherited :ARCHIVE_OLPATH headline))
-         (headline-text (org-element-property :raw-value headline))
-         (time-created (org-element-property :CREATED headline))
-         (time-created (nd/org-ts-format-to-iso time-created))
-         (time-closed (nd/org-element-timestamp-raw :closed headline t))
-         (time-scheduled (nd/org-element-timestamp-raw :scheduled headline t))
-         (time-deadline (nd/org-element-timestamp-raw :deadline headline t))
-         (keyword (org-element-property :todo-keyword headline))
-         (effort (org-element-property :EFFORT headline))
-         (effort (nd/org-effort-to-int effort t))
-         (priority (org-element-property :priority headline))
-         ;; tags table data
-         (tags (org-element-property :tags headline))
-         (i-tags (org-element-property :ARCHIVE_ITAGS headline))
-         (i-tags (when i-tags (split-string i-tags)))
-         (insert-tags
-          (lambda (tags archive-file-path headline-file-offset inherited)
-            (while tags
-              (nd/sql-insert nd/org-sqlite-db-path
-                             "tags"
-                             (list archive-file-path
-                                   headline-file-offset
-                                   (car tags)
-                                   inherited))
-              (setq tags (cdr tags)))))
-         ;; get headline section for processing drawers and contents
-         (contents-plist (nd/org-element-sort-headline-contents headline))
-         (property-drawer (plist-get contents-plist :property-drawer))
-         (node-properties (org-element-contents property-drawer))
-         (logbook-drawer (plist-get contents-plist :logbook-drawer))
-         (logbook-contents (org-element-contents logbook-drawer))
-         (hl-contents (plist-get contents-plist :other-contents)))
+(defun nd/org-element-note-header-to-sql (parsed-item &optional acc)
+  "Add data from PARSED-ITEM to ACC depending on its type."
+  (let ((type (plist-get parsed-item :type))
+        (archive-file-path (plist-get parsed-item :archive-file-path))
+        (entry-file-offset (plist-get parsed-item :offset))
+        (header-text (plist-get parsed-item :header-text)))
+    ;; TODO, make these adapt to the value of org-log-note-headings??
+    (cond
+     ((eq type 'state)
+      (let* ((state-old (match-string 3 header-text))
+             (state-new (match-string 1 header-text))
+             (state-data (list archive-file-path
+                               entry-file-offset
+                               state-old
+                               state-new)))
+        (nd/plist-put-list acc 'state_changes state-data)))
+     ((memq type '(reschedule delschedule redeadline deldeadline))
+      (let* ((time-old (nd/org-ts-format-to-iso
+                        (match-string 1 header-text)))
+             (planning-kw (if (memq type '(reschedule delschedule))
+                              :scheduled
+                            :deadline))
+             (parent-hl (plist-get parsed-item :parent-headline))
+             (time-new (nd/org-element-timestamp-raw planning-kw parent-hl t))
+             (time-new (nd/org-ts-format-to-iso time-new))
+             (planning-type (if (eq :scheduled planning-kw) "s" "d"))
+             (planning-data (list archive-file-path
+                                  entry-file-offset
+                                  time-old
+                                  time-new
+                                  planning-type)))
+        (nd/plist-put-list acc 'planning_changes planning-data)))
+     ;; no action required for these
+     ((memq type '(done refile note)) acc)
+     ;; header type not determined, therefore do nothing
+     (t acc))))
 
-    ;; insert into headlines table
-    (nd/sql-insert nd/org-sqlite-db-path
-                   "headlines"
-                   (list archive-file-path
-                         headline-file-offset
-                         archive-tree-path
-                         source-file-path
-                         source-tree-path
-                         headline-text
-                         time-created
-                         time-closed
-                         time-scheduled
-                         time-deadline
-                         keyword
-                         effort
-                         priority
-                         ;; TODO add contents
-                         nil))
+(defun nd/org-element-note-get-time-logged (parsed-item)
+  "Return time-logged of PARSED-ITEM or nil if it cannot be determined."
+  (set-match-data (plist-get parsed-item :match-data))
+  (let* ((type (plist-get parsed-item :type))
+         (time-index
+          (cond
+           ((memq type '(done note refile)) 1)
+           ((memq type '(reschedule delschedule redeadline deldeadline)) 3)
+           ((eq type 'state) 5)))
+         (header-text (plist-get parsed-item :header-text)))
+    (when time-index
+      (nd/org-ts-format-to-iso (match-string time-index header-text)))))
 
-    ;; insert into tags tables
-    (funcall insert-tags tags archive-file-path headline-file-offset 0)
-    ;; retrieve parent tags if we want inheritance
-    (when nd/org-sql-use-tag-inheritance
-      (setq i-tags (nd/org-element-get-parent-tags headline i-tags)))
-    (funcall insert-tags i-tags archive-file-path headline-file-offset 1)
+(defun nd/org-element-note-to-sql (parsed-item &optional acc)
+  "Add logbook common data from PARSED-ITEM to ACC."
+  
+  (let* ((archive-file-path (plist-get parsed-item :archive-file-path))
+         (headline-file-offset (plist-get parsed-item :headline-file-offset))
+         (entry-file-offset (plist-get parsed-item :offset))
+         (time-logged (nd/org-element-note-get-time-logged parsed-item))
+         (note-text (plist-get parsed-item :header-text))
+         (logbook-data (list archive-file-path
+                             headline-file-offset
+                             entry-file-offset
+                             time-logged
+                             note-text))
+         (new-acc (nd/plist-put-list acc 'logbook logbook-data)))
+    (nd/org-element-note-header-to-sql parsed-item new-acc)))
 
-    ;; insert properties into table
-    (nd/org-element-property-to-sql node-properties archive-file-path)
+(defun nd/org-element-add-note-to-clock (clock-data note-text)
+  "Add NOTE-TEXT to sql data CLOCK-DATA."
+  (append clock-data note-text))
 
-    ;; insert logbook entries into their tables
-    (nd/org-element-logbook-to-sql logbook-contents archive-file-path)))
+(defun nd/org-logbook-parse-timestamp-range (ts)
+  "Return start and end of timestamp TS depending on if it is a range.
+Return value will be a list of two elements if range and one if not."
+  (when ts
+    (let ((time-start (nd/org-ts-format-to-iso (org-timestamp-split-range ts))))
+      (when time-start
+        (let* ((type (org-element-property :type ts))
+               (time-end
+                (when (eq type 'inactive-range)
+                  (nd/org-ts-format-to-iso (org-timestamp-split-range ts t)))))
+          (cons time-start time-end))))))
 
-(defun nd/org-element-property-to-sql (node-properties archive-file-path)
-  "Parse node-property element NP and insert data into TBL in sqlite DB.
-ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
-  (when node-properties
-    (let* ((cur (car node-properties))
-           (rem (cdr node-properties))
-           (key-text (org-element-property :key cur)))
-      (unless (member key-text nd/org-sql-ignored-properties)
-        (let* ((parent-headline (nd/org-element-get-parent-headline cur))
-               (headline-file-offset (org-element-property :begin parent-headline))
-               (property-file-offset (org-element-property :begin cur))
-               (val-text (org-element-property :value cur)))
-          (nd/sql-insert nd/org-sqlite-db-path
-                         "properties"
-                         (list archive-file-path
-                               headline-file-offset
-                               property-file-offset
-                               key-text
-                               val-text
-                               ;; TODO add inherited flag
-                               nil))))
-      (nd/org-element-property-to-sql rem archive-file-path))))
+(defun nd/org-element-clock-to-sql (clock archive-file-path
+                                          headline-file-offset)
+  "Parse org-element CLOCK and return a list of extracted data.
+ARCHIVE-FILE-PATH and HEADLINE-FILE-OFFSET are the file path and file
+offset of the property's parent headline in the org file."
+  (let* ((clock-file-offset (org-element-property :begin clock))
+         (ts-obj (org-element-property :value clock))
+         (ts-range (nd/org-logbook-parse-timestamp-range ts-obj))
+         (time-start (car ts-range))
+         (time-end (cdr ts-range)))
+    (list archive-file-path
+          headline-file-offset
+          clock-file-offset
+          time-start
+          time-end)))
 
-(defun nd/org-element-logbook-to-sql (lb-contents archive-file-path &optional last-clock)
-  (when lb-contents
+(defun nd/org-element-logbook-items-to-sql (items archive-file-path
+                                               headline-file-offset
+                                               &optional acc
+                                               last-clock)
+  "Parse ITEMS from logbook drawer (not clocks) and add to ACC.
+ARCHIVE-FILE-PATH and HEADLINE-FILE-OFFSET are the file path and file
+offset of the property's parent headline in the org file.
+LAST-CLOCK has the same purpose as `nd/org-element-logbook-to-sql'."
+  (if (not items)
+      acc
+    (let* ((cur (car items))
+           (rem (cdr items))
+           (parsed-item (nd/org-logbook-parse-item cur
+                                                   archive-file-path
+                                                   headline-file-offset))
+           (type (plist-get parsed-item :type))
+           (header-text (plist-get parsed-item :header-text))
+           ;; if header type unknown and after a clock assume it
+           ;; is a clock note
+           (new-acc
+            (if (and last-clock (not type))
+                (let ((new-clock (nd/org-element-add-note-to-clock last-clock header-text)))
+                  (nd/plist-put-list acc 'clocking new-clock))
+             (nd/org-element-note-to-sql parsed-item acc))))
+      ;; don't pass the new clock here as any thing called from inside
+      ;; this function is guaranteed to be at least the second note
+      ;; after a clock entry
+      (nd/org-element-logbook-items-to-sql rem
+                                        archive-file-path
+                                        headline-file-offset
+                                        new-acc))))
+
+(defun nd/org-element-logbook-to-sql (lb-contents archive-file-path
+                                                  headline-file-offset
+                                                  &optional acc
+                                                  last-clock)
+  "Loop through logbook entries LB-CONTENTS and insert data into ACC.
+ARCHIVE-FILE-PATH and HEADLINE-FILE-OFFSET are the file path and file
+offset of the property's parent headline in the org file.
+
+LAST-CLOCK is a temporary value to store the list of data from the
+last clocking entry. This is necessary because some clock entries
+may have notes attached to them, but since the clock and item elements
+are independent from each other, we need to scan the next note to see
+if it belongs to a clock."
+  (if (not lb-contents)
+      (if last-clock (nd/plist-put-list acc 'clocking last-clock) acc)
     (let* ((cur (car lb-contents))
            (rem (cdr lb-contents))
            (type (org-element-type cur)))
-      (print type)
       (cond
        ((eq 'plain-list type)
-        ;; call some processing function and pass last-clock
-        (let ((contents (org-element-contents cur)))
-          (nd/org-element-logbook-item-to-sql contents archive-file-path))
-        (nd/org-element-logbook-to-sql rem archive-file-path))
+        (let* ((items (org-element-contents cur))
+               (new-acc
+                (nd/org-element-logbook-items-to-sql items
+                                                     archive-file-path
+                                                     headline-file-offset
+                                                     acc
+                                                     last-clock)))
+          (nd/org-element-logbook-to-sql rem
+                                         archive-file-path
+                                         headline-file-offset
+                                         new-acc)))
        ((eq 'clock type)
-        ;; call some processing function
-        (nd/org-element-clock-to-sql cur archive-file-path)
-        (nd/org-element-logbook-to-sql rem archive-file-path last-clock))
+        (let ((new-clock (nd/org-element-clock-to-sql cur
+                                                      archive-file-path
+                                                      headline-file-offset)))
+          (nd/org-element-logbook-to-sql rem
+                                         archive-file-path
+                                         headline-file-offset
+                                         acc
+                                         new-clock)))
        (t (error (concat "Unknown logbook entry type: " (symbol-name type))))))))
 
-(defun nd/org-element-logbook-item-to-sql (items archive-file-path)
-  "Parse ITEM if in log drawer and add notes and log entries to db.
-ARCHIVE-FILE-PATH is the path to the archive file."
-  ;; assume all items here are from a legit logbook drawer
-  (when items
-    (let* ((cur (car items))
-           (rem (cdr items))
-           (parent-headline (nd/org-element-get-parent-headline cur))
-           (headline-file-offset (org-element-property :begin parent-headline))
-           (entry-file-offset (org-element-property :begin cur))
-           (paragraph (nd/org-element-find-type 'paragraph cur))
-           (contents (org-element-contents paragraph))
-           ;; split entry into right / left components via linebreak
-           (left (nd/org-element-split-by-type 'line-break contents))
-           (right (nd/org-element-split-by-type 'line-break contents t))
-           (note (string-trim (substring-no-properties
-                               (org-element-interpret-data right))))
-           (entry-str (string-trim (substring-no-properties
-                                    (org-element-interpret-data left))))
-           (note-parsed (nd/org-logbook-match-entry entry-str))
-           (note-type (car note-parsed))
-           (note-match (cdr note-parsed))
-           time-index time-logged logbook-data)
+(defun nd/org-element-property-to-sql (node-props archive-file-path
+                                                  headline-file-offset
+                                                  &optional acc)
+  "Add data from NODE-PROPS to accumulator sql-data plist ACC.
+ARCHIVE-FILE-PATH and HEADLINE-FILE-OFFSET are the file path and file
+offset of the property's parent headline in the org file."
+  (if (not node-props)
+      acc
+    (let* ((cur (car node-props))
+           (rem (cdr node-props))
+           (key-text (org-element-property :key cur))
+           (new-acc
+            (if (member key-text nd/org-sql-ignored-properties)
+                acc
+              (let* ((property-file-offset (org-element-property :begin cur))
+                     (val-text (org-element-property :value cur))
+                     (prop-data (list archive-file-path
+                                      headline-file-offset
+                                      property-file-offset
+                                      key-text
+                                      val-text
+                                      ;; TODO add inherited flag
+                                      nil)))
+                (nd/plist-put-list acc 'properties prop-data)))))
+      (nd/org-element-property-to-sql rem
+                                      archive-file-path
+                                      headline-file-offset
+                                      new-acc))))
 
-        ;; get time recorded based on note type
-      (when note-type
-        (set-match-data note-match)
-        (setq time-index
-              (cond
-               ((memq note-type '(done note refile)) 1)
-               ((memq note-type '(reschedule delschedule redeadline deldeadline)) 3)
-               ((eq note-type 'state) 5)
-               (t (error (concat "Unknown type: " (symbol-name note-type))))))
-        (setq time-logged (nd/org-ts-format-to-iso
-                           (match-string time-index entry-str))))
-
-      ;; insert into general logbook table first
-      (nd/sql-insert nd/org-sqlite-db-path
-                     "logbook"
-                     (list archive-file-path
+(defun nd/org-element-tags-to-sql (headline archive-file-path
+                                            headline-file-offset
+                                            &optional acc)
+  "Add tags to sql-data plist ACC from HEADLINE.
+ARCHIVE-FILE-PATH and HEADLINE-FILE-OFFSET are the file path and file
+offset of the property's parent headline in the org file."
+  (let* ((insert-tags
+          (lambda (tags a h i acc)
+            (if (not tags)
+                acc
+              (let* ((cur (car tags))
+                     (rem (cdr tags))
+                     (tags-data (list a h cur i))
+                     (new-acc (nd/plist-put-list acc 'tags tags-data)))
+                (funcall insert-tags rem a h i new-acc) new-acc))))
+         ;; first insert all headline tags into acc
+         (tags (org-element-property :tags headline))
+         (new-acc (funcall insert-tags
+                           tags
+                           archive-file-path
                            headline-file-offset
-                           entry-file-offset
-                           time-logged
-                           note))
+                           0
+                           acc))
+         ;; then retrieve i-tags, optionally going up to parents
+         (i-tags (org-element-property :ARCHIVE_ITAGS headline))
+         (i-tags (when i-tags (split-string i-tags)))
+         (i-tags (if nd/org-sql-use-tag-inheritance
+                     (nd/org-element-get-parent-tags headline i-tags)
+                   i-tags)))
+    (funcall insert-tags i-tags archive-file-path headline-file-offset
+             1 new-acc)))
 
-      ;; insert into auxiliary logging tables
-      (when note-type
-        (cond
-         ((eq note-type 'state)
-          (let* ((state-old (match-string 3 entry-str))
-                 (state-new (match-string 1 entry-str)))
-            (nd/sql-insert nd/org-sqlite-db-path
-                           "state_changes"
-                           (list archive-file-path
-                                 entry-file-offset
-                                 state-old
-                                 state-new))))
-         
-         ((memq note-type '(reschedule delschedule redeadline deldeadline))
-          (let* ((time-old (nd/org-ts-format-to-iso
-                            (match-string 1 entry-str)))
-                 (schedule (memq note-type '(reschedule delschedule)))
-                 (time-new (nd/org-element-timestamp-raw
-                            (if schedule :scheduled :deadline)
-                            parent-headline
-                            t))
-                 (time-new (nd/org-ts-format-to-iso time-new))
-                 (planning-type (if schedule "s" "d")))
-            (nd/sql-insert nd/org-sqlite-db-path
-                           "planning_changes"
-                           (list archive-file-path
-                                 entry-file-offset
-                                 time-old
-                                 time-new
-                                 planning-type))))
-
-         ;; no action required for these
-         ((memq note-type '(done refile note)) (ignore))
-         
-         ;; this shouldn't happen
-         (t (error (concat "Unknown entry type: " (symbol-name note-type))))))
-      (nd/org-element-logbook-item-to-sql rem archive-file-path))))
-
-(defun nd/org-element-clock-to-sql (clock archive-file-path)
-  "Parse org-element CLOCK and insert data into TBL in sqlite DB.
+(defun nd/org-element-header-to-sql (headlines archive-file-path
+                                               &optional acc)
+  "Parse list of org-elements HEADLINES and insert data into ACC.
 ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
-  (let* ((parent-headline (nd/org-element-get-parent-headline clock))
-         (headline-file-offset (org-element-property :begin parent-headline))
-         (clock-file-offset (org-element-property :begin clock))
-         (timestamp-obj (org-element-property :value clock))
-         (timestamp-type (org-element-property :type timestamp-obj))
-         time-start time-end)
-    ;; process timestamp depending on if it is a range or singular
-    (cond ((eq 'inactive-range timestamp-type)
-           (setq time-start (org-timestamp-split-range timestamp-obj)
-                 time-end (org-timestamp-split-range timestamp-obj t)))
-          ((eq 'inactive timestamp-type)
-           (setq time-start timestamp-obj))
-          ;; should never happen
-          (t (error (concat "unknown timestamp type: "
-                            (symbol-name timestamp-type)))))
-    (setq time-start (nd/org-ts-format-to-iso
-                      (org-element-property :raw-value time-start))
-          time-end (nd/org-ts-format-to-iso
-                    (org-element-property :raw-value time-end)))
-    (nd/sql-insert nd/org-sqlite-db-path
-                   "clocking"
-                   (list archive-file-path
-                         headline-file-offset
-                         clock-file-offset
-                         time-start
-                         time-end
-                         ;; TODO add clocking note
-                         nil))))
+  (if (not headlines)
+      acc
+    (let* ((cur (car headlines))
+           (rem (cdr headlines))
+           (headline-file-offset (org-element-property :begin cur))
+           (archive-tree-path (nd/org-element-get-parent-tree cur))
+           ;; insert data for headlines table
+           (source-file-path (nd/org-element-property-inherited :ARCHIVE_FILE cur))
+           (source-tree-path (nd/org-element-property-inherited :ARCHIVE_OLPATH cur))
+           (headline-text (org-element-property :raw-value cur))
+           (time-created (org-element-property :CREATED cur))
+           (time-created (nd/org-ts-format-to-iso time-created))
+           (time-closed (nd/org-element-timestamp-raw :closed cur t))
+           (time-scheduled (nd/org-element-timestamp-raw :scheduled cur t))
+           (time-deadline (nd/org-element-timestamp-raw :deadline cur t))
+           (keyword (nd/strip-string (org-element-property :todo-keyword cur)))
+           (effort (org-element-property :EFFORT cur))
+           (effort (nd/org-effort-to-int effort t))
+           (priority (org-element-property :priority cur))
+           (hl-part (nd/org-element-partition-headline cur)) ;; data for children
+           (hl-contents (plist-get hl-part :headline-contents))
+           ;; (hl-contents-text (org-element-interpret-data hl-contents))
+           ;; (hl-contents-text (when hl-contents-text
+           ;;                     (string-trim
+           ;;                      (substring-no-properties hl-contents-text))))
+           (hl-data (list archive-file-path
+                          headline-file-offset
+                          archive-tree-path
+                          source-file-path
+                          source-tree-path
+                          headline-text
+                          time-created
+                          time-closed
+                          time-scheduled
+                          time-deadline
+                          keyword
+                          effort
+                          priority
+                          nil))
+           (new-acc (nd/plist-put-list acc 'headlines hl-data))
+           ;; insert data for tags table
+           (new-acc (nd/org-element-tags-to-sql cur
+                                                archive-file-path
+                                                headline-file-offset
+                                                new-acc))
+           ;; insert data for property table
+           (property-drawer (plist-get hl-part :property-drawer))
+           (node-props (org-element-contents property-drawer))
+           (new-acc (nd/org-element-property-to-sql node-props
+                                                    archive-file-path
+                                                    headline-file-offset
+                                                    new-acc))
+           ;; insert data for logbook table
+           (lb-drawer (plist-get hl-part :logbook-drawer))
+           (lb-contents (org-element-contents lb-drawer))
+           (new-acc (nd/org-element-logbook-to-sql lb-contents
+                                                   archive-file-path
+                                                   headline-file-offset
+                                                   new-acc))
+           ;; insert data for subheadings under this one
+           (subheadings (plist-get hl-part :subheadings))
+           (new-acc (nd/org-element-header-to-sql subheadings
+                                                  archive-file-path
+                                                  new-acc)))
+      (nd/org-element-header-to-sql rem archive-file-path new-acc))))
 
 (defun nd/org-archive-to-db ()
   "Transfer archive files to sqlite database."
   (let* ((rxv-path (expand-file-name "test.org_archive" org-directory))
          (tree (with-current-buffer (find-file-noselect rxv-path)
-                 (org-element-parse-buffer))))
+                 (org-element-parse-buffer)))
+         (contents (org-element-contents tree))
+         (headlines (if (eq 'section (org-element-type (car contents)))
+                        (cdr contents)
+                      contents)))
+    (nd/org-element-header-to-sql headlines rxv-path)))
 
-    (org-element-map tree 'headline
-      (lambda (h) (nd/org-element-header-to-sql h rxv-path)))))
-    ;; (org-element-map tree 'clock
-    ;;   (lambda (c) (nd/org-element-clock-to-sql c rxv-path)))
-    ;; (org-element-map tree 'node-property
-    ;;   (lambda (n) (nd/org-element-property-to-sql n rxv-path)))
-    ;; (org-element-map tree 'item
-    ;;   (lambda (i) (nd/org-element-logbook-item-to-sql i rxv-path)))))
+;; these are obviously temporary
+(setq max-lisp-eval-depth 100000
+      max-specpdl-size 800000)
 #+END_SRC
 * tools
 ** printing
