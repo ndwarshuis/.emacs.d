@@ -3369,7 +3369,7 @@ offset of the property's parent headline in the org file."
                      (new-acc (nd/plist-put-list acc 'tags tags-data)))
                 (funcall insert-tags rem a h i new-acc) new-acc))))
          ;; first insert all headline tags into acc
-         (tags (org-element-property :tags headline))
+         (tags (mapcar #'nd/strip-string (org-element-property :tags headline)))
          (new-acc (funcall insert-tags
                            tags
                            archive-file-path
