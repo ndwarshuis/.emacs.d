@@ -2707,37 +2707,33 @@ any other symbols to their symbol name."
         (entry (symbol-name entry))
         (t "NULL")))
     
-(defun nd/sql-construct-insertion (tbl data)
+(defun nd/sql-construct-insert (tbl-name tbl-data)
   "Concatenate DATA into escaped comma-separated string for SQL insertion."
-  (let* ((data-str (mapcar #'nd/sql-to-string data))
+  (let* ((data-str (mapcar #'nd/sql-to-string tbl-data))
          (data-str (string-join data-str ",")))
-    (concat "insert into " tbl " values(" data-str ");")))
+    (concat "insert into " (symbol-name tbl-name) " values(" data-str ");")))
 
-(defun nd/sql-insert (db tbl data)
-  "Insert list DATA into TBL in sqlite database DB."
-  (nd/sql-cmd db (nd/sql-construct-insertion tbl data)))
-
-(defun nd/sql-insert-multi (db tbl-data &optional acc)
-  "Insert TBL-DATA into sqlite database DB using transactions.
-TBL-DATA is a plist with each key as the table and the value as a
-list of lists holding data for that table."
-  (if (not tbl-data)
+(defun nd/sql-construct-insert-transaction (all-data &optional acc)
+  "Construct transaction string to insert ALL-DATA into SQL.
+Does not actually execute the string."
+  (if (not all-data)
       (concat acc "commit;")
-    (let* ((acc (or acc "begin transaction;"))
-           (tbl-name (car tbl-data))
-           (row-data (cdr tbl-data))
-           (rem (cddr tbl-data))
-           (concat-tbl
-            (lambda (tbl data &optional acc)
-              (if data
-                  (let* ((cur (car data))
-                         (rem (cdr data))
-                         (acc-new (nd/sql-construct-insertion tbl cur))
-                         (acc-new (concat acc acc-new)))
-                    (funcall concat-tbl tbl rem acc-new))
-                acc)))
-           (new-acc (funcall concat-tbl tbl row-data)))
-      (nd/sql-insert-multi (db rem new-acc)))))
+    (let* ((tbl-name (car all-data))
+           (tbl-data (nth 1 all-data))
+           (rem (cddr all-data))
+           (tbl-data-str (mapcar (lambda (d) (nd/sql-construct-insert tbl-name d)) tbl-data))
+           (tbl-data-str (string-join tbl-data-str))
+           (new-acc (or acc "begin transaction;"))
+           (new-acc (concat new-acc tbl-data-str)))
+      (nd/sql-construct-insert-transaction rem new-acc))))
+
+(defun nd/sql-insert (db tbl-name tbl-data)
+  "Insert list TBL-DATA into TBL-NAME in sqlite database DB."
+  (nd/sql-cmd db (nd/sql-construct-insertion tbl-name tbl-data)))
+
+(defun nd/sql-insert-multi (db all-data)
+  "Insert ALL-DATA into sqlite DB."
+  (nd/sql-cmd db (nd/sql-construct-insert-transaction all-data)))
 #+END_SRC
 **** org parsing function
 Basic functions to parse org strings
@@ -3455,8 +3451,8 @@ ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
                                                   new-acc)))
       (nd/org-element-header-to-sql rem archive-file-path new-acc))))
 
-(defun nd/org-archive-to-db ()
-  "Transfer archive files to sqlite database."
+(defun nd/org-sql-extract ()
+  "Return a plist of data to be inserted into sql database."
   (let* ((rxv-path (expand-file-name "test.org_archive" org-directory))
          (tree (with-current-buffer (find-file-noselect rxv-path)
                  (org-element-parse-buffer)))
@@ -3465,6 +3461,11 @@ ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
                         (cdr contents)
                       contents)))
     (nd/org-element-header-to-sql headlines rxv-path)))
+
+(defun nd/org-archive-to-db ()
+  "Transfer archive files to sqlite database."
+  (let ((sql-data (nd/org-sql-extract)))
+    (nd/sql-insert-multi nd/org-sqlite-db-path sql-data)))
 
 ;; these are obviously temporary
 (setq max-lisp-eval-depth 100000
