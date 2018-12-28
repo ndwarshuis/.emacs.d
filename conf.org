@@ -2888,6 +2888,19 @@ FOREIGN KEY (archive_file_path, entry_file_offset)
 REFERENCES logbook (archive_file_path, entry_file_offset),
 PRIMARY KEY (archive_file_path ASC, entry_file_offset ASC));"
   "Schema to build the planning_changes table in the org archive db.")
+
+(defconst nd/org-sqlite-links-schema
+  "CREATE TABLE links (
+archive_file_path TEXT,
+headline_file_offset INTEGER,
+link_file_offset INTEGER,
+link_path TEXT,
+link_text TEXT,
+link_type TEXT,
+FOREIGN KEY (archive_file_path, headline_file_offset)
+REFERENCES headlines (archive_file_path, headline_file_offset),
+PRIMARY KEY (archive_file_path ASC, link_file_offset ASC));"
+  "Schema to build the links table in the org archive db.")
 #+END_SRC
 **** org element functions
 These are functions that operate on org-element objects to parse for insertion into the db.
