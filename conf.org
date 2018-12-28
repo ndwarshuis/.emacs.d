@@ -2709,23 +2709,31 @@ any other symbols to their symbol name."
     
 (defun nd/sql-construct-insert (tbl-name tbl-data)
   "Concatenate DATA into escaped comma-separated string for SQL insertion."
-  (let* ((data-str (mapcar #'nd/sql-to-string tbl-data))
-         (data-str (string-join data-str ",")))
-    (concat "insert into " (symbol-name tbl-name) " values(" data-str ");")))
+  ;; column names are the properties in the plist
+  (let* ((col-names (-slice tbl-data 0 nil 2))
+         (col-names (mapcar (lambda (s) (substring (symbol-name s) 1)) col-names))
+         (col-names (string-join col-names ","))
+         ;; column values are the values of each property
+         (col-values (-slice tbl-data 1 nil 2))
+         (col-values (mapcar #'nd/sql-to-string col-values))
+         (col-values (string-join col-values ",")))
+    (concat "insert into " (symbol-name tbl-name)
+            " (" col-names ") values (" col-values ");")))
 
-(defun nd/sql-construct-insert-transaction (all-data &optional acc)
+(defun nd/sql-construct-insert-transaction (all-data)
   "Construct transaction string to insert ALL-DATA into SQL.
 Does not actually execute the string."
-  (if (not all-data)
-      (concat acc "commit;")
-    (let* ((tbl-name (car all-data))
-           (tbl-data (nth 1 all-data))
-           (rem (cddr all-data))
-           (tbl-data-str (mapcar (lambda (d) (nd/sql-construct-insert tbl-name d)) tbl-data))
-           (tbl-data-str (string-join tbl-data-str))
-           (new-acc (or acc "begin transaction;"))
-           (new-acc (concat new-acc tbl-data-str)))
-      (nd/sql-construct-insert-transaction rem new-acc))))
+  (let* ((scan-tbl
+          (lambda (tbl)
+            (let ((name (car tbl))
+                  (data (cdr tbl)))
+              (string-join (mapcar
+                            (lambda (d)
+                              (nd/sql-construct-insert name d))
+                            data)))))
+         (ins (mapcar (lambda (tbl) (funcall scan-tbl tbl)) all-data))
+         (ins (string-join ins)))
+    (concat "begin transaction;" ins "commit;")))
 
 (defun nd/sql-insert (db tbl-name tbl-data)
   "Insert list TBL-DATA into TBL-NAME in sqlite database DB."
@@ -2734,6 +2742,26 @@ Does not actually execute the string."
 (defun nd/sql-insert-multi (db all-data)
   "Insert ALL-DATA into sqlite DB."
   (nd/sql-cmd db (nd/sql-construct-insert-transaction all-data)))
+
+(defun nd/alist-put (alist prop value &optional front)
+  "For given ALIST, append VALUE to the current values in prop.
+Current values (that is the cdr of each key) is assumed to be a list.
+If PROP does not exist, create it. Return the new alist. If FRONT is 
+t, add to the front of current values list instead of the back."
+  (let* ((cur-cell (assoc prop alist))
+         (cur-values (cdr cur-cell)))
+    (cond
+     (cur-values
+      (let ((new-cdr (if front
+                         `(,value ,@cur-values)
+                       `(,@cur-values ,value))))
+        (setcdr cur-cell new-cdr) alist))
+     (cur-cell
+      (setcdr cur-cell `(,value)) alist)
+     (alist
+      (append alist `((,prop ,value))))
+     (t 
+      `((,prop ,value))))))
 #+END_SRC
 **** org parsing function
 Basic functions to parse org strings
@@ -2803,12 +2831,13 @@ PRIMARY KEY (archive_file_path, headline_file_offset, tag, inherited));"
   "CREATE TABLE properties (
 archive_file_path TEXT,
 headline_file_offset INTEGER,
-property_file_offset INTEGER PRIMARY KEY,
+property_file_offset INTEGER,
 key_text TEXT NOT NULL,
 val_text TEXT NOT NULL,
 inherited BOOLEAN,
 FOREIGN KEY (archive_file_path, headline_file_offset)
-REFERENCES headlines (archive_file_path, headline_file_offset));"
+REFERENCES headlines (archive_file_path, headline_file_offset),
+PRIMARY KEY (archive_file_path ASC, property_file_offset ASC));"
   "Schema to build the properties table in the org archive db.")
 
 (defconst nd/org-sqlite-clocking-schema
@@ -2816,7 +2845,7 @@ REFERENCES headlines (archive_file_path, headline_file_offset));"
 archive_file_path TEXT,
 headline_file_offset INTEGER,
 clock_file_offset INTEGER,
-time_start DATE NOT NULL,
+time_start DATE,
 time_end DATE,
 clock_note TEXT,
 FOREIGN KEY (archive_file_path, headline_file_offset)
@@ -2830,6 +2859,7 @@ archive_file_path TEXT,
 headline_file_offset INTEGER,
 entry_file_offset INTEGER,
 time_logged DATE,
+header TEXT,
 note TEXT,
 FOREIGN KEY (archive_file_path, headline_file_offset)
 REFERENCES headlines (archive_file_path, headline_file_offset),
@@ -2871,14 +2901,16 @@ If ISO is t, return the timestamp in ISO 8601 format."
         (let ((raw-ts (org-element-property :raw-value ts)))
           (if iso (nd/org-ts-format-to-iso raw-ts) raw-ts))))))
       
-(defun nd/org-element-find-type (type obj)
-  "Find and return the first instance of TYPE in OBJ.
-TYPE is an org element type symbol and OBJ is a list of elements/objects."
-  (let ((obj-cur (car obj))
-        (obj-rem (cdr obj)))
-    (if (eq type (org-element-type obj-cur))
-        obj-cur
-      (nd/org-element-find-type type obj-rem))))
+;; TODO this is entirely redundant and can be replaced with assoc
+;; (defun nd/org-element-find-type (type obj)
+;;   "Find and return the first instance of TYPE in OBJ.
+;; TYPE is an org element type symbol and OBJ is a list of elements/objects."
+;;   (when obj
+;;     (let ((obj-cur (car obj))
+;;           (obj-rem (cdr obj)))
+;;       (if (eq type (org-element-type obj-cur))
+;;           obj-cur
+;;         (nd/org-element-find-type type obj-rem)))))
       
 (defun nd/org-element-get-parent-type (type obj)
   "Return parent element of type TYPE for OBJ or nil if not found."
@@ -2943,51 +2975,7 @@ parent until found or return nil if unfruitful."
        prop-val
        (let ((parent (org-element-property :parent obj)))
          (nd/org-element-property-inherited prop parent))))))
-         
-(defun nd/org-element-partition-headline (headline)
-  "For a given org-element HEADLINE, return a sorted plist.
-The plist will be structured as such:
 
-:planning '(data)
-:logbook-drawer '(data)
-:property-drawer '(data)
-:headline-contents '(data)
-:subheadings (list of subheadings)
-
-The planning entry will have the list of data associated with the
-:planning property, and likewise with property-drawer. logbook-drawer
-will be a drawer that is explicitly named `org-log-into-drawer' or
-nil if not set. other-contents includes all other elements including
-other drawers, list, paragraph elements, etc. If any of these groups 
-are missing, nil will be returned."
-  (when headline
-    (let ((hl-contents (org-element-contents headline)))
-      (if (eq 'headline (org-element-type (car hl-contents)))
-          ;; return just a plist of subheadings if there is no section
-          (list :subheadings hl-contents)
-        (let* ((sec-contents (org-element-contents (car hl-contents)))
-               (subheadings (cdr hl-contents))
-               (init-plist (list :subheadings subheadings))
-               (get-pkey
-                (lambda (obj)
-                  (let ((type (org-element-type obj)))
-                    (cond
-                     ((eq 'planning type) :planning)
-                     ((eq 'property-drawer type) :property-drawer)
-                     ((and (eq 'drawer type)
-                           (equal (org-element-property :drawer-name obj)
-                                  org-log-into-drawer))
-                      :logbook-drawer)
-                     (t :headline-contents)))))
-               (sort-contents
-                (lambda (contents &optional acc)
-                  (let*
-                      ((cur (car contents))
-                       (rem (cdr contents))
-                       (pkey (funcall get-pkey cur))
-                       (new-acc (nd/plist-put-append acc pkey cur)))
-                    (if rem (funcall sort-contents rem new-acc) new-acc)))))
-          (funcall sort-contents sec-contents init-plist))))))
 #+END_SRC
 **** org sql constants and variables
 #+BEGIN_SRC emacs-lisp
@@ -3010,12 +2998,9 @@ See `org-use-tag-inheritance'.")
 The logbook takes some extra work to parse as there is little/no information to distinguish the "type" of any given log entry (outside of clocking). Therefore, need to go down to the string level and match using regular expressions.
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-logbook-match-header (header-text)
-  "Test if ENTRY-STR matches `nd/org-log-note-headings-regexp'.
-If match successful, returns plist with the following:
-
-:type - the type of the header, which is the car to the corresponding
-  cell in `nd/org-log-note-headings-regexp'
-:match-data - the match data for the search to find the type"
+  "Attempts to match HEADER-TEXT with `nd/org-log-note-headings-regexp'.
+If match successful, returns list whose car is the match type
+and cdr is the match data."
   (let* ((scan
           (lambda (str note-regex-alist)
             (when note-regex-alist
@@ -3027,44 +3012,7 @@ If match successful, returns plist with the following:
                     type
                   (funcall scan str rem))))))
          (type (funcall scan header-text nd/org-log-note-headings-regexp)))
-    (when type (list :type type :match-data (match-data)))))
-  
-(defun nd/org-logbook-parse-item (item archive-file-path headline-file-offset)
-  "Parse an org-element ITEM which is assumed to be part of a logbook.
-Returns a plist with the following structure:
-
-:item - the original item element
-:parent-headline - the headline immediately encapsulating the item
-:header-text - the first line of the note which is standardized using
-  `org-log-note-headings' as a trimmed string with no text properties.
-:note-text - the remainder of the note text as a trimmed string with
-  no text properties (will be nil if item has no line-break element)
-:offset - the file offset of the item
-:type - the type of the item (may be nil if undetermined)
-:match-data - match data associated with finding the type as done
-  using `nd/org-log-note-headings-regexp' (may be nil if undetermined)
-:archive-file-path - the value of ARCHIVE-FILE-PATH
-:headline-file-offset - the value of HEADLINE-FILE-OFFSET."
-  (let* ((parent-hl (nd/org-element-get-parent-headline item))
-         (item-offset (org-element-property :begin item))
-         (paragraph (nd/org-element-find-type 'paragraph item))
-         (contents (org-element-contents paragraph))
-         ;; split entry into right / left components via linebreak
-         (left (nd/org-element-split-by-type 'line-break contents))
-         (right (nd/org-element-split-by-type 'line-break contents t))
-         (header-text (string-trim (substring-no-properties
-                                  (org-element-interpret-data left))))
-         (note-text (string-trim (substring-no-properties
-                                  (org-element-interpret-data right))))
-         (type-plist (nd/org-logbook-match-header header-text))
-         (parse-plist (list :item item
-                            :parent-headline parent-hl
-                            :header-text header-text
-                            :note-text note-text
-                            :offset item-offset
-                            :archive-file-path archive-file-path
-                            :headline-file-offset headline-file-offset)))
-    (append parse-plist type-plist)))
+    (when type (cons type (match-data)))))
     
 ;; this function doesn't exist in vanilla org mode >:(
 (defun nd/org-todo-keywords-stripped ()
@@ -3133,6 +3081,102 @@ of the escapes."
   "Like `org-log-note-headings' but has regexp's instead of
 escape sequences.")
 #+END_SRC
+**** org sql partioning functions
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-sql-partion-headling-section (contents &optional acc)
+  "Partition list of org-elements CONTENTS into accumulator ACC.
+When finished return ACC. ACC will hold an alist structured as described
+in `nd/org-element-partition-headline', except this function does not
+deal with the subheadings or headline-properties."
+  (if (not contents)
+      acc
+    (let* ((cur (car contents))
+           (rem (cdr contents))
+           (type (org-element-type cur))
+           (acc*
+            (cond
+             ((eq type 'planning)
+              (nd/alist-put acc :planning cur))
+             ((eq type 'property-drawer)
+              ;; TODO maybe filter for non-node-props here???
+              (let ((node-props (org-element-contents cur)))
+                (nd/alist-put acc :node-props node-props)))
+             ((eq type 'drawer)
+              (let ((name (org-element-property :drawer-name cur)))
+                (if (equal name org-log-into-drawer)
+                    (let ((lb-contents (org-element-contents cur)))
+                      (nd/alist-put acc :logbook lb-contents))
+                  (nd/alist-put acc :hl-contents cur))))
+             (t (nd/alist-put acc :hi-contents cur)))))
+      (nd/org-sql-partion-headling-section rem acc*))))
+
+(defun nd/org-sql-partition-headline (headline fp)
+  "For org-element HEADLINE and file path FP, return an alist.
+The alist will be structured as such:
+
+:filepath - path to the file in which the headline resides
+:headline - original headline element
+:section - the section contents of the headline if found
+:subheadlines - list of subheadlines if any
+
+The planning entry will have the list of data associated with the
+:planning property, and likewise with property-drawer. logbook-drawer
+will be a drawer that is explicitly named `org-log-into-drawer' or
+nil if not set. other-contents includes all other elements including
+other drawers, list, paragraph elements, etc. If any of these groups 
+are missing, nil will be returned."
+ (unless headline (error "No headline given"))
+  (unless fp (error "No file path given"))
+  (let* ((hl-contents (org-element-contents headline))
+         (section (assoc 'section hl-contents))
+         (section (org-element-contents section))
+         (subheadlines (if section (cdr hl-contents) hl-contents)))
+    `((:headline . ,headline)
+      (:filepath . ,fp)
+      (:section . ,section)
+      (:subheadlines . ,subheadlines))))
+    ;; (when section
+    ;;   (let ((sec-contents (org-element-contents section)))
+    ;;     (nd/org-sql-partion-headling-section sec-contents hl-part)))))
+
+(defun nd/org-sql-partition-item (item hl-part)
+  "Parse an org-element ITEM which is assumed to be part of a logbook.
+Returns a alist with the following structure:
+
+:hl-part - the partitioned headline HL-PART surrounding the item,
+  which is an object as described in `nd/org-sql-partition-headline'
+:item - the original item element
+:header-text - the first line of the note which is standardized using
+  `org-log-note-headings'
+:note-text - the remainder of the note text as a trimmed string with
+  no text properties (will be nil if item has no line-break element)
+:type - the type of the item's header text (may be nil if unknown)
+:match-data - match data associated with finding the type as done
+  using `nd/org-log-note-headings-regexp' (may be nil if undetermined).
+
+Anatomy of a logbook item (non-clocking):
+- header-text with linebreak //
+  note-text ... more text
+- another header-text linebreak
+
+The header text is solely used for determining :type and :match-data."
+  (let* ((paragraph (assoc 'paragraph item))
+         (contents (org-element-contents paragraph))
+         ;; split entry into right / left components via linebreak
+         (left (nd/org-element-split-by-type 'line-break contents))
+         (right (nd/org-element-split-by-type 'line-break contents t))
+         (header-text (string-trim (substring-no-properties
+                                  (org-element-interpret-data left))))
+         (note-text (string-trim (substring-no-properties
+                                  (org-element-interpret-data right))))
+         (header-match (nd/org-logbook-match-header header-text)))
+    `((:item . ,item)
+      (:hl-part . ,hl-part)
+      (:header-text . ,header-text)
+      (:note-text . ,note-text)
+      (:type . ,(car header-match))
+      (:match-data . ,(cdr header-match)))))
+#+END_SRC
 **** org sql db function
 These are the main functions to populate the db.
 #+BEGIN_SRC emacs-lisp
@@ -3148,319 +3192,352 @@ These are the main functions to populate the db.
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-state-changes-schema)
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-planning-changes-schema)))
 
-(defun nd/org-element-note-header-to-sql (parsed-item &optional acc)
-  "Add data from PARSED-ITEM to ACC depending on its type."
-  (let ((type (plist-get parsed-item :type))
-        (archive-file-path (plist-get parsed-item :archive-file-path))
-        (entry-file-offset (plist-get parsed-item :offset))
-        (header-text (plist-get parsed-item :header-text)))
+(defun nd/org-sql-extract-lb-header (item-part &optional acc)
+  "Add specific data from logbook entry ITEM-PART to accumulator ACC.
+ITEM-PART is a partitions logbook item as described in
+`nd/org-sql-partition-item'. Note headings are parsed according to
+how they match those generated by `org-log-note-headings', and
+nothing is added if a match is not found."
+  (let* ((hl-part (alist-get :hl-part item-part))
+         (hl (alist-get :headline hl-part))
+         (fp (alist-get :filepath hl-part))
+         (item (alist-get :item item-part))
+         (item-offset (org-element-property :begin item))
+         (type (alist-get :type item-part))
+         (md (alist-get :match-data item-part))
+         (header-text (alist-get :header-text item-part)))
     ;; TODO, make these adapt to the value of org-log-note-headings??
+    (set-match-data md)
     (cond
      ((eq type 'state)
       (let* ((state-old (match-string 3 header-text))
              (state-new (match-string 1 header-text))
-             (state-data (list archive-file-path
-                               entry-file-offset
-                               state-old
-                               state-new)))
-        (nd/plist-put-list acc 'state_changes state-data)))
+             (state-data (list :archive_file_path fp
+                               :entry_file_offset item-offset
+                               :state_old state-old
+                               :state_new state-new)))
+        (nd/alist-put acc 'state_changes state-data)))
      ((memq type '(reschedule delschedule redeadline deldeadline))
       (let* ((time-old (nd/org-ts-format-to-iso
                         (match-string 1 header-text)))
              (planning-kw (if (memq type '(reschedule delschedule))
                               :scheduled
                             :deadline))
-             (parent-hl (plist-get parsed-item :parent-headline))
-             (time-new (nd/org-element-timestamp-raw planning-kw parent-hl t))
-             (time-new (nd/org-ts-format-to-iso time-new))
+             (time-new (nd/org-element-timestamp-raw planning-kw hl t))
              (planning-type (if (eq :scheduled planning-kw) "s" "d"))
-             (planning-data (list archive-file-path
-                                  entry-file-offset
-                                  time-old
-                                  time-new
-                                  planning-type)))
-        (nd/plist-put-list acc 'planning_changes planning-data)))
+             (planning-data (list :archive_file_path fp
+                                  :entry_file_offset item-offset
+                                  :time_old time-old
+                                  :time_new time-new
+                                  :planning_type planning-type)))
+        (nd/alist-put acc 'planning_changes planning-data)))
      ;; no action required for these
      ((memq type '(done refile note)) acc)
      ;; header type not determined, therefore do nothing
      (t acc))))
 
-(defun nd/org-element-note-get-time-logged (parsed-item)
-  "Return time-logged of PARSED-ITEM or nil if it cannot be determined."
-  (set-match-data (plist-get parsed-item :match-data))
-  (let* ((type (plist-get parsed-item :type))
+;; TODO this gets called for clock notes?
+(defun nd/org-element-note-get-time-logged (item-part)
+  "Return time-logged of ITEM-PART or nil if it cannot be determined.
+ITEM-PART is a partitioned logbook item as described in
+`nd/org-sql-partition-item'."
+  (let* ((type (alist-get :type item-part))
          (time-index
           (cond
            ((memq type '(done note refile)) 1)
            ((memq type '(reschedule delschedule redeadline deldeadline)) 3)
            ((eq type 'state) 5)))
-         (header-text (plist-get parsed-item :header-text)))
+         (header-text (alist-get :header-text item-part)))
     (when time-index
+      (set-match-data (alist-get :match-data item-part))
       (nd/org-ts-format-to-iso (match-string time-index header-text)))))
 
-(defun nd/org-element-note-to-sql (parsed-item &optional acc)
-  "Add logbook common data from PARSED-ITEM to ACC."
-  
-  (let* ((archive-file-path (plist-get parsed-item :archive-file-path))
-         (headline-file-offset (plist-get parsed-item :headline-file-offset))
-         (entry-file-offset (plist-get parsed-item :offset))
-         (time-logged (nd/org-element-note-get-time-logged parsed-item))
-         (note-text (plist-get parsed-item :header-text))
-         (logbook-data (list archive-file-path
-                             headline-file-offset
-                             entry-file-offset
-                             time-logged
-                             note-text))
-         (new-acc (nd/plist-put-list acc 'logbook logbook-data)))
-    (nd/org-element-note-header-to-sql parsed-item new-acc)))
+(defun nd/org-sql-extract-lb-entry (item-part &optional acc)
+  "Add data from logbook entry ITEM-PART to accumulator ACC.
+ITEM-PART is a partitioned logbook item as described in
+`nd/org-sql-partition-item'."
+  (let* ((hl-part (alist-get :hl-part item-part))
+         (fp (alist-get :filepath hl-part))
+         (hl (alist-get :headline hl-part))
+         (item (alist-get :item item-part))
+         (hl-offset (org-element-property :begin hl))
+         (item-offset (org-element-property :begin item))
+         (time-logged (nd/org-element-note-get-time-logged item-part))
+         (hdr-text (alist-get :header-text item-part))
+         (note-text (alist-get :note-text item-part))
+         (logbook-data (list :archive_file_path fp
+                             :headline_file_offset hl-offset
+                             :entry_file_offset item-offset
+                             :time_logged time-logged
+                             :header hdr-text
+                             :note note-text))
+         (acc* (nd/alist-put acc 'logbook logbook-data)))
+    (nd/org-sql-extract-lb-header item-part acc*)))
 
-(defun nd/org-element-add-note-to-clock (clock-data note-text)
-  "Add NOTE-TEXT to sql data CLOCK-DATA."
-  (append clock-data note-text))
+(defun nd/org-sql-add-note-to-clock (clock-data item-part &optional acc)
+  "Add ITEM-PART to CLOCK-DATA and add to accumulator ACC.
+ITEM-PART is a partitions logbook item as described in
+`nd/org-sql-partition-item'."
+  (let* ((header-text (alist-get :header-text item-part))
+         (clock-data* `(,@clock-data :clock_note ,header-text)))
+    (nd/alist-put acc 'clocking clock-data*)))
 
 (defun nd/org-logbook-parse-timestamp-range (ts)
   "Return start and end of timestamp TS depending on if it is a range.
 Return value will be a list of two elements if range and one if not."
   (when ts
-    (let ((time-start (nd/org-ts-format-to-iso (org-timestamp-split-range ts))))
-      (when time-start
-        (let* ((type (org-element-property :type ts))
-               (time-end
-                (when (eq type 'inactive-range)
-                  (nd/org-ts-format-to-iso (org-timestamp-split-range ts t)))))
-          (cons time-start time-end))))))
+    (let ((convert
+           (lambda (ts &optional end)
+             (nd/org-ts-format-to-iso
+              (org-element-property
+               :raw-value
+               (org-timestamp-split-range ts end))))))
+    (if (eq (org-element-property :type ts) 'inactive-range)
+        (let ((start (funcall convert ts))
+              (end (funcall convert ts t)))
+          (cons start end))
+      `(,(funcall convert ts))))))
 
-(defun nd/org-element-clock-to-sql (clock archive-file-path
-                                          headline-file-offset)
-  "Parse org-element CLOCK and return a list of extracted data.
-ARCHIVE-FILE-PATH and HEADLINE-FILE-OFFSET are the file path and file
-offset of the property's parent headline in the org file."
-  (let* ((clock-file-offset (org-element-property :begin clock))
+(defun nd/org-sql-extract-lb-clock (clock hl-part &optional acc item)
+  "Add data from logbook CLOCK to accumulator ACC.
+HL-PART is an object as returned by `nd/org-sql-partition-headline'
+and represents the headline surrounding the clock.
+If ITEM is provided, check that this is a valid note that can be
+added to the clock, else add it as a normal logbook entry."
+  (let* ((hl (alist-get :headline hl-part))
+         (fp (alist-get :filepath hl-part))
+         (hl-offset (org-element-property :begin hl))
+         (cl-offset (org-element-property :begin clock))
          (ts-obj (org-element-property :value clock))
          (ts-range (nd/org-logbook-parse-timestamp-range ts-obj))
-         (time-start (car ts-range))
-         (time-end (cdr ts-range)))
-    (list archive-file-path
-          headline-file-offset
-          clock-file-offset
-          time-start
-          time-end)))
+         (start (car ts-range))
+         (end (cdr ts-range))
+         (clock-data (list :archive_file_path fp
+                           :headline_file_offset hl-offset
+                           :clock_file_offset cl-offset
+                           :time_start start
+                           :time_end end)))
+    (if (not item)
+        (nd/alist-put acc 'clocking clock-data)
+      (let* ((item-part (nd/org-sql-partition-item item hl-part))
+             (item-type (alist-get :type item-part)))
+        (if item-type
+            (let ((acc* (nd/alist-put acc 'clocking clock-data)))
+              (nd/org-sql-extract-lb-entry item-part acc*))
+          (nd/org-sql-add-note-to-clock clock-data item-part acc))))))
 
-(defun nd/org-element-logbook-items-to-sql (items archive-file-path
-                                               headline-file-offset
-                                               &optional acc
-                                               last-clock)
-  "Parse ITEMS from logbook drawer (not clocks) and add to ACC.
-ARCHIVE-FILE-PATH and HEADLINE-FILE-OFFSET are the file path and file
-offset of the property's parent headline in the org file.
-LAST-CLOCK has the same purpose as `nd/org-element-logbook-to-sql'."
+(defun nd/org-sql-extract-lb-items (items hl-part &optional acc)
+  "Add data from logbook ITEMS to accumulator ACC.
+HL-PART is an object as returned by `nd/org-sql-partition-headline'
+and represents the headline surrounding the items."
   (if (not items)
       acc
     (let* ((cur (car items))
            (rem (cdr items))
-           (parsed-item (nd/org-logbook-parse-item cur
-                                                   archive-file-path
-                                                   headline-file-offset))
-           (type (plist-get parsed-item :type))
-           (header-text (plist-get parsed-item :header-text))
-           ;; if header type unknown and after a clock assume it
-           ;; is a clock note
-           (new-acc
-            (if (and last-clock (not type))
-                (let ((new-clock (nd/org-element-add-note-to-clock last-clock header-text)))
-                  (nd/plist-put-list acc 'clocking new-clock))
-             (nd/org-element-note-to-sql parsed-item acc))))
-      ;; don't pass the new clock here as any thing called from inside
-      ;; this function is guaranteed to be at least the second note
-      ;; after a clock entry
-      (nd/org-element-logbook-items-to-sql rem
-                                        archive-file-path
-                                        headline-file-offset
-                                        new-acc))))
+           (item-part (nd/org-sql-partition-item cur hl-part))
+           (acc* (nd/org-sql-extract-lb-entry item-part acc)))
+      (nd/org-sql-extract-lb-items rem hl-part acc*))))
 
-(defun nd/org-element-logbook-to-sql (lb-contents archive-file-path
-                                                  headline-file-offset
-                                                  &optional acc
-                                                  last-clock)
-  "Loop through logbook entries LB-CONTENTS and insert data into ACC.
-ARCHIVE-FILE-PATH and HEADLINE-FILE-OFFSET are the file path and file
-offset of the property's parent headline in the org file.
+(defun nd/org-sql-extract-lb-one (entry hl-part &optional acc)
+  "Add data from logbook ENTRY to accumulator ACC.
+HL-PART is an object as returned by `nd/org-sql-partition-headline'
+and represents the headline surrounding the entry."
+  (let ((type (org-element-type entry)))
+    (cond
+     ((eq type 'clock)
+      (nd/org-sql-extract-lb-clock entry hl-part acc))
+     ((eq type 'plain-list)
+      (let ((items (org-element-contents entry)))
+        (nd/org-sql-extract-lb-items items hl-part acc)))
+     ;; TODO add an "UNKNOWN" logbook parser
+     (t acc))))
 
-LAST-CLOCK is a temporary value to store the list of data from the
-last clocking entry. This is necessary because some clock entries
-may have notes attached to them, but since the clock and item elements
-are independent from each other, we need to scan the next note to see
-if it belongs to a clock."
-  (if (not lb-contents)
-      (if last-clock (nd/plist-put-list acc 'clocking last-clock) acc)
-    (let* ((cur (car lb-contents))
-           (rem (cdr lb-contents))
-           (type (org-element-type cur)))
-      (cond
-       ((eq 'plain-list type)
-        (let* ((items (org-element-contents cur))
-               (new-acc
-                (nd/org-element-logbook-items-to-sql items
-                                                     archive-file-path
-                                                     headline-file-offset
-                                                     acc
-                                                     last-clock)))
-          (nd/org-element-logbook-to-sql rem
-                                         archive-file-path
-                                         headline-file-offset
-                                         new-acc)))
-       ((eq 'clock type)
-        (let ((new-clock (nd/org-element-clock-to-sql cur
-                                                      archive-file-path
-                                                      headline-file-offset)))
-          (nd/org-element-logbook-to-sql rem
-                                         archive-file-path
-                                         headline-file-offset
-                                         acc
-                                         new-clock)))
-       (t (error (concat "Unknown logbook entry type: " (symbol-name type))))))))
+;; TODO this triggers a sql syntax error when the note is not a clock note
+(defun nd/org-sql-extract-lb-two (entry1 entry2 hl-part &optional acc)
+  "Add data from logbook ENTRY1 and ENTRY2 to accumulator ACC.
+HL-PART is an object as returned by `nd/org-sql-partition-headline'
+and represents the headline surrounding the entries. This assumes the
+entries are org-element types clock and plain-list respectively, and
+will check if the first item in ENTRY2 is part of the clock."
+  (let* ((items (org-element-contents entry2))
+         (first-item (car items))
+         (rem-items (cdr items))
+         (acc* (nd/org-sql-extract-lb-clock entry1 hl-part acc first-item)))
+    (nd/org-sql-extract-lb-items rem-items hl-part acc*)))
 
-(defun nd/org-element-property-to-sql (node-props archive-file-path
-                                                  headline-file-offset
-                                                  &optional acc)
-  "Add data from NODE-PROPS to accumulator sql-data plist ACC.
-ARCHIVE-FILE-PATH and HEADLINE-FILE-OFFSET are the file path and file
-offset of the property's parent headline in the org file."
-  (if (not node-props)
-      acc
-    (let* ((cur (car node-props))
-           (rem (cdr node-props))
-           (key-text (org-element-property :key cur))
-           (new-acc
-            (if (member key-text nd/org-sql-ignored-properties)
+(defun nd/org-sql-find-logbook (contents)
+  "Find the logbook drawer given CONTENTS from section of org headline.
+Returns a list of the contents in the logbook. Note this assumes
+the `org-log-into-drawer' is set and that there is one drawer per
+headline matching this value. Additional logbook drawers will be
+ignored."
+  (org-element-contents
+   (rassoc-if
+    (lambda (e)
+      (equal org-log-into-drawer (plist-get (car e) :drawer-name)))
+    contents)))
+
+(defun nd/org-sql-extract-lb (hl-part &optional acc)
+  "Add logbook data from HL-PART and add to accumulator ACC.
+HL-PART is an object as returned by `nd/org-sql-partition-headline'."
+  (let* ((sec (alist-get :section hl-part))
+         (lb-contents (nd/org-sql-find-logbook sec))
+         (scan
+          (lambda (contents &optional acc)
+            (if (not contents)
                 acc
-              (let* ((property-file-offset (org-element-property :begin cur))
-                     (val-text (org-element-property :value cur))
-                     (prop-data (list archive-file-path
-                                      headline-file-offset
-                                      property-file-offset
-                                      key-text
-                                      val-text
-                                      ;; TODO add inherited flag
-                                      nil)))
-                (nd/plist-put-list acc 'properties prop-data)))))
-      (nd/org-element-property-to-sql rem
-                                      archive-file-path
-                                      headline-file-offset
-                                      new-acc))))
+              ;; Need two of the next entries here because clocks may
+              ;; have notes associated with them, but the only
+              ;; distinguishing characteristic they have is that they
+              ;; don't match anything in org-log-note-headings. If we
+              ;; end up processing two entries at once, skip over two
+              ;; instead of one on the next iteration.
+              (let* ((cur1 (car contents))
+                     (cur2 (cadr contents))
+                     (type1 (org-element-type cur1))
+                     (type2 (org-element-type cur2))
+                     (try-clock-note (and (eq 'clock type1)
+                                          (eq type2 'plain-list)))
+                     (acc*
+                      (if try-clock-note
+                          (nd/org-sql-extract-lb-two cur1 cur2 hl-part acc)
+                        (nd/org-sql-extract-lb-one cur1 hl-part acc)))
+                     (rem (if try-clock-note (cddr contents) (cdr contents))))
+                (funcall scan rem acc*))))))
+    (funcall scan lb-contents acc)))
 
-(defun nd/org-element-tags-to-sql (headline archive-file-path
-                                            headline-file-offset
-                                            &optional acc)
-  "Add tags to sql-data plist ACC from HEADLINE.
-ARCHIVE-FILE-PATH and HEADLINE-FILE-OFFSET are the file path and file
-offset of the property's parent headline in the org file."
-  (let* ((insert-tags
-          (lambda (tags a h i acc)
+(defun nd/org-sql-extract-properties (hl-part &optional acc)
+   "Add properties data from HL-PART and add to accumulator ACC.
+HL-PART is an object as returned by `nd/org-sql-partition-headline'."
+  (let* ((hl (alist-get :headline hl-part))
+         (sec (alist-get :section hl-part))
+         (prop-drawer (assoc 'property-drawer sec))
+         (node-props (org-element-contents prop-drawer))
+         (scan
+          (lambda (node-props hl-part &optional acc)
+            (if (not node-props)
+                acc
+              (let* ((cur (car node-props))
+                     (rem (cdr node-props))
+                     (hl (alist-get :headline hl-part))
+                     (fp (alist-get :filepath hl-part))
+                     (offset (org-element-property :begin hl))
+                     (np-offset (org-element-property :begin cur))
+                     (key (org-element-property :key cur))
+                     (val (org-element-property :value cur))
+                     (prop-data (list :archive_file_path fp
+                                      :headline_file_offset offset
+                                      :property_file_offset np-offset
+                                      :key_text key
+                                      :val_text val
+                                      ;; TODO add inherited flag
+                                      :inherited nil))
+                     (acc*
+                      (if (member key nd/org-sql-ignored-properties)
+                          acc
+                        (nd/alist-put acc 'properties prop-data))))
+                (funcall scan rem hl-part acc*))))))
+    (nd/org-sql-extract-property node-props hl-part acc)))
+
+(defun nd/org-sql-extract-tags (hl-part &optional acc)
+  "Add tags data from HL-PART and add to accumulator ACC.
+HL-PART is an object as returned by `nd/org-sql-partition-headline'."
+  (let* ((hl (alist-get :headline hl-part))
+         (tags (org-element-property :tags hl))
+         (tags (mapcar #'nd/strip-string tags))
+         ;; then retrieve i-tags, optionally going up to parents
+         (i-tags (org-element-property :ARCHIVE_ITAGS hl))
+         (i-tags (when i-tags (split-string i-tags)))
+         (i-tags (if nd/org-sql-use-tag-inheritance
+                     (nd/org-element-get-parent-tags hl i-tags)
+                   i-tags))
+         (scan
+          (lambda (tags hl-part &optional acc inherited)
             (if (not tags)
                 acc
               (let* ((cur (car tags))
                      (rem (cdr tags))
-                     (tags-data (list a h cur i))
-                     (new-acc (nd/plist-put-list acc 'tags tags-data)))
-                (funcall insert-tags rem a h i new-acc) new-acc))))
-         ;; first insert all headline tags into acc
-         (tags (mapcar #'nd/strip-string (org-element-property :tags headline)))
-         (new-acc (funcall insert-tags
-                           tags
-                           archive-file-path
-                           headline-file-offset
-                           0
-                           acc))
-         ;; then retrieve i-tags, optionally going up to parents
-         (i-tags (org-element-property :ARCHIVE_ITAGS headline))
-         (i-tags (when i-tags (split-string i-tags)))
-         (i-tags (if nd/org-sql-use-tag-inheritance
-                     (nd/org-element-get-parent-tags headline i-tags)
-                   i-tags)))
-    (funcall insert-tags i-tags archive-file-path headline-file-offset
-             1 new-acc)))
+                     (hl (alist-get :headline hl-part))
+                     (fp (alist-get :filepath hl-part))
+                     (offset (org-element-property :begin hl))
+                     (i (if inherited 1 0))
+                     (tags-data (list :archive_file_path fp
+                                      :headline_file_offset offset
+                                      :tag cur
+                                      :inherited i))
+                     (acc* (nd/alist-put acc 'tags tags-data)))
+                (funcall scan rem hl-part acc* inherited)))))
+         (acc* (funcall scan tags hl-part acc)))
+    (funcall scan i-tags hl-part acc* t)))
 
-(defun nd/org-element-header-to-sql (headlines archive-file-path
-                                               &optional acc)
-  "Parse list of org-elements HEADLINES and insert data into ACC.
-ARCHIVE-FILE-PATH is the file path to the currently parsed archive file."
+(defun nd/org-sql-extract-headline (hl-part &optional acc)
+  "Add general data from headline HL-PART to accumulator ACC.
+HL-PART is an object as returned by `nd/org-sql-partition-headline'."
+  (let* ((fp (alist-get :filepath hl-part))
+         (hl (alist-get :headline hl-part))
+         (offset (org-element-property :begin hl))
+         (rxv-tp (nd/org-element-get-parent-tree hl))
+         (src-fp (nd/org-element-property-inherited :ARCHIVE_FILE hl))
+         (src-tp (nd/org-element-property-inherited :ARCHIVE_OLPATH hl))
+         (hl-txt (org-element-property :raw-value hl))
+         (t-created (org-element-property :CREATED hl))
+         (t-created (nd/org-ts-format-to-iso t-created))
+         (t-closed (nd/org-element-timestamp-raw :closed hl t))
+         (t-scheduled (nd/org-element-timestamp-raw :scheduled hl t))
+         (t-deadline (nd/org-element-timestamp-raw :deadline hl t))
+         (kw (nd/strip-string (org-element-property :todo-keyword hl)))
+         (effort (org-element-property :EFFORT hl))
+         (effort (nd/org-effort-to-int effort t))
+         (priority (org-element-property :priority hl))
+         ;; TODO, add contents somehow
+         ;; (hl-contents (plist-get hl-part :hl-contents))
+         ;; (hl-contents-text (org-element-interpret-data hl-contents))
+         ;; (hl-contents-text (when hl-contents-text
+         ;;                     (string-trim
+         ;;                      (substring-no-properties hl-contents-text))))
+         (hl-data (list :archive_file_path fp
+                        :headline_file_offset offset
+                        :archive_tree_path rxv-tp
+                        :source_file_path src-fp
+                        :source_tree_path src-tp
+                        :headline_text hl-txt
+                        :time_created t-created
+                        :time_closed t-closed
+                        :time_scheduled t-scheduled
+                        :time_deadlined t-deadline
+                        :keyword kw
+                        :effort effort
+                        :priority priority
+                        :content nil)))
+    (nd/alist-put acc 'headlines hl-data)))
+
+(defun nd/org-sql-extract-headlines-all (headlines fp &optional acc)
+  "Extract data from HEADLINES and add to accumulator ACC.
+FP is the file path containing the headlines."
   (if (not headlines)
       acc
     (let* ((cur (car headlines))
            (rem (cdr headlines))
-           (headline-file-offset (org-element-property :begin cur))
-           (archive-tree-path (nd/org-element-get-parent-tree cur))
-           ;; insert data for headlines table
-           (source-file-path (nd/org-element-property-inherited :ARCHIVE_FILE cur))
-           (source-tree-path (nd/org-element-property-inherited :ARCHIVE_OLPATH cur))
-           (headline-text (org-element-property :raw-value cur))
-           (time-created (org-element-property :CREATED cur))
-           (time-created (nd/org-ts-format-to-iso time-created))
-           (time-closed (nd/org-element-timestamp-raw :closed cur t))
-           (time-scheduled (nd/org-element-timestamp-raw :scheduled cur t))
-           (time-deadline (nd/org-element-timestamp-raw :deadline cur t))
-           (keyword (nd/strip-string (org-element-property :todo-keyword cur)))
-           (effort (org-element-property :EFFORT cur))
-           (effort (nd/org-effort-to-int effort t))
-           (priority (org-element-property :priority cur))
-           (hl-part (nd/org-element-partition-headline cur)) ;; data for children
-           (hl-contents (plist-get hl-part :headline-contents))
-           ;; (hl-contents-text (org-element-interpret-data hl-contents))
-           ;; (hl-contents-text (when hl-contents-text
-           ;;                     (string-trim
-           ;;                      (substring-no-properties hl-contents-text))))
-           (hl-data (list archive-file-path
-                          headline-file-offset
-                          archive-tree-path
-                          source-file-path
-                          source-tree-path
-                          headline-text
-                          time-created
-                          time-closed
-                          time-scheduled
-                          time-deadline
-                          keyword
-                          effort
-                          priority
-                          nil))
-           (new-acc (nd/plist-put-list acc 'headlines hl-data))
-           ;; insert data for tags table
-           (new-acc (nd/org-element-tags-to-sql cur
-                                                archive-file-path
-                                                headline-file-offset
-                                                new-acc))
-           ;; insert data for property table
-           (property-drawer (plist-get hl-part :property-drawer))
-           (node-props (org-element-contents property-drawer))
-           (new-acc (nd/org-element-property-to-sql node-props
-                                                    archive-file-path
-                                                    headline-file-offset
-                                                    new-acc))
-           ;; insert data for logbook table
-           (lb-drawer (plist-get hl-part :logbook-drawer))
-           (lb-contents (org-element-contents lb-drawer))
-           (new-acc (nd/org-element-logbook-to-sql lb-contents
-                                                   archive-file-path
-                                                   headline-file-offset
-                                                   new-acc))
-           ;; insert data for subheadings under this one
-           (subheadings (plist-get hl-part :subheadings))
-           (new-acc (nd/org-element-header-to-sql subheadings
-                                                  archive-file-path
-                                                  new-acc)))
-      (nd/org-element-header-to-sql rem archive-file-path new-acc))))
+           (hl-part (nd/org-sql-partition-headline cur fp))
+           (hl-sub (alist-get :subheadlines hl-part))
+           (acc* (nd/org-sql-extract-headline hl-part acc))
+           ;; (acc* (nd/org-sql-extract-tags hl-part acc*))
+           ;; (acc* (nd/org-sql-extract-properties hl-part acc*))
+           (acc* (nd/org-sql-extract-lb hl-part acc*))
+           (acc* (nd/org-sql-extract-headlines-all hl-sub fp acc*)))
+      (nd/org-sql-extract-headlines-all rem fp acc*))))
 
 (defun nd/org-sql-extract ()
   "Return a plist of data to be inserted into sql database."
   (let* ((rxv-path (expand-file-name "test.org_archive" org-directory))
+         ;; TODO files need to be already open???
          (tree (with-current-buffer (find-file-noselect rxv-path)
                  (org-element-parse-buffer)))
          (contents (org-element-contents tree))
          (headlines (if (eq 'section (org-element-type (car contents)))
                         (cdr contents)
                       contents)))
-    (nd/org-element-header-to-sql headlines rxv-path)))
+    (nd/org-sql-extract-headlines-all headlines rxv-path)))
 
 (defun nd/org-archive-to-db ()
   "Transfer archive files to sqlite database."
