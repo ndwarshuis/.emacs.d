@@ -2684,11 +2684,11 @@ These are =org-mode=-agnostic functions that pertain to sql. They are basically 
 #+BEGIN_SRC emacs-lisp
 (require 'sql)
 
-(defun nd/sql-cmd (db sql)
-  "Execute string SQL on database DB executing `sql-sqlite-program'.
+(defun nd/sql-cmd (db cmd)
+  "Execute string CMD on database DB executing `sql-sqlite-program'.
 Returns the output of CMD. SQL should not contain any quotes as if it
 were entered on the shell."
-  (shell-command-to-string (format "%s %s \"%s\"" sql-sqlite-program db sql)))
+  (shell-command-to-string (format "%s %s \"%s\"" sql-sqlite-program db cmd)))
   
 (defun nd/sql-escape-text (txt)
   "Escape and quote TXT in order to insert into sqlite db via 'insert'.
@@ -2762,6 +2762,50 @@ t, add to the front of current values list instead of the back."
       (append alist `((,prop ,value))))
      (t 
       `((,prop ,value))))))
+
+(defun nd/sql-to-plist (out &rest cols)
+  "Parse SQL output string OUT to an plist representing the data.
+COLS are the column names as symbols used to obtain OUT."
+  (let* ((out-trim (string-trim out))
+         (row-data (split-string out-trim "\n"))
+         (cell-data (mapcar (lambda (s) (split-string s "|")) row-data)))
+    (mapcar (lambda (d) (cl-mapcan #'list cols d)) cell-data)))
+
+(defun nd/sql-select (db tbl-name &rest cols)
+  "Select columns from TBL-NAME in DB where COLS is the list of columns.
+If COLS is nil, all columns will be returned. Columns is expected as
+a list of keywords like ':col1' and :col2'."
+  (let* ((colnames
+          (if (not cols) "*"
+            (string-join
+             (mapcar (lambda (s) (substring (symbol-name s) 1)) cols)
+             ",")))
+         (cmd (format "select %s from %s;" colnames (symbol-name tbl-name)))
+         (out (nd/sql-cmd db cmd)))
+    (apply #'nd/sql-to-plist out cols)))
+
+;; this somehow doesn't exist O.o
+(defun nd/sql-plist-get-vals(plist)
+  "Return all the values in PLIST."
+  (-slice plist 1 nil 2))
+
+(defun nd/sql-kw-to-colname (kw)
+  "Returns string representation of KW for column in sql database."
+  (substring (symbol-name kw) 1))
+
+(defun nd/sql-delete (db tbl-name cols)
+  "Delete records from TBL-NAME in DB where COLS are true.
+COND is a plist of column names and values, '(:col1 val1 :col2 val2)',
+where values will be deleted if the listed columns have the listed
+values (AND condition)."
+  (let* ((keys (plist-get-keys cols))
+         (keys (mapcar #'nd/sql-kw-to-colname keys))
+         (vals (nd/sql-plist-get-vals cols))
+         (vals (mapcar #'nd/sql-to-string vals))
+         (conds-str (mapcar* (lambda (k v) (format "%s=%s" k v)) keys vals))
+         (conds-str (string-join conds-str " and "))
+         (cmd (format "delete from %s where %s;" (symbol-name tbl-name) conds-str)))
+    (nd/sql-cmd db cmd)))
 #+END_SRC
 **** org parsing function
 Basic functions to parse org strings
