@@ -2797,6 +2797,16 @@ If TS is nil or TS cannot be understood, nil will be returned."
 #+END_SRC
 **** org sql schemas
 #+BEGIN_SRC emacs-lisp
+(defconst nd/org-sqlite-files-schema
+  "CREATE TABLE files (
+file_path TEXT PRIMARY KEY ASC,
+md5 TEXT NOT NULL,
+size INTEGER NOT NULL,
+time_modified DATE,
+time_created DATE,
+time_accessed DATE);"
+  "Schema to build the files table in the org archive db.")
+
 (defconst nd/org-sqlite-header-schema
   "CREATE TABLE headlines (
 archive_file_path TEXT,
@@ -2813,7 +2823,8 @@ keyword TEXT,
 effort INTEGER,
 priority INTEGER,
 content TEXT,
-PRIMARY KEY (archive_file_path ASC, headline_file_offset ASC));"
+PRIMARY KEY (archive_file_path ASC, headline_file_offset ASC)
+FOREIGN KEY (archive_file_path) REFERENCES files (file_path));"
   "Schema to build the headers table in the org archive db.")
 
 (defconst nd/org-sqlite-tags-schema
@@ -3197,6 +3208,7 @@ These are the main functions to populate the db.
   "Make a sqlite database for org archive files if it does not exist already."
   (unless (file-exists-p nd/org-sqlite-db-path)
     (process-file-shell-command (concat "touch " nd/org-sqlite-db-path))
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-files-schema)
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-header-schema)
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-properties-schema)
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-tags-schema)
@@ -3557,17 +3569,31 @@ FP is the path to the file containing the headlines."
              (nd/org-sql-extract-headlines hl-sub acc* fp)))))
     (nd/org-sql-extract headlines into acc fp)))
 
+(defvar nd/org-sql-files '("test1.org_archive" "test2.org_archive")
+  "A list of org files to put into sql database.")
+
 (defun nd/org-sql-extract-files ()
   "Return a plist of data to be inserted into sql database."
-  (let* ((rxv-path (expand-file-name "test.org_archive" org-directory))
-         ;; TODO files need to be already open???
-         (tree (with-current-buffer (find-file-noselect rxv-path)
-                 (org-element-parse-buffer)))
-         (contents (org-element-contents tree))
-         (headlines (if (eq 'section (org-element-type (car contents)))
-                        (cdr contents)
-                      contents)))
-    (nd/org-sql-extract-headlines headlines nil rxv-path)))
+  (let ((paths (mapcar (lambda (p) (expand-file-name p org-directory)) nd/org-sql-files))
+        (into
+         (lambda (fp acc)
+           (let* ((buf (find-file-noselect fp t))
+                  (tree (with-current-buffer buf
+                          (org-element-parse-buffer)))
+                  (md5sum (md5 buf))
+                  (attr (file-attributes fp))
+                  (fsize (file-attribute-size attr))
+                  (contents (org-element-contents tree))
+                  (headlines (if (assoc 'section contents)
+                                 (cdr contents)
+                               contents))
+                  (file-data (list :file_path fp
+                                   :md5 md5sum
+                                   :size fsize))
+                  (acc* (nd/alist-put acc 'files file-data)))
+             ;; acc*))))
+             (nd/org-sql-extract-headlines headlines acc* fp)))))
+    (nd/org-sql-extract paths into nil)))
 
 (defun nd/org-archive-to-db ()
   "Transfer archive files to sqlite database."
