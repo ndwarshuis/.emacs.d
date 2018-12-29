@@ -1352,7 +1352,7 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
   (setq org-capture-templates
         ;; regular TODO task
         `(("t" "todo" entry (file ,capfile)
-           "* TODO %?\n%U\ndeliverable: \n")
+           "* TODO %?\n")
 
           ;; for useful reference information that may be grouped with tasks
           ("n" "note" entry (file ,capfile)
@@ -1372,7 +1372,7 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
 
           ;; for converting mu4e emails to tasks, defaults to next-day deadline
           ("e" "email" entry (file ,capfile)
-           "* TODO Respond to %:fromname; Re: %:subject  :#laptop:\nDEADLINE: %(nd/org-timestamp-future 1)\n%U\n%a\n")
+           "* TODO Respond to %:fromname; Re: %:subject  :#laptop:\nDEADLINE: %(nd/org-timestamp-future 1)\n%a\n")
 
           ;; for interruptions that produce useful reference material
           ("m" "meeting" entry (file ,capfile)
