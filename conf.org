@@ -2688,7 +2688,7 @@ These are =org-mode=-agnostic functions that pertain to sql. They are basically 
   "Execute string SQL on database DB executing `sql-sqlite-program'.
 Returns the output of CMD. SQL should not contain any quotes as if it
 were entered on the shell."
-  (shell-command-to-string (concat sql-sqlite-program " " db " \"" sql "\"")))
+  (shell-command-to-string (format "%s %s \"%s\"" sql-sqlite-program db sql)))
   
 (defun nd/sql-escape-text (txt)
   "Escape and quote TXT in order to insert into sqlite db via 'insert'.
@@ -2717,8 +2717,8 @@ any other symbols to their symbol name."
          (col-values (-slice tbl-data 1 nil 2))
          (col-values (mapcar #'nd/sql-to-string col-values))
          (col-values (string-join col-values ",")))
-    (concat "insert into " (symbol-name tbl-name)
-            " (" col-names ") values (" col-values ");")))
+    (format "insert into %s (%s) values (%s);" (symbol-name tbl-name)
+            col-names col-values )))
 
 (defun nd/sql-construct-insert-transaction (all-data)
   "Construct transaction string to insert ALL-DATA into SQL.
@@ -2733,7 +2733,7 @@ Does not actually execute the string."
                             data)))))
          (ins (mapcar (lambda (tbl) (funcall scan-tbl tbl)) all-data))
          (ins (string-join ins)))
-    (concat "begin transaction;" ins "commit;")))
+    (format "begin transaction; %s commit;" ins)))
 
 (defun nd/sql-insert (db tbl-name tbl-data)
   "Insert list TBL-DATA into TBL-NAME in sqlite database DB."
