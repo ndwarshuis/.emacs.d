@@ -2805,15 +2805,13 @@ size INTEGER NOT NULL,
 time_modified DATE,
 time_created DATE,
 time_accessed DATE);"
-  "Schema to build the files table in the org archive db.")
+  "Schema to build the files table in the org db.")
 
 (defconst nd/org-sqlite-header-schema
   "CREATE TABLE headlines (
-archive_file_path TEXT,
-headline_file_offset INTEGER,
-archive_tree_path TEXT,
-source_file_path TEXT NOT NULL,
-source_tree_path TEXT,
+file_path TEXT,
+headline_offset INTEGER,
+tree_path TEXT,
 headline_text TEXT NOT NULL,
 time_created DATE,
 time_closed DATE,
@@ -2823,95 +2821,95 @@ keyword TEXT,
 effort INTEGER,
 priority INTEGER,
 content TEXT,
-PRIMARY KEY (archive_file_path ASC, headline_file_offset ASC)
-FOREIGN KEY (archive_file_path) REFERENCES files (file_path));"
-  "Schema to build the headers table in the org archive db.")
+PRIMARY KEY (file_path ASC, headline_offset ASC)
+FOREIGN KEY (file_path) REFERENCES files (file_path));"
+  "Schema to build the headers table in the org db.")
 
 (defconst nd/org-sqlite-tags-schema
   "CREATE TABLE tags (
-archive_file_path TEXT,
-headline_file_offset INTEGER,
+file_path TEXT,
+headline_offset INTEGER,
 tag TEXT,
 inherited BOOLEAN,
-FOREIGN KEY (archive_file_path, headline_file_offset)
-REFERENCES headlines (archive_file_path, headline_file_offset),
-PRIMARY KEY (archive_file_path, headline_file_offset, tag, inherited));"
-  "Schema to build the tags table in the org archive db.")
+FOREIGN KEY (file_path, headline_offset)
+REFERENCES headlines (file_path, headline_offset),
+PRIMARY KEY (file_path, headline_offset, tag, inherited));"
+  "Schema to build the tags table in the org db.")
 
 (defconst nd/org-sqlite-properties-schema
   "CREATE TABLE properties (
-archive_file_path TEXT,
-headline_file_offset INTEGER,
-property_file_offset INTEGER,
+file_path TEXT,
+headline_offset INTEGER,
+property_offset INTEGER,
 key_text TEXT NOT NULL,
 val_text TEXT NOT NULL,
 inherited BOOLEAN,
-FOREIGN KEY (archive_file_path, headline_file_offset)
-REFERENCES headlines (archive_file_path, headline_file_offset),
-PRIMARY KEY (archive_file_path ASC, property_file_offset ASC));"
-  "Schema to build the properties table in the org archive db.")
+FOREIGN KEY (file_path, headline_offset)
+REFERENCES headlines (file_path, headline_offset),
+PRIMARY KEY (file_path ASC, property_offset ASC));"
+  "Schema to build the properties table in the org db.")
 
 (defconst nd/org-sqlite-clocking-schema
   "CREATE TABLE clocking (
-archive_file_path TEXT,
-headline_file_offset INTEGER,
-clock_file_offset INTEGER,
+file_path TEXT,
+headline_offset INTEGER,
+clock_offset INTEGER,
 time_start DATE,
 time_end DATE,
 clock_note TEXT,
-FOREIGN KEY (archive_file_path, headline_file_offset)
-REFERENCES headlines (archive_file_path, headline_file_offset),
-PRIMARY KEY (archive_file_path ASC, clock_file_offset ASC));"
-  "Schema to build the clocking table in the org archive db.")
+FOREIGN KEY (file_path, headline_offset)
+REFERENCES headlines (file_path, headline_offset),
+PRIMARY KEY (file_path ASC, clock_offset ASC));"
+  "Schema to build the clocking table in the org db.")
 
 (defconst nd/org-sqlite-logbook-schema
   "CREATE TABLE logbook (
-archive_file_path TEXT,
-headline_file_offset INTEGER,
-entry_file_offset INTEGER,
+file_path TEXT,
+headline_offset INTEGER,
+entry_offset INTEGER,
 time_logged DATE,
 header TEXT,
 note TEXT,
-FOREIGN KEY (archive_file_path, headline_file_offset)
-REFERENCES headlines (archive_file_path, headline_file_offset),
-PRIMARY KEY (archive_file_path ASC, entry_file_offset ASC));"
-  "Schema to build the logbook table in the org archive db.")
+FOREIGN KEY (file_path, headline_offset)
+REFERENCES headlines (file_path, headline_offset),
+PRIMARY KEY (file_path ASC, entry_offset ASC));"
+  "Schema to build the logbook table in the org db.")
 
 (defconst nd/org-sqlite-state-changes-schema
   "CREATE TABLE state_changes (
-archive_file_path TEXT,
-entry_file_offset INTEGER,
+file_path TEXT,
+entry_offset INTEGER,
 state_old TEXT NOT NULL,
 state_new TEXT NOT NULL,
-FOREIGN KEY (archive_file_path, entry_file_offset)
-REFERENCES headlines (archive_file_path, headline_file_offset),
-PRIMARY KEY (archive_file_path ASC, entry_file_offset ASC));"
-  "Schema to build the state_changes table in the org archive db.")
+FOREIGN KEY (file_path, entry_offset)
+REFERENCES headlines (file_path, headline_offset),
+PRIMARY KEY (file_path ASC, entry_offset ASC));"
+  "Schema to build the state_changes table in the org db.")
 
 (defconst nd/org-sqlite-planning-changes-schema
   "CREATE TABLE planning_changes (
-archive_file_path TEXT,
-entry_file_offset INTEGER,
+file_path TEXT,
+entry_offset INTEGER,
 time_old DATE NOT NULL,
 time_new DATE,
 planning_type TEXT CHECK (planning_type = \\\"d\\\" or (planning_type = \\\"s\\\")),
-FOREIGN KEY (archive_file_path, entry_file_offset)
-REFERENCES logbook (archive_file_path, entry_file_offset),
-PRIMARY KEY (archive_file_path ASC, entry_file_offset ASC));"
-  "Schema to build the planning_changes table in the org archive db.")
+FOREIGN KEY (file_path, entry_offset)
+REFERENCES logbook (file_path, entry_offset),
+PRIMARY KEY (file_path ASC, entry_offset ASC));"
+  "Schema to build the planning_changes table in the org db.")
 
 (defconst nd/org-sqlite-links-schema
   "CREATE TABLE links (
-archive_file_path TEXT,
-headline_file_offset INTEGER,
-link_file_offset INTEGER,
+file_path TEXT,
+headline_offset INTEGER,
+link_offset INTEGER,
 link_path TEXT,
 link_text TEXT,
 link_type TEXT,
-FOREIGN KEY (archive_file_path, headline_file_offset)
-REFERENCES headlines (archive_file_path, headline_file_offset),
-PRIMARY KEY (archive_file_path ASC, link_file_offset ASC));"
-  "Schema to build the links table in the org archive db.")
+FOREIGN KEY (file_path, headline_offset)
+REFERENCES headlines (file_path, headline_offset),
+PRIMARY KEY (file_path ASC, link_offset ASC));"
+  "Schema to build the links table in the org db.")
 #+END_SRC
 **** org element functions
 These are functions that operate on org-element objects to parse for insertion into the db.
@@ -3008,8 +3006,7 @@ parent until found or return nil if unfruitful."
   "Path for the sqlite database that holds archive data.")
   
 (defconst nd/org-sql-ignored-properties
-  '("ARCHIVE_TIME" "ARCHIVE_FILE" "ARCHIVE_OLPATH" "ARCHIVE_CATEGORY"
-    "ARCHIVE_ITAGS" "ARCHIVE_TODO" "Effort" "CREATED")
+  '("ARCHIVE_ITAGS" "Effort" "CREATED")
   "Property keys to be ignored when inserting in properties table. 
 It is assumed these are used elsewhere and thus it would be redundant 
 to store them.")
@@ -3238,8 +3235,8 @@ nothing is added if a match is not found."
      ((eq type 'state)
       (let* ((state-old (match-string 3 header-text))
              (state-new (match-string 1 header-text))
-             (state-data (list :archive_file_path fp
-                               :entry_file_offset item-offset
+             (state-data (list :file_path fp
+                               :entry_offset item-offset
                                :state_old state-old
                                :state_new state-new)))
         (nd/alist-put acc 'state_changes state-data)))
@@ -3251,8 +3248,8 @@ nothing is added if a match is not found."
                             :deadline))
              (time-new (nd/org-element-timestamp-raw planning-kw hl t))
              (planning-type (if (eq :scheduled planning-kw) "s" "d"))
-             (planning-data (list :archive_file_path fp
-                                  :entry_file_offset item-offset
+             (planning-data (list :file_path fp
+                                  :entry_offset item-offset
                                   :time_old time-old
                                   :time_new time-new
                                   :planning_type planning-type)))
@@ -3290,9 +3287,9 @@ ITEM-PART is a partitioned logbook item as described in
          (time-logged (nd/org-element-note-get-time-logged item-part))
          (hdr-text (alist-get :header-text item-part))
          (note-text (alist-get :note-text item-part))
-         (logbook-data (list :archive_file_path fp
-                             :headline_file_offset hl-offset
-                             :entry_file_offset item-offset
+         (logbook-data (list :file_path fp
+                             :headline_offset hl-offset
+                             :entry_offset item-offset
                              :time_logged time-logged
                              :header hdr-text
                              :note note-text))
@@ -3329,9 +3326,9 @@ added to the clock, else add it as a normal logbook entry."
          (ts-range (nd/org-logbook-parse-timestamp-range ts-obj))
          (start (car ts-range))
          (end (cdr ts-range))
-         (clock-data (list :archive_file_path fp
-                           :headline_file_offset hl-offset
-                           :clock_file_offset cl-offset
+         (clock-data (list :file_path fp
+                           :headline_offset hl-offset
+                           :clock_offset cl-offset
                            :time_start start
                            :time_end end)))
     (if (not item)
@@ -3425,6 +3422,13 @@ HL-PART is an object as returned by `nd/org-sql-partition-headline'."
                 (funcall scan rem acc*))))))
     (funcall scan lb-contents acc)))
 
+(defun nd/org-sql-parse-ts-maybe (txt)
+  "If TXT is a timestamp, return it in ISO 8601 format.
+Otherwise return it unchanged."
+  ;; assume the iso parser to return nil on failure
+  (let ((txt* (nd/org-ts-format-to-iso txt)))
+    (if txt* txt* txt)))
+
 (defun nd/org-sql-extract-properties (hl-part acc)
    "Add properties data from HL-PART and add to accumulator ACC.
 HL-PART is an object as returned by `nd/org-sql-partition-headline'."
@@ -3441,9 +3445,10 @@ HL-PART is an object as returned by `nd/org-sql-partition-headline'."
                        (hl-offset (org-element-property :begin hl))
                        (np-offset (org-element-property :begin np))
                        (val (org-element-property :value np))
-                       (prop-data (list :archive_file_path fp
-                                        :headline_file_offset hl-offset
-                                        :property_file_offset np-offset
+                       (val (nd/org-sql-parse-ts-maybe val))
+                       (prop-data (list :file_path fp
+                                        :headline_offset hl-offset
+                                        :property_offset np-offset
                                         :key_text key
                                         :val_text val
                                         ;; TODO add inherited flag
@@ -3455,6 +3460,7 @@ HL-PART is an object as returned by `nd/org-sql-partition-headline'."
   "Extract tags data from HL-PART and add to accumulator ACC.
 HL-PART is an object as returned by `nd/org-sql-partition-headline'."
   (let* ((hl (alist-get :headline hl-part))
+         ;; first retrieve tags and strip text props and whitespace
          (tags (org-element-property :tags hl))
          (tags (mapcar #'nd/strip-string tags))
          ;; then retrieve i-tags, optionally going up to parents
@@ -3469,8 +3475,8 @@ HL-PART is an object as returned by `nd/org-sql-partition-headline'."
                    (fp (alist-get :filepath hl-part))
                    (offset (org-element-property :begin hl))
                    (i (if inherited 1 0))
-                   (tags-data (list :archive_file_path fp
-                                    :headline_file_offset offset
+                   (tags-data (list :file_path fp
+                                    :headline_offset offset
                                     :tag tag
                                     :inherited i)))
               (nd/alist-put acc 'tags tags-data))))
@@ -3504,9 +3510,9 @@ HL-PART is an object as returned by `nd/org-sql-partition-headline'."
                      (ln-text (mapcar #'nd/strip-string ln-text))
                      (ln-text (string-join ln-text))
                      (ln-type (org-element-property :type ln))
-                     (ln-data (list :archive_file_path fp
-                                    :headline_file_offset hl-offset
-                                    :link_file_offset ln-offset
+                     (ln-data (list :file_path fp
+                                    :headline_offset hl-offset
+                                    :link_offset ln-offset
                                     :link_path ln-path
                                     :link_text ln-text
                                     :link_type ln-type)))
@@ -3520,8 +3526,6 @@ HL-PART is an object as returned by `nd/org-sql-partition-headline'."
          (hl (alist-get :headline hl-part))
          (offset (org-element-property :begin hl))
          (rxv-tp (nd/org-element-get-parent-tree hl))
-         (src-fp (nd/org-element-property-inherited :ARCHIVE_FILE hl))
-         (src-tp (nd/org-element-property-inherited :ARCHIVE_OLPATH hl))
          (hl-txt (org-element-property :raw-value hl))
          (t-created (org-element-property :CREATED hl))
          (t-created (nd/org-ts-format-to-iso t-created))
@@ -3538,11 +3542,9 @@ HL-PART is an object as returned by `nd/org-sql-partition-headline'."
          ;; (hl-contents-text (when hl-contents-text
          ;;                     (string-trim
          ;;                      (substring-no-properties hl-contents-text))))
-         (hl-data (list :archive_file_path fp
-                        :headline_file_offset offset
-                        :archive_tree_path rxv-tp
-                        :source_file_path src-fp
-                        :source_tree_path src-tp
+         (hl-data (list :file_path fp
+                        :headline_offset offset
+                        :tree_path rxv-tp
                         :headline_text hl-txt
                         :time_created t-created
                         :time_closed t-closed
@@ -3591,7 +3593,6 @@ FP is the path to the file containing the headlines."
                                    :md5 md5sum
                                    :size fsize))
                   (acc* (nd/alist-put acc 'files file-data)))
-             ;; acc*))))
              (nd/org-sql-extract-headlines headlines acc* fp)))))
     (nd/org-sql-extract paths into nil)))
 
