@@ -2821,8 +2821,9 @@ keyword TEXT,
 effort INTEGER,
 priority INTEGER,
 content TEXT,
-PRIMARY KEY (file_path ASC, headline_offset ASC)
-FOREIGN KEY (file_path) REFERENCES files (file_path));"
+PRIMARY KEY (file_path ASC, headline_offset ASC),
+FOREIGN KEY (file_path) REFERENCES files (file_path)
+ON DELETE CASCADE);"
   "Schema to build the headers table in the org db.")
 
 (defconst nd/org-sqlite-tags-schema
@@ -2832,7 +2833,8 @@ headline_offset INTEGER,
 tag TEXT,
 inherited BOOLEAN,
 FOREIGN KEY (file_path, headline_offset)
-REFERENCES headlines (file_path, headline_offset),
+REFERENCES headlines (file_path, headline_offset)
+ON DELETE CASCADE,
 PRIMARY KEY (file_path, headline_offset, tag, inherited));"
   "Schema to build the tags table in the org db.")
 
@@ -2845,7 +2847,8 @@ key_text TEXT NOT NULL,
 val_text TEXT NOT NULL,
 inherited BOOLEAN,
 FOREIGN KEY (file_path, headline_offset)
-REFERENCES headlines (file_path, headline_offset),
+REFERENCES headlines (file_path, headline_offset)
+ON DELETE CASCADE,
 PRIMARY KEY (file_path ASC, property_offset ASC));"
   "Schema to build the properties table in the org db.")
 
@@ -2858,7 +2861,8 @@ time_start DATE,
 time_end DATE,
 clock_note TEXT,
 FOREIGN KEY (file_path, headline_offset)
-REFERENCES headlines (file_path, headline_offset),
+REFERENCES headlines (file_path, headline_offset)
+ON DELETE CASCADE,
 PRIMARY KEY (file_path ASC, clock_offset ASC));"
   "Schema to build the clocking table in the org db.")
 
@@ -2871,7 +2875,8 @@ time_logged DATE,
 header TEXT,
 note TEXT,
 FOREIGN KEY (file_path, headline_offset)
-REFERENCES headlines (file_path, headline_offset),
+REFERENCES headlines (file_path, headline_offset)
+ON DELETE CASCADE,
 PRIMARY KEY (file_path ASC, entry_offset ASC));"
   "Schema to build the logbook table in the org db.")
 
@@ -2882,7 +2887,8 @@ entry_offset INTEGER,
 state_old TEXT NOT NULL,
 state_new TEXT NOT NULL,
 FOREIGN KEY (file_path, entry_offset)
-REFERENCES headlines (file_path, headline_offset),
+REFERENCES headlines (file_path, headline_offset)
+ON DELETE CASCADE,
 PRIMARY KEY (file_path ASC, entry_offset ASC));"
   "Schema to build the state_changes table in the org db.")
 
@@ -2894,7 +2900,8 @@ time_old DATE NOT NULL,
 time_new DATE,
 planning_type TEXT CHECK (planning_type = \\\"d\\\" or (planning_type = \\\"s\\\")),
 FOREIGN KEY (file_path, entry_offset)
-REFERENCES logbook (file_path, entry_offset),
+REFERENCES logbook (file_path, entry_offset)
+ON DELETE CASCADE,
 PRIMARY KEY (file_path ASC, entry_offset ASC));"
   "Schema to build the planning_changes table in the org db.")
 
@@ -2907,7 +2914,8 @@ link_path TEXT,
 link_text TEXT,
 link_type TEXT,
 FOREIGN KEY (file_path, headline_offset)
-REFERENCES headlines (file_path, headline_offset),
+REFERENCES headlines (file_path, headline_offset)
+ON DELETE CASCADE,
 PRIMARY KEY (file_path ASC, link_offset ASC));"
   "Schema to build the links table in the org db.")
 #+END_SRC
