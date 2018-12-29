@@ -3203,7 +3203,8 @@ These are the main functions to populate the db.
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-clocking-schema)
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-logbook-schema)
     (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-state-changes-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-planning-changes-schema)))
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-planning-changes-schema)
+    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-links-schema)))
 
 (defun nd/org-sql-extract-lb-header (item-part &optional acc)
   "Add specific data from logbook entry ITEM-PART to accumulator ACC.
@@ -3483,6 +3484,48 @@ HL-PART is an object as returned by `nd/org-sql-partition-headline'."
          (acc* (funcall scan tags hl-part acc)))
     (funcall scan i-tags hl-part acc* t)))
 
+(defun nd/org-sql-extract-scanner (objs fun acc &rest args)
+  "Recursively iterate through OBJS and add them to accumulator ACC.
+FUN is a function that takes a single object from OBJS, processes it,
+and adds it to ACC before returning a new ACC. Remaining ARGS will be
+passed to FUN."
+  (if (not objs)
+      acc
+    (let* ((cur (car objs))
+           (rem (cdr objs))
+           (acc* (apply fun cur acc args)))
+      (apply #'nd/org-sql-extract-scanner rem fun acc args))))
+
+(defun nd/org-sql-extract-links (hl-part &optional acc)
+  "Add link data from headline HL-PART to accumulator ACC.
+HL-PART is an object as returned by `nd/org-sql-partition-headline'."
+  (let* ((sec (alist-get :section hl-part))
+         (links (org-element-map sec 'link #'identity))
+         (scan
+          (lambda (links hl-part &optional acc)
+            (if (not links)
+                acc
+              (let* ((cur (car links))
+                     (rem (cdr links))
+                     (fp (alist-get :filepath hl-part))
+                     (hl (alist-get :headline hl-part))
+                     (hl-offset (org-element-property :begin hl))
+                     (ln-offset (org-element-property :begin cur))
+                     (ln-path (org-element-property :path cur))
+                     (ln-text (org-element-contents cur))
+                     (ln-text (mapcar #'nd/strip-string ln-text))
+                     (ln-text (string-join ln-text))
+                     (ln-type (org-element-property :type cur))
+                     (ln-data (list :archive_file_path fp
+                                    :headline_file_offset hl-offset
+                                    :link_file_offset ln-offset
+                                    :link_path ln-path
+                                    :link_text ln-text
+                                    :link_type ln-type))
+                     (acc* (nd/alist-put acc 'links ln-data)))
+                (funcall scan rem hl-part acc*))))))
+    (funcall scan links hl-part acc)))
+
 (defun nd/org-sql-extract-headline (hl-part &optional acc)
   "Add general data from headline HL-PART to accumulator ACC.
 HL-PART is an object as returned by `nd/org-sql-partition-headline'."
@@ -3534,8 +3577,9 @@ FP is the file path containing the headlines."
            (hl-part (nd/org-sql-partition-headline cur fp))
            (hl-sub (alist-get :subheadlines hl-part))
            (acc* (nd/org-sql-extract-headline hl-part acc))
-           ;; (acc* (nd/org-sql-extract-tags hl-part acc*))
-           ;; (acc* (nd/org-sql-extract-properties hl-part acc*))
+           (acc* (nd/org-sql-extract-links hl-part acc*))
+           (acc* (nd/org-sql-extract-tags hl-part acc*))
+           (acc* (nd/org-sql-extract-properties hl-part acc*))
            (acc* (nd/org-sql-extract-lb hl-part acc*))
            (acc* (nd/org-sql-extract-headlines-all hl-sub fp acc*)))
       (nd/org-sql-extract-headlines-all rem fp acc*))))
