@@ -2684,12 +2684,59 @@ These are =org-mode=-agnostic functions that pertain to sql. They are basically 
 #+BEGIN_SRC emacs-lisp
 (require 'sql)
 
-(defun nd/sql-cmd (db cmd)
-  "Execute string CMD on database DB executing `sql-sqlite-program'.
-Returns the output of CMD. SQL should not contain any quotes as if it
-were entered on the shell."
-  (shell-command-to-string (format "%s %s \"%s\"" sql-sqlite-program db cmd)))
-  
+;; this needs a better home :/
+(defun nd/alist-put (alist prop value &optional front)
+  "For given ALIST, append VALUE to the current values in prop.
+Current values (that is the cdr of each key) is assumed to be a list.
+If PROP does not exist, create it. Return the new alist. If FRONT is 
+t, add to the front of current values list instead of the back."
+  (let* ((cur-cell (assoc prop alist))
+         (cur-values (cdr cur-cell)))
+      (cond
+       (cur-values
+        (let ((new-cdr (if front
+                           `(,value ,@cur-values)
+                         `(,@cur-values ,value))))
+          (setcdr cur-cell new-cdr) alist))
+       (cur-cell
+        (setcdr cur-cell `(,value)) alist)
+       (alist
+        (append alist `((,prop ,value))))
+       (t 
+        `((,prop ,value))))))
+
+;; this somehow doesn't exist O.o
+;; this also needs a better home :/
+(defun nd/sql-plist-get-vals(plist)
+  "Return all the values in PLIST."
+  (-slice plist 1 nil 2))
+
+;; (defun nd/sql-construct-insert-transaction (all-data)
+;;   "Construct transaction string to insert ALL-DATA into SQL.
+;; Does not actually execute the string."
+;;   (let* ((scan-tbl
+;;           (lambda (tbl)
+;;             (let ((name (car tbl))
+;;                   (data (cdr tbl)))
+;;               (string-join (mapcar
+;;                             (lambda (d)
+;;                               (nd/sql-construct-insert name d))
+;;                             data)))))
+;;          (ins (mapcar (lambda (tbl) (funcall scan-tbl tbl)) all-data))
+;;          (ins (string-join ins)))
+;;     (format "begin transaction; %s commit;" ins)))
+
+;; SQL string parsing functions
+(defun nd/sql-to-plist (out &rest cols)
+  "Parse SQL output string OUT to an plist representing the data.
+COLS are the column names as symbols used to obtain OUT."
+  (unless (equal out "")
+    (let* ((out-trim (string-trim out))
+           (row-data (split-string out-trim "\n"))
+           (cell-data (mapcar (lambda (s) (split-string s "|")) row-data)))
+      (mapcar (lambda (d) (cl-mapcan #'list cols d)) cell-data))))
+
+;; sql to string functions
 (defun nd/sql-escape-text (txt)
   "Escape and quote TXT in order to insert into sqlite db via 'insert'.
 This assumes the insertion command will be run on a shell where the
@@ -2706,34 +2753,124 @@ any other symbols to their symbol name."
         ((numberp entry) (number-to-string entry))
         (entry (symbol-name entry))
         (t "NULL")))
-    
-(defun nd/sql-construct-insert (tbl-name tbl-data)
-  "Concatenate DATA into escaped comma-separated string for SQL insertion."
-  ;; column names are the properties in the plist
-  (let* ((col-names (-slice tbl-data 0 nil 2))
+
+(defun nd/sql-kw-to-colname (kw)
+  "Return string representation of KW for column in sql database."
+  (substring (symbol-name kw) 1))
+
+(defun nd/sql-plist-concat (plist &optional sep)
+  "Concatenate a PLIST to string to be used in a SQL statement.
+Returns a string formatted like 'prop1 = value1 SEP prop2 = value2'
+from a plist like '(:prop1 value1 :prop2 value2)."
+  (let* ((sep (or sep ","))
+         (keys (plist-get-keys plist))
+         (keys (mapcar #'nd/sql-kw-to-colname keys))
+         (vals (nd/sql-plist-get-vals plist))
+         (vals (mapcar #'nd/sql-to-string vals))
+         (str (mapcar* (lambda (k v) (format "%s=%s" k v)) keys vals)))
+    (string-join str sep)))
+
+;; SQL formatting functions
+(defun nd/org-sql-fmt-insert (tbl-name tbl-data)
+  "Format SQL insert command from TBL-NAME and TBL-DATA."
+  (let* ((col-names (plist-get-keys tbl-data))
          (col-names (mapcar (lambda (s) (substring (symbol-name s) 1)) col-names))
          (col-names (string-join col-names ","))
-         ;; column values are the values of each property
-         (col-values (-slice tbl-data 1 nil 2))
+         (col-values (nd/sql-plist-get-vals tbl-data))
          (col-values (mapcar #'nd/sql-to-string col-values))
          (col-values (string-join col-values ",")))
     (format "insert into %s (%s) values (%s);" (symbol-name tbl-name)
             col-names col-values )))
 
-(defun nd/sql-construct-insert-transaction (all-data)
-  "Construct transaction string to insert ALL-DATA into SQL.
-Does not actually execute the string."
-  (let* ((scan-tbl
-          (lambda (tbl)
-            (let ((name (car tbl))
-                  (data (cdr tbl)))
-              (string-join (mapcar
-                            (lambda (d)
-                              (nd/sql-construct-insert name d))
-                            data)))))
-         (ins (mapcar (lambda (tbl) (funcall scan-tbl tbl)) all-data))
-         (ins (string-join ins)))
-    (format "begin transaction; %s commit;" ins)))
+(defun nd/org-sql-fmt-update (tbl-name update)
+  "Format SQL update command from TBL-NAME, UPDATE, and CONDS."
+  (let ((upd-str (nd/sql-plist-concat (car update)))
+        (conds-str (nd/sql-plist-concat (cdr update) " and ")))
+    (format "update %s set %s where %s;" (symbol-name tbl-name)
+            upd-str conds-str)))
+
+(defun nd/org-sql-fmt-delete (tbl-name conds)
+  "Format SQL update command from TBL-NAME and CONDS."
+  (let ((conds-str (nd/sql-plist-concat conds " and ")))
+    (format "delete from %s where %s;" (symbol-name tbl-name) conds-str)))
+
+(defun nd/org-sql-fmt-trans (sql-str)
+  "Format SQL transaction from list of SQL commands as strings SQL-STR."
+  (when sql-str
+    (nd/org-sql->> sql-str
+                   (-flatten)
+                   (string-join)
+                   (format "begin transaction; %s commit;"))))
+
+(defun nd/org-sql-fmt-multi (tbl fun)
+  (let ((name (car tbl))
+        (data (cdr tbl)))
+    (mapcar (lambda (r) (funcall fun name r)) data)))
+
+(defun nd/org-sql-fmt-inserts (tbl)
+  (nd/org-sql-fmt-multi tbl #'nd/org-sql-fmt-insert))
+
+(defun nd/org-sql-fmt-updates (tbl)
+  (nd/org-sql-fmt-multi tbl #'nd/org-sql-fmt-update))
+
+(defun nd/org-sql-fmt-deletes (tbl)
+  (nd/org-sql-fmt-multi tbl #'nd/org-sql-fmt-delete))
+  
+;; SQL command abstractions
+(defun nd/sql-cmd (db cmd &optional show-err foreign-keys)
+  "Execute string CMD on database DB executing `sql-sqlite-program'.
+Returns the output of CMD. SQL should not contain any quotes as if it
+were entered on the shell."
+  (when cmd 
+    (let* ((err (if show-err "" " 2> /dev/null"))
+           (pragma (if foreign-keys
+                       "PRAGMA foreign_keys = ON;"
+                     "PRAGMA foreign_keys = OFF;"))
+           ;; TODO, there has to be a better way to fix this foreign key bs
+           (cmd (format "%s %s \"%s%s\"%s" sql-sqlite-program db pragma cmd err)))
+      (shell-command-to-string cmd))))
+
+(defun nd/sql-select (db tbl-name cols &optional conds)
+  "Select columns from TBL-NAME in DB where COLS is the list of columns.
+If COLS is nil, all columns will be returned. Columns is expected as
+a list of keywords like ':col1' and :col2'. CONDS, if supplied, is
+a plist of conditions to test in the select statement. (currently
+joined by AND)"
+  (let* ((colnames
+          (if (not cols) "*"
+            (string-join
+             (mapcar (lambda (s) (substring (symbol-name s) 1)) cols)
+             ",")))
+         (tbl-str (symbol-name tbl-name))
+         (cmd (if (not conds)
+                  (format "select %s from %s;" colnames tbl-str)
+                (let ((conds-str (nd/sql-plist-concat conds " and ")))
+                  (format "select %s from %s where %s;" colnames
+                          tbl-str conds-str))))
+         (out (nd/sql-cmd db cmd)))
+    (apply #'nd/sql-to-plist out cols)))
+
+(defun nd/sql-delete (db tbl-name conds)
+  "Delete records from TBL-NAME in DB where CONDS are true.
+CONDS is a plist of column names and values, '(:col1 val1 :col2 val2)',
+where values will be deleted if the listed columns have the listed
+values (AND condition)."
+  (let* ((conds-str (nd/sql-plist-concat " and "))
+         (cmd (format "delete from %s where %s;"
+                      (symbol-name tbl-name) conds-str)))
+    (nd/sql-cmd db cmd)))
+
+(defun nd/sql-update (db tbl-name update conds)
+  "Update records in TBL-NAME in DB with UPDATE where CONDS are true.
+VALUES is a plist containing the columns and new values as
+'(col1: newval1 col2: newval2) and CONDS is a similar plist
+where columns in UPDATE will be updated if values matching those in
+CONDS are found (AND condition)."
+  (let* ((upd-str (nd/sql-plist-concat update))
+         (conds-str (nd/sql-plist-to-condition conds " and "))
+         (cmd (format "update %s set %s where %s;"
+                      (symbol-name tbl-name) upd-str conds-str)))
+    (nd/sql-cmd db cmd)))
 
 (defun nd/sql-insert (db tbl-name tbl-data)
   "Insert list TBL-DATA into TBL-NAME in sqlite database DB."
@@ -2742,70 +2879,6 @@ Does not actually execute the string."
 (defun nd/sql-insert-multi (db all-data)
   "Insert ALL-DATA into sqlite DB."
   (nd/sql-cmd db (nd/sql-construct-insert-transaction all-data)))
-
-(defun nd/alist-put (alist prop value &optional front)
-  "For given ALIST, append VALUE to the current values in prop.
-Current values (that is the cdr of each key) is assumed to be a list.
-If PROP does not exist, create it. Return the new alist. If FRONT is 
-t, add to the front of current values list instead of the back."
-  (let* ((cur-cell (assoc prop alist))
-         (cur-values (cdr cur-cell)))
-    (cond
-     (cur-values
-      (let ((new-cdr (if front
-                         `(,value ,@cur-values)
-                       `(,@cur-values ,value))))
-        (setcdr cur-cell new-cdr) alist))
-     (cur-cell
-      (setcdr cur-cell `(,value)) alist)
-     (alist
-      (append alist `((,prop ,value))))
-     (t 
-      `((,prop ,value))))))
-
-(defun nd/sql-to-plist (out &rest cols)
-  "Parse SQL output string OUT to an plist representing the data.
-COLS are the column names as symbols used to obtain OUT."
-  (let* ((out-trim (string-trim out))
-         (row-data (split-string out-trim "\n"))
-         (cell-data (mapcar (lambda (s) (split-string s "|")) row-data)))
-    (mapcar (lambda (d) (cl-mapcan #'list cols d)) cell-data)))
-
-(defun nd/sql-select (db tbl-name &rest cols)
-  "Select columns from TBL-NAME in DB where COLS is the list of columns.
-If COLS is nil, all columns will be returned. Columns is expected as
-a list of keywords like ':col1' and :col2'."
-  (let* ((colnames
-          (if (not cols) "*"
-            (string-join
-             (mapcar (lambda (s) (substring (symbol-name s) 1)) cols)
-             ",")))
-         (cmd (format "select %s from %s;" colnames (symbol-name tbl-name)))
-         (out (nd/sql-cmd db cmd)))
-    (apply #'nd/sql-to-plist out cols)))
-
-;; this somehow doesn't exist O.o
-(defun nd/sql-plist-get-vals(plist)
-  "Return all the values in PLIST."
-  (-slice plist 1 nil 2))
-
-(defun nd/sql-kw-to-colname (kw)
-  "Returns string representation of KW for column in sql database."
-  (substring (symbol-name kw) 1))
-
-(defun nd/sql-delete (db tbl-name cols)
-  "Delete records from TBL-NAME in DB where COLS are true.
-COND is a plist of column names and values, '(:col1 val1 :col2 val2)',
-where values will be deleted if the listed columns have the listed
-values (AND condition)."
-  (let* ((keys (plist-get-keys cols))
-         (keys (mapcar #'nd/sql-kw-to-colname keys))
-         (vals (nd/sql-plist-get-vals cols))
-         (vals (mapcar #'nd/sql-to-string vals))
-         (conds-str (mapcar* (lambda (k v) (format "%s=%s" k v)) keys vals))
-         (conds-str (string-join conds-str " and "))
-         (cmd (format "delete from %s where %s;" (symbol-name tbl-name) conds-str)))
-    (nd/sql-cmd db cmd)))
 #+END_SRC
 **** org parsing function
 Basic functions to parse org strings
@@ -2841,17 +2914,15 @@ If TS is nil or TS cannot be understood, nil will be returned."
 #+END_SRC
 **** org sql schemas
 #+BEGIN_SRC emacs-lisp
-(defconst nd/org-sqlite-files-schema
-  "CREATE TABLE files (
+(defconst nd/org-sql-schemas
+  '("CREATE TABLE files (
 file_path TEXT PRIMARY KEY ASC,
 md5 TEXT NOT NULL,
 size INTEGER NOT NULL,
 time_modified DATE,
 time_created DATE,
 time_accessed DATE);"
-  "Schema to build the files table in the org db.")
 
-(defconst nd/org-sqlite-header-schema
   "CREATE TABLE headlines (
 file_path TEXT,
 headline_offset INTEGER,
@@ -2867,10 +2938,9 @@ priority INTEGER,
 content TEXT,
 PRIMARY KEY (file_path ASC, headline_offset ASC),
 FOREIGN KEY (file_path) REFERENCES files (file_path)
+ON UPDATE CASCADE
 ON DELETE CASCADE);"
-  "Schema to build the headers table in the org db.")
 
-(defconst nd/org-sqlite-tags-schema
   "CREATE TABLE tags (
 file_path TEXT,
 headline_offset INTEGER,
@@ -2878,11 +2948,10 @@ tag TEXT,
 inherited BOOLEAN,
 FOREIGN KEY (file_path, headline_offset)
 REFERENCES headlines (file_path, headline_offset)
+ON UPDATE CASCADE
 ON DELETE CASCADE,
 PRIMARY KEY (file_path, headline_offset, tag, inherited));"
-  "Schema to build the tags table in the org db.")
 
-(defconst nd/org-sqlite-properties-schema
   "CREATE TABLE properties (
 file_path TEXT,
 headline_offset INTEGER,
@@ -2892,11 +2961,10 @@ val_text TEXT NOT NULL,
 inherited BOOLEAN,
 FOREIGN KEY (file_path, headline_offset)
 REFERENCES headlines (file_path, headline_offset)
+ON UPDATE CASCADE
 ON DELETE CASCADE,
 PRIMARY KEY (file_path ASC, property_offset ASC));"
-  "Schema to build the properties table in the org db.")
 
-(defconst nd/org-sqlite-clocking-schema
   "CREATE TABLE clocking (
 file_path TEXT,
 headline_offset INTEGER,
@@ -2906,11 +2974,10 @@ time_end DATE,
 clock_note TEXT,
 FOREIGN KEY (file_path, headline_offset)
 REFERENCES headlines (file_path, headline_offset)
+ON UPDATE CASCADE
 ON DELETE CASCADE,
 PRIMARY KEY (file_path ASC, clock_offset ASC));"
-  "Schema to build the clocking table in the org db.")
 
-(defconst nd/org-sqlite-logbook-schema
   "CREATE TABLE logbook (
 file_path TEXT,
 headline_offset INTEGER,
@@ -2920,23 +2987,21 @@ header TEXT,
 note TEXT,
 FOREIGN KEY (file_path, headline_offset)
 REFERENCES headlines (file_path, headline_offset)
+ON UPDATE CASCADE
 ON DELETE CASCADE,
 PRIMARY KEY (file_path ASC, entry_offset ASC));"
-  "Schema to build the logbook table in the org db.")
 
-(defconst nd/org-sqlite-state-changes-schema
   "CREATE TABLE state_changes (
 file_path TEXT,
 entry_offset INTEGER,
 state_old TEXT NOT NULL,
 state_new TEXT NOT NULL,
 FOREIGN KEY (file_path, entry_offset)
-REFERENCES headlines (file_path, headline_offset)
+REFERENCES logbook (file_path, entry_offset)
+ON UPDATE CASCADE
 ON DELETE CASCADE,
 PRIMARY KEY (file_path ASC, entry_offset ASC));"
-  "Schema to build the state_changes table in the org db.")
 
-(defconst nd/org-sqlite-planning-changes-schema
   "CREATE TABLE planning_changes (
 file_path TEXT,
 entry_offset INTEGER,
@@ -2945,11 +3010,10 @@ time_new DATE,
 planning_type TEXT CHECK (planning_type = \\\"d\\\" or (planning_type = \\\"s\\\")),
 FOREIGN KEY (file_path, entry_offset)
 REFERENCES logbook (file_path, entry_offset)
+ON UPDATE CASCADE
 ON DELETE CASCADE,
 PRIMARY KEY (file_path ASC, entry_offset ASC));"
-  "Schema to build the planning_changes table in the org db.")
 
-(defconst nd/org-sqlite-links-schema
   "CREATE TABLE links (
 file_path TEXT,
 headline_offset INTEGER,
@@ -2959,9 +3023,10 @@ link_text TEXT,
 link_type TEXT,
 FOREIGN KEY (file_path, headline_offset)
 REFERENCES headlines (file_path, headline_offset)
+ON UPDATE CASCADE
 ON DELETE CASCADE,
-PRIMARY KEY (file_path ASC, link_offset ASC));"
-  "Schema to build the links table in the org db.")
+PRIMARY KEY (file_path ASC, link_offset ASC));")
+  "Table schemas for the org database.")
 #+END_SRC
 **** org element functions
 These are functions that operate on org-element objects to parse for insertion into the db.
@@ -3092,9 +3157,12 @@ and cdr is the match data."
  "Return `org-todo-keywords' as string list w/o selectors.
 Will likely match the value of `org-todo-keywords-1' in many cases,
 but this has the advantage of being always available and comprehensive."
- (mapcar
-  (lambda (s) (replace-regexp-in-string "(.*)" "" s))
-  (remove "|" (mapcan #'cdr (copy-tree org-todo-keywords)))))
+ (nd/org-sql->>
+  org-todo-keywords
+  (copy-tree)
+  (mapcan #'cdr)
+  (remove "|")
+  (mapcar (lambda (s) (replace-regexp-in-string "(.*)" "" s)))))
 
 (defun nd/org-log-note-headings-matcher ()
   "Convert `org-log-note-headings' to a regex matcher.
@@ -3105,24 +3173,24 @@ of the escapes."
   (let* ((escapes '("%u" "%U" "%t" "%T" "%d" "%D" "%s" "%S"))
          (todo-list (nd/org-todo-keywords-stripped))
          (todo-regexp (mapconcat #'regexp-quote todo-list "\\|"))
-         (ts-or-todo-regexp (concat "\"\\(" org-ts-regexp-inactive "\\|"
-                                    todo-regexp "\\)\""))
-         (org-ts-regexp-cap (concat "\\(" org-ts-regexp "\\)")) 
-         (org-ts-regexp-inactive-cap (concat "\\(" org-ts-regexp-inactive "\\)")) 
-         (re-matchers (list ".*"
-                            ".*"
-                            org-ts-regexp-inactive-cap
-                            org-ts-regexp-cap
-                            org-ts-regexp-inactive-cap
-                            org-ts-regexp-cap
-                            ts-or-todo-regexp
-                            ts-or-todo-regexp))
-         (re-matchers-pad (mapcar
-                           (lambda (s)
-                             (concat "[[:space:]]*" s "[[:space:]]*"))
-                           re-matchers))
+         (ts-or-todo-regexp (format "\"\\(%s\\|%s\\)\""
+                                    org-ts-regexp-inactive
+                                    todo-regexp))
+         (org-ts-regexp-cap (format "\\(%s\\)" org-ts-regexp)) 
+         (org-ts-regexp-inactive-cap (format "\\(%s\\)" org-ts-regexp-inactive)) 
          (re-no-pad-alist (mapcar* #'cons escapes escapes))
-         (re-match-alist (mapcar* #'cons escapes re-matchers-pad))
+         (re-match-alist
+          (nd/org-sql->>
+           (list ".*"
+                 ".*"
+                 org-ts-regexp-inactive-cap
+                 org-ts-regexp-cap
+                 org-ts-regexp-inactive-cap
+                 org-ts-regexp-cap
+                 ts-or-todo-regexp
+                 ts-or-todo-regexp)
+           (mapcar (lambda (s) (concat "[[:space:]]*" s "[[:space:]]*")))
+           (mapcar* #'cons escapes)))
          (apply2note
           (lambda (n f)
             (let ((note-type (car n))
@@ -3137,17 +3205,18 @@ of the escapes."
           (lambda (n)
             (funcall apply2note
                      n
-                     (lambda (s) (replace-regexp-in-string "\s+" " " s)))))
-         (new org-log-note-headings))
-    ;; remove padding information by replacing all escape sequences
-    ;; with their non-padded version and then removing extra spaces
-    (setq new (mapcar (lambda (n) (funcall replace-esc n re-no-pad-alist)) new))
-    (setq new (mapcar (lambda (n) (funcall shrink-space n)) new))
-    ;; replace all escape sequences with regexps that match
-    ;; the data to be inserted via the escape sequences
-    (setq new (mapcar (lambda (n) (funcall replace-esc n re-match-alist)) new))
-    ;; filter out anything that is blank (eg default clock-in)
-    (seq-filter (lambda (s) (not (equal (cdr s) ""))) new)))
+                     (lambda (s) (replace-regexp-in-string "\s+" " " s))))))
+    (nd/org-sql->>
+     org-log-note-headings
+     ;; remove padding information by replacing all escape sequences
+     ;; with their non-padded version and then removing extra spaces
+     (mapcar (lambda (n) (funcall replace-esc n re-no-pad-alist)))
+     (mapcar (lambda (n) (funcall shrink-space n)))
+     ;; replace all escape sequences with regexps that match
+     ;; the data to be inserted via the escape sequences
+     (mapcar (lambda (n) (funcall replace-esc n re-match-alist)))
+     ;; filter out anything that is blank (eg default clock-in)
+     (seq-filter (lambda (s) (not (equal (cdr s) "")))))))
 
 (defconst nd/org-log-note-headings-regexp
   (nd/org-log-note-headings-matcher)
@@ -3253,21 +3322,26 @@ The header text is solely used for determining :type and :match-data."
 **** org sql db function
 These are the main functions to populate the db.
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-init-db ()
-  "Make a sqlite database for org archive files if it does not exist already."
-  (unless (file-exists-p nd/org-sqlite-db-path)
-    (process-file-shell-command (concat "touch " nd/org-sqlite-db-path))
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-files-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-header-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-properties-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-tags-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-clocking-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-logbook-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-state-changes-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-planning-changes-schema)
-    (nd/sql-cmd nd/org-sqlite-db-path nd/org-sqlite-links-schema)))
+(defmacro nd/org-sql-> (&rest body)
+  (let ((result (pop body)))
+    (dolist (form body result)
+      (setq result (append (list (car form) result) (cdr form))))))
 
-(defun nd/org-sql-extract-lb-header (item-part acc)
+(defmacro nd/org-sql->> (&rest body)
+  (let ((result (pop body)))
+    (dolist (form body result)
+      (setq result (append form (list result))))))
+
+(defun nd/org-sql-extract (acc fun objs &rest args)
+  "Iterate through OBJS and add them to accumulator ACC using FUN.
+FUN is a function that takes a single object from OBJS, the accumulator,
+and ARGS. FUN adds OBJ to ACC and returns a new ACC."
+  (while objs
+    (setq acc (apply fun acc (car objs) args)
+          objs (cdr objs)))
+  acc)
+
+(defun nd/org-sql-extract-lb-header (acc item-part)
   "Add specific data from logbook entry ITEM-PART to accumulator ACC.
 ITEM-PART is a partitions logbook item as described in
 `nd/org-sql-partition-item'. Note headings are parsed according to
@@ -3326,7 +3400,7 @@ ITEM-PART is a partitioned logbook item as described in
       (set-match-data (alist-get :match-data item-part))
       (nd/org-ts-format-to-iso (match-string time-index header-text)))))
 
-(defun nd/org-sql-extract-lb-entry (item-part acc)
+(defun nd/org-sql-extract-lb-entry (acc item-part)
   "Add data from logbook entry ITEM-PART to accumulator ACC.
 ITEM-PART is a partitioned logbook item as described in
 `nd/org-sql-partition-item'."
@@ -3344,9 +3418,11 @@ ITEM-PART is a partitioned logbook item as described in
                              :entry_offset item-offset
                              :time_logged time-logged
                              :header hdr-text
-                             :note note-text))
-         (acc* (nd/alist-put acc 'logbook logbook-data)))
-    (nd/org-sql-extract-lb-header item-part acc*)))
+                             :note note-text)))
+    (nd/org-sql->
+     acc
+     (nd/alist-put 'logbook logbook-data)
+     (nd/org-sql-extract-lb-header item-part))))
 
 (defun nd/org-logbook-parse-timestamp-range (ts)
   "Return start and end of timestamp TS depending on if it is a range.
@@ -3364,7 +3440,7 @@ Return value will be a list of two elements if range and one if not."
           (cons start end))
       `(,(funcall split ts))))))
 
-(defun nd/org-sql-extract-lb-clock (clock acc hl-part &optional item)
+(defun nd/org-sql-extract-lb-clock (acc clock hl-part &optional item)
   "Add data from logbook CLOCK to accumulator ACC.
 HL-PART is an object as returned by `nd/org-sql-partition-headline'
 and represents the headline surrounding the clock.
@@ -3390,38 +3466,40 @@ added to the clock, else add it as a normal logbook entry."
         (if item-type
             ;; if we know the type, add the clock and note
             ;; separately
-            (let ((acc* (nd/alist-put acc 'clocking clock-data)))
-              (nd/org-sql-extract-lb-entry item-part acc*))
+            (nd/org-sql->
+             acc
+             (nd/alist-put 'clocking clock-data)
+             (nd/org-sql-extract-lb-entry item-part))
           ;; else add it with the clocking table
           (let* ((hdr-text (alist-get :header-text item-part))
                  (clock-data* `(,@clock-data :clock_note ,hdr-text)))
             (nd/alist-put acc 'clocking clock-data*)))))))
 
-(defun nd/org-sql-extract-lb-items (items acc hl-part)
+(defun nd/org-sql-extract-lb-items (acc items hl-part)
   "Add data from logbook ITEMS to accumulator ACC.
 HL-PART is an object as returned by `nd/org-sql-partition-headline'
 and represents the headline surrounding the items."
-  (let ((into
-         (lambda (item acc hl-part)
+  (let ((from
+         (lambda (acc item hl-part)
            (let ((item-part (nd/org-sql-partition-item item hl-part)))
-             (nd/org-sql-extract-lb-entry item-part acc)))))
-    (nd/org-sql-extract items into acc hl-part)))
+             (nd/org-sql-extract-lb-entry acc item-part)))))
+    (nd/org-sql-extract acc from items hl-part)))
 
-(defun nd/org-sql-extract-lb-one (entry acc hl-part)
+(defun nd/org-sql-extract-lb-one (acc entry hl-part)
   "Add data from logbook ENTRY to accumulator ACC.
 HL-PART is an object as returned by `nd/org-sql-partition-headline'
 and represents the headline surrounding the entry."
   (let ((type (org-element-type entry)))
     (cond
      ((eq type 'clock)
-      (nd/org-sql-extract-lb-clock entry acc hl-part))
+      (nd/org-sql-extract-lb-clock acc entry hl-part))
      ((eq type 'plain-list)
       (let ((items (org-element-contents entry)))
-        (nd/org-sql-extract-lb-items items acc hl-part)))
+        (nd/org-sql-extract-lb-items acc items hl-part)))
      ;; TODO add an "UNKNOWN" logbook parser
      (t acc))))
 
-(defun nd/org-sql-extract-lb-two (entry1 entry2 acc hl-part)
+(defun nd/org-sql-extract-lb-two (acc entry1 entry2 hl-part)
   "Add data from logbook ENTRY1 and ENTRY2 to accumulator ACC.
 HL-PART is an object as returned by `nd/org-sql-partition-headline'
 and represents the headline surrounding the entries. This assumes the
@@ -3429,9 +3507,11 @@ entries are org-element types clock and plain-list respectively, and
 will check if the first item in ENTRY2 is part of the clock."
   (let* ((items (org-element-contents entry2))
          (first-item (car items))
-         (rem-items (cdr items))
-         (acc* (nd/org-sql-extract-lb-clock entry1 acc hl-part first-item)))
-    (nd/org-sql-extract-lb-items rem-items acc* hl-part)))
+         (rem-items (cdr items)))
+    (nd/org-sql->
+     acc
+     (nd/org-sql-extract-lb-clock entry1 hl-part first-item)
+     (nd/org-sql-extract-lb-items rem-items hl-part))))
 
 (defun nd/org-sql-find-logbook (contents)
   "Find the logbook drawer given CONTENTS from section of org headline.
@@ -3445,50 +3525,45 @@ ignored."
       (equal org-log-into-drawer (plist-get (car e) :drawer-name)))
     contents)))
 
-(defun nd/org-sql-extract-lb (hl-part acc)
+(defun nd/org-sql-extract-lb (acc hl-part)
   "Add logbook data from HL-PART and add to accumulator ACC.
 HL-PART is an object as returned by `nd/org-sql-partition-headline'."
   (let* ((sec (alist-get :section hl-part))
-         (lb-contents (nd/org-sql-find-logbook sec))
-         (scan
-          (lambda (contents &optional acc)
-            (if (not contents)
-                acc
-              ;; Need two of the next entries here because clocks may
-              ;; have notes associated with them, but the only
-              ;; distinguishing characteristic they have is that they
-              ;; don't match anything in org-log-note-headings. If we
-              ;; end up processing two entries at once, skip over two
-              ;; instead of one on the next iteration.
-              (let* ((cur1 (car contents))
-                     (cur2 (cadr contents))
-                     (type1 (org-element-type cur1))
-                     (type2 (org-element-type cur2))
-                     (try-clock-note (and (eq 'clock type1)
-                                          (eq type2 'plain-list)))
-                     (acc*
-                      (if try-clock-note
-                          (nd/org-sql-extract-lb-two cur1 cur2 acc hl-part)
-                        (nd/org-sql-extract-lb-one cur1 acc hl-part)))
-                     (rem (if try-clock-note (cddr contents) (cdr contents))))
-                (funcall scan rem acc*))))))
-    (funcall scan lb-contents acc)))
+         (lb-contents (nd/org-sql-find-logbook sec)))
+    (while lb-contents
+      ;; Need two of the next entries here because clocks may
+      ;; have notes associated with them, but the only
+      ;; distinguishing characteristic they have is that they
+      ;; don't match anything in org-log-note-headings. If we
+      ;; end up processing two entries at once, skip over two
+      ;; instead of one on the next iteration.
+      (let* ((cur1 (car lb-contents))
+             (cur2 (cadr lb-contents))
+             (type1 (org-element-type cur1))
+             (type2 (org-element-type cur2))
+             (try-clock-note (and (eq 'clock type1)
+                                  (eq type2 'plain-list))))
+        (if try-clock-note
+            (setq acc (nd/org-sql-extract-lb-two acc cur1 cur2 hl-part)
+                  lb-contents (cddr lb-contents))
+          (setq acc (nd/org-sql-extract-lb-one acc cur1 hl-part)
+                lb-contents (cdr lb-contents)))))
+    acc))
 
 (defun nd/org-sql-parse-ts-maybe (txt)
   "If TXT is a timestamp, return it in ISO 8601 format.
 Otherwise return it unchanged."
   ;; assume the iso parser to return nil on failure
-  (let ((txt* (nd/org-ts-format-to-iso txt)))
-    (if txt* txt* txt)))
+  (nd/org-sql-> txt (nd/org-ts-format-to-iso) (or txt)))
 
-(defun nd/org-sql-extract-properties (hl-part acc)
+(defun nd/org-sql-extract-properties (acc hl-part)
    "Add properties data from HL-PART and add to accumulator ACC.
 HL-PART is an object as returned by `nd/org-sql-partition-headline'."
   (let* ((sec (alist-get :section hl-part))
          (prop-drawer (assoc 'property-drawer sec))
          (node-props (org-element-contents prop-drawer))
-         (into
-          (lambda (np acc hl-part)
+         (from
+          (lambda (acc np hl-part)
             (let ((key (org-element-property :key np)))
               (if (member key nd/org-sql-ignored-properties)
                   acc
@@ -3506,23 +3581,24 @@ HL-PART is an object as returned by `nd/org-sql-partition-headline'."
                                         ;; TODO add inherited flag
                                         :inherited nil)))
                   (nd/alist-put acc 'properties prop-data)))))))
-    (nd/org-sql-extract node-props into acc hl-part)))
+    (nd/org-sql-extract acc from node-props hl-part)))
 
-(defun nd/org-sql-extract-tags (hl-part acc)
+(defun nd/org-sql-extract-tags (acc hl-part)
   "Extract tags data from HL-PART and add to accumulator ACC.
 HL-PART is an object as returned by `nd/org-sql-partition-headline'."
   (let* ((hl (alist-get :headline hl-part))
          ;; first retrieve tags and strip text props and whitespace
-         (tags (org-element-property :tags hl))
-         (tags (mapcar #'nd/strip-string tags))
+         (tags (nd/org-sql->> hl
+                              (org-element-property :tags)
+                              (mapcar #'nd/strip-string)))
          ;; then retrieve i-tags, optionally going up to parents
          (i-tags (org-element-property :ARCHIVE_ITAGS hl))
          (i-tags (when i-tags (split-string i-tags)))
          (i-tags (if nd/org-sql-use-tag-inheritance
                      (nd/org-element-get-parent-tags hl i-tags)
                    i-tags))
-         (into
-          (lambda (tag acc hl-part &optional inherited)
+         (from
+          (lambda (acc tag hl-part &optional inherited)
             (let* ((hl (alist-get :headline hl-part))
                    (fp (alist-get :filepath hl-part))
                    (offset (org-element-property :begin hl))
@@ -3531,28 +3607,20 @@ HL-PART is an object as returned by `nd/org-sql-partition-headline'."
                                     :headline_offset offset
                                     :tag tag
                                     :inherited i)))
-              (nd/alist-put acc 'tags tags-data))))
-         (acc* (nd/org-sql-extract tags into acc hl-part)))
-    (nd/org-sql-extract i-tags into acc* hl-part t)))
+              (nd/alist-put acc 'tags tags-data)))))
+    (nd/org-sql->
+     acc
+     (nd/org-sql-extract from tags hl-part)
+     (nd/org-sql-extract from i-tags hl-part t))))
 
-(defun nd/org-sql-extract (objs fun acc &rest args)
-  "Iterate through OBJS and add them to accumulator ACC using FUN.
-FUN is a function that takes a single object from OBJS, the accumulator,
-and ARGS. FUN adds OBJ to ACC and returns a new ACC."
-  (if (not objs)
-      acc
-    (let* ((cur (car objs))
-           (rem (cdr objs))
-           (acc* (apply fun cur acc args)))
-      (apply #'nd/org-sql-extract rem fun acc* args))))
 
-(defun nd/org-sql-extract-links (hl-part &optional acc)
+(defun nd/org-sql-extract-links (acc hl-part)
   "Add link data from headline HL-PART to accumulator ACC.
 HL-PART is an object as returned by `nd/org-sql-partition-headline'."
   (let* ((sec (alist-get :section hl-part))
          (links (org-element-map sec 'link #'identity))
-         (into
-          (lambda (ln acc hl-part)
+         (from
+          (lambda (acc ln hl-part)
               (let* ((fp (alist-get :filepath hl-part))
                      (hl (alist-get :headline hl-part))
                      (hl-offset (org-element-property :begin hl))
@@ -3569,9 +3637,9 @@ HL-PART is an object as returned by `nd/org-sql-partition-headline'."
                                     :link_text ln-text
                                     :link_type ln-type)))
                 (nd/alist-put acc 'links ln-data)))))
-    (nd/org-sql-extract links into acc hl-part)))
+    (nd/org-sql-extract acc from links hl-part)))
 
-(defun nd/org-sql-extract-headline (hl-part &optional acc)
+(defun nd/org-sql-extract-hl-meta (acc hl-part)
   "Add general data from headline HL-PART to accumulator ACC.
 HL-PART is an object as returned by `nd/org-sql-partition-headline'."
   (let* ((fp (alist-get :filepath hl-part))
@@ -3608,50 +3676,168 @@ HL-PART is an object as returned by `nd/org-sql-partition-headline'."
                         :content nil)))
     (nd/alist-put acc 'headlines hl-data)))
 
-(defun nd/org-sql-extract-headlines (headlines acc fp)
+(defun nd/org-sql-extract-hl (acc headlines fp)
   "Extract data from HEADLINES and add to accumulator ACC.
 FP is the path to the file containing the headlines."
-  (let ((into
-         (lambda (hl acc fp)
+  (let ((from
+         (lambda (acc hl fp)
            (let* ((hl-part (nd/org-sql-partition-headline hl fp))
-                  (hl-sub (alist-get :subheadlines hl-part))
-                  (acc* (nd/org-sql-extract-headline hl-part acc))
-                  (acc* (nd/org-sql-extract-links hl-part acc*))
-                  (acc* (nd/org-sql-extract-tags hl-part acc*))
-                  (acc* (nd/org-sql-extract-properties hl-part acc*))
-                  (acc* (nd/org-sql-extract-lb hl-part acc*)))
-             (nd/org-sql-extract-headlines hl-sub acc* fp)))))
-    (nd/org-sql-extract headlines into acc fp)))
+                  (hl-sub (alist-get :subheadlines hl-part)))
+             (nd/org-sql-> acc
+                           (nd/org-sql-extract-hl-meta hl-part)
+                           (nd/org-sql-extract-links hl-part)
+                           (nd/org-sql-extract-tags hl-part)
+                           (nd/org-sql-extract-properties hl-part)
+                           (nd/org-sql-extract-lb hl-part)
+                           (nd/org-sql-extract-hl hl-sub fp))))))
+    (nd/org-sql-extract acc from headlines fp)))
+
+(defun nd/org-sql-extract-file (cell acc)
+  "Extract the file in the car of CELL for a sql insertion.
+The results are accumulated in ACC which is returned on exit."
+  (let* ((fp (car cell))
+         (md5sum (cdr cell))
+         (buf (find-file-noselect fp t))
+         (tree (with-current-buffer buf
+                 (org-element-parse-buffer)))
+         (attr (file-attributes fp))
+         (fsize (file-attribute-size attr))
+         (contents (org-element-contents tree))
+         (headlines (if (assoc 'section contents)
+                        (cdr contents)
+                      contents))
+         (file-data (list :file_path fp
+                          :md5 md5sum
+                          :size fsize)))
+    (nd/org-sql->
+     acc
+     (nd/alist-put 'files file-data)
+     (nd/org-sql-extract-hl headlines fp))))
+
+(defun nd/org-sql-mk-insert (cell acc)
+  (nd/org-sql->> (plist-get acc 'insert)
+                 (nd/org-sql-extract-file cell)
+                 (plist-put acc 'insert)))
+
+(defun nd/org-sql-mk-update (cell acc)
+  (let ((updt-acc (plist-get acc 'update)))
+    (nd/org-sql->> `((:file_path ,(car cell)) . (:md5 ,(cdr cell)))
+                   (nd/alist-put updt-acc 'files)
+                   (plist-put acc 'update))))
+
+(defun nd/org-sql-mk-delete (cell acc)
+  (let ((dlt-acc (plist-get acc 'delete)))
+    (nd/org-sql->>  `(:file_path ,(car cell))
+                    (nd/alist-put dlt-acc 'files)
+                    (plist-put acc 'delete))))
+
+(defun nd/org-sql-get-updates (cell fp-qry acc)
+  "Returns cell where the car is accumulator ACC and cdr is current fp-qry."
+  ;; if perfect match, do nothing
+  (if (find cell fp-qry :test #'equal)
+      (cons acc (remove cell fp-qry))
+    (let* ((match-cells
+            (lambda (a b fun)
+              (let ((car-a (car a))
+                    (cdr-a (cdr a))
+                    (car-b (car b))
+                    (cdr-b (cdr b)))
+                (funcall fun car-a car-b cdr-a cdr-b))))
+           (match-fp
+            (lambda (fp-a fp-b md5-a md5-b)
+              (and (equal fp-a fp-b) (not (equal md5-a md5-b)))))
+           (match-md5
+            (lambda (fp-a fp-b md5-a md5-b)
+              (and (not (equal fp-a fp-b)) (equal md5-a md5-b))))
+           (match-fp*
+            (lambda (b)
+              (funcall match-cells cell b match-fp)))
+           (match-md5*
+            (lambda (b)
+              (funcall match-cells cell b match-md5)))
+           (found-fp (find-if (lambda (q) (funcall match-fp* q)) fp-qry)))
+      (cond
+       ;; delete qry in db and insert cell
+       (found-fp
+        (cons (nd/org-sql-mk-insert cell (nd/org-sql-mk-delete found-fp acc))
+              (remove found-fp fp-qry)))
+       ;; update fp in db
+       ((find-if (lambda (q) (funcall match-md5* q)) fp-qry)
+        (cons (nd/org-sql-mk-update cell acc)
+              (remove-if (lambda (q) (funcall match-md5* q)) fp-qry)))
+       ;; insert cell
+       (t
+        (cons (nd/org-sql-mk-insert cell acc) fp-qry))))))
+
+(defun nd/org-sql-compare-files (fp-dsk fp-qry)
+  (let (acc)
+    (while fp-dsk
+      (let* ((cur (car fp-dsk))
+             (rem (cdr fp-dsk))
+             (found (nd/org-sql-get-updates cur fp-qry acc)))
+        (setq fp-dsk rem
+              acc (car found)
+              fp-qry (cdr found))))
+    (if fp-qry (nd/org-sql-mk-delete fp-qry acc)) acc))
+
+(defun nd/org-sql-files-from-disk ()
+  "Return alist of metadata for filepaths PATHS."
+  (let ((paths (mapcar (lambda (p) (expand-file-name p org-directory)) nd/org-sql-files))
+        (cons-md5
+         (lambda (fp)
+           (let* ((fp-buf (find-file-noselect fp t)))
+             (cons fp (md5 fp-buf))))))
+    (mapcar (lambda (p) (funcall cons-md5 p)) paths)))
+
+(defun nd/org-sql-files-from-db ()
+  "Get all files and their metadata from the database.
+Returns an alist where the each car is file_path and each cdr is
+the plist of metadata."
+  ;; TODO should probably make the table recreate itself if it is
+  ;; corrupted or missing
+  (when (file-exists-p nd/org-sqlite-db-path)
+    (nd/org-sql->> '(:file_path :md5)
+                   (nd/sql-select nd/org-sqlite-db-path 'files)
+                   (mapcar #'nd/sql-plist-get-vals)
+                   (mapcar (lambda (q) (cons (car q) (car (cdr q))))))))
+
+(defun nd/org-sql-get-transactions ()
+  (let ((fp-dsk (nd/org-sql-files-from-disk))
+        (map-trns
+         (lambda (op fun trans)
+           (nd/org-sql->>
+            (plist-get trans op)
+            (mapcar (lambda (s) (funcall fun s)))
+            (nd/org-sql-fmt-trans)
+            (plist-put trans op)))))
+    (nd/org-sql->>
+     (nd/org-sql-files-from-db)
+     (nd/org-sql-compare-files fp-dsk)
+     (funcall map-trns 'insert #'nd/org-sql-fmt-inserts)
+     (funcall map-trns 'update #'nd/org-sql-fmt-updates)
+     (funcall map-trns 'delete #'nd/org-sql-fmt-deletes))))
 
 (defvar nd/org-sql-files '("test1.org_archive" "test2.org_archive")
   "A list of org files to put into sql database.")
 
-(defun nd/org-sql-extract-files ()
-  "Return a plist of data to be inserted into sql database."
-  (let ((paths (mapcar (lambda (p) (expand-file-name p org-directory)) nd/org-sql-files))
-        (into
-         (lambda (fp acc)
-           (let* ((buf (find-file-noselect fp t))
-                  (tree (with-current-buffer buf
-                          (org-element-parse-buffer)))
-                  (md5sum (md5 buf))
-                  (attr (file-attributes fp))
-                  (fsize (file-attribute-size attr))
-                  (contents (org-element-contents tree))
-                  (headlines (if (assoc 'section contents)
-                                 (cdr contents)
-                               contents))
-                  (file-data (list :file_path fp
-                                   :md5 md5sum
-                                   :size fsize))
-                  (acc* (nd/alist-put acc 'files file-data)))
-             (nd/org-sql-extract-headlines headlines acc* fp)))))
-    (nd/org-sql-extract paths into nil)))
+(defun nd/org-init-db ()
+  "Make a sqlite database for org files if it does not exist already."
+  (unless (file-exists-p nd/org-sqlite-db-path)
+    (process-file-shell-command (concat "touch " nd/org-sqlite-db-path))
+    (mapcar (lambda (s) (nd/sql-cmd nd/org-sqlite-db-path s)) nd/org-sql-schemas)))
 
-(defun nd/org-archive-to-db ()
+(defun nd/org-archive-to-db (&optional show-err)
   "Transfer archive files to sqlite database."
-  (let ((sql-data (nd/org-sql-extract-files)))
-    (nd/sql-insert-multi nd/org-sqlite-db-path sql-data)))
+  (let* ((trans (nd/org-sql-get-transactions))
+         (trans-dlt (plist-get trans 'delete))
+         (trans-upd (plist-get trans 'update))
+         (trans-ins (plist-get trans 'insert)))
+    ;; note, the order of sql commands matters in transactions,
+    ;; so, we need to do deletes, update, then inserts in that order
+    ;; `(,(nd/sql-cmd nd/org-sqlite-db-path trans-dlt show-err))))
+    `(,(nd/sql-cmd nd/org-sqlite-db-path trans-dlt show-err t)
+      ,(nd/sql-cmd nd/org-sqlite-db-path trans-upd show-err t)
+      ,(nd/sql-cmd nd/org-sqlite-db-path trans-ins show-err nil))))
 #+END_SRC
 * tools
 ** printing
