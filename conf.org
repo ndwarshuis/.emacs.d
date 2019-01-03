@@ -3813,7 +3813,17 @@ This assumes an active connection is open."
 **** interative functions
 Interactive update commands go here.
 #+BEGIN_SRC emacs-lisp
-
+(defun org-sql-user-update ()
+  "Update the Org SQL database."
+  (interactive)
+  ;; TODO need to see if schema is correct?
+  ;; for now this assumes the db exists and has a valid schema
+  (unless (get-buffer-process org-sql-buffer)
+    (message "Opening SQLi Buffer")
+    (org-sql-cmd-open-connection))
+  (message "Updating Org SQL database")
+  (org-sql-update-db)
+  (message "Org SQL update complete"))
 #+END_SRC
 * tools
 ** printing
