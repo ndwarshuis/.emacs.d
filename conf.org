@@ -746,24 +746,14 @@ Overlays hex color codes with matching colors in certain modes like css and html
 (use-package rainbow-mode
   :ensure t)
 #+END_SRC
-*** Markdown
-Added support for standard markdown files. Also used in R-markdown.
+*** R-markdown
+R-markdown is enabled via polymode, which allows multiple modes in one buffer (this is actually as crazy as it sounds). In this case, the modes are yaml, R, markdown, and others. Installing =poly-R= will pull in all required dependencies.
 #+BEGIN_SRC emacs-lisp
-(use-package markdown-mode
-  :ensure t)
-#+END_SRC
-*** polymode
-This allows multiple modes in one buffer. This may sound totally crazy...but it actually is. Despite it's hackiness, it makes alot of sense for some situations such as R markdown which requires yaml, markdown, and R code in one buffer.
-#+BEGIN_SRC emacs-lisp
-(use-package polymode
+(use-package poly-R
   :ensure t
-  :after markdown-mode
   :mode
   (("\\.Rmd\\'" . poly-markdown+r-mode)
-   ("\\.rmd\\'" . poly-markdown+r-mode))
-  :config
-  (require 'poly-R)
-  (require 'poly-markdown))
+   ("\\.rmd\\'" . poly-markdown+r-mode)))
 #+END_SRC
 *** csv files
 This adds support for csv files. Almost makes them editable like a spreadsheet. The lambda function enables alignment by default.
