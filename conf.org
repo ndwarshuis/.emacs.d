@@ -1364,7 +1364,7 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
 
           ;; task with a deadline
           ("d" "deadline" entry (file ,capfile)
-           "* TODO %?\nDEADLINE: %^t\ndeliverable:\n%U\n")
+           "* TODO %?\nDEADLINE: %^t\n%U\n")
 
           ;; for converting mu4e emails to tasks, defaults to next-day deadline
           ("e" "email" entry (file ,capfile)
