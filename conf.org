@@ -1167,20 +1167,20 @@ The first property is called =PARENT_TYPE= and has two values =iterator= and =pe
 In practice, I use this for tasks like workouts, paying bills, maintenance, grocery shopping, work meetings, GTD reviews, etc. These are all *almost* consistent but may change slightly in their timing, action items, effort, context, etc. If any of these change, it is easy enough to modify one heading without disrupting the rest.
 
 In an org tree these look like this:
-#+BEGIN_SRC org
-***** clean room
+#+BEGIN_SRC
+ ***** clean room
 :PROPERTIES:
 :PARENT_TYPE: iterator
 :TIME_SHIFT: +1m
 :END:
-****** DONE clean room [0/2]
+ ****** DONE clean room [0/2]
 CLOSED: [2018-11-21 Wed 22:13] SCHEDULED: <2018-10-29 Mon>
 :PROPERTIES:
 :Effort:   0:15
 :END:
 - [ ] vacuum
 - [ ] throw away trash
-****** TODO clean room [0/2]
+ ****** TODO clean room [0/2]
 SCHEDULED: <2018-11-29 Thu>
 :PROPERTIES:
 :Effort:   0:30
@@ -1457,7 +1457,6 @@ Steps for this algorithm:
 
 This should be O(n) (best case/no conflicts) to O(n^2) (worst case/everything conflicts)
 #+BEGIN_SRC emacs-lisp
-;; TODO either need the file path or turn the point into a marker
 (defun nd/org-conflict-make-entry (ts range offset fp &optional type)
   (list :timestamp ts
         :range (or range 0)
@@ -1539,29 +1538,49 @@ Return value will be (start . range) if range and (start) if not."
      (append acc it))))
 
 (defun nd/org-conflict-extract-hl (acc hl fp)
-  (let ((sub (--> (org-element-contents hl)
-                  (if (assoc 'section it) (cdr it) it))))
-    (-> acc
-        (nd/org-conflict-extract-hl-sched hl fp)
-        (nd/org-conflict-extract-hl-ts hl fp)
-        (nd/org-conflict-extract #'nd/org-conflict-extract-hl sub fp))))
+  (-> acc
+      (nd/org-conflict-extract-hl-sched hl fp)
+      (nd/org-conflict-extract-hl-ts hl fp)))
+
+(defun nd/org-conflict-filter-todo (hls)
+  (if (not nd/org-conficts-filter-todo) hls
+    (--remove
+     (member (org-element-property :todo-keyword it)
+                      nd/org-conficts-filtered-todo)
+     hls)))
+
+(defun nd/org-conflict-filter-files (fps)
+  (if (not nd/org-conficts-filter-files) fps
+    (--remove
+     (-find (lambda (s) (string-match-p s it)) nd/org-conficts-filtered-files)
+     fps)))
+
+(defun nd/org-conflict-filter-past (tss)
+  (if (not nd/org-conficts-filter-past) tss
+    (let ((ft (float-time)))
+      (--remove (< (plist-get it :timestamp) ft) tss))))
+
+(defun nd/org-conflict-filter-habit (hls)
+  (if (not nd/org-conficts-filter-habit) hls
+    (--remove (org-element-property :STYLE it) hls)))
 
 (defun nd/org-conflict-extract-file (acc fp)
   (-->
    fp
    (find-file-noselect it t)
    (with-current-buffer it (org-element-parse-buffer))
-   (org-element-contents it)
-   (if (assoc 'section it) (cdr it) it)
+   (org-element-map it 'headline #'identity)
+   (nd/org-conflict-filter-todo it)
+   (nd/org-conflict-filter-habit it)
    (nd/org-conflict-extract acc #'nd/org-conflict-extract-hl it fp)))
 
 (defun nd/org-conflict-conflicting-p (ts-a ts-b)
   "Return t if timestamps TS-A and TS-B conflict."
+  ;; assume that ts-a starts before ts-b
   (let* ((start-a (plist-get ts-a :timestamp))
          (start-b (plist-get ts-b :timestamp))
-         (end-a (+ start-a (plist-get ts-a :range)))
-         (end-b (+ start-b (plist-get ts-b :range))))
-    (<= start-a start-b end-a)))
+         (end-a (+ start-a (plist-get ts-a :range))))
+    (or (= start-a start-b) (< start-b end-a))))
 
 (defun nd/find-conflict (ts ts-list conlist)
   (->> ts-list
@@ -1580,7 +1599,9 @@ Return value will be (start . range) if range and (start) if not."
   (->>
    ;; (list "~/Org/reference/testconflict.org")
    (org-agenda-files)
+   nd/org-conflict-filter-files
    (nd/org-conflict-extract nil #'nd/org-conflict-extract-file)
+   nd/org-conflict-filter-past
    (--sort (< (plist-get it :timestamp) (plist-get other :timestamp)))
    nd/org-conflict-build-conlist))
 #+END_SRC
@@ -1690,6 +1711,23 @@ MARKER for use in the conflict agenda view."
 					     org-series-cmd ,org-cmd))
       (org-agenda-finalize)
       (setq buffer-read-only t))))
+#+END_SRC
+**** filters
+#+BEGIN_SRC emacs-lisp
+(defvar nd/org-conficts-filter-files t)
+
+(defconst nd/org-conficts-filtered-files
+  '("incubator" "peripheral"))
+
+(defvar nd/org-conficts-filter-todo t)
+
+(defconst nd/org-conficts-filtered-todo
+  '("CANC" "DONE"))
+
+(defvar nd/org-conficts-filter-past t)
+
+(defvar nd/org-conficts-filter-habit t)
+
 #+END_SRC
 *** agenda
 **** targets
