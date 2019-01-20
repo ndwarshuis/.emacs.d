@@ -1457,28 +1457,34 @@ Steps for this algorithm:
 
 This should be O(n) (best case/no conflicts) to O(n^2) (worst case/everything conflicts)
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-conflict-make-entry (ts range offset fp &optional type)
+(defun nd/org-conflict-make-entry (ts range offset fp hardness
+                                      &optional type)
   (list :timestamp ts
         :range (or range 0)
         :offset offset
         :type type
+        :hardness hardness
         :filepath fp))
 
-(defun nd/org-conflict-parse-ts (ts)
-  "Return start and end of timestamp TS depending on if it is a range.
-Return value will be (start . range) if range and (start) if not."
+(defun nd/org-conflict-ts-hard-p (ts)
+  (org-element-property :hour-start ts))
+
+(defun nd/org-conflict-parse-ts (ts hl fp)
   (when ts
-    (let ((split
-           (lambda (ts &optional end)
-             (--> ts
-                  (org-timestamp-split-range it end)
-                  (org-element-property :raw-value it)
-                  (org-2ft it)))))
+    (let* ((offset (org-element-property :begin hl))
+           (hardness (nd/org-conflict-ts-hard-p ts))
+           (split
+            (lambda (ts &optional end)
+              (--> ts
+                   (org-timestamp-split-range it end)
+                   (org-element-property :raw-value it)
+                   (org-2ft it)
+                   (round it))))
+           (start (funcall split ts)))
       (if (eq (org-element-property :type ts) 'active-range)
-          (let ((start (funcall split ts))
-                (end (funcall split ts t)))
-            (cons start (- end start)))
-        `(,(funcall split ts))))))
+          (let ((range (--> ts (funcall split it t) (- it start))))
+            (nd/org-conflict-make-entry start range offset fp hardness))
+        (nd/org-conflict-make-entry start 0 offset fp hardness)))))
 
 (defun nd/org-conflict-effort-seconds (effort-str)
   "Convert EFFORT-STR into an integer in seconds from HH:MM format."
@@ -1504,38 +1510,34 @@ Return value will be (start . range) if range and (start) if not."
   acc)
 
 (defun nd/org-conflict-extract-hl-sched (acc hl fp)
-  (let ((ts-sched (->> hl
-                       (org-element-property :scheduled)
-                       (org-element-property :raw-value)
-                       (org-2ft)))
-        (range (-some->> hl
-                         (org-element-property :EFFORT)
-                         nd/org-conflict-effort-seconds))
-        (offset (org-element-property :begin hl)))
-    (if (= 0 ts-sched) acc
-      (-> ts-sched
-          (nd/org-conflict-make-entry range offset fp 'scheduled)
+  (let* ((ts (org-element-property :scheduled hl))
+         (ts-ft (->> ts (org-element-property :raw-value) org-2ft round))
+         (range (-some->> hl
+                          (org-element-property :EFFORT)
+                          nd/org-conflict-effort-seconds))
+         (hardness (nd/org-conflict-ts-hard-p ts))
+         (offset (org-element-property :begin hl)))
+    (if (= 0 ts-ft) acc
+      (-> ts-ft
+          (nd/org-conflict-make-entry range offset fp hardness 'scheduled)
           (cons acc)))))
 
 (defun nd/org-conflict-extract-hl-ts (acc hl fp)
-  (let ((offset (org-element-property :begin hl)))
-    (-->
-     hl
-     (assoc 'section it)
-     (org-element-contents it)
-     (--remove
-      (or (eq 'planning (org-element-type it))
-          (eq 'property-drawer (org-element-type it))
-          (eq 'drawer (org-element-type it)))
-      it)
-     (org-element-map it 'timestamp #'identity)
-     (--filter
-      (or (eq 'active (org-element-property :type it))
-          (eq 'active-range (org-element-property :type it)))
-      it)
-     (mapcar #'nd/org-conflict-parse-ts it)
-     (--map (nd/org-conflict-make-entry (car it) (cdr it) offset fp) it)
-     (append acc it))))
+  (--> hl
+       (assoc 'section it)
+       (org-element-contents it)
+       (--remove
+        (or (eq 'planning (org-element-type it))
+            (eq 'property-drawer (org-element-type it))
+            (eq 'drawer (org-element-type it)))
+        it)
+       (org-element-map it 'timestamp #'identity)
+       (--filter
+        (or (eq 'active (org-element-property :type it))
+            (eq 'active-range (org-element-property :type it)))
+        it)
+       (--map (nd/org-conflict-parse-ts it hl fp) it)
+       (append acc it)))
 
 (defun nd/org-conflict-extract-hl (acc hl fp)
   (-> acc
@@ -1595,6 +1597,54 @@ Return value will be (start . range) if range and (start) if not."
             ts-list (cdr ts-list)))
     conlist))
 
+(defun nd/org-conflict-split-day-bounds (tss)
+  (letrec
+      ((new
+        (lambda (start end ts)
+          (nd/org-conflict-make-entry start
+                                      (- end start)
+                                      (plist-get ts :offset)
+                                      (plist-get ts :filepath)
+                                      (plist-get ts :hardness)
+                                      (plist-get ts :type))))
+       ;; need to temporarily offset the epoch time so day
+       ;; boundaries line up in local time
+       (split
+        (lambda (start end ts)
+          (let* ((tzs-a (-> start current-time-zone car))
+                 (tzs-b (-> end current-time-zone car))
+                 (start* (-> end (+ tzs-b) (ceiling 86400) 1- (* 86400) (- tzs-b))))
+            (if (> start* (-> start (+ tzs-a) (floor 86400) (* 86400) (- tzs-a)))
+                (cons (funcall new start* end ts)
+                      (funcall split start start* ts))
+              (list (funcall new start end ts))))))
+       (split-maybe
+        (lambda (ts)
+          (let* ((start (plist-get ts :timestamp))
+                 (end (+ start (plist-get ts :range)))
+                 (tzs (-> start current-time-zone car)))
+            (if (< (-> start (+ tzs) (ceiling 86400)) end)
+                (funcall split start end ts)
+              ts)))))
+    (--mapcat (funcall split-maybe it) tss)))
+
+(defun nd/org-overlist-overloaded-p (tss)
+  (letrec ((ts2diff
+            (lambda (ts)
+              (let ((start (plist-get ts :timestamp)))
+                (- (-> ts (plist-get :range) (+ start)) start)))))
+    (->> tss (--map (funcall ts2diff it)) -sum (<= 86400))))
+
+(defun nd/org-overlist-daily-split (tss)
+  (letrec ((tz-shift (lambda (ts) (-> ts current-time-zone car (+ ts)))))
+    (->>
+     tss
+     (--partition-by (--> it
+                          (plist-get it :timestamp)
+                          (funcall tz-shift it)
+                          (floor it 86400))))))
+
+;; TODO, this isn't DRY
 (defun nd/org-conflict-get ()
   (->>
    ;; (list "~/Org/reference/testconflict.org")
@@ -1602,8 +1652,22 @@ Return value will be (start . range) if range and (start) if not."
    nd/org-conflict-filter-files
    (nd/org-conflict-extract nil #'nd/org-conflict-extract-file)
    nd/org-conflict-filter-past
+   (--filter (plist-get it :hardness))
    (--sort (< (plist-get it :timestamp) (plist-get other :timestamp)))
    nd/org-conflict-build-conlist))
+
+(defun nd/org-overlist-get ()
+  (->>
+   ;; (list "~/Org/reference/testconflict.org")
+   (org-agenda-files)
+   nd/org-conflict-filter-files
+   (nd/org-conflict-extract nil #'nd/org-conflict-extract-file)
+   nd/org-conflict-filter-past
+   (--filter (< 0 (plist-get it :range)))
+   nd/org-conflict-split-day-bounds
+   (--sort (< (plist-get it :timestamp) (plist-get other :timestamp)))
+   nd/org-overlist-daily-split
+   (--filter (nd/org-overlist-overloaded-p it))))
 #+END_SRC
 **** frontend
 To display any conflicts, I could just fetch the org headings and throw them into a new buffer. But that's boring, and quite limiting. I basically want all the perks of an agenda buffer...tab-follow, the nice parent display at the bottom, time adjust hotkeys, etc. So the obvious and hacky solution is to throw together a quick-n-dirty agenda buffer which displays each conflict pair in sequentional fashion.
@@ -1658,9 +1722,10 @@ MARKER for use in the conflict agenda view."
 	      'type "timestamp")))))
 
 (defun nd/org-conflct-ts-fmt (ts)
-  (let ((fmt "[%Y-%m-%d %H:%M]"))
+  (let ((fmt "[%Y-%m-%d]"))
     (--> ts (plist-get it :timestamp) (format-time-string fmt it))))
 
+;; TODO...waaaaay too wet (not DRY)
 (defun nd/org-conflicts (&optional arg)
   (interactive "P")
 
@@ -1711,6 +1776,56 @@ MARKER for use in the conflict agenda view."
 					     org-series-cmd ,org-cmd))
       (org-agenda-finalize)
       (setq buffer-read-only t))))
+
+(defun nd/org-overloaded (&optional arg)
+  (interactive "P")
+
+  (if org-agenda-overriding-arguments
+      (setq arg org-agenda-overriding-arguments))
+
+  (if (and (stringp arg) (not (string-match "\\S-" arg))) (setq arg nil))
+
+  (let* ((today (org-today))
+	     (date (calendar-gregorian-from-absolute today))
+	     (completion-ignore-case t)
+         (org-agenda-prefix-format '((agenda . "  %-12:c %-5:e ")))
+	     rtn rtnall files file pos)
+
+    (catch 'exit
+      (when org-agenda-sticky (setq org-agenda-buffer-name "*Org Overloads*"))
+
+      (org-agenda-prepare)
+      ;; (org-compile-prefix-format 'todo)
+      (org-compile-prefix-format 'agenda)
+      ;; (org-set-sorting-strategy 'todo)
+
+      (setq org-agenda-redo-command '(nd/org-overloaded))
+
+	  (insert "Overloaded Days: \n")
+	  (add-text-properties (point-min) (1- (point))
+			               (list 'face 'org-agenda-structure
+				                 'short-heading "Overloads"))
+	  (org-agenda-mark-header-line (point-min))
+
+      (-some->
+       (nd/org-overlist-get)
+       (--each
+           (insert (concat
+                    "On " (nd/org-conflct-ts-fmt (car it)) "\n"
+                    (mapconcat #'nd/get-conflict-header-text it "\n")
+                    "\n"))))
+
+      ;; clean up and finalize
+      (goto-char (point-min))
+      (or org-agenda-multi (org-agenda-fit-window-to-buffer))
+      (add-text-properties
+       (point-min) (point-max)
+	   `(org-agenda-type agenda
+					     org-last-args ,arg
+					     org-redo-cmd ,org-agenda-redo-command
+					     org-series-cmd ,org-cmd))
+      (org-agenda-finalize)
+      (setq buffer-read-only t))))
 #+END_SRC
 **** filters
 #+BEGIN_SRC emacs-lisp
@@ -1727,7 +1842,6 @@ MARKER for use in the conflict agenda view."
 (defvar nd/org-conficts-filter-past t)
 
 (defvar nd/org-conficts-filter-habit t)
-
 #+END_SRC
 *** agenda
 **** targets
