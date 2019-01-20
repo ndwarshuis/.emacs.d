@@ -929,6 +929,28 @@ and reverts all todo keywords to TODO."
   (org-back-to-heading t)
   (delete-region (point) (+ 1 (save-excursion (org-end-of-subtree)))))
 
+(defun nd/org-clock-range ()
+  "Add a complete clock entry to the current heading.
+Does not touch the running clock."
+  (interactive)
+  (let* ((t1 (-> (org-read-date t t) float-time))
+         (t2 (-> (org-read-date t t nil nil t1) float-time))
+         (diff (round (- t2 t1))))
+    (if (< diff 0) (message "Second timestamp earlier than first!")
+      (let* ((h (-> diff (/ 3600) floor))
+             (m (-> diff (- (* h 3600)) (/ 60) floor))
+             (new-clock
+              (concat
+               org-clock-string " "
+               (format-time-string (org-time-stamp-format t t) t1) "--"
+               (format-time-string (org-time-stamp-format t t) t2)" => "
+               (format "%2d:%02d" h m))))
+        (save-excursion
+          (org-clock-find-position nil)
+          (insert-before-markers "\n")
+	      (backward-char 1)
+	      (org-indent-line)
+          (insert new-clock))))))
 #+END_SRC
 *** org agenda
 These are executed directly from agenda views and affect their source org buffers. The trick is that all of them must somehow go back to the heading to which they allude, execute, then update the agenda view with whatever changes have been made.
