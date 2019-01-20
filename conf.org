@@ -1445,48 +1445,83 @@ The modeline is a nice place to indicate if something is clocked in or out. Unfo
 
 (setq spaceline-highlight-face-func 'nd/spaceline-highlight-face-clocked)
 #+END_SRC
-*** conflict detection
-Somehow org-mode has no way to detect conflicts between tasks with timestamps (!!??). Luckily I can make my own.
-**** backend
-The algorithm to detect conflicts scans all org files and stores conflicts in a list of pairs of each heading with a conflicting timestamp.
-
-Steps for this algorithm:
-1. make a list of all entries with timestamps
-2. sort timestamp list
-3. Walk through list and compare entries immediately after (sorting ensures that entries can be skipped once one non-conflict is found). If conflicts are found push the pair to a new list (this is what is used to make the display)
-
-This should be O(n) (best case/no conflicts) to O(n^2) (worst case/everything conflicts)
+*** clustering
+Org mode has no way of detecting if conflicts exist. It also has no way of alerting someone if they have overbooked their schedule
+**** extraction filters
+These control which types of headlines are processed by org-cluster
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-conflict-make-entry (ts range offset fp hardness
+(defvar nd/org-cluster-filter-files t
+  "Set to t if files should be filtered in org-cluster.
+This option does nothing unless `nd/org-cluster-filtered-files' is 
+also non-nil.")
+
+(defconst nd/org-cluster-filtered-files
+  '("incubator" "peripheral")
+  "Files that should be excluded from org-cluster analysis.
+These are pattern-matched so they do not need to be exact names
+or paths.")
+
+(defvar nd/org-cluster-filter-todo t
+  "Set to t if todo keywords should be filtered in org-cluster.
+This option does nothing unless `nd/org-cluster-filtered-todo' is 
+also non-nil.")
+
+(defconst nd/org-cluster-filtered-todo
+  '("CANC" "DONE")
+  "TODO keywords that should be filtered from org-cluster analysis.")
+
+(defvar nd/org-cluster-filter-past t
+  "Set to t to exclude files from before now in org-cluster analysis.")
+
+(defvar nd/org-cluster-filter-habit nil
+  "Set to t to exclude habits from org-cluster analysis.")
+#+END_SRC
+**** timestamp extraction and filtering
+Conflicts and overloads begin with the same list to process, which is created using =org-element-parse-buffer= and a variety of filtering functions to extract relevent timestamps.
+
+The main object that is passed around during extraction and processing is the timestamp-plist as described in =nd/org-cluster-make-tsp= below.
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-cluster-make-tsp (unixtime range offset fp hardness
                                       &optional type)
-  (list :timestamp ts
+  "Construct a timestamp plist to be used in further processing.
+UNIXTIME is the unixtime of the timestamp as an integer, RANGE is the 
+duration of the timestamp (could be 0), OFFSET is the character offset
+of the timestamp in the file represented with filepath FP, HARDNESS
+is a boolean denoting if the timestamp is 'hard' (has minutes and
+hours) or 'soft' (only a date). TYPE can be optionally supplied to
+denote kinds of timestamps (only 'scheduled' for now)."
+  (list :unixtime (round unixtime)
         :range (or range 0)
         :offset offset
         :type type
         :hardness hardness
         :filepath fp))
-
-(defun nd/org-conflict-ts-hard-p (ts)
+        
+(defun nd/org-cluster-ts-hard-p (ts)
+  "Return non-nil if the timestamp TS has hours/minutes."
   (org-element-property :hour-start ts))
-
-(defun nd/org-conflict-parse-ts (ts hl fp)
+  
+(defun nd/org-cluster-parse-ts (ts hl fp)
+  "Parse a timestamp TS belonging to headline HL and filepath FP.
+TS is an object as described in the org-element API. Only active
+or active-range types are considered. Returns a new timestamp-plist
+for TS."
   (when ts
     (let* ((offset (org-element-property :begin hl))
-           (hardness (nd/org-conflict-ts-hard-p ts))
+           (hardness (nd/org-cluster-ts-hard-p ts))
            (split
             (lambda (ts &optional end)
               (--> ts
                    (org-timestamp-split-range it end)
                    (org-element-property :raw-value it)
-                   (org-2ft it)
-                   (round it))))
+                   (org-2ft it))))
            (start (funcall split ts)))
       (if (eq (org-element-property :type ts) 'active-range)
           (let ((range (--> ts (funcall split it t) (- it start))))
-            (nd/org-conflict-make-entry start range offset fp hardness))
-        (nd/org-conflict-make-entry start 0 offset fp hardness)))))
-
-(defun nd/org-conflict-effort-seconds (effort-str)
+            (nd/org-cluster-make-tsp start range offset fp hardness))
+        (nd/org-cluster-make-tsp start 0 offset fp hardness)))))
+        
+(defun nd/org-cluster-effort-seconds (effort-str)
   "Convert EFFORT-STR into an integer in seconds from HH:MM format."
   (let ((effort-str (string-trim effort-str)))
     (save-match-data
@@ -1503,26 +1538,35 @@ This should be O(n) (best case/no conflicts) to O(n^2) (worst case/everything co
                (* 60))))
        (t (error (format "Unknown effort: %s'" effort-str)))))))
 
-(defun nd/org-conflict-extract (acc fun objs &rest args)
+(defun nd/org-cluster-extract (acc fun objs &rest args)
+  "Run FUN on each of OBJS and put results into accumulator ACC.
+FUN is a function that takes the accumulator as its first argument,
+one member of OBJS as the second, and ARGS as the rest if supplied."
   (while objs
     (setq acc (apply fun acc (car objs) args)
           objs (cdr objs)))
   acc)
 
-(defun nd/org-conflict-extract-hl-sched (acc hl fp)
+(defun nd/org-cluster-extract-hl-sched (acc hl fp)
+  "Extract scheduled timestamp from headline HL in filepath FP.
+Create a new timestamp-plist and add to accumulator ACC."
   (let* ((ts (org-element-property :scheduled hl))
-         (ts-ft (->> ts (org-element-property :raw-value) org-2ft round))
+         (unixtime (->> ts (org-element-property :raw-value) org-2ft))
          (range (-some->> hl
                           (org-element-property :EFFORT)
-                          nd/org-conflict-effort-seconds))
-         (hardness (nd/org-conflict-ts-hard-p ts))
+                          nd/org-cluster-effort-seconds))
+         (hardness (nd/org-cluster-ts-hard-p ts))
          (offset (org-element-property :begin hl)))
-    (if (= 0 ts-ft) acc
-      (-> ts-ft
-          (nd/org-conflict-make-entry range offset fp hardness 'scheduled)
+    (if (= 0 unixtime) acc
+      (-> unixtime
+          (nd/org-cluster-make-tsp range offset fp hardness 'scheduled)
           (cons acc)))))
 
-(defun nd/org-conflict-extract-hl-ts (acc hl fp)
+(defun nd/org-cluster-extract-hl-ts (acc hl fp)
+  "Extract timestamps from headline HL in filepath FP.
+All active timestamps that are not in drawers or the planning header 
+are considered. Each timestamp is converted into a new timestamp-plist
+and added to accumulator ACC."
   (--> hl
        (assoc 'section it)
        (org-element-contents it)
@@ -1536,143 +1580,185 @@ This should be O(n) (best case/no conflicts) to O(n^2) (worst case/everything co
         (or (eq 'active (org-element-property :type it))
             (eq 'active-range (org-element-property :type it)))
         it)
-       (--map (nd/org-conflict-parse-ts it hl fp) it)
+       (--map (nd/org-cluster-parse-ts it hl fp) it)
        (append acc it)))
 
-(defun nd/org-conflict-extract-hl (acc hl fp)
+(defun nd/org-cluster-extract-hl (acc hl fp)
+  "Extract timestamps from headline HL in filepath FP and store in ACC."
   (-> acc
-      (nd/org-conflict-extract-hl-sched hl fp)
-      (nd/org-conflict-extract-hl-ts hl fp)))
+      (nd/org-cluster-extract-hl-sched hl fp)
+      (nd/org-cluster-extract-hl-ts hl fp)))
 
-(defun nd/org-conflict-filter-todo (hls)
-  (if (not nd/org-conficts-filter-todo) hls
+(defun nd/org-cluster-filter-todo (hls)
+  "Filter certain TODO keywords from headline list HLS."
+  (if (not nd/org-cluster-filter-todo) hls
     (--remove
      (member (org-element-property :todo-keyword it)
-                      nd/org-conficts-filtered-todo)
+                      nd/org-cluster-filtered-todo)
      hls)))
 
-(defun nd/org-conflict-filter-files (fps)
-  (if (not nd/org-conficts-filter-files) fps
+(defun nd/org-cluster-filter-files (fps)
+  "Filter certain file names from files list FPS."
+  (if (not nd/org-cluster-filter-files) fps
     (--remove
-     (-find (lambda (s) (string-match-p s it)) nd/org-conficts-filtered-files)
+     (-find (lambda (s) (string-match-p s it)) nd/org-cluster-filtered-files)
      fps)))
 
-(defun nd/org-conflict-filter-past (tss)
-  (if (not nd/org-conficts-filter-past) tss
+(defun nd/org-cluster-filter-past (tsps)
+  "Filter out timestamp-plists in list TSPS if they start in the past."
+  (if (not nd/org-cluster-filter-past) tsps
     (let ((ft (float-time)))
-      (--remove (< (plist-get it :timestamp) ft) tss))))
+      (--remove (< (plist-get it :unixtime) ft) tsps))))
 
-(defun nd/org-conflict-filter-habit (hls)
-  (if (not nd/org-conficts-filter-habit) hls
+(defun nd/org-cluster-filter-habit (hls)
+  "Filter headlines from headline list HLS that are habits."
+  (if (not nd/org-cluster-filter-habit) hls
     (--remove (org-element-property :STYLE it) hls)))
 
-(defun nd/org-conflict-extract-file (acc fp)
+(defun nd/org-cluster-extract-file (acc fp)
+  "Extract timestamps from filepath FP and add to accumulator ACC."
   (-->
    fp
    (find-file-noselect it t)
    (with-current-buffer it (org-element-parse-buffer))
    (org-element-map it 'headline #'identity)
-   (nd/org-conflict-filter-todo it)
-   (nd/org-conflict-filter-habit it)
-   (nd/org-conflict-extract acc #'nd/org-conflict-extract-hl it fp)))
+   (nd/org-cluster-filter-todo it)
+   (nd/org-cluster-filter-habit it)
+   (nd/org-cluster-extract acc #'nd/org-cluster-extract-hl it fp)))
+  
+(defun nd/org-cluster-get-unprocessed ()
+  "Return a list of timestamp-plists with desired filter settings."
+  (->>
+   ;; (list "~/Org/reference/testconflict.org")
+   (org-agenda-files)
+   nd/org-cluster-filter-files
+   (nd/org-cluster-extract nil #'nd/org-cluster-extract-file)   
+   nd/org-cluster-filter-past))
+#+END_SRC
+**** conflict detection
+This algorithm builds a list of pairs, with each pair being a two tasks that conflict and should be O(n) (best case/no conflicts) to O(n^2) (worst case/everything conflicts).
 
-(defun nd/org-conflict-conflicting-p (ts-a ts-b)
+Steps for this:
+1. make a list of all entries containing timestamps (active and scheduled)
+2. sort timestamp list
+3. Walk through list and compare entries immediately after (sorting ensures that entries can be skipped once one non-conflict is found). If conflicts are found push the pair to new list.
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-cluster-conflicting-p (tsp-a tsp-b)
   "Return t if timestamps TS-A and TS-B conflict."
   ;; assume that ts-a starts before ts-b
-  (let* ((start-a (plist-get ts-a :timestamp))
-         (start-b (plist-get ts-b :timestamp))
-         (end-a (+ start-a (plist-get ts-a :range))))
+  (let* ((start-a (plist-get tsp-a :unixtime))
+         (start-b (plist-get tsp-b :unixtime))
+         (end-a (-> tsp-a (plist-get :range) (+ start-a))))
     (or (= start-a start-b) (< start-b end-a))))
 
-(defun nd/find-conflict (ts ts-list conlist)
-  (->> ts-list
-       (--take-while (nd/org-conflict-conflicting-p ts it))
-       (--map (cons ts it))
+(defun nd/org-cluster-find-conflict (tsp tsps conlist)
+  "Test if timestamp-plist TSP conflicts with any in TSPS.
+If found, anything in TSPS is cons'd with TSP and added to CONLIST
+as a pair. New CONLIST is returned."
+  (->> tsps
+       (--take-while (nd/org-cluster-conflicting-p tsp it))
+       (--map (cons tsp it))
        (append conlist)))
   
-(defun nd/org-conflict-build-conlist (ts-list)
+(defun nd/org-cluster-build-conlist (tsps)
+  "Build a list of conflict pairs from timestamp-plist TSPS."
   (let ((conlist))
-    (while (< 1 (length ts-list))
-      (setq conlist (nd/find-conflict (car ts-list) (cdr ts-list) conlist)
-            ts-list (cdr ts-list)))
+    (while (< 1 (length tsps))
+      (setq conlist (nd/org-cluster-find-conflict (car tsps)
+                                                  (cdr tsps)
+                                                  conlist)
+            tsps (cdr tsps)))
     conlist))
 
-(defun nd/org-conflict-split-day-bounds (tss)
+(defun nd/org-cluster-get-conflicts ()
+  "Return a list of cons cells representing conflict pairs.
+Each member in the cons cell is a timestamp-plist."
+  (->>
+   (nd/org-cluster-get-unprocessed)
+   (--filter (plist-get it :hardness))
+   (--sort (< (plist-get it :unixtime) (plist-get other :unixtime)))
+   nd/org-cluster-build-conlist))
+#+END_SRC
+**** overload detection
+Overloads are defined as days that have more than 24 hours worth of scheduled material. The algorithm is O(n) as it is basically just a bunch of filtering functions that walk through the list.
+
+Steps for the algorithm:
+1. filter only ranged entries (unranged entries have zero time)
+2. maybe split timestamps if they span multiple days
+3. sort from earliest to latest starting time
+4. sum the range of timestamps in each day, keeping those that exceed 24 hours
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-cluster-split-day-bounds (tsps)
+  "Split timestamp-plists in TSPS via daily boundaries.
+Returns a new timestamp-plist with equal or greater length depending
+on how many members needed splitting."
   (letrec
       ((new
-        (lambda (start end ts)
-          (nd/org-conflict-make-entry start
+        (lambda (start end tsp)
+          (nd/org-cluster-make-tsp start
                                       (- end start)
-                                      (plist-get ts :offset)
-                                      (plist-get ts :filepath)
-                                      (plist-get ts :hardness)
-                                      (plist-get ts :type))))
+                                      (plist-get tsp :offset)
+                                      (plist-get tsp :filepath)
+                                      (plist-get tsp :hardness)
+                                      (plist-get tsp :type))))
        ;; need to temporarily offset the epoch time so day
        ;; boundaries line up in local time
        (split
-        (lambda (start end ts)
+        (lambda (start end tsp)
           (let* ((tzs-a (-> start current-time-zone car))
                  (tzs-b (-> end current-time-zone car))
                  (start* (-> end (+ tzs-b) (ceiling 86400) 1- (* 86400) (- tzs-b))))
             (if (> start* (-> start (+ tzs-a) (floor 86400) (* 86400) (- tzs-a)))
-                (cons (funcall new start* end ts)
-                      (funcall split start start* ts))
-              (list (funcall new start end ts))))))
+                (cons (funcall new start* end tsp)
+                      (funcall split start start* tsp))
+              (list (funcall new start end tsp))))))
        (split-maybe
-        (lambda (ts)
-          (let* ((start (plist-get ts :timestamp))
-                 (end (+ start (plist-get ts :range)))
+        (lambda (tsp)
+          (let* ((start (plist-get tsp :unixtime))
+                 (end (+ start (plist-get tsp :range)))
                  (tzs (-> start current-time-zone car)))
             (if (< (-> start (+ tzs) (ceiling 86400)) end)
-                (funcall split start end ts)
-              ts)))))
-    (--mapcat (funcall split-maybe it) tss)))
+                (funcall split start end tsp)
+              tsp)))))
+    (--mapcat (funcall split-maybe it) tsps)))
 
-(defun nd/org-overlist-overloaded-p (tss)
-  (letrec ((ts2diff
-            (lambda (ts)
-              (let ((start (plist-get ts :timestamp)))
-                (- (-> ts (plist-get :range) (+ start)) start)))))
-    (->> tss (--map (funcall ts2diff it)) -sum (<= 86400))))
-
-(defun nd/org-overlist-daily-split (tss)
-  (letrec ((tz-shift (lambda (ts) (-> ts current-time-zone car (+ ts)))))
+(defun nd/org-cluster-daily-split (tsps)
+  "Group timestamp-plist TSPS into sublists for each day."
+  (letrec ((tz-shift (lambda (tsp) (-> tsp current-time-zone car (+ tsp)))))
     (->>
-     tss
+     tsps
      (--partition-by (--> it
-                          (plist-get it :timestamp)
+                          (plist-get it :unixtime)
                           (funcall tz-shift it)
                           (floor it 86400))))))
-
-;; TODO, this isn't DRY
-(defun nd/org-conflict-get ()
+                          
+(defun nd/org-cluster-overloaded-p (tsps)
+  "Return t if total time of timestamp-plists in TSPS exceeds 24 hours.
+It is assumed the TSPS represents tasks and appointments within one
+day."
+  (letrec ((ts2diff
+            (lambda (tsp)
+              (let ((start (plist-get tsp :unixtime)))
+                (- (-> tsp (plist-get :range) (+ start)) start)))))
+    (->> tsps (--map (funcall ts2diff it)) -sum (<= 86400))))
+                          
+(defun nd/org-cluster-get-overloads ()
+  "Return list of lists of timestamp-plists grouped by day.
+Anything present represents all the tasks in a single day if that day
+is overloaded. If a day is not overloaded there will be nothing for it
+in the returned list."
   (->>
-   ;; (list "~/Org/reference/testconflict.org")
-   (org-agenda-files)
-   nd/org-conflict-filter-files
-   (nd/org-conflict-extract nil #'nd/org-conflict-extract-file)
-   nd/org-conflict-filter-past
-   (--filter (plist-get it :hardness))
-   (--sort (< (plist-get it :timestamp) (plist-get other :timestamp)))
-   nd/org-conflict-build-conlist))
-
-(defun nd/org-overlist-get ()
-  (->>
-   ;; (list "~/Org/reference/testconflict.org")
-   (org-agenda-files)
-   nd/org-conflict-filter-files
-   (nd/org-conflict-extract nil #'nd/org-conflict-extract-file)
-   nd/org-conflict-filter-past
+   (nd/org-cluster-get-unprocessed)
    (--filter (< 0 (plist-get it :range)))
-   nd/org-conflict-split-day-bounds
-   (--sort (< (plist-get it :timestamp) (plist-get other :timestamp)))
-   nd/org-overlist-daily-split
-   (--filter (nd/org-overlist-overloaded-p it))))
+   nd/org-cluster-split-day-bounds
+   (--sort (< (plist-get it :unixtime) (plist-get other :unixtime)))
+   nd/org-cluster-daily-split
+   (--filter (nd/org-cluster-overloaded-p it))))
 #+END_SRC
 **** frontend
-To display any conflicts, I could just fetch the org headings and throw them into a new buffer. But that's boring, and quite limiting. I basically want all the perks of an agenda buffer...tab-follow, the nice parent display at the bottom, time adjust hotkeys, etc. So the obvious and hacky solution is to throw together a quick-n-dirty agenda buffer which displays each conflict pair in sequentional fashion.
+I could just fetch the org headings and throw them into a new buffer. But that's boring, and quite limiting. I basically want all the perks of an agenda buffer...tab-follow, the nice parent display at the bottom, time adjust hotkeys, etc. So the obvious and hacky solution is to throw together a quick-n-dirty agenda buffer.
 #+BEGIN_SRC emacs-lisp
-(defun nd/get-conflict-header-text (ts-entry)
+(defun nd/org-cluster-headline-text (ts-entry)
   "Return string with text properties representing the org header for
 MARKER for use in the conflict agenda view."
   (let* ((offset (plist-get ts-entry :offset))
@@ -1721,12 +1807,12 @@ MARKER for use in the conflict agenda view."
 	      'ts-date ts-date
 	      'type "timestamp")))))
 
-(defun nd/org-conflct-ts-fmt (ts)
+(defun nd/org-cluster-ts-fmt (ts)
   (let ((fmt "[%Y-%m-%d]"))
-    (--> ts (plist-get it :timestamp) (format-time-string fmt it))))
+    (--> ts (plist-get it :unixtime) (format-time-string fmt it))))
 
 ;; TODO...waaaaay too wet (not DRY)
-(defun nd/org-conflicts (&optional arg)
+(defun nd/org-cluster-show-conflicts (&optional arg)
   (interactive "P")
 
   (if org-agenda-overriding-arguments
@@ -1748,7 +1834,7 @@ MARKER for use in the conflict agenda view."
       (org-compile-prefix-format 'agenda)
       ;; (org-set-sorting-strategy 'todo)
 
-      (setq org-agenda-redo-command '(nd/org-conflicts))
+      (setq org-agenda-redo-command '(nd/org-cluster-show-conflicts))
 
 	  (insert "Conflicting Headings: \n")
 	  (add-text-properties (point-min) (1- (point))
@@ -1757,12 +1843,12 @@ MARKER for use in the conflict agenda view."
 	  (org-agenda-mark-header-line (point-min))
 
       (-some->
-       (nd/org-conflict-get)
+       (nd/org-cluster-get-conflicts)
        (--each
            (insert (concat
-                    "At " (nd/org-conflct-ts-fmt (car it)) "\n"
-                    (nd/get-conflict-header-text (car it)) "\n"
-                    (nd/get-conflict-header-text (cdr it)) "\n"
+                    "At " (nd/org-cluster-ts-fmt (car it)) "\n"
+                    (nd/org-cluster-headline-text (car it)) "\n"
+                    (nd/org-cluster-headline-text (cdr it)) "\n"
                     "\n"))))
 
       ;; clean up and finalize
@@ -1777,7 +1863,7 @@ MARKER for use in the conflict agenda view."
       (org-agenda-finalize)
       (setq buffer-read-only t))))
 
-(defun nd/org-overloaded (&optional arg)
+(defun nd/org-cluster-show-overloads (&optional arg)
   (interactive "P")
 
   (if org-agenda-overriding-arguments
@@ -1799,7 +1885,7 @@ MARKER for use in the conflict agenda view."
       (org-compile-prefix-format 'agenda)
       ;; (org-set-sorting-strategy 'todo)
 
-      (setq org-agenda-redo-command '(nd/org-overloaded))
+      (setq org-agenda-redo-command '(nd/org-cluster-show-overloads))
 
 	  (insert "Overloaded Days: \n")
 	  (add-text-properties (point-min) (1- (point))
@@ -1808,11 +1894,11 @@ MARKER for use in the conflict agenda view."
 	  (org-agenda-mark-header-line (point-min))
 
       (-some->
-       (nd/org-overlist-get)
+       (nd/org-cluster-get-overloads)
        (--each
            (insert (concat
-                    "On " (nd/org-conflct-ts-fmt (car it)) "\n"
-                    (mapconcat #'nd/get-conflict-header-text it "\n")
+                    "On " (nd/org-cluster-ts-fmt (car it)) "\n"
+                    (mapconcat #'nd/org-cluster-headline-text it "\n")
                     "\n"))))
 
       ;; clean up and finalize
@@ -1826,22 +1912,6 @@ MARKER for use in the conflict agenda view."
 					     org-series-cmd ,org-cmd))
       (org-agenda-finalize)
       (setq buffer-read-only t))))
-#+END_SRC
-**** filters
-#+BEGIN_SRC emacs-lisp
-(defvar nd/org-conficts-filter-files t)
-
-(defconst nd/org-conficts-filtered-files
-  '("incubator" "peripheral"))
-
-(defvar nd/org-conficts-filter-todo t)
-
-(defconst nd/org-conficts-filtered-todo
-  '("CANC" "DONE"))
-
-(defvar nd/org-conficts-filter-past t)
-
-(defvar nd/org-conficts-filter-habit t)
 #+END_SRC
 *** agenda
 **** targets
@@ -3606,6 +3676,8 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "<f1>") 'org-agenda)
 (global-set-key (kbd "<f2>") 'org-capture)
 (global-set-key (kbd "<f3>") 'cfw:open-org-calendar)
+(global-set-key (kbd "C-<f3>") 'nd/org-cluster-show-conflicts)
+(global-set-key (kbd "C-S-<f3>") 'nd/org-cluster-show-overloads)
 (global-set-key (kbd "<f4>") 'org-clock-goto)
 (global-set-key (kbd "<f5>") 'ansi-term)
 (global-set-key (kbd "<f8>") 'helm-command-prefix)
