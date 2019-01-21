@@ -930,7 +930,7 @@ and reverts all todo keywords to TODO."
   (delete-region (point) (+ 1 (save-excursion (org-end-of-subtree)))))
 
 (defun nd/org-clock-range ()
-  "Add a complete clock entry to the current heading.
+  "Add a completed clock entry to the current heading.
 Does not touch the running clock."
   (interactive)
   (let* ((t1 (-> (org-read-date t t) float-time))
@@ -3649,6 +3649,11 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 
             ;; this is just a useful function I made (actually I think I stole)
             (local-set-key (kbd "C-c C-x x") 'nd/mark-subtree-done)
+
+            ;; this actually overrides org-clock-report (which I never use)
+            ;; with a function to insert full clock entries for those times
+            ;; I forget to clock in (often)
+            (local-set-key (kbd "C-c C-x C-r") 'nd/org-clock-range)
 
             ;; override default org subtree cloning with something that clones and resets
             (local-set-key (kbd "C-c C-x c") 'nd/org-clone-subtree-with-time-shift)))
