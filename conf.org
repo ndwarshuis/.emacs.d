@@ -3481,11 +3481,11 @@ Comint-based inferior modes often are not evil (eg =intero= and =ESS=). Configur
 **** interactive functions
 Some common interactive functions for comint-based modes
 #+BEGIN_SRC emacs-lisp
-(defun nd/comint-char-mode-evil-insert ()
-  "If not at the last line, go to the end of the buffer and enter insert mode.  Else just enter insert mode."
-  (interactive)
-  (if (/= (line-number-at-pos (point)) (line-number-at-pos (point-max)))
-        (goto-char (point-max))))
+;; (defun nd/comint-char-mode-evil-insert ()
+;;   "If not at the last line, go to the end of the buffer and enter insert mode.  Else just enter insert mode."
+;;   (interactive)
+;;   (if (/= (line-number-at-pos (point)) (line-number-at-pos (point-max)))
+;;         (goto-char (point-max))))
         
 (defun nd/comint-send-input-evil-insert (&optional send-input-cmd)
   "Go into insert mode after calling SEND-INPUT-CMD which is usually
