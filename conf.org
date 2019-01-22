@@ -929,28 +929,40 @@ and reverts all todo keywords to TODO."
   (org-back-to-heading t)
   (delete-region (point) (+ 1 (save-excursion (org-end-of-subtree)))))
 
-(defun nd/org-clock-range ()
+(defun nd/org-clock-range (&optional arg)
   "Add a completed clock entry to the current heading.
-Does not touch the running clock."
-  (interactive)
+Does not touch the running clock. When called with one C-u prefix
+argument, ask for a range in minutes in place of the second date."
+  (interactive "P")
   (let* ((t1 (-> (org-read-date t t) float-time))
-         (t2 (-> (org-read-date t t nil nil t1) float-time))
-         (diff (round (- t2 t1))))
-    (if (< diff 0) (message "Second timestamp earlier than first!")
+         (diff (if (equal arg '(4))
+                   (-some-> (read-string "Length in minutes: ")
+                            (cl-parse-integer :junk-allowed t)
+                            (* 60))
+                 (-> (org-read-date t t nil nil t1)
+                      float-time
+                      round
+                      (- t1)))))
+    (cond
+     ((not diff) (message "Invalid range given!"))
+     ((< diff 0) (message "Second timestamp earlier than first!"))
+     (t
       (let* ((h (-> diff (/ 3600) floor))
              (m (-> diff (- (* h 3600)) (/ 60) floor))
              (new-clock
               (concat
                org-clock-string " "
-               (format-time-string (org-time-stamp-format t t) t1) "--"
-               (format-time-string (org-time-stamp-format t t) t2)" => "
+               (format-time-string (org-time-stamp-format t t) t1)
+               "--"
+               (format-time-string (org-time-stamp-format t t) (+ t1 diff))
+               " => "
                (format "%2d:%02d" h m))))
         (save-excursion
           (org-clock-find-position nil)
           (insert-before-markers "\n")
 	      (backward-char 1)
 	      (org-indent-line)
-          (insert new-clock))))))
+          (insert new-clock)))))))
 #+END_SRC
 *** org agenda
 These are executed directly from agenda views and affect their source org buffers. The trick is that all of them must somehow go back to the heading to which they allude, execute, then update the agenda view with whatever changes have been made.
@@ -1001,6 +1013,13 @@ It will clone the last entry in the selected subtree."
   (nd/org-agenda-cmd-wrapper
    nil
    (call-interactively #'nd/org-delete-subtree)))
+
+(defun nd/org-agenda-clock-range ()
+  "Apply `nd/org-clock-range' to an agenda entry"
+  (interactive)
+  (nd/org-agenda-cmd-wrapper
+   nil
+   (call-interactively #'nd/org-clock-range)))
 #+END_SRC
 ** calfw
 This is a nifty calendar...sometimes way faster than the agenda buffer for looking at long term things.
@@ -3662,7 +3681,8 @@ These are for mode-specific bindings that can/should be outside of the evil maps
           (lambda ()
             (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)
             (local-set-key (kbd "C-c C-x c") 'nd/org-agenda-clone-subtree-with-time-shift)
-            (local-set-key (kbd "C-c C-x C-b") 'nd/org-agenda-toggle-checkbox)))
+            (local-set-key (kbd "C-c C-x C-b") 'nd/org-agenda-toggle-checkbox)
+            (local-set-key (kbd "C-c C-x C-r") 'nd/org-agenda-clock-range)))
 #+END_SRC
 *** mu4e
 #+BEGIN_SRC emacs-lisp
