@@ -331,9 +331,37 @@ Emacs comes with some useless garbage by default. IMHO (in my haughty opinion), 
 (scroll-bar-mode -1)
 #+END_SRC
 ** startup screen
-I don't need the startup screen; scratch buffer is fine. This may change in the future.
+Default startup screen is silly
 #+BEGIN_SRC emacs-lisp
 (setq inhibit-startup-screen t)
+#+END_SRC
+
+Instead use a dashboard, and display days until predicted death...you know, as a pick-me-up ;)
+#+BEGIN_SRC emacs-lisp
+(defvar nd/user-birthday 727506000
+  "User date of birth in unix time")
+
+(defvar nd/predicted-age-at-death 71.5
+  "Expected age that user will die.")
+
+(defun nd/deathclock (list-size) 
+  (let ((death-ut (-> nd/predicted-age-at-death
+                      (* 31557600)
+                      (+ nd/user-birthday))))
+    (insert (--> (float-time)
+                 (- death-ut it)
+                 (/ it 86400)
+                 (round it)
+                 (format "%s days until death" it)))))
+  
+(use-package dashboard
+  :ensure t
+  :config 
+  (setq dashboard-banner-logo-title nil
+        dashboard-startup-banner "~/.emacs.d/dashlogo.png"
+        dashboard-items '(deathclock))
+  (add-to-list 'dashboard-item-generators '(deathclock . nd/deathclock))
+  (dashboard-setup-startup-hook))
 #+END_SRC
 ** windows
 *** popup windows
