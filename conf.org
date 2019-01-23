@@ -2184,12 +2184,58 @@ entire subtrees to save time and ignore tasks")
 #+END_SRC
 ***** task helper functions
 These are the building blocks for skip functions.
+****** org-element
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-element-parse-headline (&optional granularity subtree)
+  "Like `org-element-parse-buffer' but on only one headline. Assumes 
+that point is currently on the starting line of the headline in
+question. if SUBTREE is t, return all the subheadings under this
+heading."
+   ;; (line-beginning-position)
+  (let ((start (point))
+        (end (if subtree
+                 (save-excursion (org-end-of-subtree))
+               (save-excursion (outline-next-heading) (point)))))
+    (-> (org-element--parse-elements
+         start end 'first-section nil granularity nil nil)
+        car)))
+
+(defun nd/org-element-first-lb-entry (headline)
+  "Get the first logbook entry of the headline under point."
+  (letrec
+      ((get-ts
+        (lambda (obj)
+          (if (eq 'clock (org-element-type obj))
+              (--> obj
+                   (org-element-property :value it)
+                   ;; assume this will return the latest even if
+                   ;; not a range
+                   (org-timestamp-split-range it t))
+            (->>
+             obj
+             org-element-contents
+             car
+             org-element-contents
+             car
+             ;; this assumes that the log timestamps are always
+             ;; at the end of the first line
+             (--take-while (not (eq 'line-break (org-element-type it))))
+             (--last (eq 'timestamp (org-element-type it))))))))
+  (-some-->
+   headline
+   (org-element-contents it)
+   (car it)
+   (org-element-contents it)
+   (--first
+    (equal org-log-into-drawer (org-element-property :drawer-name it))
+    it)
+   (org-element-contents it)
+   (car it)
+   (funcall get-ts it)
+   (org-element-property :raw-value it))))
+#+END_SRC
 ****** timestamps
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-entry-get-ia-timestamp ()
-  "Get the inactive timestamp of the current entry but skip those in logbooks."
-  (let (( (re-search-forward regexp end t)))))
-
 (defun nd/get-date-property (timestamp-property)
   "Get TIMESTAMP-PROPERTY on current heading and convert to a number.
 If it does not have a date, it will return nil."
@@ -2214,10 +2260,6 @@ to REF-TIME. Returns nil if no timestamp is found."
 (defun nd/is-created-heading-p ()
   "Return heading's CREATED property timestamp or nil."
   (nd/get-date-property "CREATED"))
-
-(defun nd/is-ia-timestamped-heading-p ()
-  "Get active timestamp of current heading."
-  (nd/get-date-property "TIMESTAMP_IA"))
 
 (defun nd/is-timestamped-heading-p ()
   "Get active timestamp of current heading."
@@ -2251,11 +2293,14 @@ to REF-TIME. Returns nil if no timestamp is found."
    'nd/is-closed-heading-p
     (- (* 60 60 24 nd/archive-delay-days))))
 
-(defun nd/is-inert-heading-p ()
-  "Return timestamp if current heading is inert."
-  (nd/heading-compare-timestamp
-   'nd/is-ia-timestamped-heading-p
-   (- (* 60 60 24 nd/inert-delay-days))))
+(defun nd/is-inert-p ()
+  "Return most recent timestamp if headline is inert."
+  (let* ((recent-ft (-some->> (nd/org-element-parse-headline)
+                              nd/org-element-first-lb-entry
+                              org-2ft)))
+    (-some--> (or recent-ft (nd/get-date-property "CREATED"))
+              (- (float-time) it)
+              (when (> it (* 86400 nd/inert-delay-days)) it))))
 #+END_SRC
 ****** task level testing
 #+BEGIN_SRC emacs-lisp
@@ -2280,6 +2325,23 @@ to REF-TIME. Returns nil if no timestamp is found."
 (defun nd/is-atomic-task-p ()
   "Return todo keyword if heading has no todoitem parents or children."
   (and (not (nd/heading-has-parent 'nd/is-todoitem-p)) (nd/is-task-p)))
+
+(defun nd/task-status ()
+  "Return the status of the headline under point."
+  (let ((kw (nd/is-task-p)))
+    (when kw
+      (cond 
+       ((nd/is-archivable-heading-p)
+        :archiveable)
+       ((nd/is-inert-p)
+        :inert)
+       ((and (member kw org-done-keywords) (not (nd/is-closed-heading-p)))
+        :done-unclosed)
+       ((and (not (member kw org-done-keywords)) (nd/is-closed-heading-p))
+        :undone-closed)
+       ((member kw org-done-keywords)
+        :completed)
+       (t :active)))))
 #+END_SRC
 ****** property testing
 #+BEGIN_SRC emacs-lisp
