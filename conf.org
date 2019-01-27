@@ -3679,20 +3679,20 @@ REPL. If no SEND-INPUT-CMD then `comint-send-input' is used."
   (kbd "RET") (lambda () nd/comint-send-input-evil-insert
                 'inferior-ess-send-input))
 
-(add-hook 'inferior-ess-mode-hook
-          (lambda ()
-            (add-hook 'evil-insert-state-entry-hook
-                      'nd/comint-char-mode-evil-insert nil t)))
+;; (add-hook 'inferior-ess-mode-hook
+;;           (lambda ()
+;;             (add-hook 'evil-insert-state-entry-hook
+;;                       'nd/comint-char-mode-evil-insert nil t)))
 #+END_SRC
 **** intero
 #+BEGIN_SRC emacs-lisp
 (evil-define-key 'normal intero-repl-mode-map
   (kbd "RET") 'nd/comint-send-input-evil-insert)
   
-(add-hook 'intero-repl-mode-hook
-          (lambda ()
-            (add-hook 'evil-insert-state-entry-hook
-                      'nd/comint-char-mode-evil-insert nil t)))
+;; (add-hook 'intero-repl-mode-hook
+;;           (lambda ()
+;;             (add-hook 'evil-insert-state-entry-hook
+;;                       'nd/comint-char-mode-evil-insert nil t)))
 #+END_SRC
 *** collection
 Most packages that don't have an evil version are in this one. I don't like surprises so I set =evil-collection-modes-list= with the modes I actually want. Some of these are further configured below.
