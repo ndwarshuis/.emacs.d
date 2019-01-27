@@ -2644,6 +2644,18 @@ Skip functions for headings which may or may not be todo-items.
 ****** tasks
 A few functions apply to both atomic tasks and project tasks the same.
 #+BEGIN_SRC emacs-lisp
+(defun nd/skip-non-tasks ()
+  "Skip headlines that are not tasks."
+  (save-restriction
+    (widen)
+    (let ((keyword (nd/is-todoitem-p)))
+      (if keyword
+          (when (nd/heading-has-children 'nd/is-todoitem-p)
+              (if (member keyword nd/project-skip-todostates)
+                  (nd/skip-subtree)
+                (nd/skip-heading)))
+        (nd/skip-heading)))))
+
 (defun nd/skip-non-created-tasks ()
   "Skip tasks that do not have CREATED timestamp properties."
   (save-excursion
@@ -2770,31 +2782,27 @@ Projects are handled quite simply. They have statuscodes for which I test, and t
 ***** sorting and filtering
 These are used to filter and sort within block agendas (note this is different from the other filtering functions above as these are non-interactive).
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-agenda-filter-status (filter status-fun a-line
-                                           &optional filter-only)
-  "Filter for `org-agenda-before-sorting-filter-function' intended for
-agenda project views (eg makes the assumption that all entries are
-from projects in the original org buffer) wherein this function will
-filter project headings based on their statuscodes.
-
-It works by going to the original org buffer and determining the 
-project status using STATUS-FUN, after which it will check if 
-status is in FILTER (a list of statuscodes). If true, the flag string 
-in the prefix is replaced with the status, and the status is set as a 
-text property for further sorting.
-
-If option FILTER-ONLY is t, function only return the unmodified a-line 
-or nil to act as a filter (eg does not touch text properties)."
+(defun nd/org-agenda-filter-prop (a-line filter prop-fun
+                                           &optional prop-key)
+  "Filter for `org-agenda-before-sorting-filter-function' where
+A-LINE is a line from the agenda view, FILTER is an ordered list
+of property values to be filtered/sorted, and PROP-FUN is a function
+that determines a property value based on the org content of the
+original buffer. If PROP-KEY is supplied, assign the return value of
+PROP-FUN to PROP-KEY in A-LINE's text properties. Returns either nil
+if return value of PROP-FUN not in FILTER or A-LINE (modified or not)."
   (let* ((m (get-text-property 1 'org-marker a-line))
          (s (with-current-buffer (marker-buffer m)
               (goto-char m)
-              (funcall status-fun))))
-    (if (member s filter)
-        (if filter-only
-            a-line
-          (org-add-props (replace-regexp-in-string
-                          "xxxx" (symbol-name s) a-line)
-              nil 'project-status s)))))
+              (funcall prop-fun))))
+    (when (find s filter)
+        (if (not prop-key) a-line
+          (--> a-line
+               (replace-regexp-in-string
+                (format "\\$%s\\$" (symbol-name prop-key))
+                (symbol-name s)
+                it)
+               (org-add-props it nil prop-key s))))))
 
 (defun nd/org-agenda-sort-prop (prop order a b)
   "Sort a block agenda view by text property PROP given a list ORDER
@@ -2807,6 +2815,34 @@ inputs. To be used with `org-agenda-cmp-user-defined'."
     (cond ((or (null pa) (null pb)) nil)
           ((< pa pb) +1)
           ((> pa pb) -1))))
+
+(defun nd/org-agenda-sort-multi (a b &rest funs)
+  "Sort lines A and B from block agenda view given functions FUNS.
+Functions in FUNS must take either A or B as their arguments and
+should return a positive integer indicating their rank. The FUNS
+list is traversed in order, where the front is the outermost sorting
+order."
+  (let* ((fun (car funs))
+         (pa (funcall fun a))
+         (pb (funcall fun b)))
+    (cond
+     ((< pa pb) +1)
+     ((> pa pb) -1)
+     (t (-some->> funs cdr (apply #'nd/org-agenda-sort-multi a b))))))
+
+(defun nd/org-agenda-sort-task-todo (line)
+  (or
+   (-some-> (get-text-property 1 'todo-state line)
+            (position nd/org-agenda-todo-sort-order :test #'equal))
+   (length nd/org-agenda-todo-sort-order)))
+  
+(defun nd/org-agenda-sort-status (line order)
+  (or
+   (-some-> (get-text-property 1 'statuscode line) (position order))
+   (length order)))
+
+(defun nd/org-agenda-sort-task-atomic (line)
+  (if (eq '! (get-text-property 1 'atomic line)) 1 0))
 #+END_SRC
 ***** block view building macros
 Some useful shorthands to create block agenda views
@@ -2833,6 +2869,33 @@ takes a sorting structure SORT which is passed to
      (org-agenda-todo-ignore-with-date t)
      (org-agenda-sorting-strategy ,sort))))
 
+(defun nd/agenda-base-task-cmd* (match header skip-fun kw-list status-fun
+                                         &optional status-px)
+  (let ((prefix (if status-px
+                    ''((tags . "  %-12:c $statuscode$: $atomic$ %-5:e "))
+                  ''((tags . "  %-12:c         %-5:e")))))
+    `(tags-todo
+      ,match
+      ((org-agenda-overriding-header ,header)
+       (org-agenda-skip-function ,skip-fun)
+       (org-agenda-todo-ignore-with-date t)
+       (org-agenda-before-sorting-filter-function
+        (lambda (l)
+          (-some->
+           l
+           (nd/org-agenda-filter-prop ,kw-list ,status-fun 'statuscode)
+           (nd/org-agenda-filter-prop
+            '(* !) (lambda () (if (nd/is-atomic-task-p) '! '*)) 'atomic))))
+       (org-agenda-cmp-user-defined
+        (lambda (a b)
+          (nd/org-agenda-sort-multi
+           a b
+           (lambda (l) (nd/org-agenda-sort-status l ,kw-list))
+           #'nd/org-agenda-sort-task-atomic
+           #'nd/org-agenda-sort-task-todo)))
+       (org-agenda-prefix-format ,prefix)
+       (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
+
 (defun nd/agenda-base-project-cmd (match header skip-fun kw-list status-fun
                                          &optional todo status-px)
   "Make a tags-todo agenda view that matches tags in string MATCH with
@@ -2843,18 +2906,19 @@ get the statuscode of the current line in the agenda. Optional arg
 TODO determines if this is a tags-todo (t) or tags (nil) block, and
 STATUS-PX as t enables the statuscode to be formatted into the prefix
 string."
-  `(,(if 'tags-todo 'tags)
-    ,match
-    ((org-agenda-overriding-header ,header)
-     (org-agenda-skip-function ,skip-fun)
-     (org-agenda-before-sorting-filter-function
-      (lambda (l) (nd/org-agenda-filter-status ,kw-list ,status-fun l)))
-     (org-agenda-cmp-user-defined
-      (lambda (a b) (nd/org-agenda-sort-prop 'project-status ,kw-list a b)))
-     (org-agenda-prefix-format '((tags . ,(if status-px
-                                             "  %-12:c %(format \"xxxx: \")"
-                                           "  %-12:c       "))))
-     (org-agenda-sorting-strategy '(user-defined-down category-keep)))))
+  (let ((prefix (if status-px
+                    ''((tags . "  %-12:c $statuscode$: "))
+                  ''((tags . "  %-12:c        ")))))
+    `(,(if 'tags-todo 'tags)
+      ,match
+      ((org-agenda-overriding-header ,header)
+       (org-agenda-skip-function ,skip-fun)
+       (org-agenda-before-sorting-filter-function
+        (lambda (l) (nd/org-agenda-filter-prop l ,kw-list ,status-fun 'statuscode)))
+       (org-agenda-cmp-user-defined
+        (lambda (a b) (nd/org-agenda-sort-prop 'statuscode ,kw-list a b)))
+       (org-agenda-prefix-format ,prefix)
+       (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
 #+END_SRC
 ***** interactive functions
 This is basically a filter but since it is implemented through skip functions it makes more sense to include it here. It allows distinguishing between toplevel projects and projects that are subprojects of the toplevel project (I usually only care about the former).
@@ -2931,11 +2995,12 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
 
      ("t"
       "Task View"
-      (,(nd/agenda-base-task-cmd act-no-rep-match
-                                 "Project Tasks"
-                                 ''nd/skip-non-project-tasks
-                                 ''(user-defined-up category-keep))
-       ,(nd/agenda-base-task-cmd act-no-rep-match "Atomic Tasks" ''nd/skip-non-atomic-tasks)))
+      (,(nd/agenda-base-task-cmd*
+         act-no-rep-match
+         "Tasks"
+         ''nd/skip-non-tasks
+         ''(:undone-closed :done-unclosed :active :inert)
+         ''nd/task-status t)))
 
      ("p"
       "Project View"
