@@ -774,6 +774,19 @@ Overlays hex color codes with matching colors in certain modes like css and html
 (use-package rainbow-mode
   :ensure t)
 #+END_SRC
+*** markdown
+Make font sizes smaller and less intrusive for headers
+#+BEGIN_SRC emacs-lisp
+(add-hook 'markdown-mode-hook
+          (lambda ()
+            (let ((heading-height 1.15))
+              (set-face-attribute 'markdown-header-face-1 nil :weight 'bold :height heading-height)
+              (set-face-attribute 'markdown-header-face-2 nil :weight 'semi-bold :height heading-height)
+              (set-face-attribute 'markdown-header-face-3 nil :weight 'normal :height heading-height)
+              (set-face-attribute 'markdown-header-face-4 nil :weight 'normal :height heading-height)
+              (set-face-attribute 'markdown-header-face-5 nil :weight 'normal :height heading-height))))
+
+#+END_SRC
 *** R-markdown
 R-markdown is enabled via polymode, which allows multiple modes in one buffer (this is actually as crazy as it sounds). In this case, the modes are yaml, R, markdown, and others. Installing =poly-R= will pull in all required dependencies.
 #+BEGIN_SRC emacs-lisp
