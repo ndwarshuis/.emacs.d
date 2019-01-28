@@ -2165,7 +2165,7 @@ These are functions and variables exclusively for agenda block manipulation with
 (defconst nd/inert-delay-days 90
   "The number of days to wait before tasks are considered inert.")
   
-(defconst nd/iter-statuscodes '(:uninit :empty :active)
+(defconst nd/iter-statuscodes '(:uninit :unscheduled :empty :project-error :active)
   "Iterators can have these statuscodes.")
  
 (defconst nd/peri-future-time nd/iter-future-time
@@ -2421,7 +2421,8 @@ Projects are tested according to their statuscodes, which in turn are a function
   "Compare position of statuscodes SC1 and SC2 in SC-LIST using operator OP."
   `(,op (position ,sc1 ,sc-list) (position ,sc2 ,sc-list)))
 
-(defun nd/descend-into-project (allowed-statuscodes trans-tbl get-task-status)
+(defun nd/descend-into-project
+    (allowed-statuscodes trans-tbl get-task-status callback-fun)
   "Loop through (sub)project and return overall statuscode.
 
 The returned statuscode is chosen from list ALLOWED-STATUSCODES where 
@@ -2441,7 +2442,7 @@ obtain a statuscode-equivalent of the status of the tasks."
   ;; when this is encountered the loop is broken because we are done
   ;; (the last entry trumps all others)
   (let ((project-status (first allowed-statuscodes))
-        (breaker-status (car (last allowed-statuscodes)))
+        (breaker-status (-last-item allowed-statuscodes))
         (previous-point))
     (save-excursion
       (setq previous-point (point))
@@ -2454,7 +2455,7 @@ obtain a statuscode-equivalent of the status of the tasks."
               (let ((new-status
                      ;; if project then descend recursively
                      (if (nd/heading-has-children 'nd/is-todoitem-p)
-                         (let ((n (nd/get-project-status)))
+                         (let ((n (funcall callback-fun)))
                            ;; if project returns an allowed status
                            ;; then use that
                            (or (and (member n allowed-statuscodes) n)
@@ -2485,7 +2486,8 @@ obtain a statuscode-equivalent of the status of the tasks."
      ((nd/is-scheduled-heading-p) :scheduled-project)
 
      ;; held projects do not care what is underneath them
-     ((equal keyword "HOLD") :held)
+     ;; only need to test if they are inert
+     ((equal keyword "HOLD") (if (nd/is-inert-p) :inert :held))
 
      ;; projects with invalid todostates are nonsense
      ((member keyword nd/project-invalid-todostates)
@@ -2501,6 +2503,7 @@ obtain a statuscode-equivalent of the status of the tasks."
       (nd/descend-into-project
        '(:archivable :complete)
        '((:stuck . 1)
+         (:inert . 1)
          (:held . 1)
          (:waiting . 1)
          (:active . 1)
@@ -2510,13 +2513,15 @@ obtain a statuscode-equivalent of the status of the tasks."
          (:done-incomplete . 1))
        (lambda (k)
          (if (and (member k org-done-keywords)
-                  (nd/is-archivable-heading-p)) 0 1))))
+                  (nd/is-archivable-heading-p)) 0 1))
+       #'nd/get-project-status))
      
      ;; done projects are like canceled projects but can also be incomplete
      ((equal keyword "DONE")
       (nd/descend-into-project
        '(:archivable :complete :done-incomplete)
        '((:stuck . 2)
+         (:inert . 2)
          (:held . 2)
          (:waiting . 2)
          (:active . 2)
@@ -2526,55 +2531,104 @@ obtain a statuscode-equivalent of the status of the tasks."
        (lambda (k)
          (if (member k org-done-keywords)
              (if (nd/is-archivable-heading-p) 0 1)
-           2))))
+           2))
+       #'nd/get-project-status))
      
      ;; project with TODO states could be basically any status
      ((equal keyword "TODO")
       (nd/descend-into-project
-       '(:undone-complete :stuck :held :waiting :active)
+       '(:undone-complete :stuck :held :waiting :active :inert)
        '((:complete . 0)
          (:archivable . 0)
          (:scheduled-project . 1)
          (:invalid-todostate . 1)
          (:done-incomplete . 1))
        (lambda (k)
-         (cond ((equal k "TODO") (if (nd/is-scheduled-heading-p) 4 1))
+         (cond ((nd/is-inert-p) 5)
+               ((equal k "TODO") (if (nd/is-scheduled-heading-p) 4 1))
                ((equal k "HOLD") 2)
                ((equal k "WAIT") 3)
                ((equal k "NEXT") 4)
-               (t 0)))))
+               (t 0)))
+       #'nd/get-project-status))
      
      (t (error (concat "invalid keyword detected: " keyword))))))
 #+END_SRC
 ****** repeater testing
 Iterators and periodicals are tested similarly to projects in that they have statuscodes.
 #+BEGIN_SRC emacs-lisp
+(defun nd/get-iterator-project-status (kw)
+  (cond
+   ((or (nd/is-scheduled-heading-p)
+        (member kw nd/project-invalid-todostates) :project-error))
+
+   ;; canceled tasks add nothing
+   ((equal kw "CANC") :empty)
+   
+   ;;
+   ;; these require descending into the project subtasks
+   ;;
+
+   ;; done projects either add nothing (empty) or are not actually
+   ;; done (project error)
+   ((equal kw "DONE")
+    (nd/descend-into-project
+     '(:empty :project-error)
+     '((:unscheduled . 1)
+       (:active . 1))
+     (lambda (k)
+       (if (member k org-done-keywords) 0 1))
+     #'nd/get-iterator-project-status))
+   
+   ;; project with TODO states could be basically any status
+   ((equal kw "TODO")
+    (nd/descend-into-project
+     '(:unscheduled :empty :active)
+     '(:project-error . 0)
+     (lambda (k)
+       (let ((ts (nd/is-scheduled-heading-p)))
+         (cond
+          ((not ts) 1)
+          ((< nd/iter-future-time (- ts (float-time))) 2)
+          (t 0))))
+     #'nd/get-iterator-project-status))
+   
+   (t (error (concat "invalid keyword detected: " kw)))))
+
 (defun nd/get-iterator-status ()
   "Get the status of an iterator where allowed statuscodes are in list
  `nd/get-iter-statuscodes.' where latter codes in the list trump 
 earlier ones."
-  (let ((iter-status (first nd/iter-statuscodes))
-        (subtree-end (save-excursion (org-end-of-subtree t))))
+  (let ((cur-status (first nd/iter-statuscodes))
+        (breaker-status (-last-item nd/iter-statuscodes))
+        (subtree-end (save-excursion (org-end-of-subtree t)))
+        (prev-point (point)))
     (save-excursion
-      (setq previous-point (point))
       (outline-next-heading)
-      (while (and (not (eq iter-status :active))
-                  (< (point) subtree-end))
-        (let ((keyword (nd/is-atomic-task-p))
+      (while (and (not (eq cur-status breaker-status))
+                  (< prev-point (point) subtree-end))
+        (let ((kw (nd/is-todoitem-p))
               (new-status))
-          (if keyword
-              (progn
-                (setq new-status (if (nd/heading-compare-timestamp
-                                      (lambda ()
-                                        (or (nd/is-scheduled-heading-p)
-                                            (nd/is-deadlined-heading-p)))
-                                        nd/iter-future-time t)
-                                     :active
-                                   :empty))
-                (if (nd/compare-statuscodes > new-status iter-status nd/iter-statuscodes)
-                    (setq iter-status new-status)))))
-        (outline-next-heading)))
-    iter-status))
+          (when kw
+            ;; test if project of atomic task
+            ;; assume that there are no todoitems above this headline
+            ;; to make checking easier
+            (setq
+             new-status
+             (if (nd/heading-has-children 'nd/is-todoitem-p)
+                 (nd/get-iterator-project-status kw)
+               (let ((ts (or (nd/is-scheduled-heading-p)
+                             (nd/is-deadlined-heading-p))))
+                 (cond
+                  ((member kw org-done-keywords) :empty)
+                  ((not ts) :unscheduled)
+                  ((< nd/iter-future-time (- ts (float-time))) :active)
+                  (t :empty)))))
+            (when (nd/compare-statuscodes > new-status cur-status nd/iter-statuscodes)
+              (setq cur-status new-status))))
+        (setq prev-point (point))
+        (org-forward-heading-same-level 1 t)))
+    cur-status))
     
 (defun nd/get-periodical-status ()
   "Get the status of a periodical where allowed statuscodes are in list
@@ -3009,7 +3063,11 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
      ("t"
       "Task View"
       (,(nd/agenda-base-task-cmd*
-         act-no-rep-match
+         ;; TODO, this can be better optimized if this view is split,
+         ;; right now need to include DONE because may have
+         ;; done-unclosed
+         (concat actionable "-" periodical "-" habit "-" iterator)
+         ;; act-no-rep-match
          "Tasks"
          ''nd/skip-non-tasks
          ''(:undone-closed :done-unclosed :active :inert)
@@ -3022,7 +3080,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
          '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Projects")
          ''nd/skip-non-projects
          ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
-                               :stuck :waiting :held :active)
+                               :stuck :waiting :held :active :inert)
          ''nd/get-project-status t t)))
           
      ("i"
