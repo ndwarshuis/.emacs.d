@@ -2560,7 +2560,7 @@ Iterators and periodicals are tested similarly to projects in that they have sta
 (defun nd/get-iterator-project-status (kw)
   (cond
    ((or (nd/is-scheduled-heading-p)
-        (member kw nd/project-invalid-todostates) :project-error))
+        (member kw nd/project-invalid-todostates)) :project-error)
 
    ;; canceled tasks add nothing
    ((equal kw "CANC") :empty)
@@ -3121,10 +3121,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
          "-NA-REFILE+PARENT_TYPE=\"iterator\""
          "Iterator Status"
          ''nd/skip-non-iterator-parent-headings
-         'nd/iter-statuscodes ''nd/get-iterator-status nil t)
-       ,(nd/agenda-base-task-cmd "-NA-REFILE+PARENT_TYPE=\"iterator\"/!"
-                                 "Unscheduled or Undeaded"
-                                 ''nd/skip-non-iterator-unscheduled)))
+         'nd/iter-statuscodes ''nd/get-iterator-status nil t)))
 
      ("r" "Refile" ((tags "REFILE" ((org-agenda-overriding-header "Tasks to Refile"))
                           (org-tags-match-list-sublevels nil))))
