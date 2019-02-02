@@ -2018,11 +2018,8 @@ I personally like having sticky agendas by default so I can use multiple windows
 (setq org-agenda-sticky t)
 #+END_SRC
 ***** tag alignment
-The agenda does not do this by default...it's annoying
 #+BEGIN_SRC emacs-lisp
-(add-hook 'org-finalize-agenda-hook
-          (lambda () (setq org-agenda-tags-column (- 4 (window-width)))
-            (org-agenda-align-tags)))
+(setq org-agenda-tags-column 'auto)
 #+END_SRC 
 ***** prefix format
 This controls what each line on the block agenda looks like. This is reformated to include effort and remove icons.
@@ -2173,13 +2170,14 @@ These are functions and variables exclusively for agenda block manipulation with
 (defconst nd/inert-delay-days 90
   "The number of days to wait before tasks are considered inert.")
   
-(defconst nd/iter-statuscodes '(:uninit :unscheduled :empty :project-error :active)
+;; TODO ;unscheduled should trump all
+(defconst nd/iter-statuscodes '(:uninit :empt :actv :project-error :unscheduled)
   "Iterators can have these statuscodes.")
  
 (defconst nd/peri-future-time nd/iter-future-time
   "Periodicals must have at least one heading greater into the future to be fresh.")
 
-(defconst nd/peri-statuscodes '(:uninit :stale :fresh))
+(defconst nd/peri-statuscodes '(:uninit :empt :actv :unscheduled))
 
 (defconst nd/project-invalid-todostates
   '("WAIT" "NEXT")
@@ -2353,16 +2351,16 @@ to REF-TIME. Returns nil if no timestamp is found."
     (when kw
       (cond 
        ((nd/is-archivable-heading-p)
-        :archiveable)
+        :arch)
        ((nd/is-inert-p)
-        :inert)
+        :inrt)
        ((and (member kw org-done-keywords) (not (nd/is-closed-heading-p)))
         :done-unclosed)
        ((and (not (member kw org-done-keywords)) (nd/is-closed-heading-p))
-        :undone-closed)
+        :closed-undone)
        ((member kw org-done-keywords)
-        :completed)
-       (t :active)))))
+        :comp)
+       (t :actv)))))
 #+END_SRC
 ****** property testing
 #+BEGIN_SRC emacs-lisp
@@ -2495,7 +2493,7 @@ obtain a statuscode-equivalent of the status of the tasks."
 
      ;; held projects do not care what is underneath them
      ;; only need to test if they are inert
-     ((equal keyword "HOLD") (if (nd/is-inert-p) :inert :held))
+     ((equal keyword "HOLD") (if (nd/is-inert-p) :inrt :held))
 
      ;; projects with invalid todostates are nonsense
      ((member keyword nd/project-invalid-todostates)
@@ -2509,13 +2507,13 @@ obtain a statuscode-equivalent of the status of the tasks."
      ;; any errors or undone tasks are irrelevant
      ((equal keyword "CANC")
       (nd/descend-into-project
-       '(:archivable :complete)
-       '((:stuck . 1)
-         (:inert . 1)
+       '(:arch :comp)
+       '((:stck . 1)
+         (:inrt . 1)
          (:held . 1)
-         (:waiting . 1)
-         (:active . 1)
-         (:scheduled-project . 1)
+         (:wait . 1)
+         (:actv . 1)
+         (:sched-project . 1)
          (:invalid-todostate . 1)
          (:undone-complete . 1)
          (:done-incomplete . 1))
@@ -2527,12 +2525,12 @@ obtain a statuscode-equivalent of the status of the tasks."
      ;; done projects are like canceled projects but can also be incomplete
      ((equal keyword "DONE")
       (nd/descend-into-project
-       '(:archivable :complete :done-incomplete)
-       '((:stuck . 2)
-         (:inert . 2)
+       '(:arch :comp :done-incomplete)
+       '((:stck . 2)
+         (:inrt . 2)
          (:held . 2)
-         (:waiting . 2)
-         (:active . 2)
+         (:wait . 2)
+         (:actv . 2)
          (:scheduled-project . 2)
          (:invalid-todostate . 2)
          (:undone-complete . 2))
@@ -2545,9 +2543,9 @@ obtain a statuscode-equivalent of the status of the tasks."
      ;; project with TODO states could be basically any status
      ((equal keyword "TODO")
       (nd/descend-into-project
-       '(:undone-complete :stuck :held :waiting :active :inert)
-       '((:complete . 0)
-         (:archivable . 0)
+       '(:undone-complete :stck :held :wait :actv :inrt)
+       '((:comp . 0)
+         (:arch . 0)
          (:scheduled-project . 1)
          (:invalid-todostate . 1)
          (:done-incomplete . 1))
@@ -2571,7 +2569,7 @@ Iterators and periodicals are tested similarly to projects in that they have sta
         (member kw nd/project-invalid-todostates)) :project-error)
 
    ;; canceled tasks add nothing
-   ((equal kw "CANC") :empty)
+   ((equal kw "CANC") :empt)
    
    ;;
    ;; these require descending into the project subtasks
@@ -2581,9 +2579,9 @@ Iterators and periodicals are tested similarly to projects in that they have sta
    ;; done (project error)
    ((equal kw "DONE")
     (nd/descend-into-project
-     '(:empty :project-error)
+     '(:empt :project-error)
      '((:unscheduled . 1)
-       (:active . 1))
+       (:actv . 1))
      (lambda (k)
        (if (member k org-done-keywords) 0 1))
      #'nd/get-iterator-project-status))
@@ -2591,7 +2589,7 @@ Iterators and periodicals are tested similarly to projects in that they have sta
    ;; project with TODO states could be basically any status
    ((equal kw "TODO")
     (nd/descend-into-project
-     '(:unscheduled :empty :active)
+     '(:unscheduled :empt :actv)
      '(:project-error . 0)
      (lambda (k)
        (let ((ts (nd/is-scheduled-heading-p)))
@@ -2628,10 +2626,10 @@ earlier ones."
                (let ((ts (or (nd/is-scheduled-heading-p)
                              (nd/is-deadlined-heading-p))))
                  (cond
-                  ((member kw org-done-keywords) :empty)
+                  ((member kw org-done-keywords) :empt)
                   ((not ts) :unscheduled)
-                  ((< nd/iter-future-time (- ts (float-time))) :active)
-                  (t :empty)))))
+                  ((< nd/iter-future-time (- ts (float-time))) :actv)
+                  (t :empt)))))
             (when (nd/compare-statuscodes > new-status cur-status nd/iter-statuscodes)
               (setq cur-status new-status))))
         (setq prev-point (point))
@@ -2642,25 +2640,46 @@ earlier ones."
   "Get the status of a periodical where allowed statuscodes are in list
  `nd/get-peri-statuscodes.' where latter codes in the list trump 
 earlier ones."
-  (let ((peri-status :uninit)
-        (subtree-end (save-excursion (org-end-of-subtree t))))
+  (letrec
+      ((max-ts
+        (lambda ()
+          (-some-->
+           (nd/org-element-parse-headline)
+           (org-element-map it 'timestamp #'identity)
+           (--filter
+            (memq (org-element-property :type it) '(active active-range))
+            it)
+           (--map
+            (--> it
+                 (org-timestamp-split-range it t)
+                 (org-element-property :raw-value it)
+                 (org-2ft it))
+            it)
+           (-max it))))
+       (compare
+        (lambda (s1 s2)
+          (if (nd/compare-statuscodes > s1 s2 nd/peri-statuscodes) s1 s2)))
+       (new-status
+        (lambda (ts)
+          (-->
+           ts
+           (cond
+            ((not it) :unscheduled)
+            ((< nd/peri-future-time (- it (float-time))) :actv)
+            (t :empt))
+           (funcall compare it cur-status))))
+       (cur-status (first nd/peri-statuscodes))
+       (breaker-status (-last-item nd/peri-statuscodes))
+       (subtree-end (save-excursion (org-end-of-subtree t)))
+       (prev-point (point)))
     (save-excursion
-      (setq previous-point (point))
       (outline-next-heading)
-      (while (and (not (eq peri-status :fresh))
-                  (< (point) subtree-end))
-        (if (and (nd/is-periodical-heading-p)
-                 (not (nd/heading-has-children 'nd/is-periodical-heading-p)))
-            (let ((new-status
-                   (if (nd/heading-compare-timestamp
-                        'nd/is-timestamped-heading-p
-                        nd/iter-future-time t)
-                       :fresh
-                     :stale)))
-              (if (nd/compare-statuscodes > new-status peri-status nd/peri-statuscodes)
-                  (setq peri-status new-status))))
-        (outline-next-heading)))
-    peri-status))
+      (while (and (not (eq cur-status breaker-status))
+                  (< prev-point (point) subtree-end))
+        (setq cur-status (->> (funcall max-ts) (funcall new-status)))
+        (setq prev-point (point))
+        (org-forward-heading-same-level 1 t)))
+    cur-status))
 #+END_SRC
 ***** skip functions
 These are the primary means used to sort through tasks and build agenda block views
@@ -2773,29 +2792,30 @@ These are headings marked with PARENT_TYPE property that have timestamped headin
                   (not (nd/heading-has-parent 'nd/is-iterator-heading-p))))
         (nd/skip-heading))))
 
-(defun nd/skip-non-iterator-unscheduled ()
-  "Skip all headings that are not unscheduled iterator children."
-  (nd/skip-heading-without
-   nd/is-atomic-task-p
-   (not (or (nd/is-scheduled-heading-p)
-            (nd/is-deadlined-heading-p)))))
+;; (defun nd/skip-non-iterator-unscheduled ()
+;;   "Skip all headings that are not unscheduled iterator children."
+;;   (nd/skip-heading-without
+;;    nd/is-atomic-task-p
+;;    (not (or (nd/is-scheduled-heading-p)
+;;             (nd/is-deadlined-heading-p)))))
             
 (defun nd/skip-non-periodical-parent-headings ()
   "Skip headings that are not toplevel periodical headings."
   (save-restriction
     (widen)
-    (if (not (and (nd/is-periodical-heading-p)
-                  (not (nd/heading-has-parent 'nd/is-periodical-heading-p))))
-        (nd/skip-heading))))
+    (unless (and
+             (nd/is-periodical-heading-p)
+             (not (nd/heading-has-parent 'nd/is-periodical-heading-p)))
+      (nd/skip-heading))))
 
-(defun nd/skip-non-periodical-untimestamped ()
-  "Skip all headings that are not periodical children without a timestamp."
-  (save-restriction
-    (widen)
-    (if (not (and (nd/is-periodical-heading-p)
-                  (not (nd/is-timestamped-heading-p))
-                  (not (nd/heading-has-children 'nd/is-periodical-heading-p))))
-        (nd/skip-heading))))
+;; (defun nd/skip-non-periodical-untimestamped ()
+;;   "Skip all headings that are not periodical children without a timestamp."
+;;   (save-restriction
+;;     (widen)
+;;     (if (not (and (nd/is-periodical-heading-p)
+;;                   (not (nd/is-timestamped-heading-p))
+;;                   (not (nd/heading-has-children 'nd/is-periodical-heading-p))))
+;;         (nd/skip-heading))))
 #+END_SRC
 ****** project tasks
 Note that I don't care about the timestamp in these cases because I don't archive these; I archive their parent projects. The keywords I care about are NEXT, WAIT, and HOLD because these are definitive project tasks that require/inhibit futher action. (TODO = stuck which I take care of at the project level, and DONE/CANC = archivable which is dealt with similarly)
@@ -2872,12 +2892,31 @@ if return value of PROP-FUN not in FILTER or A-LINE (modified or not)."
               (funcall prop-fun))))
     (when (find s filter)
         (if (not prop-key) a-line
-          (--> a-line
-               (replace-regexp-in-string
-                (format "\\$%s\\$" (symbol-name prop-key))
-                (symbol-name s)
-                it)
-               (org-add-props it nil prop-key s))))))
+          (org-add-props a-line nil prop-key s)))))
+               
+(defun nd/org-agenda-regexp-replace-props (props)
+  (letrec
+      ((replace-prop
+        (lambda (p)
+          (let ((prop-val (->> (thing-at-point 'line)
+                               (get-text-property 1 (cdr p))
+                               symbol-name))
+                (re (format "$%s$" (car p))))
+            (when prop-val
+              (save-excursion
+                (when (search-forward re (line-end-position) t 1)
+                  (replace-match prop-val))))))))
+   (save-excursion
+     (goto-char (point-min))
+     (while (< (point) (point-max))
+       (--each props (funcall replace-prop it))
+       (forward-line)))))
+       
+(add-hook
+ 'org-agenda-finalize-hook
+ (lambda ()
+   (nd/org-agenda-regexp-replace-props '(("y" . atomic)
+                                         ("xxxx" . statuscode)))))
 
 (defun nd/org-agenda-sort-prop (prop order a b)
   "Sort a block agenda view by text property PROP given a list ORDER
@@ -2917,7 +2956,7 @@ order."
    (length order)))
 
 (defun nd/org-agenda-sort-task-atomic (line)
-  (if (eq '! (get-text-property 1 'atomic line)) 1 0))
+  (if (eq '-!- (get-text-property 1 'atomic line)) 1 0))
 #+END_SRC
 ***** block view building macros
 Some useful shorthands to create block agenda views
@@ -2947,7 +2986,7 @@ takes a sorting structure SORT which is passed to
 (defun nd/agenda-base-task-cmd* (match header skip-fun kw-list status-fun
                                          &optional status-px)
   (let ((prefix (if status-px
-                    ''((tags . "  %-12:c $statuscode$: $atomic$ %-5:e "))
+                    ''((tags . "  %-12:c $xxxx$: $y$ %-5:e "))
                   ''((tags . "  %-12:c         %-5:e")))))
     `(tags-todo
       ,match
@@ -2960,7 +2999,7 @@ takes a sorting structure SORT which is passed to
            l
            (nd/org-agenda-filter-prop ,kw-list ,status-fun 'statuscode)
            (nd/org-agenda-filter-prop
-            '(* !) (lambda () (if (nd/is-atomic-task-p) '! '*)) 'atomic))))
+            '(-*- -!-) (lambda () (if (nd/is-atomic-task-p) '-!- '-*-)) 'atomic))))
        (org-agenda-cmp-user-defined
         (lambda (a b)
           (nd/org-agenda-sort-multi
@@ -2982,7 +3021,7 @@ TODO determines if this is a tags-todo (t) or tags (nil) block, and
 STATUS-PX as t enables the statuscode to be formatted into the prefix
 string."
   (let ((prefix (if status-px
-                    ''((tags . "  %-12:c $statuscode$: "))
+                    ''((tags . "  %-12:c $xxxx$: "))
                   ''((tags . "  %-12:c        ")))))
     `(,(if 'tags-todo 'tags)
       ,match
@@ -3078,7 +3117,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
          ;; act-no-rep-match
          "Tasks"
          ''nd/skip-non-tasks
-         ''(:undone-closed :done-unclosed :active :inert)
+         ''(:undone-closed :done-unclosed :actv :inrt)
          ''nd/task-status t)))
 
      ("p"
@@ -3088,7 +3127,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
          '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Projects")
          ''nd/skip-non-projects
          ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
-                               :stuck :waiting :held :active :inert)
+                               :stck :wait :held :actv :inrt)
          ''nd/get-project-status t t)))
           
      ("i"
@@ -3108,7 +3147,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
          '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Incubated Projects")
          ''nd/skip-non-projects
          ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
-                               :stuck :waiting :held :active)
+                               :stck :wait :held :actv)
          ''nd/get-project-status
          t t)))
           
@@ -3118,10 +3157,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
          (concat actionable "-" iterator "+" periodical "-" habit)
          "Periodical Status"
          ''nd/skip-non-periodical-parent-headings
-         'nd/peri-statuscodes ''nd/get-periodical-status nil t)
-       ,(nd/agenda-base-heading-cmd "-NA-REFILE+PARENT_TYPE=\"periodical\""
-                                   "Untimestamped"
-                                   ''nd/skip-non-periodical-untimestamped)))
+         'nd/peri-statuscodes ''nd/get-periodical-status nil t)))
 
      ("I"
       "Iterator View"
@@ -3164,7 +3200,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
        ,(nd/agenda-base-project-cmd
          (concat actionable "-" periodical "-" iterator "-" habit)
          '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Archivable Projects")
-         ''nd/skip-non-projects ''(:archivable) ''nd/get-project-status))))))
+         ''nd/skip-non-projects ''(:arch) ''nd/get-project-status))))))
 #+END_SRC
 ** gtd next generation
 GTD is great but has many limitations...mostly due to the fact that it was originally made on paper. This is meant to extend the GTD workflow into a comprehensive tracking engine that can be used and analyze and project long-term plans and goals.
