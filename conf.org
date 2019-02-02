@@ -526,6 +526,14 @@ Flycheck will highlight and explain syntax errors in code and formatting.
         flycheck-navigation-minimum-level 'warning)
   (delight 'flycheck-mode "γ" "flycheck"))
 #+END_SRC
+*** packaging
+#+BEGIN_SRC emacs-lisp
+(use-package flycheck-package
+  :ensure t
+  :after flycheck
+  :config
+  (eval-after-load 'flycheck '(flycheck-package-setup)))
+#+END_SRC
 ** auto completion
 Company provides a dropdown of completion options. It has many backends which are configured in each language and format elsewhere.
 #+BEGIN_SRC emacs-lisp
