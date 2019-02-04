@@ -818,9 +818,11 @@ Org has several extensions in the form of loadable modules. =org-protocol= is us
 #+BEGIN_SRC emacs-lisp
 (setq org-modules '(org-habit org-protocol))
 (require 'org)
+;; make sure everything else works that I have customly defined
 (require 'org-agenda)
 (require 'org-protocol)
 (require 'org-habit)
+(require 'org-clock)
 #+END_SRC
 *** directory
 I keep all my org files in one place.
