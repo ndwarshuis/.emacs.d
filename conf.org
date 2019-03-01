@@ -80,6 +80,12 @@ This is code that is used generally throughout the emacs config
   :config
   (setq dash-enable-fontlock t))
 #+END_SRC
+*** dash functional
+#+BEGIN_SRC emacs-lisp
+(use-package dash-functional
+  :ensure t
+  :config)
+#+END_SRC
 ** macros
 #+BEGIN_SRC emacs-lisp
 ;; lovingly stolen from aaron harris
