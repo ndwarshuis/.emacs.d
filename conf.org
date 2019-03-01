@@ -3615,6 +3615,11 @@ Spell checking is generally a good idea when writing to pointy-haired bosses.
 #+BEGIN_SRC emacs-lisp
 (setq ediff-window-setup-function 'ediff-setup-windows-plain)
 #+END_SRC
+** jupyter
+#+BEGIN_SRC emacs-lisp
+(use-package ein
+  :ensure t)
+#+END_SRC
 * keybindings
 For the sake of my sanity, all bindings go here. Note this means I don't use =:bind= in use-package forms.
 ** setup
