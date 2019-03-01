@@ -646,7 +646,7 @@ A few caveats when using =R=
         (setq python-offset 4)))
         
 (setq python-shell-interpreter "ipython"
-      python-shell-interpreter-args "--colors=Linux --profile=default")
+      python-shell-interpreter-args "--simple-prompt")
 #+END_SRC
 *** Haskell
 **** major mode and intero
