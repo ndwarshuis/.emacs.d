@@ -3649,6 +3649,11 @@ I like being evil. All package and custom bindings go here.
   :config
   (evil-mode 1))
 #+END_SRC
+*** search
+By default search uses the default emacs built-in search module. Not evil enough (which really means vim search has features that I like)
+#+BEGIN_SRC emacs-lisp
+(evil-select-search-module 'evil-search-module 'evil-search)
+#+END_SRC
 *** motion
 By default, emacs counts a sentence as having at least 2 spaces after punctuation. Make this behave more like vim.
 #+BEGIN_SRC emacs-lisp
