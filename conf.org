@@ -920,10 +920,11 @@ Since I use org mode as my config file, makes sense to have a table of contents 
 *** org buffer
 Some useful additional commands for org buffers.
 #+BEGIN_SRC emacs-lisp
-(defun nd/mark-subtree-keyword (new-keyword &optional exclude)
+(defun nd/mark-subtree-keyword (new-keyword &optional exclude no-log)
   "Mark all tasks in a subtree with NEW-KEYWORD unless original
 keyword is in the optional argument EXCLUDE."
-  (let ((subtree-end (save-excursion (org-end-of-subtree t))))
+  (let ((subtree-end (save-excursion (org-end-of-subtree t)))
+        (org-todo-log-states (unless no-log org-todo-log-states)))
     (if (not (listp exclude))
         (error "exlude must be a list if provided"))
     (save-excursion
@@ -947,13 +948,12 @@ and reverts all todo keywords to TODO."
                    (read-from-minibuffer
                     "Date shift per clone (e.g. +1w, empty to copy unchanged): "))))
     (condition-case err
-        (progn
           (save-excursion
-            ;; clone once and reset
+          ;; clone once and reset
             (org-clone-subtree-with-time-shift 1 shift)
             (org-forward-heading-same-level 1 t)
             (org-reset-checkbox-state-subtree)
-            (nd/mark-subtree-keyword "TODO")
+            (nd/mark-subtree-keyword "TODO" nil t)
             (call-interactively 'nd/org-log-delete)
             (org-cycle)
             ;; clone reset tree again if we need more than one clone
@@ -962,7 +962,7 @@ and reverts all todo keywords to TODO."
                   (org-clone-subtree-with-time-shift additional-trees shift)
                   (dotimes (i additional-trees)
                     (org-forward-heading-same-level 1 t)
-                    (org-cycle))))))
+                    (org-cycle)))))
       (error (message "%s" (error-message-string err))))))
 
 (defun nd/org-log-delete ()
