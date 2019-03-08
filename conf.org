@@ -981,6 +981,23 @@ and reverts all todo keywords to TODO."
                     (org-cycle)))))
       (error (message "%s" (error-message-string err))))))
 
+(defun nd/org-clone-subtree-with-time-shift-toplevel (n)
+  "Go to the last item underneath an iterator and clone using
+`nd/org-agenda-clone-subtree-with-time-shift'. Assumes point starts on
+the top level headline and only looks at the second level of
+headlines to clone."
+  (interactive "nNumber of clones to produce: ")
+  ;; do nothing if there is nothing to clone
+  (unless (eq :uninit (nd/get-iterator-status))
+    ;; goto last item in the second level
+    (save-excursion
+      (let ((current-point (point)))
+        (outline-next-heading)
+        (while (< current-point (point))
+          (setq current-point (point))
+          (org-forward-heading-same-level 1 t)))
+      (nd/org-clone-subtree-with-time-shift n))))
+
 (defun nd/org-log-delete ()
   "Delete logbook drawer of subtree."
   (interactive)
@@ -1077,8 +1094,7 @@ It will clone the last entry in the selected subtree."
   (interactive)
   (nd/org-agenda-cmd-wrapper
    nil
-   (org-end-of-subtree)
-   (call-interactively #'nd/org-clone-subtree-with-time-shift)))
+   (call-interactively #'nd/org-clone-subtree-with-time-shift-toplevel)))
 
 (defun nd/org-agenda-delete-subtree ()
   "Apply `nd/org-delete-subtree' to an agenda entry."
