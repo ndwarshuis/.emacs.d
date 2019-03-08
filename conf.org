@@ -3688,7 +3688,8 @@ I like being evil. All package and custom bindings go here.
   :ensure t
   :init
   ;; this is required to make evil collection work
-  (setq evil-want-integration nil)
+  (setq evil-want-integration nil
+        evil-want-keybinding nil)
   :config
   (evil-mode 1))
 #+END_SRC
