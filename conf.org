@@ -3420,6 +3420,12 @@ If dired is to replace all other file managers it must handle devices. This func
      :buffer "*helm device buffer*"
      :prompt "Device: ")))
 #+END_SRC
+*** filtering
+Filtering is useful for obvious reasons
+#+BEGIN_SRC emacs-lisp
+(use-package dired-narrow
+  :ensure t)
+#+END_SRC
 ** mu4e
 *** basic
 #+BEGIN_SRC emacs-lisp
@@ -3947,15 +3953,18 @@ Note this assumes there are no sorting switches on `dired-ls'"
 
 (put 'dired-find-alternate-file 'disabled nil)
 
-(evil-define-key 'normal dired-mode-map
-  "a" 'dired-find-file
-  "za" 'gnus-dired-attach
-  "gs" 'nd/dired-sort-by
-  "^" 'nd/dired-move-to-parent-directory
-  "q" 'nd/kill-current-buffer
-  (kbd "<return>") 'dired-find-alternate-file
-  (kbd "C-<return>") 'nd/dired-xdg-open
-  (kbd "M-<return>") 'nd/dired-open-with)
+(evil-define-key #'normal dired-mode-map
+  "a" #'dired-find-file
+  "za" #'gnus-dired-attach
+  "gs" #'nd/dired-sort-by
+  "gg" #'evil-goto-first-line
+  "G" #'evil-goto-line
+  "^" #'nd/dired-move-to-parent-directory
+  "q" #'nd/kill-current-buffer
+  "n" #'dired-narrow
+  (kbd "<return>") #'dired-find-alternate-file
+  (kbd "C-<return>") #'nd/dired-xdg-open
+  (kbd "M-<return>") #'nd/dired-open-with)
 #+END_SRC
 **** helm
 I like tab completion...regardless of what the helm zealots say. This is actually easier and faster because I can just scroll through the source list with j/k and mash TAB when I find the right directory.
