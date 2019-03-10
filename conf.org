@@ -681,10 +681,10 @@ The defacto style for haskell mandates camelcase, so use subword mode.
 #+END_SRC
 *** TeX
 **** AUCTeX
-This is the official TeX (and friends) emacs package. I installed this outside of emacs on my system, so just need to load it here. Even if you do install through emacs, you will still need all the TeX packages which are bundled on Arch Linux through TeX-Live.
+Install auctex through emacs as this is OS independent and more automatic. Note that the Tex package libraries (eg TeXLive) still need to be installed to do anything useful.
 #+BEGIN_SRC emacs-lisp
-(load "auctex.el" nil t t)
-(require 'tex-mik)
+(use-package auctex
+  :ensure t)
 #+END_SRC
 **** external viewers
 AUCTeX can launch external viewers to show compiled documents. I use Okular for PDFs.
