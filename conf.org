@@ -107,6 +107,16 @@ event of an error or nonlocal exit."
        ,@(mapcar (lambda (adform)
                    `(advice-remove ,(car adform) ,(nth 2 adform)))
                  adlist))))
+
+(defmacro nd/when-os (os &rest body)
+  "Execute BODY if the operating system is OS.
+OS is one of those in `system-type'."
+  `(when (eq system-type os) ,@body))
+
+(defmacro nd/when-not-os (os &rest body)
+  "Execute BODY if the operating system is not OS.
+OS is one of those in `system-type'."
+  `(when (not (eq system-type os)) ,@body))
 #+END_SRC
 ** functions
 #+BEGIN_SRC emacs-lisp
