@@ -111,12 +111,19 @@ event of an error or nonlocal exit."
 (defmacro nd/when-os (os &rest body)
   "Execute BODY if the operating system is OS.
 OS is one of those in `system-type'."
-  `(when (eq system-type os) ,@body))
+  `(if (eq system-type ,os) (progn ,@body)
+     (print "Skipping OS-restricted code")))
 
 (defmacro nd/when-not-os (os &rest body)
   "Execute BODY if the operating system is not OS.
 OS is one of those in `system-type'."
-  `(when (not (eq system-type os)) ,@body))
+  `(when (not (eq system-type ,os)) (progn ,@body)
+     (print "Skipping OS-restricted code")))
+
+(defmacro nd/when-bin (bin &rest body)
+  "Execute BODY if the program BIN exists."
+  `(if (executable-find ,bin) (progn ,@body)
+     (print (format "Executable %s not found. Skipping." ,bin))))
 #+END_SRC
 ** functions
 #+BEGIN_SRC emacs-lisp
@@ -469,6 +476,10 @@ Some prompts require literal "yes" or "no" to decide action. Life is short and I
 #+END_SRC
 * low-level config
 General configuation for behind-the-scenes behavior
+** user information
+#+BEGIN_SRC emacs-lisp
+(setq user-full-name "Dwarshuis, Nathan J")
+#+END_SRC
 ** autosave
 Saving files continuously is actually really annoying and clutters my disk. Turn it off.
 #+BEGIN_SRC emacs-lisp
@@ -3376,24 +3387,26 @@ make sizes human readable
 *** mu4e attachments
 By default the included gnus-dired package does not understan mu4e, so override the existing =gnus-dired-mail-buffers= function to fix. This allows going to a dired buffer, marking files, and attaching them interactively to mu4e draft buffers.
 #+BEGIN_SRC emacs-lisp
-;; from here:
-;; https://www.djcbsoftware.nl/code/mu/mu4e/Dired.html#Dired
-(require 'gnus-dired)
+(nd/when-bin
+ "mu"
+ ;; from here:
+ ;; https://www.djcbsoftware.nl/code/mu/mu4e/Dired.html#Dired
+ (require 'gnus-dired)
 
-(eval-after-load 'gnus-dired
-  '(defun gnus-dired-mail-buffers ()
-     "Return a list of active mu4e message buffers."
-     (let (buffers)
-       (save-current-buffer
-         (dolist (buffer (buffer-list t))
-           (set-buffer buffer)
-           (when (and (derived-mode-p 'message-mode)
-                      (null message-sent-message-via))
-             (push (buffer-name buffer) buffers))))
-       (nreverse buffers))))
+ (eval-after-load 'gnus-dired
+   '(defun gnus-dired-mail-buffers ()
+      "Return a list of active mu4e message buffers."
+      (let (buffers)
+        (save-current-buffer
+          (dolist (buffer (buffer-list t))
+            (set-buffer buffer)
+            (when (and (derived-mode-p 'message-mode)
+                       (null message-sent-message-via))
+              (push (buffer-name buffer) buffers))))
+        (nreverse buffers))))
 
-(setq gnus-dired-mail-mode 'mu4e-user-agent)
-(add-hook 'dired-mode-hook 'turn-on-gnus-dired-mode)
+ (setq gnus-dired-mail-mode 'mu4e-user-agent)
+ (add-hook 'dired-mode-hook 'turn-on-gnus-dired-mode))
 #+END_SRC
 *** directory sized
 By default dired uses =ls -whatever= to get its output. This does not have recursive directory contents by default. This nitfy package solves this. This is not on default because navigation is much slower and the du output adds very little in many situations (toggle when needed).
@@ -3441,216 +3454,193 @@ Filtering is useful for obvious reasons
   :ensure t)
 #+END_SRC
 ** mu4e
-*** basic
+Since mu4e is an external program, need to check that it is installed before loading anything.
 #+BEGIN_SRC emacs-lisp
-(require 'mu4e)
+(nd/when-bin
+ "mu"
+ (require 'mu4e)
+ (setq mail-user-agent 'mu4e-user-agent
+       message-kill-buffer-on-exit t
 
-(setq mail-user-agent 'mu4e-user-agent
-      mu4e-maildir "/mnt/data/Mail"
+       ;; misc
+       mu4e-change-filenames-when-moving t
+       mu4e-confirm-quit nil
+       mu4e-compose-dont-reply-to-self t
+       mu4e-get-mail-command "systemctl --user start mbsync"
+       mu4e-use-fancy-chars nil
 
-      mu4e-attachment-dir "~/Downloads"
-      
-      mu4e-view-show-images t
-      mu4e-headers-show-target nil
-      
-      mu4e-view-show-addresses t
+       ;; directories
+       mu4e-maildir "/mnt/data/Mail"
+       mu4e-attachment-dir "~/Downloads"
+       
+       ;; headers
+       mu4e-headers-show-target nil
+       mu4e-headers-fields '((:human-date . 11)
+                             (:flags . 5)
+                             (:from . 22)
+                             (:thread-subject))
+       mu4e-headers-date-format "%F"
+       mu4e-headers-time-format "%R"
 
-      message-kill-buffer-on-exit t
-      
-      mu4e-change-filenames-when-moving t
+       ;; view
+       mu4e-view-show-images t
+       mu4e-view-show-addresses t
+       mu4e-view-prefer-html t
 
-      mu4e-confirm-quit nil
+       ;; compose
+       mu4e-compose-signature-auto-include nil ;; sigs are annoying by default
+       mu4e-compose-signature
+       (string-join
+        '("Nathan Dwarshuis"
+          ""
+          "PhD Student - Biomedical Engineering - Krish Roy Lab"
+          "Georgia Institute of Technology and Emory University"
+          "ndwarshuis3@gatech.edu")
+        "\n")
 
-      mu4e-view-prefer-html t
+       ;; yanking (aka citing)
+       message-yank-prefix "" ;; the ">" characters are annoying
+       message-yank-cited-prefix ""
+       message-yank-empty-prefix ""
 
-      mu4e-compose-dont-reply-to-self t
-      
-      mu4e-get-mail-command "systemctl --user start mbsync"
 
-      user-full-name "Dwarshuis, Nathan J")
-#+END_SRC
-*** headers view
-#+BEGIN_SRC emacs-lisp
-(setq mu4e-headers-fields '((:human-date . 11)
-                            (:flags . 5)
-                            (:from . 22)
-                            (:thread-subject))
-      mu4e-headers-date-format "%F"
-      mu4e-headers-time-format "%R"
-      mu4e-use-fancy-chars nil)
-#+END_SRC
-*** citing
-The citation line should enable history folding in outlook. This is enabled by using 32 underscores followed by the addressing info of the previous message(s).
-#+BEGIN_SRC emacs-lisp
-;; necessary for the header macros below
-(require 'nnheader)
+       ;; contexts (multiple inboxes)
+       mu4e-context-policy 'pick-first
+       mu4e-compose-context-policy 'ask-if-none
+       mu4e-user-mail-address-list '("natedwarshuis@gmail.com"
+                                     "ndwarshuis3@gatech.edu"
+                                     "ndwarsh@emory.edu")
+       mu4e-contexts
+       `( ,(make-mu4e-context
+            :name "personal"
+            :match-func
+            (lambda (msg)
+              (when msg
+                (let ((pfx (mu4e-message-field msg :maildir)))
+                  (string-prefix-p "/gmail" pfx))))
+            :vars '((mu4e-trash-folder . "/gmail/trash")
+                    (mu4e-drafts-folder . "/gmail/drafts")
+                    (mu4e-sent-folder . "/gmail/sent")
+                    (mu4e-refile-folder . "/gmail/archive")
+                    (mu4e-sent-messages-behavior . delete)
+                    (smtpmail-stream-type . starttls)
+                    (smtpmail-smtp-server . "smtp.gmail.com")
+                    (smtpmail-smtp-service . 587)
+                    (smtpmail-smtp-user . "natedwarshuis@gmail.com")
+                    (user-mail-address . "natedwarshuis@gmail.com")
+                    (mu4e-maildir-shortcuts .
+                                            (("/gmail/inbox" . ?i)
+                                             ("/gmail/sent" . ?s)
+                                             ("/gmail/trash" . ?t)
+                                             ("/gmail/drafts" . ?d)
+                                             ("/gmail/archive" . ?a)))))
+          ,(make-mu4e-context
+            :name "gatech"
+            :match-func
+            (lambda (msg)
+              (when msg
+                (let ((pfx (mu4e-message-field msg :maildir)))
+                  (string-prefix-p "/gatech" pfx))))
+            :vars '((mu4e-trash-folder . "/gatech/trash")
+                    (mu4e-drafts-folder . "/gatech/drafts")
+                    (mu4e-sent-folder . "/gatech/sent")
+                    (mu4e-refile-folder . "/gatech/archive")
+                    (mu4e-sent-messages-behavior . sent)
+                    (smtpmail-stream-type . starttls)
+                    (smtpmail-smtp-server . "smtp.office365.com")
+                    (smtpmail-smtp-service . 587)
+                    (smtpmail-smtp-user . "ndwarshuis3@gatech.edu")
+                    (user-mail-address . "ndwarshuis3@gatech.edu")
+                    (mu4e-maildir-shortcuts .
+                                            (("/gatech/inbox" . ?i)
+                                             ("/gatech/sent" . ?s)
+                                             ("/gatech/trash" . ?t)
+                                             ("/gatech/drafts" . ?d)
+                                             ("/gatech/archive" . ?a)))))
+          ,(make-mu4e-context
+            :name "emory"
+            :match-func
+            (lambda (msg)
+              (when msg
+                (let ((pfx (mu4e-message-field msg :maildir)))
+                  (string-prefix-p "/emory" pfx))))
+            :vars '((mu4e-trash-folder . "/emory/trash")
+                    (mu4e-drafts-folder . "/emory/drafts")
+                    (mu4e-sent-folder . "/emory/sent")
+                    (mu4e-refile-folder . "/emory/archive")
+                    (mu4e-sent-messages-behavior . sent)
+                    (smtpmail-stream-type . starttls)
+                    (smtpmail-smtp-server . "smtp.office365.com")
+                    (smtpmail-smtp-service . 587)
+                    (smtpmail-smtp-user . "ndwarsh@emory.edu")
+                    (user-mail-address . "ndwarsh@emory.edu")
+                    (mu4e-maildir-shortcuts .
+                                            (("/emory/inbox" . ?i)
+                                             ("/emory/sent" . ?s)
+                                             ("/emory/trash" . ?t)
+                                             ("/emory/drafts" . ?d)
+                                             ("/emory/archive" . ?a)))))))
+ 
+ ;; enable visual line mode and spell checking
+ (add-hook 'mu4e-compose-mode-hook 'turn-off-auto-fill)
+ (add-hook 'mu4e-compose-mode-hook 'visual-line-mode)
+ (add-hook 'mu4e-view-mode-hook 'turn-off-auto-fill)
+ (add-hook 'mu4e-view-mode-hook 'visual-line-mode)
+ (add-hook 'mu4e-compose-mode-hook (lambda () (flyspell-mode 1)))
+ 
+ ;; Outlook doesn't know how to fold mu4e messages by default. 
+ ;; This is enabled by using 32 underscores followed by the addressing
+ ;; info of the previou message(s).
+ (require 'nnheader) ; necessary for the header macros below
 
-(defun nd/message-insert-citation-header ()
-  "Insert the header of the reply message."
-  (let* ((h message-reply-headers)
-         (sep "________________________________")
-         (from (concat "From: " (mail-header-from h)))
-         (date (concat "Sent: " (mail-header-date h)))
-         (to (concat "To: " user-full-name))
-         (subj (concat "Subject: " (message-strip-subject-re (mail-header-subject h)))))
-    (insert (string-join `("" ,sep ,from ,date ,to ,subj "") "\n"))))
-    
-(setq message-citation-line-function 'nd/message-insert-citation-header)
-#+END_SRC
+ (defun nd/message-insert-citation-header ()
+   "Insert the header of the reply message."
+   (let* ((h message-reply-headers)
+          (sep "________________________________")
+          (from (concat "From: " (mail-header-from h)))
+          (date (concat "Sent: " (mail-header-date h)))
+          (to (concat "To: " user-full-name))
+          (subj (concat "Subject: " (message-strip-subject-re (mail-header-subject h)))))
+     (insert (string-join `("" ,sep ,from ,date ,to ,subj "") "\n"))))
+ 
+ (setq message-citation-line-function 'nd/message-insert-citation-header)
 
-The default "> " things are annoying when citing old messages.
-#+BEGIN_SRC emacs-lisp
-(setq message-yank-prefix "")
-(setq message-yank-cited-prefix "")
-(setq message-yank-empty-prefix "")
-#+END_SRC
+ ;; prevent html to text conversion from destroying links
+ (setq
+  mu4e-compose-pre-hook
+  (lambda ()
+    (let* ((msg mu4e-compose-parent-message)
+           (html (and msg (plist-get msg :body-html)))
+           ;; oops, mu4e screwed up
+           (mu4e-html2text-command
+            (if (executable-find "html2text")
+                "html2text --ignore-emphasis --images-to-alt --body-width=0"
+              'mu4e-shr2text)))
+      (when (and html mu4e-view-prefer-html (member compose-type '(reply forward)))
+        ;; hackity hack, since the normal mu4e-message-body-text function
+        ;; does not render the desired html, do it here and force the
+        ;; aforementioned function to only look at text by removing
+        ;; the html
+        (plist-put msg :body-txt (mu4e~html2text-shell msg mu4e-html2text-command))
+        (plist-put msg :body-html nil)))))
 
-By default the citation is destroyed (as in totally textified) if it is HTML. I want the links to be preserved, so use html2text and set arguments accordingly. Note that =--body-width=0= is necessary to prevent line breaks from being inserted in the middle of links. 
-#+BEGIN_SRC emacs-lisp
-(setq
- mu4e-compose-pre-hook
- (lambda ()
-   (let* ((msg mu4e-compose-parent-message)
-          (html (and msg (plist-get msg :body-html)))
-          ;; oops, mu4e screwed up
-          (mu4e-html2text-command
-           (if (file-exists-p "/usr/bin/html2text")
-               "html2text --ignore-emphasis --images-to-alt --body-width=0"
-             'mu4e-shr2text)))
-     (when (and html mu4e-view-prefer-html (member compose-type '(reply forward)))
-       ;; hackity hack, since the normal mu4e-message-body-text function
-       ;; does not render the desired html, do it here and force the
-       ;; aforementioned function to only look at text by removing
-       ;; the html
-       (plist-put msg :body-txt (mu4e~html2text-shell msg mu4e-html2text-command))
-       (plist-put msg :body-html nil)))))
-#+END_SRC
-*** smtp
-#+BEGIN_SRC emacs-lisp
-(require 'smtpmail)
-;; (require 'smtpmail-async)
-;; (require 'secrets)
-;; (setq secrets-enabled t)
-(setq send-mail-function 'smtpmail-send-it
-      message-send-mail-function 'smtpmail-send-it)
-(add-to-list 'auth-sources (expand-file-name "~/.emacs.d/.authinfo_mu4e.gpg"))
-;; (add-to-list 'auth-sources "secrets:default")
-#+END_SRC
-*** contexts
-I have current have three contexts, personal and two work accounts. The first is a gmail account and the second/third are office365 accounts.
-#+BEGIN_SRC emacs-lisp
-(setq mu4e-context-policy 'pick-first
-      mu4e-compose-context-policy 'ask-if-none
-      mu4e-user-mail-address-list '("natedwarshuis@gmail.com" "ndwarshuis3@gatech.edu" "ndwarsh@emory.edu")
-      
-      mu4e-contexts
-      `( ,(make-mu4e-context
-           :name "personal"
-           :match-func
-           (lambda (msg)
-             (when msg
-               (let ((pfx (mu4e-message-field msg :maildir)))
-                 (string-prefix-p "/gmail" pfx))))
-           :vars '((mu4e-trash-folder . "/gmail/trash")
-                   (mu4e-drafts-folder . "/gmail/drafts")
-                   (mu4e-sent-folder . "/gmail/sent")
-                   (mu4e-refile-folder . "/gmail/archive")
-                   (mu4e-sent-messages-behavior . delete)
-                   (smtpmail-stream-type . starttls)
-                   (smtpmail-smtp-server . "smtp.gmail.com")
-                   (smtpmail-smtp-service . 587)
-                   (smtpmail-smtp-user . "natedwarshuis@gmail.com")
-                   (user-mail-address . "natedwarshuis@gmail.com")
-                   (mu4e-maildir-shortcuts .
-                                           (("/gmail/inbox" . ?i)
-                                            ("/gmail/sent" . ?s)
-                                            ("/gmail/trash" . ?t)
-                                            ("/gmail/drafts" . ?d)
-                                            ("/gmail/archive" . ?a)))))
-         ,(make-mu4e-context
-           :name "gatech"
-           :match-func
-           (lambda (msg)
-             (when msg
-               (let ((pfx (mu4e-message-field msg :maildir)))
-                 (string-prefix-p "/gatech" pfx))))
-           :vars '((mu4e-trash-folder . "/gatech/trash")
-                   (mu4e-drafts-folder . "/gatech/drafts")
-                   (mu4e-sent-folder . "/gatech/sent")
-                   (mu4e-refile-folder . "/gatech/archive")
-                   (mu4e-sent-messages-behavior . sent)
-                   (smtpmail-stream-type . starttls)
-                   (smtpmail-smtp-server . "smtp.office365.com")
-                   (smtpmail-smtp-service . 587)
-                   (smtpmail-smtp-user . "ndwarshuis3@gatech.edu")
-                   (user-mail-address . "ndwarshuis3@gatech.edu")
-                   (mu4e-maildir-shortcuts .
-                                           (("/gatech/inbox" . ?i)
-                                            ("/gatech/sent" . ?s)
-                                            ("/gatech/trash" . ?t)
-                                            ("/gatech/drafts" . ?d)
-                                            ("/gatech/archive" . ?a)))))
-         ,(make-mu4e-context
-           :name "emory"
-           :match-func
-           (lambda (msg)
-             (when msg
-               (let ((pfx (mu4e-message-field msg :maildir)))
-                 (string-prefix-p "/emory" pfx))))
-           :vars '((mu4e-trash-folder . "/emory/trash")
-                   (mu4e-drafts-folder . "/emory/drafts")
-                   (mu4e-sent-folder . "/emory/sent")
-                   (mu4e-refile-folder . "/emory/archive")
-                   (mu4e-sent-messages-behavior . sent)
-                   (smtpmail-stream-type . starttls)
-                   (smtpmail-smtp-server . "smtp.office365.com")
-                   (smtpmail-smtp-service . 587)
-                   (smtpmail-smtp-user . "ndwarsh@emory.edu")
-                   (user-mail-address . "ndwarsh@emory.edu")
-                   (mu4e-maildir-shortcuts .
-                                           (("/emory/inbox" . ?i)
-                                            ("/emory/sent" . ?s)
-                                            ("/emory/trash" . ?t)
-                                            ("/emory/drafts" . ?d)
-                                            ("/emory/archive" . ?a)))))))
-#+END_SRC
-*** org-mu4e
-#+BEGIN_SRC emacs-lisp
-(use-package org-mu4e
-  :after (org mu4e)
-  :config
-  (setq
-   ;; for using mu4e in org-capture templates
-   org-mu4e-link-query-in-headers-mode nil
-   ;; for composing rich-text emails using org mode
-   org-mu4e-convert-to-html t))
-#+END_SRC
-*** signature
-Signatures take lots of space and make short messages look needlessly clunky, so keep off by default.
-#+BEGIN_SRC emacs-lisp
-(setq mu4e-compose-signature-auto-include nil
+ (require 'smtpmail)
+ ;; (require 'smtpmail-async)
+ ;; (require 'secrets)
+ ;; (setq secrets-enabled t)
+ ;; (add-to-list 'auth-sources "secrets:default")
+ (setq send-mail-function 'smtpmail-send-it
+       message-send-mail-function 'smtpmail-send-it)
+ (add-to-list 'auth-sources (expand-file-name "~/.emacs.d/.authinfo_mu4e.gpg"))
 
-      mu4e-compose-signature
-      (string-join
-       '("Nathan Dwarshuis"
-         ""
-         "PhD Student - Biomedical Engineering - Krish Roy Lab"
-         "Georgia Institute of Technology and Emory University"
-         "ndwarshuis3@gatech.edu")
-       "\n"))
-#+END_SRC
-*** visual-line-mode
-By default mu4e adds breaks after 80-ish chars using auto-fill-mode which makes messages look weird when opened. =Visual-line-mode= avoids this problem.
-#+BEGIN_SRC emacs-lisp
-(add-hook 'mu4e-compose-mode-hook 'turn-off-auto-fill)
-(add-hook 'mu4e-compose-mode-hook 'visual-line-mode)
-(add-hook 'mu4e-view-mode-hook 'turn-off-auto-fill)
-(add-hook 'mu4e-view-mode-hook 'visual-line-mode)
-#+END_SRC
-*** flyspell
-Spell checking is generally a good idea when writing to pointy-haired bosses.
-#+BEGIN_SRC emacs-lisp
-(add-hook 'mu4e-compose-mode-hook (lambda () (flyspell-mode 1)))
+ (use-package org-mu4e
+   :after (org mu4e)
+   :config
+   (setq
+    ;; for using mu4e in org-capture templates
+    org-mu4e-link-query-in-headers-mode nil
+    ;; for composing rich-text emails using org mode
+    org-mu4e-convert-to-html t)))
 #+END_SRC
 ** shell
 #+begin_src emacs-lisp
@@ -4027,8 +4017,10 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 #+END_SRC
 *** mu4e
 #+BEGIN_SRC emacs-lisp
-(define-key mu4e-headers-mode-map (kbd "C-c C-l") 'org-store-link)
-(define-key mu4e-view-mode-map (kbd "C-c C-l") 'org-store-link)
+(nd/when-bin
+ "mu"
+ (define-key mu4e-headers-mode-map (kbd "C-c C-l") 'org-store-link)
+ (define-key mu4e-view-mode-map (kbd "C-c C-l") 'org-store-link))
 #+END_SRC
 *** dired
 #+BEGIN_SRC emacs-lisp
@@ -4068,10 +4060,11 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "C-<f3>") 'nd/org-cluster-show-conflicts)
 (global-set-key (kbd "C-S-<f3>") 'nd/org-cluster-show-overloads)
 (global-set-key (kbd "<f4>") 'org-clock-goto)
+(global-set-key (kbd "C-<f4>") 'nd/org-tomato-user-get-summary)
 (global-set-key (kbd "<f5>") 'ansi-term)
 (global-set-key (kbd "<f8>") 'helm-command-prefix)
 (global-set-key (kbd "C-<f5>") 'nd/open-urxvt)
-(global-set-key (kbd "<f12>") 'mu4e)
+(nd/when-bin "mu" (global-set-key (kbd "<f12>") 'mu4e))
 (global-set-key (kbd "C-<f12>") 'global-hl-line-mode)
 (global-set-key (kbd "S-<f12>") 'display-line-numbers-mode)
 #+END_SRC
