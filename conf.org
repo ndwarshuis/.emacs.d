@@ -683,8 +683,8 @@ The defacto style for haskell mandates camelcase, so use subword mode.
 **** AUCTeX
 Install auctex through emacs as this is OS independent and more automatic. Note that the Tex package libraries (eg TeXLive) still need to be installed to do anything useful.
 #+BEGIN_SRC emacs-lisp
-(use-package auctex
-  :ensure t)
+(use-package tex
+  :ensure auctex)
 #+END_SRC
 **** external viewers
 AUCTeX can launch external viewers to show compiled documents. I use Okular for PDFs.
