@@ -3460,7 +3460,7 @@ Since mu4e is an external program, need to check that it is installed before loa
 (nd/when-bin
  "mu"
  (require 'mu4e)
- (defun nd/make-mu4e-context (name dir addr smtp-srv)
+ (defun nd/make-mu4e-context (name dir addr smtp-srv sent-behavior)
    (let ((trash (format "/%s/trash" dir))
          (drafts (format "/%s/drafts" dir))
          (sent (format "/%s/sent" dir))
@@ -3478,7 +3478,7 @@ Since mu4e is an external program, need to check that it is installed before loa
               (mu4e-drafts-folder . ,drafts)
               (mu4e-sent-folder . ,sent)
               (mu4e-refile-folder . ,archive)
-              (mu4e-sent-messages-behavior . ,sent)
+              (mu4e-sent-messages-behavior . ,sent-behavior)
               (smtpmail-stream-type . starttls)
               (smtpmail-smtp-server . ,smtp-srv)
               (smtpmail-smtp-service . 587)
@@ -3544,15 +3544,18 @@ Since mu4e is an external program, need to check that it is installed before loa
         (nd/make-mu4e-context "personal"
                               "gmail"
                               "natedwarshuis@gmail.com"
-                              "smtp.gmail.com")
+                              "smtp.gmail.com"
+                              'delete)
         (nd/make-mu4e-context "gatech"
                               "gatech"
                               "ndwarshuis3@gatech.edu"
-                              "smtp.office365.com")
+                              "smtp.office365.com"
+                              'sent)
         (nd/make-mu4e-context "emory"
                               "emory"
                               "ndwarsh@emory.edu"
-                              "smtp.office365.com")))
+                              "smtp.office365.com"
+                              'sent)))
  
  ;; enable visual line mode and spell checking
  (add-hook 'mu4e-compose-mode-hook 'turn-off-auto-fill)
