@@ -20,6 +20,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#cursor][cursor]]
   - [[#misc][misc]]
 - [[#low-level-config][low-level config]]
+  - [[#user-information][user information]]
   - [[#autosave][autosave]]
   - [[#async][async]]
 - [[#editing][editing]]
@@ -3459,6 +3460,35 @@ Since mu4e is an external program, need to check that it is installed before loa
 (nd/when-bin
  "mu"
  (require 'mu4e)
+ (defun nd/make-mu4e-context (name dir addr smtp-srv)
+   (let ((trash (format "/%s/trash" dir))
+         (drafts (format "/%s/drafts" dir))
+         (sent (format "/%s/sent" dir))
+         (archive (format "/%s/archive" dir))
+         (inbox (format "/%s/inbox" dir))
+         (mf (lambda (d msg)
+               (-some-->
+                msg
+                (mu4e-message-field it :maildir)
+                (string-prefix-p (concat "/" d) it)))))
+     (make-mu4e-context
+      :name name
+      :match-func (-partial mf dir) ; use lexical scope here
+      :vars `((mu4e-trash-folder . ,trash)
+              (mu4e-drafts-folder . ,drafts)
+              (mu4e-sent-folder . ,sent)
+              (mu4e-refile-folder . ,archive)
+              (mu4e-sent-messages-behavior . ,sent)
+              (smtpmail-stream-type . starttls)
+              (smtpmail-smtp-server . ,smtp-srv)
+              (smtpmail-smtp-service . 587)
+              (smtpmail-smtp-user . ,addr)
+              (user-mail-address . ,addr)
+              (mu4e-maildir-shortcuts . ((,inbox . ?i)
+                                         (,sent . ?s)
+                                         (,trash . ?t)
+                                         (,drafts . ?d)
+                                         (,archive . ?a)))))))
  (setq mail-user-agent 'mu4e-user-agent
        message-kill-buffer-on-exit t
 
@@ -3503,7 +3533,6 @@ Since mu4e is an external program, need to check that it is installed before loa
        message-yank-cited-prefix ""
        message-yank-empty-prefix ""
 
-
        ;; contexts (multiple inboxes)
        mu4e-context-policy 'pick-first
        mu4e-compose-context-policy 'ask-if-none
@@ -3511,75 +3540,19 @@ Since mu4e is an external program, need to check that it is installed before loa
                                      "ndwarshuis3@gatech.edu"
                                      "ndwarsh@emory.edu")
        mu4e-contexts
-       `( ,(make-mu4e-context
-            :name "personal"
-            :match-func
-            (lambda (msg)
-              (when msg
-                (let ((pfx (mu4e-message-field msg :maildir)))
-                  (string-prefix-p "/gmail" pfx))))
-            :vars '((mu4e-trash-folder . "/gmail/trash")
-                    (mu4e-drafts-folder . "/gmail/drafts")
-                    (mu4e-sent-folder . "/gmail/sent")
-                    (mu4e-refile-folder . "/gmail/archive")
-                    (mu4e-sent-messages-behavior . delete)
-                    (smtpmail-stream-type . starttls)
-                    (smtpmail-smtp-server . "smtp.gmail.com")
-                    (smtpmail-smtp-service . 587)
-                    (smtpmail-smtp-user . "natedwarshuis@gmail.com")
-                    (user-mail-address . "natedwarshuis@gmail.com")
-                    (mu4e-maildir-shortcuts .
-                                            (("/gmail/inbox" . ?i)
-                                             ("/gmail/sent" . ?s)
-                                             ("/gmail/trash" . ?t)
-                                             ("/gmail/drafts" . ?d)
-                                             ("/gmail/archive" . ?a)))))
-          ,(make-mu4e-context
-            :name "gatech"
-            :match-func
-            (lambda (msg)
-              (when msg
-                (let ((pfx (mu4e-message-field msg :maildir)))
-                  (string-prefix-p "/gatech" pfx))))
-            :vars '((mu4e-trash-folder . "/gatech/trash")
-                    (mu4e-drafts-folder . "/gatech/drafts")
-                    (mu4e-sent-folder . "/gatech/sent")
-                    (mu4e-refile-folder . "/gatech/archive")
-                    (mu4e-sent-messages-behavior . sent)
-                    (smtpmail-stream-type . starttls)
-                    (smtpmail-smtp-server . "smtp.office365.com")
-                    (smtpmail-smtp-service . 587)
-                    (smtpmail-smtp-user . "ndwarshuis3@gatech.edu")
-                    (user-mail-address . "ndwarshuis3@gatech.edu")
-                    (mu4e-maildir-shortcuts .
-                                            (("/gatech/inbox" . ?i)
-                                             ("/gatech/sent" . ?s)
-                                             ("/gatech/trash" . ?t)
-                                             ("/gatech/drafts" . ?d)
-                                             ("/gatech/archive" . ?a)))))
-          ,(make-mu4e-context
-            :name "emory"
-            :match-func
-            (lambda (msg)
-              (when msg
-                (let ((pfx (mu4e-message-field msg :maildir)))
-                  (string-prefix-p "/emory" pfx))))
-            :vars '((mu4e-trash-folder . "/emory/trash")
-                    (mu4e-drafts-folder . "/emory/drafts")
-                    (mu4e-sent-folder . "/emory/sent")
-                    (mu4e-refile-folder . "/emory/archive")
-                    (mu4e-sent-messages-behavior . sent)
-                    (smtpmail-stream-type . starttls)
-                    (smtpmail-smtp-server . "smtp.office365.com")
-                    (smtpmail-smtp-service . 587)
-                    (smtpmail-smtp-user . "ndwarsh@emory.edu")
-                    (user-mail-address . "ndwarsh@emory.edu")
-                    (mu4e-maildir-shortcuts .
-                                            (("/emory/inbox" . ?i)
-                                             ("/emory/sent" . ?s)
-                                             ("/emory/trash" . ?t)
-                                             ("/emory/drafts" . ?d)
-                                             ("/emory/archive" . ?a)))))))
+       (list
+        (nd/make-mu4e-context "personal"
+                              "gmail"
+                              "natedwarshuis@gmail.com"
+                              "smtp.gmail.com")
+        (nd/make-mu4e-context "gatech"
+                              "gatech"
+                              "ndwarshuis3@gatech.edu"
+                              "smtp.office365.com")
+        (nd/make-mu4e-context "emory"
+                              "emory"
+                              "ndwarsh@emory.edu"
+                              "smtp.office365.com")))
  
  ;; enable visual line mode and spell checking
  (add-hook 'mu4e-compose-mode-hook 'turn-off-auto-fill)
@@ -3588,7 +3561,7 @@ Since mu4e is an external program, need to check that it is installed before loa
  (add-hook 'mu4e-view-mode-hook 'visual-line-mode)
  (add-hook 'mu4e-compose-mode-hook (lambda () (flyspell-mode 1)))
  
- ;; Outlook doesn't know how to fold mu4e messages by default. 
+ ;; Outlook doesn't know how to fold mu4e messages by default
  ;; This is enabled by using 32 underscores followed by the addressing
  ;; info of the previou message(s).
  (require 'nnheader) ; necessary for the header macros below
