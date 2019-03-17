@@ -40,6 +40,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#gantt-charts][gantt charts]]
   - [[#gtd-implementation][gtd implementation]]
   - [[#gtd-next-generation][gtd next generation]]
+  - [[#tomato-mode][tomato mode]]
 - [[#tools][tools]]
   - [[#printing][printing]]
   - [[#magit][magit]]
@@ -86,6 +87,11 @@ This is code that is used generally throughout the emacs config
 (use-package dash-functional
   :ensure t
   :config)
+#+END_SRC
+*** sound-wav
+#+BEGIN_SRC emacs-lisp
+(use-package sound-wav
+  :ensure t)
 #+END_SRC
 ** macros
 #+BEGIN_SRC emacs-lisp
@@ -3324,9 +3330,38 @@ Org mode is great and all, but in many cases, text files just won't cut it. Hard
 These are variables that I set for my use but will not go into the eventual package
 #+BEGIN_SRC emacs-lisp
 (setq org-sql-use-tag-inheritance t
+
       org-sql-ignored-properties '("CREATED")
-      org-sql-files '("~/Org/general.org_archive" 
-                      "~/Org/projects/"))
+      org-sql-ignored-tags nil
+      org-sql-ignored-link-types 'all
+      
+      org-sql-included-headline-planning-types '(:closed :scheduled :deadline)
+      org-sql-included-contents-timestamp-types '(active)
+      
+      org-sql-store-planning-timestamps t
+      org-sql-store-logbook-other t
+      org-sql-store-logbook-planning-changes t
+      org-sql-store-logbook-state-changes t
+      org-sql-store-clock-notes t
+      org-sql-store-clocks t
+
+      org-sql-files '(
+                      "~/Org/general.org_archive" 
+                      "~/Org/general_2018.org_archive" 
+                      "~/Org/general.org" 
+                      ;; "~/Org/test1.org_archive" 
+                      ;; "~/Org/test2.org_archive" 
+                      "~/Org/incubator.org" 
+                      "~/Org/projects/"
+                      ))
+#+END_SRC
+** tomato mode
+This really means "super awesome pomodoro implementation." =Tomato-mode= sounds cooler and more emacs like.
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'load-path "~/.emacs.d/dvl/org-tomato/")
+(require 'org-tomato)
+
+(setq org-tomato-timer-sound (expand-file-name "~/.emacs.d/you_suffer.wav"))
 #+END_SRC
 * tools
 ** printing
@@ -4036,7 +4071,7 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "C-<f3>") 'nd/org-cluster-show-conflicts)
 (global-set-key (kbd "C-S-<f3>") 'nd/org-cluster-show-overloads)
 (global-set-key (kbd "<f4>") 'org-clock-goto)
-(global-set-key (kbd "C-<f4>") 'nd/org-tomato-user-get-summary)
+(global-set-key (kbd "C-<f4>") 'org-tomato-user-get-summary)
 (global-set-key (kbd "<f5>") 'ansi-term)
 (global-set-key (kbd "<f8>") 'helm-command-prefix)
 (global-set-key (kbd "C-<f5>") 'nd/open-urxvt)
