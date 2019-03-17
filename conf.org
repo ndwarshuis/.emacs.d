@@ -531,7 +531,7 @@ This will spell-check comments in programming languages.
 
 Since flyspell mode is enabled in so many buffers, use a short modeline alias.
 #+BEGIN_SRC emacs-lisp
-(delight 'flyspell-mode "λ" "flyspell")
+(delight 'flyspell-mode "σ" "flyspell")
 #+END_SRC
 
 Additionally, I want to automatically highlight errors whenever =flyspell-mode= is enabled.
@@ -552,7 +552,7 @@ Flycheck will highlight and explain syntax errors in code and formatting.
         flycheck-idle-change-delay 2
         flycheck-error-list-minimum-level 'warning
         flycheck-navigation-minimum-level 'warning)
-  (delight 'flycheck-mode "γ" "flycheck"))
+  (delight 'flycheck-mode "ϕ" "flycheck"))
 #+END_SRC
 *** packaging
 #+BEGIN_SRC emacs-lisp
