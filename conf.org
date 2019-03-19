@@ -150,7 +150,7 @@ OS is one of those in `system-type'."
   "Return all applications that can open a given MIMETYPE.
 The list is comprised of alists where pairs are of the form (name . command)."
   (let* ((case-fold-search nil)
-         (mime-regex (concat "^MimeType=.*" mimetype ";.*$"))
+         (mime-regex (concat "^MimeType=.*" mimetype ";?.*$"))
          (desktop-dirs '("/usr/share/applications"
                          "/usr/local/share/applications"
                          "~/.local/share/applications"))
