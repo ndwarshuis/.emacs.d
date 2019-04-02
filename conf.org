@@ -4107,12 +4107,14 @@ They removed the underscore-inserts-arrow feature. Bring it back.
 The function keys are nice because they are almost (not always) free in every mode. Therefore I use these for functions that I need to access anywhere, but not necessary extremely often (because they are out of the way and harder to reach).
 #+BEGIN_SRC emacs-lisp
 (global-set-key (kbd "<f1>") 'org-agenda)
+(global-set-key (kbd "C-<f1>") 'org-brain-visualize)
 (global-set-key (kbd "<f2>") 'org-capture)
 (global-set-key (kbd "<f3>") 'cfw:open-org-calendar)
 (global-set-key (kbd "C-<f3>") 'nd/org-cluster-show-conflicts)
 (global-set-key (kbd "C-S-<f3>") 'nd/org-cluster-show-overloads)
 (global-set-key (kbd "<f4>") 'org-clock-goto)
 (global-set-key (kbd "C-<f4>") 'org-tomato-user-get-summary)
+(global-set-key (kbd "C-S-<f4>") 'org-tomato-user-pomodoro-goto)
 (global-set-key (kbd "<f5>") 'ansi-term)
 (global-set-key (kbd "<f8>") 'helm-command-prefix)
 (global-set-key (kbd "C-<f5>") 'nd/open-urxvt)
