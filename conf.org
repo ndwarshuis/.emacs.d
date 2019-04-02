@@ -972,6 +972,17 @@ Since I use org mode as my config file, makes sense to have a table of contents 
   (set-face-attribute 'org-column nil :background "#1e2023")
   ;; org-columns-summary-types
 #+END_SRC
+*** rifle
+#+BEGIN_SRC emacs-lisp
+(use-package helm-org-rifle
+  :ensure t
+  :after (org helm))
+
+(defun nd/helm-org-rifle-brain ()
+  "Rifle files in `org-brain-path'."
+  (interactive)
+  (helm-org-rifle-directories (list org-brain-path)))
+#+END_SRC
 ** extra commands
 *** org buffer
 Some useful additional commands for org buffers.
