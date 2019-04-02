@@ -681,6 +681,13 @@ A few caveats when using =R=
 #+BEGIN_SRC emacs-lisp
 (use-package inf-ruby
   :ensure t)
+
+(use-package robe
+  :ensure t
+  :hook (ruby-mode . robe))
+
+(use-package ruby-test-mode
+  :ensure t)
 #+END_SRC
 *** Haskell
 **** major mode and intero
