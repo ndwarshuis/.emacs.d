@@ -3370,6 +3370,15 @@ This really means "super awesome pomodoro implementation." =Tomato-mode= sounds 
 
 (setq org-tomato-timer-sound (expand-file-name "~/.emacs.d/you_suffer.wav"))
 #+END_SRC
+** brain
+#+BEGIN_SRC emacs-lisp
+(use-package org-brain
+  :init
+  (setq org-brain-path "~/Org/reference")
+  (with-eval-after-load 'evil
+    (evil-set-initial-state 'org-brain-visualize-mode 'emacs))
+  :ensure t)
+#+END_SRC
 * tools
 ** printing
 For some reason there is no default way to get a "print prompt." Instead one needs to either install some third-party helper or make a function like this.
@@ -4033,14 +4042,25 @@ These are for mode-specific bindings that can/should be outside of the evil maps
             (local-set-key (kbd "C-c C-x C-r") 'nd/org-clock-range)
 
             ;; override default org subtree cloning with something that clones and resets
-            (local-set-key (kbd "C-c C-x c") 'nd/org-clone-subtree-with-time-shift)))
+            (local-set-key (kbd "C-c C-x c") 'nd/org-clone-subtree-with-time-shift)
+
+            ;; add clock in/out functions for tomato mode
+            (local-set-key (kbd "C-x C-c C-x C-i") 'org-tomato-user-hl-clock-in)
+            (local-set-key (kbd "C-x C-c C-x C-o") 'org-tomato-user-hl-clock-out)
+
+            ;; add org-brain shortcuts
+            (local-set-key (kbd "C-c W") 'org-brain-refile)))
             
 (add-hook 'org-agenda-mode-hook
           (lambda ()
             (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)
+            (local-set-key (kbd "C-c W") 'org-brain-refile)
             (local-set-key (kbd "C-c C-x c") 'nd/org-agenda-clone-subtree-with-time-shift)
             (local-set-key (kbd "C-c C-x C-b") 'nd/org-agenda-toggle-checkbox)
-            (local-set-key (kbd "C-c C-x C-r") 'nd/org-agenda-clock-range)))
+            (local-set-key (kbd "C-c C-x C-r") 'nd/org-agenda-clock-range)
+            (local-set-key (kbd "C-x C-c C-x C-i") 'org-tomato-user-hl-agenda-clock-in)
+            (local-set-key (kbd "C-x C-c C-x C-o") 'org-tomato-user-hl-agenda-clock-out)))
+
 #+END_SRC
 *** mu4e
 #+BEGIN_SRC emacs-lisp
