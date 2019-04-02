@@ -3313,17 +3313,18 @@ And yes, there is =org-expiry=, but it does more than I need and I don't feel li
 
 This function adds the =CREATED= property. Note that I only really care about TODO entries, as anything else is either not worth tracking or an appointment which already have timestamps.
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-set-creation-time (&optional always)
+(defun nd/org-set-creation-time (&optional always &rest args)
   "Set the creation time property of the current heading.
 Applies only to todo entries unless ALWAYS is t."
-  (when (or always (nd/is-todoitem-p))
+  ;; (when (or always (nd/is-todoitem-p))
     (let* ((ts (format-time-string (cdr org-time-stamp-formats)))
            (ts-ia (concat "[" (substring ts 1 -1) "]")))
-      (funcall-interactively 'org-set-property "CREATED" ts-ia))))
+      (funcall-interactively 'org-set-property "CREATED" ts-ia)))
 #+END_SRC
 
 Advise the =org-insert-todo-entry= function. Advice here is necessary as there is only a hook for =org-insert-heading= and it fires before the TODO info is added.
 #+BEGIN_SRC emacs-lisp
+(advice-add 'org-insert-heading :after #'nd/org-set-creation-time)
 (advice-add 'org-insert-todo-heading :after #'nd/org-set-creation-time)
 #+END_SRC
 
