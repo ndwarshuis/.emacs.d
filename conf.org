@@ -669,7 +669,8 @@ A few caveats when using =R=
 ;; make python tabs 4 chars
 (add-hook 'python-mode-hook
       (lambda ()
-        (setq indent-tabs-mode t)
+        (setq indent-tabs-mode nil)
+        (setq py-indent-tabs-mode nil)
         (setq tab-width 4)
         (setq python-offset 4)))
         
