@@ -793,6 +793,12 @@ I like having my lines short and readable (also easier to git). Turn on autofill
 (add-hook 'LaTeX-mode-hook #'nd/turn-on-auto-fill-maybe)
 (add-hook 'LaTeX-mode-hook #'fci-mode)
 #+END_SRC
+**** local variables
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'tex
+  (add-to-list 'safe-local-variable-values
+               '(TeX-command-extra-options . "-shell-escape")))
+#+END_SRC
 **** BibTeX
 ***** database management
 #+BEGIN_SRC emacs-lisp
