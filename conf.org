@@ -3925,7 +3925,7 @@ Most packages that don't have an evil version are in this one. Some don't behave
   :init
   (setq evil-collection-mode-list
         '(anaconda-mode company comint custom debug dired doc-view
-                        ebib ediff flycheck helm minibuffer mu4e
+                        ebib ediff flycheck helm help minibuffer mu4e
                         profiler term which-key))
   (setq evil-collection-setup-minibuffer t)
   :config
