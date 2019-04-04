@@ -577,7 +577,7 @@ Company provides a dropdown of completion options. It has many backends which ar
 #+BEGIN_SRC emacs-lisp
 (use-package company
   :ensure t
-  :delight " ©"
+  :delight "κ"
   :config
   (setq company-idle-delay 0
         company-minimum-prefix-length 3))
