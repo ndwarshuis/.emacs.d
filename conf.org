@@ -582,19 +582,6 @@ Company provides a dropdown of completion options. It has many backends which ar
   (setq company-idle-delay 0
         company-minimum-prefix-length 3))
 #+END_SRC
-*** yasnippet
-#+BEGIN_SRC emacs-lisp
-(use-package yasnippet
-  :ensure t)
-
-(use-package yasnippet-snippets
-  :ensure t
-  :after yasnippet
-  :hook
-  ((prog-mode . yas-minor-mode))
-  :config
-  (yas-reload-all))
-#+END_SRC
 ** undo
 I find it weird that most programs do not have a tree-like tool to navigate undo information...because this is literally how most programs store this data.
 
