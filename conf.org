@@ -3725,6 +3725,31 @@ Since mu4e is an external program, need to check that it is installed before loa
 (use-package ein
   :ensure t)
 #+END_SRC
+** excorporate
+#+BEGIN_SRC emacs-lisp
+(use-package excorporate
+  :ensure t
+  :config
+  (require 'excorporate-org)
+  (setq excorporate-configuration
+        '("ndwarshuis3@gateh.edu" .
+          "https://outlook.office365.com/EWS/Exchange.asmx")
+        excorporate-org-buffer-name "exco.org"))
+
+(defun nd/exco-org-save-buffer (&rest args)
+  (with-current-buffer (get-buffer excorporate-org-buffer-name)
+    (write-file "/tmp/exco.org")))
+          
+;; these are nasty async functions so the advice needs to be globally
+;; defined
+(advice-add #'exco-org-finalize-buffer :after #'nd/exco-org-save-buffer)
+
+(defun nd/exco-org-pull-calendar ()
+  (interactive)
+  (let ((date (or org-agenda-current-date (calendar-current-date))))
+    (save-current-buffer
+      (apply #'nd/exco-org-show-day-save date))))
+#+END_SRC
 * keybindings
 For the sake of my sanity, all bindings go here. Note this means I don't use =:bind= in use-package forms.
 ** setup
