@@ -736,7 +736,8 @@ AUCTeX can launch external viewers to show compiled documents. I use Okular for 
                                    (output-pdf "Okular")
                                    (output-html "xdg-open")))
 #+END_SRC
-**** folding and outlining
+**** outline mode
+***** folding
 I like how =org-mode= folds with the TAB key, so bring the same thing to AUCTeX here with =outline-magic=.
 #+BEGIN_SRC emacs-lisp
 (add-hook 'LaTeX-mode-hook (lambda () (outline-minor-mode 1)))
@@ -746,8 +747,8 @@ I like how =org-mode= folds with the TAB key, so bring the same thing to AUCTeX 
   :ensure t
   :after outline)
 #+END_SRC
-
-Also, the section fonts are too big by default. Now the sizes are all kept equal with hatchet, axe, and saw :)
+***** fonts
+The section fonts are too big by default. Now the fonts are all kept equal with hatchet, axe, and saw :)
 #+BEGIN_SRC emacs-lisp
 (setq font-latex-fontify-sectioning 'color)
 #+END_SRC
@@ -3532,7 +3533,7 @@ Filtering is useful for obvious reasons
 (use-package dired-narrow
   :ensure t)
 #+END_SRC
-** pdftools
+** pdf-tools
 #+BEGIN_SRC emacs-lisp
 (use-package pdf-tools
   :ensure t
