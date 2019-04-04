@@ -655,18 +655,34 @@ A few caveats when using =R=
 #+END_SRC
 *** Python
 #+BEGIN_SRC emacs-lisp
-(elpy-enable)
+(use-package elpy
+  :ensure t)
 
-;; make python tabs 4 chars
-(add-hook 'python-mode-hook
-      (lambda ()
-        (setq indent-tabs-mode nil)
-        (setq py-indent-tabs-mode nil)
-        (setq tab-width 4)
-        (setq python-offset 4)))
-        
-(setq python-shell-interpreter "ipython"
-      python-shell-interpreter-args "--simple-prompt")
+(defun nd/init-anaconda-company ()
+  "Set the company backends for anaconda mode."
+  (setq-local company-backends '(company-anaconda)))
+
+(use-package python
+  :hook ((python-mode . flycheck-mode)
+         (python-mode . anaconda-mode)
+         (python-mode . company-mode)
+         (python-mode . nd/init-anaconda-company)
+         (inferior-python-mode . company-mode)
+         (inferior-python-mode . nd/init-anaconda-company))
+  :config (setq indent-tabs-mode nil
+                py-indent-tabs-mode nil
+                tab-width 4
+                python-offset 4
+                python-shell-interpreter "ipython"
+                python-shell-interpreter-args "-i --simple-prompt"))
+
+(use-package anaconda-mode
+  :ensure t
+  :after python)
+
+(use-package company-anaconda
+  :ensure t
+  :after (python company anaconda))
 #+END_SRC
 *** Ruby
 #+BEGIN_SRC emacs-lisp
