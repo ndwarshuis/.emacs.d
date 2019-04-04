@@ -549,7 +549,7 @@ Additionally, I want to automatically highlight errors whenever =flyspell-mode= 
 ;; (add-hook 'flyspell-mode-hook 'flyspell-buffer)
 #+END_SRC
 *** syntax checking
-Flycheck will highlight and explain syntax errors in code and formatting.
+Flycheck will highlight and explain syntax errors in code and formatting. See each language below for external tools that need to be installed to make flycheck work to the fullest.
 #+BEGIN_SRC emacs-lisp
 (use-package flycheck
   :ensure t
@@ -626,9 +626,8 @@ Elisp can use vanilla company with no plugins
 *** ESS (Emacs Speaks Statistics)
 For me this means R but ess also supports S-plus, SAS, Stata, and other statistical black-magic languages. Note that ESS is not part of =prog-mode= so it must be added manually to hooks.
 
-A few caveats when using =R=
-- =ess-mode= requires a running R process for =company-mode= to work
-- =flycheck-mode= requries =r-lintr=
+Flycheck syntax checkers
+- r-lintr (install from CRAN)
 #+begin_src emacs-lisp
 (defun nd/init-ess-company ()
   "Set the company backends for ess modes."
@@ -654,6 +653,9 @@ A few caveats when using =R=
         ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
 #+END_SRC
 *** Python
+Flycheck syntax checkers to install (either globally or using =pip=)
+- flake8
+- python-pylint
 #+BEGIN_SRC emacs-lisp
 (use-package elpy
   :ensure t)
@@ -718,6 +720,7 @@ The defacto style for haskell mandates camelcase, so use subword mode.
 (delight 'subword-mode nil "subword")
 #+END_SRC
 *** Lua
+For flycheck, install =luacheck= (from AUR on Arch).
 #+BEGIN_SRC emacs-lisp
 (use-package lua-mode
   :ensure t)
@@ -888,6 +891,10 @@ This adds support for csv files. Almost makes them editable like a spreadsheet. 
 (use-package pkgbuild-mode
   :ensure t)
 #+END_SRC
+*** Unix Shell
+No custom code here, but flycheck needs =shellcheck= (a Haskell program). On Arch (or any other distro that loves dynamic binding) easiest way to install is via =stack install ShellCheck=
+*** SQL
+No custom code here, but flycheck needs =sqlint= (on Arch available through the AUR).
 * org-mode
 ** low-level config
 *** modules
