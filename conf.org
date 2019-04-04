@@ -3916,60 +3916,17 @@ This is somewhat strange because all I really care about is moving between lines
   "0" 'beginning-of-visual-line
   "$" 'end-of-visual-line)
 #+END_SRC
-*** comint
-Comint-based inferior modes often are not evil (eg =intero= and =ESS=). Configure this similarly to term (see below) where C-j/k navigate cmd history and insert mode goes to cmd input line.
-**** interactive functions
-Some common interactive functions for comint-based modes
-#+BEGIN_SRC emacs-lisp
-;; (defun nd/comint-char-mode-evil-insert ()
-;;   "If not at the last line, go to the end of the buffer and enter insert mode.  Else just enter insert mode."
-;;   (interactive)
-;;   (if (/= (line-number-at-pos (point)) (line-number-at-pos (point-max)))
-;;         (goto-char (point-max))))
-        
-(defun nd/comint-send-input-evil-insert (&optional send-input-cmd)
-  "Go into insert mode after calling SEND-INPUT-CMD which is usually
-the function that send the command to the interactive process in the
-REPL. If no SEND-INPUT-CMD then `comint-send-input' is used."
-  (interactive)
-  (if send-input-cmd (funcall send-input-cmd) (comint-send-input))
-  (evil-insert 1))
-        
-(evil-define-key '(normal insert) comint-mode-map
-  (kbd "C-k") 'comint-previous-input
-  (kbd "C-j") 'comint-next-input)
-#+END_SRC
-**** ess
-#+BEGIN_SRC emacs-lisp
-(evil-define-key 'normal inferior-ess-mode-map
-  (kbd "RET") (lambda () nd/comint-send-input-evil-insert
-                'inferior-ess-send-input))
-
-;; (add-hook 'inferior-ess-mode-hook
-;;           (lambda ()
-;;             (add-hook 'evil-insert-state-entry-hook
-;;                       'nd/comint-char-mode-evil-insert nil t)))
-#+END_SRC
-**** intero
-#+BEGIN_SRC emacs-lisp
-(evil-define-key 'normal intero-repl-mode-map
-  (kbd "RET") 'nd/comint-send-input-evil-insert)
-  
-;; (add-hook 'intero-repl-mode-hook
-;;           (lambda ()
-;;             (add-hook 'evil-insert-state-entry-hook
-;;                       'nd/comint-char-mode-evil-insert nil t)))
-#+END_SRC
 *** collection
-Most packages that don't have an evil version are in this one. I don't like surprises so I set =evil-collection-modes-list= with the modes I actually want. Some of these are further configured below.
+Most packages that don't have an evil version are in this one. Some don't behave the way I like so those are further modified below.
 #+BEGIN_SRC emacs-lisp
 (use-package evil-collection
   :ensure t
   :after evil
   :init
   (setq evil-collection-mode-list
-        '(company dired doc-view ediff flycheck helm minibuffer mu4e
-                  package-menu pdf term which-key))
+        '(anaconda-mode company comint custom debug dired doc-view
+                        ebib ediff flycheck helm minibuffer mu4e
+                        profiler term which-key))
   (setq evil-collection-setup-minibuffer t)
   :config
   (evil-collection-init))
@@ -4064,19 +4021,55 @@ Note this assumes there are no sorting switches on `dired-ls'"
   (kbd "C-<return>") #'nd/dired-xdg-open
   (kbd "M-<return>") #'nd/dired-open-with)
 #+END_SRC
+**** comint
+***** common
+#+BEGIN_SRC emacs-lisp
+;; (defun nd/comint-char-mode-evil-insert ()
+;;   "If not at the last line, go to the end of the buffer and enter insert mode.  Else just enter insert mode."
+;;   (interactive)
+;;   (if (/= (line-number-at-pos (point)) (line-number-at-pos (point-max)))
+;;         (goto-char (point-max))))
+        
+(defun nd/comint-send-input-evil-insert (&optional send-input-cmd)
+  "Go into insert mode after calling SEND-INPUT-CMD which is usually
+the function that send the command to the interactive process in the
+REPL. If no SEND-INPUT-CMD then `comint-send-input' is used."
+  (interactive)
+  (if send-input-cmd (funcall send-input-cmd) (comint-send-input))
+  (evil-insert 1))
+        
+;; this makes more sense than what collection has
+(evil-define-key '(normal insert) comint-mode-map
+  (kbd "C-k") 'comint-previous-input
+  (kbd "C-j") 'comint-next-input)
+#+END_SRC
+***** ess
+#+BEGIN_SRC emacs-lisp
+(evil-define-key 'normal inferior-ess-mode-map
+  (kbd "RET") (lambda () nd/comint-send-input-evil-insert
+                'inferior-ess-send-input))
+
+;; (add-hook 'inferior-ess-mode-hook
+;;           (lambda ()
+;;             (add-hook 'evil-insert-state-entry-hook
+;;                       'nd/comint-char-mode-evil-insert nil t)))
+#+END_SRC
+***** intero
+#+BEGIN_SRC emacs-lisp
+(evil-define-key 'normal intero-repl-mode-map
+  (kbd "RET") 'nd/comint-send-input-evil-insert)
+  
+;; (add-hook 'intero-repl-mode-hook
+;;           (lambda ()
+;;             (add-hook 'evil-insert-state-entry-hook
+;;                       'nd/comint-char-mode-evil-insert nil t)))
+#+END_SRC
 **** helm
-I like tab completion...regardless of what the helm zealots say. This is actually easier and faster because I can just scroll through the source list with j/k and mash TAB when I find the right directory.
+I like tab completion...regardless of what the helm zealots say.
 #+BEGIN_SRC emacs-lisp
 (evil-define-key '(normal insert) helm-map
   (kbd "<tab>") 'helm-execute-persistent-action
   (kbd "C-<tab>") 'helm-select-action)
-#+END_SRC
-**** term
-Since I use vi mode in my terminal emulator, need to preserve the escape key's raw behavior
-#+BEGIN_SRC emacs-lisp
-(evil-define-key 'insert term-raw-map
-  (kbd "<escape>") 'nd/term-send-raw-escape
-  (kbd "C-<escape>") 'evil-normal-state)
 #+END_SRC
 **** pdf-view
 Apparently it needs to be set up after pdf-view is launched
@@ -4088,6 +4081,13 @@ Apparently it needs to be set up after pdf-view is launched
 #+BEGIN_SRC emacs-lisp
 (add-hook 'package-menu-mode-hook
           (lambda () (evil-collection-package-menu-setup)))
+#+END_SRC
+**** term
+Since I use vi mode in my terminal emulator, need to preserve the escape key's raw behavior
+#+BEGIN_SRC emacs-lisp
+(evil-define-key 'insert term-raw-map
+  (kbd "<escape>") 'nd/term-send-raw-escape
+  (kbd "C-<escape>") 'evil-normal-state)
 #+END_SRC
 ** local
 These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future).
@@ -4164,6 +4164,12 @@ They removed the underscore-inserts-arrow feature. Bring it back.
 #+BEGIN_SRC emacs-lisp
 (define-key ess-r-mode-map "_" #'ess-insert-assign)
 (define-key inferior-ess-r-mode-map "_" #'ess-insert-assign)
+#+END_SRC
+*** python
+The only thing I like about elpy is the interactive shell
+#+BEGIN_SRC emacs-lisp
+(define-key python-mode-map (kbd "C-c C-z") #'elpy-shell-switch-to-shell)
+(define-key python-mode-map (kbd "C-M-x") #'elpy-shell-send-statement-and-step)
 #+END_SRC
 ** global
 *** function
