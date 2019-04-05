@@ -857,8 +857,10 @@ Together, =org-ref= and =helm-bibtex= provide a nice pipeline to search a BibTex
         bibtex-completion-library-path (expand-file-name "~/BibTeX/pdf")
         bibtex-completion-pdf-field "File"))
 #+END_SRC
+*** HTML
+For flycheck, install =tidy= (privides the =html-tidy= binary).
 *** CSS
-Overlays hex color codes with matching colors in certain modes like css and html. 
+Overlays hex color codes with matching colors in certain modes like css and html. For flycheck, install =stylelint= (from the AUR on Arch).
 #+BEGIN_SRC emacs-lisp
 (use-package rainbow-mode
   :ensure t)
