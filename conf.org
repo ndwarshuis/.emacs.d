@@ -699,14 +699,20 @@ Flycheck syntax checkers to install (either globally or using =pip=)
   :ensure t)
 #+END_SRC
 *** Haskell
-**** major mode and intero
-Haskell is covered just with the basic major mode and intero (provides =company= and =flycheck=) which integrates well with stack.
+**** stack
+On Arch, all packages are dynamically linked (very bad for Haskell). The solution is to install [[https://docs.haskellstack.org/en/stable/README/][stack]] via the =stack-static= package through the AUR and then install all Haskell programs through stack using static linking. 
+
+This also provides GHC which is used by flycheck for syntax checking. 
+**** major mode
 #+BEGIN_SRC emacs-lisp
 (use-package haskell-mode
   :ensure t
   :config
   (setq haskell-interactive-popup-errors nil))
-  
+#+END_SRC
+**** intero
+Provides shell, autocomplete, and syntax checking. Requires the =intero= binary to be installed through stack (=stack install intero=).
+#+BEGIN_SRC emacs-lisp
 (use-package intero
   :ensure t
   :after haskell-mode
@@ -718,6 +724,12 @@ The defacto style for haskell mandates camelcase, so use subword mode.
 #+BEGIN_SRC emacs-lisp
 (add-hook 'haskell-mode-hook #'subword-mode)
 (delight 'subword-mode nil "subword")
+#+END_SRC
+**** hlint
+Additional syntax checking can be enabled with the =hlint= program (=stack install hlint=).
+#+BEGIN_SRC emacs-lisp
+(with-eval-after-load 'intero
+  (flycheck-add-next-checker 'intero '(t . haskell-hlint)))
 #+END_SRC
 *** Lua
 For flycheck, install =luacheck= (from AUR on Arch).
