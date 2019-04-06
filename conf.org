@@ -3235,7 +3235,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
    org-agenda-custom-commands
    `(("a"
       "Calendar View"
-      ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags '("%inc" "REFILE")))
+      ((agenda "" ((org-agenda-skip-function '(org-x-skip-headings-with-tags '("%inc" "REFILE")))
                         (org-agenda-include-diary t)))))
 
      ("t"
@@ -3247,7 +3247,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
          (concat actionable "-" periodical "-" habit "-" iterator)
          ;; act-no-rep-match
          "Tasks"
-         ''nd/skip-non-tasks
+         ''org-x-skip-non-tasks
          ''(:undone-closed :done-unclosed :actv :inrt)
          ''org-x-task-status t)))
 
@@ -3256,27 +3256,27 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
       (,(org-x-agenda-base-project-cmd
          act-no-rep-match
          '(concat (and org-x-agenda-limit-project-toplevel "Toplevel ") "Projects")
-         ''nd/skip-non-projects
+         ''org-x-skip-non-projects
          ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
                                :stck :wait :held :actv :inrt)
          ''org-x-get-project-status t t)))
           
      ("i"
       "Incubator View"
-      ((agenda "" ((org-agenda-skip-function '(nd/skip-headings-with-tags nil '("%inc")))
+      ((agenda "" ((org-agenda-skip-function '(org-x-skip-headings-with-tags nil '("%inc")))
                    (org-agenda-span 7)
                    (org-agenda-time-grid nil)
                    (org-agenda-entry-types '(:deadline :timestamp :scheduled))))
        ,(org-x-agenda-base-heading-cmd "-NA-REFILE+%inc"
                                    "Stale Incubated Timestamps"
-                                   ''nd/skip-non-stale-headings)
+                                   ''org-x-skip-non-stale-headings)
        ,(org-x-agenda-base-task-cmd "-NA-REFILE+%inc/!"
                                  "Incubated Tasks"
-                                 ''nd/skip-non-atomic-tasks)
+                                 ''org-x-skip-non-atomic-tasks)
        ,(org-x-agenda-base-project-cmd
          "-NA-REFILE+%inc/!"
          '(concat (and org-x-agenda-limit-project-toplevel "Toplevel ") "Incubated Projects")
-         ''nd/skip-non-projects
+         ''org-x-skip-non-projects
          ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
                                :stck :wait :held :actv)
          ''org-x-get-project-status
@@ -3287,7 +3287,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
       (,(org-x-agenda-base-project-cmd
          (concat actionable "-" iterator "+" periodical "-" habit)
          "Periodical Status"
-         ''nd/skip-non-periodical-parent-headings
+         ''org-x-skip-non-periodical-parent-headings
          'org-clone-peri-statuscodes ''org-clone-get-periodical-status nil t)))
 
      ("I"
@@ -3295,7 +3295,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
       (,(org-x-agenda-base-project-cmd
          "-NA-REFILE+PARENT_TYPE=\"iterator\""
          "Iterator Status"
-         ''nd/skip-non-iterator-parent-headings
+         ''org-x-skip-non-iterator-parent-headings
          'org-clone-iter-statuscodes ''org-clone-get-iterator-status nil t)))
 
      ("r" "Refile" ((tags "REFILE" ((org-agenda-overriding-header "Tasks to Refile"))
@@ -3307,16 +3307,16 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
       "Critical Errors"
       (,(org-x-agenda-base-task-cmd task-match
                                  "Discontinous Project"
-                                 ''nd/skip-non-discontinuous-project-tasks)
+                                 ''org-x-skip-non-discontinuous-project-tasks)
        ,(org-x-agenda-base-heading-cmd task-match
                                     "Undone Closed"
-                                    ''nd/skip-non-undone-closed-todoitems)
+                                    ''org-x-skip-non-undone-closed-todoitems)
        ,(org-x-agenda-base-heading-cmd (concat actionable "-" periodical)
                                     "Done Unclosed"
-                                    ''nd/skip-non-done-unclosed-todoitems)
+                                    ''org-x-skip-non-done-unclosed-todoitems)
        ,(org-x-agenda-base-task-cmd (concat task-match)
                                  "Missing Creation Timestamp"
-                                 ''nd/skip-non-created-tasks)))
+                                 ''org-x-skip-non-created-tasks)))
        
 
      ("A"
@@ -3324,14 +3324,14 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
       ((tags-todo ,(concat actionable "-" periodical "-" habit "/DONE|CANC")
                   ((org-agenda-overriding-header "Archivable Atomic Tasks and Iterators")
                    (org-agenda-sorting-strategy '(category-keep))
-                   (org-agenda-skip-function 'nd/skip-non-archivable-atomic-tasks)))
+                   (org-agenda-skip-function 'org-x-skip-non-archivable-atomic-tasks)))
        ,(org-x-agenda-base-heading-cmd (concat actionable "-" habit)
                                    "Stale Tasks and Periodicals"
-                                   ''nd/skip-non-stale-headings)
+                                   ''org-x-skip-non-stale-headings)
        ,(org-x-agenda-base-project-cmd
          (concat actionable "-" periodical "-" iterator "-" habit)
          '(concat (and org-x-agenda-limit-project-toplevel "Toplevel ") "Archivable Projects")
-         ''nd/skip-non-projects ''(:arch) ''org-x-get-project-status))))))
+         ''org-x-skip-non-projects ''(:arch) ''org-x-get-project-status))))))
 #+END_SRC
 ** gtd next generation
 GTD is great but has many limitations...mostly due to the fact that it was originally made on paper. This is meant to extend the GTD workflow into a comprehensive tracking engine that can be used and analyze and project long-term plans and goals.
