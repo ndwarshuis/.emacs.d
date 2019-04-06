@@ -1023,7 +1023,7 @@ Since I use org mode as my config file, makes sense to have a table of contents 
 *** org buffer
 Some useful additional commands for org buffers.
 #+BEGIN_SRC emacs-lisp
-(defun nd/mark-subtree-keyword (new-keyword &optional exclude no-log)
+(defun org-x-mark-subtree-keyword (new-keyword &optional exclude no-log)
   "Mark all tasks in a subtree with NEW-KEYWORD unless original
 keyword is in the optional argument EXCLUDE."
   (let ((subtree-end (save-excursion (org-end-of-subtree t)))
@@ -1032,17 +1032,17 @@ keyword is in the optional argument EXCLUDE."
         (error "exlude must be a list if provided"))
     (save-excursion
       (while (< (point) subtree-end)
-        (let ((keyword (nd/is-todoitem-p)))
+        (let ((keyword (org-x-is-todoitem-p)))
           (if (and keyword (not (member keyword exclude)))
               (org-todo new-keyword)))
         (outline-next-heading)))))
 
-(defun nd/mark-subtree-done ()
+(defun org-x-mark-subtree-done ()
   "Mark all tasks in subtree as DONE unless they are already CANC."
   (interactive)
-  (nd/mark-subtree-keyword "DONE" '("CANC")))
+  (org-x-mark-subtree-keyword "DONE" '("CANC")))
 
-(defun nd/org-clone-subtree-with-time-shift (n &optional shift)
+(defun org-x-clone-subtree-with-time-shift (n &optional shift)
   "Like `org-clone-subtree-with-time-shift' except it resets checkboxes
 and reverts all todo keywords to TODO."
   (interactive "nNumber of clones to produce: ")
@@ -1056,8 +1056,8 @@ and reverts all todo keywords to TODO."
             (org-clone-subtree-with-time-shift 1 shift)
             (org-forward-heading-same-level 1 t)
             (org-reset-checkbox-state-subtree)
-            (nd/mark-subtree-keyword "TODO" nil t)
-            (call-interactively 'nd/org-log-delete)
+            (org-x-mark-subtree-keyword "TODO" nil t)
+            (call-interactively 'org-x-log-delete)
             (org-cycle)
             ;; clone reset tree again if we need more than one clone
             (if (> n 1)
@@ -1068,18 +1068,18 @@ and reverts all todo keywords to TODO."
                     (org-cycle)))))
       (error (message "%s" (error-message-string err))))))
 
-(defun nd/org-clone-subtree-with-time-shift-toplevel (n)
+(defun org-x-clone-subtree-with-time-shift-toplevel (n)
   "Go to the last item underneath an iterator and clone using
-`nd/org-agenda-clone-subtree-with-time-shift'. Assumes point starts on
+`org-x-agenda-clone-subtree-with-time-shift'. Assumes point starts on
 the top level headline and only looks at the second level of
 headlines to clone."
   (interactive "nNumber of clones to produce: ")
   ;; do nothing if there is nothing to clone
   (unless (eq :uninit
-              (or (and (nd/is-iterator-heading-p)
-                       (nd/get-iterator-status))
-                  (and (nd/is-periodical-heading-p)
-                       (nd/get-periodical-status))))
+              (or (and (org-x-is-iterator-heading-p)
+                       (org-clone-get-iterator-status))
+                  (and (org-x-is-periodical-heading-p)
+                       (org-clone-get-periodical-status))))
     ;; goto last item in the second level
     (save-excursion
       (let ((current-point (point)))
@@ -1087,9 +1087,9 @@ headlines to clone."
         (while (< current-point (point))
           (setq current-point (point))
           (org-forward-heading-same-level 1 t)))
-      (nd/org-clone-subtree-with-time-shift n))))
+      (org-x-clone-subtree-with-time-shift n))))
 
-(defun nd/org-log-delete ()
+(defun org-x-log-delete ()
   "Delete logbook drawer of subtree."
   (interactive)
   (save-excursion
@@ -1104,13 +1104,13 @@ headlines to clone."
       (delete-region (region-beginning) (region-end))
       (org-remove-empty-drawer-at (point)))))
 
-(defun nd/org-delete-subtree ()
+(defun org-x-delete-subtree ()
   "Delete the entire subtree under the current heading without sending to kill ring."
   (interactive)
   (org-back-to-heading t)
   (delete-region (point) (+ 1 (save-excursion (org-end-of-subtree)))))
 
-(defun nd/org-clock-range (&optional arg)
+(defun org-x-clock-range (&optional arg)
   "Add a completed clock entry to the current heading.
 Does not touch the running clock. When called with one C-u prefix
 argument, ask for a range in minutes in place of the second date."
@@ -1148,7 +1148,7 @@ argument, ask for a range in minutes in place of the second date."
 *** org agenda
 These are executed directly from agenda views and affect their source org buffers. The trick is that all of them must somehow go back to the heading to which they allude, execute, then update the agenda view with whatever changes have been made.
 #+BEGIN_SRC emacs-lisp
-(defmacro nd/org-agenda-cmd-wrapper (get-head &rest body)
+(defmacro org-x-agenda-cmd-wrapper (get-head &rest body)
   "Wraps commands in BODY in necessary code to allow commands to be
 called from the agenda buffer. Particularly, this wrapper will
 navigate to the original header, execute BODY, then update the agenda
@@ -1172,34 +1172,34 @@ buffer."
         (org-agenda-redo))
 	  (beginning-of-line 1))))
   
-(defun nd/org-agenda-toggle-checkbox ()
+(defun org-x-agenda-toggle-checkbox ()
   "Toggle checkboxes in org agenda view using `org-toggle-checkbox'."
   (interactive)
-  (nd/org-agenda-cmd-wrapper
+  (org-x-agenda-cmd-wrapper
    t
    (call-interactively #'org-toggle-checkbox)))
 
-(defun nd/org-agenda-clone-subtree-with-time-shift ()
-  "Apply `nd/org-clone-subtree-with-time-shift' to an agenda entry.
+(defun org-x-agenda-clone-subtree-with-time-shift ()
+  "Apply `org-x-clone-subtree-with-time-shift' to an agenda entry.
 It will clone the last entry in the selected subtree."
   (interactive)
-  (nd/org-agenda-cmd-wrapper
+  (org-x-agenda-cmd-wrapper
    nil
-   (call-interactively #'nd/org-clone-subtree-with-time-shift-toplevel)))
+   (call-interactively #'org-x-clone-subtree-with-time-shift-toplevel)))
 
-(defun nd/org-agenda-delete-subtree ()
-  "Apply `nd/org-delete-subtree' to an agenda entry."
+(defun org-x-agenda-delete-subtree ()
+  "Apply `org-x-delete-subtree' to an agenda entry."
   (interactive)
-  (nd/org-agenda-cmd-wrapper
+  (org-x-agenda-cmd-wrapper
    nil
-   (call-interactively #'nd/org-delete-subtree)))
+   (call-interactively #'org-x-delete-subtree)))
 
-(defun nd/org-agenda-clock-range ()
-  "Apply `nd/org-clock-range' to an agenda entry"
+(defun org-x-agenda-clock-range ()
+  "Apply `org-x-clock-range' to an agenda entry"
   (interactive)
-  (nd/org-agenda-cmd-wrapper
+  (org-x-agenda-cmd-wrapper
    nil
-   (call-interactively #'nd/org-clock-range)))
+   (call-interactively #'org-x-clock-range)))
 #+END_SRC
 ** calfw
 This is a nifty calendar...sometimes way faster than the agenda buffer for looking at long term things.
@@ -1381,9 +1381,9 @@ In order to make sorting easier and minimize work during processing, the files a
 **** repetition
 This deserves special attention because it comprises a significant percentage of tasks I do (and likely everyone does). I personally never liked the org's repeated task functionality. It is way too temporally rigid to be useful to me, and offers very little flexibility in mutating a task as it moves forward. Habits (which I use) are a partial fix for the first problem but do not aleviate the mutability problem.
 
-My (somewhat convoluted) solution was to use =org-clone-subtree-with-time-shift=, which creates an easy way to make repeated tasks from some template, but also allows modification. The only problem with the vanilla implementation is that it lacks automation and agenda-block awareness (they all get treated as regular tasks which I don't want). This is partially fixed with my own =nd/org-clone-subtree-with-time-shift= which automaticlly resets tasks which are cloned (eg clearing checkboxes and resetting todo state). The remainding problems I fixed by defining several properties to be applied to repeated groupings under a heading (see properties).
+My (somewhat convoluted) solution was to use =org-clone-subtree-with-time-shift=, which creates an easy way to make repeated tasks from some template, but also allows modification. The only problem with the vanilla implementation is that it lacks automation and agenda-block awareness (they all get treated as regular tasks which I don't want). This is partially fixed with my own =org-x-clone-subtree-with-time-shift= which automaticlly resets tasks which are cloned (eg clearing checkboxes and resetting todo state). The remainding problems I fixed by defining several properties to be applied to repeated groupings under a heading (see properties).
 
-The first property is called =PARENT_TYPE= and has two values =iterator= and =periodical=. The first applies to repeated tasks and second which applies to timestamped headings such as appointments. These are mostly useful for agenda sorting, where I have views specifically for managing repeated tasks. The second property is =TIME_SHIFT=; =nd/org-clone-subtree-with-time-shift= is aware of this value and automatically shifts cloned tasks accordingly if available.
+The first property is called =PARENT_TYPE= and has two values =iterator= and =periodical=. The first applies to repeated tasks and second which applies to timestamped headings such as appointments. These are mostly useful for agenda sorting, where I have views specifically for managing repeated tasks. The second property is =TIME_SHIFT=; =org-x-clone-subtree-with-time-shift= is aware of this value and automatically shifts cloned tasks accordingly if available.
 
 In practice, I use this for tasks like workouts, paying bills, maintenance, grocery shopping, work meetings, GTD reviews, etc. These are all *almost* consistent but may change slightly in their timing, action items, effort, context, etc. If any of these change, it is easy enough to modify one heading without disrupting the rest.
 
@@ -2164,7 +2164,7 @@ This controls what each line on the block agenda looks like. This is reformated 
 ***** modeline
 Hide the various modules that may be present
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-agenda-trim-modeline (orig-fn &rest args)
+(defun org-x-agenda-trim-modeline (orig-fn &rest args)
   "Advice to remove extra information from agenda modeline name."
   (let ((org-agenda-include-diary nil)
         (org-agenda-include-deadlines nil)
@@ -2172,7 +2172,7 @@ Hide the various modules that may be present
         (org-habit-show-habits nil))
     (apply orig-fn args)))
 
-(advice-add #'org-agenda-set-mode-name :around #'nd/org-agenda-trim-modeline)
+(advice-add #'org-agenda-set-mode-name :around #'org-x-agenda-trim-modeline)
 #+END_SRC
 ***** misc
 These are just some options to enable/disable some aesthetic things.
@@ -2194,7 +2194,7 @@ Rather than define infinite views for different tasks (I already have plenty of 
 ***** custom filtering functions
 Some custom filters that are applied to the agenda view. Note that some of these use alternative filter types that are implemented via advising functions (see below).
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-agenda-filter-non-context ()
+(defun org-x-agenda-filter-non-context ()
   "Filter all tasks with context tags."
   (interactive)
   (let* ((tags-list (mapcar #'car org-tag-alist))
@@ -2205,7 +2205,7 @@ Some custom filters that are applied to the agenda view. Note that some of these
           (mapcar (lambda (tag) (concat "-" tag)) context-tags))
     (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
 
-(defun nd/org-agenda-filter-non-peripheral ()
+(defun org-x-agenda-filter-non-peripheral ()
   "Filter all tasks that don't have peripheral tags."
   (interactive)
   (let* ((peripheral-tags '("PERIPHERAL")))
@@ -2213,13 +2213,13 @@ Some custom filters that are applied to the agenda view. Note that some of these
           (mapcar (lambda (tag) (concat "-" tag)) peripheral-tags))
     (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
     
-(defun nd/org-agenda-filter-non-effort ()
+(defun org-x-agenda-filter-non-effort ()
   "Filter agenda by non-effort tasks."
   (interactive)
   (setq org-agenda-hasprop-filter '("-Effort"))
   (org-agenda-filter-apply org-agenda-hasprop-filter 'hasprop))
 
-(defun nd/org-agenda-filter-delegate ()
+(defun org-x-agenda-filter-delegate ()
   "Filter agenda by tasks with an external delegate."
   (interactive)
   (setq org-agenda-hasprop-filter '("+DELEGATE"))
@@ -2233,7 +2233,7 @@ As it is, this allows any filter using =hasprop= to be applied and removed using
 ;; initialize new filters
 (defvar org-agenda-hasprop-filter nil)
 
-(defun nd/org-agenda-filter-make-matcher-prop
+(defun org-x-agenda-filter-make-matcher-prop
     (filter type &rest args)
   "Return matching matcher form for FILTER and TYPE where TYPE is not
 in the regular `org-agenda-filter-make-matcher' function. This is
@@ -2244,10 +2244,10 @@ the type is not valid (which is currently 'prop')"
     (cond
      ((eq type 'hasprop)
       (dolist (x filter)
-        (push (nd/org-agenda-filter-make-matcher-hasprop-exp x) f))))
+        (push (org-x-agenda-filter-make-matcher-hasprop-exp x) f))))
     (if f (cons 'and (nreverse f)))))
 
-(defun nd/org-agenda-filter-make-matcher-hasprop-exp (h)
+(defun org-x-agenda-filter-make-matcher-hasprop-exp (h)
  "Returns form to test the presence or absence of properties H.
 H is a string like +prop or -prop"
  (let (op)
@@ -2261,21 +2261,21 @@ H is a string like +prop or -prop"
                     (org-entry-get nil ,h))))))
      (if (eq op ?-) (list 'not f) f))))
 
-(defun nd/org-agenda-filter-show-all-hasprop nil
+(defun org-x-agenda-filter-show-all-hasprop nil
   (org-agenda-remove-filter 'hasprop))
 
 (advice-add #'org-agenda-filter-make-matcher :before-until
-            #'nd/org-agenda-filter-make-matcher-prop)
+            #'org-x-agenda-filter-make-matcher-prop)
 
 (advice-add #'org-agenda-filter-remove-all :before
             (lambda () (when org-agenda-hasprop-filter
-                    (nd/org-agenda-filter-show-all-hasprop))))
+                    (org-x-agenda-filter-show-all-hasprop))))
 #+END_SRC
 **** bulk actions
 These add to the existing bulk actions in the agenda view.
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-bulk-custom-functions
-      '((?D nd/org-agenda-delete-subtree)))
+      '((?D org-x-agenda-delete-subtree)))
 #+END_SRC
 **** holidays and birthdays
 If I don't include this, I actually forget about major holidays.
@@ -2292,33 +2292,33 @@ If I don't include this, I actually forget about major holidays.
 These are functions and variables exclusively for agenda block manipulation within the context of =org-custom-agenda-commands=.
 ***** constants
 #+BEGIN_SRC emacs-lisp
-(defconst nd/iter-future-time (* 7 24 60 60)
+(defconst org-clone-iter-future-time (* 7 24 60 60)
   "Iterators must have at least one task greater into the future to be active.")
   
-(defconst nd/archive-delay-days 30
+(defconst org-x-archive-delay 30
   "The number of days to wait before tasks are considered archivable.")
 
-(defconst nd/inert-delay-days 90
+(defconst org-x-inert-delay-days 90
   "The number of days to wait before tasks are considered inert.")
   
 ;; TODO ;unscheduled should trump all
-(defconst nd/iter-statuscodes '(:uninit :empt :actv :project-error :unscheduled)
+(defconst org-clone-iter-statuscodes '(:uninit :empt :actv :project-error :unscheduled)
   "Iterators can have these statuscodes.")
  
-(defconst nd/peri-future-time nd/iter-future-time
+(defconst org-clone-peri-future-time org-clone-iter-future-time
   "Periodicals must have at least one heading greater into the future to be fresh.")
 
-(defconst nd/peri-statuscodes '(:uninit :empt :actv :unscheduled))
+(defconst org-clone-peri-statuscodes '(:uninit :empt :actv :unscheduled))
 
-(defconst nd/project-invalid-todostates
+(defconst org-x-project-invalid-todostates
   '("WAIT" "NEXT")
   "Projects cannot have these todostates.")
   
-(defconst nd/org-agenda-todo-sort-order
+(defconst org-x-agenda-todo-sort-order
   '("NEXT" "WAIT" "HOLD" "TODO")
   "Defines the order in which todo keywords should be sorted.")
   
-(defconst nd/project-skip-todostates
+(defconst org-x-project-skip-todostates
   '("HOLD" "CANC")
   "These keywords override all contents within their subtrees.
 Currently used to tell skip functions when they can hop over
@@ -2326,17 +2326,17 @@ entire subtrees to save time and ignore tasks")
 #+END_SRC
 ***** variables
 #+BEGIN_SRC emacs-lisp
-(defvar nd/agenda-limit-project-toplevel t
+(defvar org-x-agenda-limit-project-toplevel t
   "If true, filter projects by all levels or top level only.")
 
-(defvar nd/agenda-hide-incubator-tags t
+(defvar org-x-agenda-hide-incubator-tags t
   "If true, don't show incubator headings.")
 #+END_SRC
 ***** task helper functions
 These are the building blocks for skip functions.
 ****** org-element
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-element-parse-headline (&optional granularity subtree)
+(defun org-x-element-parse-headline (&optional granularity subtree)
   "Like `org-element-parse-buffer' but on only one headline. Assumes 
 that point is currently on the starting line of the headline in
 question. if SUBTREE is t, return all the subheadings under this
@@ -2350,7 +2350,7 @@ heading."
          start end 'first-section nil granularity nil nil)
         car)))
 
-(defun nd/org-element-first-lb-entry (headline)
+(defun org-x-element-first-lb-entry (headline)
   "Get the first logbook entry of the headline under point."
   (letrec
       ((get-ts
@@ -2386,13 +2386,13 @@ heading."
 #+END_SRC
 ****** timestamps
 #+BEGIN_SRC emacs-lisp
-(defun nd/get-date-property (timestamp-property)
+(defun org-x-get-date-property (timestamp-property)
   "Get TIMESTAMP-PROPERTY on current heading and convert to a number.
 If it does not have a date, it will return nil."
   (let ((ts (org-entry-get nil timestamp-property)))
         (when ts (org-2ft ts))))
 
-(defun nd/heading-compare-timestamp (timestamp-fun
+(defun org-x-heading-compare-timestamp (timestamp-fun
                                      &optional ref-time future)
   "Returns the timestamp (from TIMESTAMP-FUM on the current heading) 
 if timestamp is futher back in time compared to a REF-TIME (default to 
@@ -2407,87 +2407,87 @@ to REF-TIME. Returns nil if no timestamp is found."
                (<= (- timestamp (float-time)) ref-time)))
         timestamp)))
         
-(defun nd/is-created-heading-p ()
+(defun org-x-is-created-heading-p ()
   "Return heading's CREATED property timestamp or nil."
-  (nd/get-date-property "CREATED"))
+  (org-x-get-date-property "CREATED"))
 
-(defun nd/is-timestamped-heading-p ()
+(defun org-x-is-timestamped-heading-p ()
   "Get active timestamp of current heading."
-  (nd/get-date-property "TIMESTAMP"))
+  (org-x-get-date-property "TIMESTAMP"))
 
-(defun nd/is-scheduled-heading-p ()
+(defun org-x-is-scheduled-heading-p ()
   "Get scheduled timestamp of current heading."
-  (nd/get-date-property "SCHEDULED"))
+  (org-x-get-date-property "SCHEDULED"))
 
-(defun nd/is-deadlined-heading-p ()
+(defun org-x-is-deadlined-heading-p ()
   "Get deadline timestamp of current heading."
-  (nd/get-date-property "DEADLINE"))
+  (org-x-get-date-property "DEADLINE"))
 
-(defun nd/is-closed-heading-p ()
+(defun org-x-is-closed-heading-p ()
   "Get closed timestamp of current heading."
-  (nd/get-date-property "CLOSED"))
+  (org-x-get-date-property "CLOSED"))
 
-(defun nd/is-stale-heading-p (&optional ts-prop)
+(defun org-x-is-stale-heading-p (&optional ts-prop)
   "Return timestamp for TS-PROP (TIMESTAMP by default) if current heading is stale."
-  (nd/heading-compare-timestamp
+  (org-x-heading-compare-timestamp
    (lambda () (let ((ts (org-entry-get nil (or ts-prop "TIMESTAMP"))))
            (when (and ts (not (find ?+ ts))) (org-2ft ts))))))
 
-(defun nd/is-fresh-heading-p ()
+(defun org-x-is-fresh-heading-p ()
   "Return timestamp if current heading is fresh."
-  (nd/heading-compare-timestamp 'nd/is-timestamped-heading-p nil t))
+  (org-x-heading-compare-timestamp 'org-x-is-timestamped-heading-p nil t))
 
-(defun nd/is-archivable-heading-p ()
+(defun org-x-is-archivable-heading-p ()
   "Return timestamp if current heading is archivable."
-  (nd/heading-compare-timestamp
-   'nd/is-closed-heading-p
-    (- (* 60 60 24 nd/archive-delay-days))))
+  (org-x-heading-compare-timestamp
+   'org-x-is-closed-heading-p
+    (- (* 60 60 24 org-x-archive-delay))))
 
-(defun nd/is-inert-p ()
+(defun org-x-is-inert-p ()
   "Return most recent timestamp if headline is inert."
-  (let* ((recent-ft (-some->> (nd/org-element-parse-headline)
-                              nd/org-element-first-lb-entry
+  (let* ((recent-ft (-some->> (org-x-element-parse-headline)
+                              org-x-element-first-lb-entry
                               org-2ft)))
-    (-some--> (or recent-ft (nd/get-date-property "CREATED"))
+    (-some--> (or recent-ft (org-x-get-date-property "CREATED"))
               (- (float-time) it)
-              (when (> it (* 86400 nd/inert-delay-days)) it))))
+              (when (> it (* 86400 org-x-inert-delay-days)) it))))
 #+END_SRC
 ****** task level testing
 #+BEGIN_SRC emacs-lisp
-(defun nd/is-todoitem-p ()
+(defun org-x-is-todoitem-p ()
   "Return todo keyword if heading has one."
   (let ((keyword (nth 2 (org-heading-components))))
     (if (member keyword org-todo-keywords-1)
         keyword)))
 
-(defun nd/is-project-p ()
+(defun org-x-is-project-p ()
   "Return todo keyword if heading has todoitem children."
-  (and (nd/heading-has-children 'nd/is-todoitem-p) (nd/is-todoitem-p)))
+  (and (org-x-headline-has-children 'org-x-is-todoitem-p) (org-x-is-todoitem-p)))
 
-(defun nd/is-task-p ()
+(defun org-x-is-task-p ()
   "Return todo keyword if heading has no todoitem children."
-  (and (not (nd/heading-has-children 'nd/is-todoitem-p)) (nd/is-todoitem-p)))
+  (and (not (org-x-headline-has-children 'org-x-is-todoitem-p)) (org-x-is-todoitem-p)))
 
-(defun nd/is-project-task-p ()
+(defun org-x-is-project-task-p ()
   "Return todo keyword if heading has todoitem parents."
-  (and (nd/heading-has-parent 'nd/is-todoitem-p) (nd/is-task-p)))
+  (and (org-x-headline-has-parent 'org-x-is-todoitem-p) (org-x-is-task-p)))
 
-(defun nd/is-atomic-task-p ()
+(defun org-x-is-atomic-task-p ()
   "Return todo keyword if heading has no todoitem parents or children."
-  (and (not (nd/heading-has-parent 'nd/is-todoitem-p)) (nd/is-task-p)))
+  (and (not (org-x-headline-has-parent 'org-x-is-todoitem-p)) (org-x-is-task-p)))
 
-(defun nd/task-status ()
+(defun org-x-task-status ()
   "Return the status of the headline under point."
-  (let ((kw (nd/is-task-p)))
+  (let ((kw (org-x-is-task-p)))
     (when kw
       (cond 
-       ((nd/is-archivable-heading-p)
+       ((org-x-is-archivable-heading-p)
         :arch)
-       ((nd/is-inert-p)
+       ((org-x-is-inert-p)
         :inrt)
-       ((and (member kw org-done-keywords) (not (nd/is-closed-heading-p)))
+       ((and (member kw org-done-keywords) (not (org-x-is-closed-heading-p)))
         :done-unclosed)
-       ((and (not (member kw org-done-keywords)) (nd/is-closed-heading-p))
+       ((and (not (member kw org-done-keywords)) (org-x-is-closed-heading-p))
         :closed-undone)
        ((member kw org-done-keywords)
         :comp)
@@ -2495,32 +2495,32 @@ to REF-TIME. Returns nil if no timestamp is found."
 #+END_SRC
 ****** property testing
 #+BEGIN_SRC emacs-lisp
-(defun nd/is-periodical-heading-p ()
+(defun org-x-is-periodical-heading-p ()
   "Return t if heading is a periodical."
   (equal "periodical" (org-entry-get nil "PARENT_TYPE" t)))
 
-(defun nd/is-iterator-heading-p ()
+(defun org-x-is-iterator-heading-p ()
   "Return t if heading is an iterator."
   (equal "iterator" (org-entry-get nil "PARENT_TYPE" t)))
 
-(defun nd/heading-has-effort-p ()
+(defun org-x-headline-has-effort-p ()
   "Return t if heading has an effort."
   (org-entry-get nil "Effort"))
 
-(defun nd/heading-has-context-p ()
+(defun org-x-headline-has-context-p ()
   "Return t if heading has a context."
   (let ((tags (org-get-tags-at)))
     (or (> (length (nd/filter-list-prefix "#" tags)) 0)
         (> (length (nd/filter-list-prefix "@" tags)) 0))))
 
-(defun nd/heading-has-tag-p (tag)
+(defun org-x-headline-has-tag-p (tag)
   "Return t if heading has tag TAG."
   (member tag (org-get-tags-at)))
 #+END_SRC
 ****** relational testing
 Returns t if heading has certain relationship to other headings
 #+BEGIN_SRC emacs-lisp
-(defun nd/heading-has-children (heading-test)
+(defun org-x-headline-has-children (heading-test)
   "Return t if heading has a child for whom HEADING-TEST is t."
   (let ((subtree-end (save-excursion (org-end-of-subtree t)))
         has-children previous-point)
@@ -2535,18 +2535,18 @@ Returns t if heading has certain relationship to other headings
         (org-forward-heading-same-level 1 t)))
     has-children))
 
-(defun nd/heading-has-parent (heading-test)
+(defun org-x-headline-has-parent (heading-test)
   "Return t if heading has parent for whom HEADING-TEST is t."
   (save-excursion (and (org-up-heading-safe) (funcall heading-test))))
 
-(defun nd/has-discontinuous-parent ()
+(defun org-x-has-discontinuous-parent ()
   "Return t if heading has a non-todoitem parent which in turn has a todoitem parent."
   (let ((has-todoitem-parent)
         (has-non-todoitem-parent))
     (save-excursion
       (while (and (org-up-heading-safe)
                   (not has-todoitem-parent))
-        (if (nd/is-todoitem-p)
+        (if (org-x-is-todoitem-p)
             (setq has-todoitem-parent t)
           (setq has-non-todoitem-parent t))))
     (and has-todoitem-parent has-non-todoitem-parent)))
@@ -2554,11 +2554,11 @@ Returns t if heading has certain relationship to other headings
 ****** project level testing
 Projects are tested according to their statuscodes, which in turn are a function of the todo keywords and timestamps of their individual subtasks.
 #+BEGIN_SRC emacs-lisp
-(defmacro nd/compare-statuscodes (op sc1 sc2 sc-list)
+(defmacro org-x-compare-statuscodes (op sc1 sc2 sc-list)
   "Compare position of statuscodes SC1 and SC2 in SC-LIST using operator OP."
   `(,op (position ,sc1 ,sc-list) (position ,sc2 ,sc-list)))
 
-(defun nd/descend-into-project
+(defun org-x-descend-into-project
     (allowed-statuscodes trans-tbl get-task-status callback-fun)
   "Loop through (sub)project and return overall statuscode.
 
@@ -2587,11 +2587,11 @@ obtain a statuscode-equivalent of the status of the tasks."
       ;; loop through subproject tasks until breaker-status found
       (while (and (not (eq project-status breaker-status))
                   (> (point) previous-point))
-        (let ((keyword (nd/is-todoitem-p)))
+        (let ((keyword (org-x-is-todoitem-p)))
           (if keyword
               (let ((new-status
                      ;; if project then descend recursively
-                     (if (nd/heading-has-children 'nd/is-todoitem-p)
+                     (if (org-x-headline-has-children 'org-x-is-todoitem-p)
                          (let ((n (funcall callback-fun)))
                            ;; if project returns an allowed status
                            ;; then use that
@@ -2605,29 +2605,29 @@ obtain a statuscode-equivalent of the status of the tasks."
                        ;; if tasks then use get-task-status to obtain status
                        (nth (funcall get-task-status keyword)
                             allowed-statuscodes))))
-                (if (nd/compare-statuscodes > new-status project-status allowed-statuscodes)
+                (if (org-x-compare-statuscodes > new-status project-status allowed-statuscodes)
                     (setq project-status new-status)))))
         (setq previous-point (point))
         (org-forward-heading-same-level 1 t)))
     project-status))
 
-(defun nd/get-project-status ()
+(defun org-x-get-project-status ()
   "Return project heading statuscode (assumes it is indeed a project)."
-  (let ((keyword (nd/is-todoitem-p)))
+  (let ((keyword (org-x-is-todoitem-p)))
     ;;
     ;; these first three are easy because they only require
     ;; testing the project headline and nothing underneath
     ;;
     (cond
      ;; it does not make sense for projects to be scheduled
-     ((nd/is-scheduled-heading-p) :scheduled-project)
+     ((org-x-is-scheduled-heading-p) :scheduled-project)
 
      ;; held projects do not care what is underneath them
      ;; only need to test if they are inert
-     ((equal keyword "HOLD") (if (nd/is-inert-p) :inrt :held))
+     ((equal keyword "HOLD") (if (org-x-is-inert-p) :inrt :held))
 
      ;; projects with invalid todostates are nonsense
-     ((member keyword nd/project-invalid-todostates)
+     ((member keyword org-x-project-invalid-todostates)
       :invalid-todostate)
      
      ;;
@@ -2637,7 +2637,7 @@ obtain a statuscode-equivalent of the status of the tasks."
      ;; canceled projects can either be archivable or complete
      ;; any errors or undone tasks are irrelevant
      ((equal keyword "CANC")
-      (nd/descend-into-project
+      (org-x-descend-into-project
        '(:arch :comp)
        '((:stck . 1)
          (:inrt . 1)
@@ -2650,12 +2650,12 @@ obtain a statuscode-equivalent of the status of the tasks."
          (:done-incomplete . 1))
        (lambda (k)
          (if (and (member k org-done-keywords)
-                  (nd/is-archivable-heading-p)) 0 1))
-       #'nd/get-project-status))
+                  (org-x-is-archivable-heading-p)) 0 1))
+       #'org-x-get-project-status))
      
      ;; done projects are like canceled projects but can also be incomplete
      ((equal keyword "DONE")
-      (nd/descend-into-project
+      (org-x-descend-into-project
        '(:arch :comp :done-incomplete)
        '((:stck . 2)
          (:inrt . 2)
@@ -2667,13 +2667,13 @@ obtain a statuscode-equivalent of the status of the tasks."
          (:undone-complete . 2))
        (lambda (k)
          (if (member k org-done-keywords)
-             (if (nd/is-archivable-heading-p) 0 1)
+             (if (org-x-is-archivable-heading-p) 0 1)
            2))
-       #'nd/get-project-status))
+       #'org-x-get-project-status))
      
      ;; project with TODO states could be basically any status
      ((equal keyword "TODO")
-      (nd/descend-into-project
+      (org-x-descend-into-project
        '(:undone-complete :stck :held :wait :actv :inrt)
        '((:comp . 0)
          (:arch . 0)
@@ -2681,23 +2681,23 @@ obtain a statuscode-equivalent of the status of the tasks."
          (:invalid-todostate . 1)
          (:done-incomplete . 1))
        (lambda (k)
-         (cond ((nd/is-inert-p) 5)
-               ((equal k "TODO") (if (nd/is-scheduled-heading-p) 4 1))
+         (cond ((org-x-is-inert-p) 5)
+               ((equal k "TODO") (if (org-x-is-scheduled-heading-p) 4 1))
                ((equal k "HOLD") 2)
                ((equal k "WAIT") 3)
                ((equal k "NEXT") 4)
                (t 0)))
-       #'nd/get-project-status))
+       #'org-x-get-project-status))
      
      (t (error (concat "invalid keyword detected: " keyword))))))
 #+END_SRC
 ****** repeater testing
 Iterators and periodicals are tested similarly to projects in that they have statuscodes.
 #+BEGIN_SRC emacs-lisp
-(defun nd/get-iterator-project-status (kw)
+(defun org-clone-get-iterator-project-status (kw)
   (cond
-   ((or (nd/is-scheduled-heading-p)
-        (member kw nd/project-invalid-todostates)) :project-error)
+   ((or (org-x-is-scheduled-heading-p)
+        (member kw org-x-project-invalid-todostates)) :project-error)
 
    ;; canceled tasks add nothing
    ((equal kw "CANC") :empt)
@@ -2709,42 +2709,42 @@ Iterators and periodicals are tested similarly to projects in that they have sta
    ;; done projects either add nothing (empty) or are not actually
    ;; done (project error)
    ((equal kw "DONE")
-    (nd/descend-into-project
+    (org-x-descend-into-project
      '(:empt :project-error)
      '((:unscheduled . 1)
        (:actv . 1))
      (lambda (k)
        (if (member k org-done-keywords) 0 1))
-     #'nd/get-iterator-project-status))
+     #'org-clone-get-iterator-project-status))
    
    ;; project with TODO states could be basically any status
    ((equal kw "TODO")
-    (nd/descend-into-project
+    (org-x-descend-into-project
      '(:unscheduled :empt :actv)
      '(:project-error . 0)
      (lambda (k)
-       (let ((ts (nd/is-scheduled-heading-p)))
+       (let ((ts (org-x-is-scheduled-heading-p)))
          (cond
           ((not ts) 1)
-          ((< nd/iter-future-time (- ts (float-time))) 2)
+          ((< org-clone-iter-future-time (- ts (float-time))) 2)
           (t 0))))
-     #'nd/get-iterator-project-status))
+     #'org-clone-get-iterator-project-status))
    
    (t (error (concat "invalid keyword detected: " kw)))))
 
-(defun nd/get-iterator-status ()
+(defun org-clone-get-iterator-status ()
   "Get the status of an iterator where allowed statuscodes are in list
  `nd/get-iter-statuscodes.' where latter codes in the list trump 
 earlier ones."
-  (let ((cur-status (first nd/iter-statuscodes))
-        (breaker-status (-last-item nd/iter-statuscodes))
+  (let ((cur-status (first org-clone-iter-statuscodes))
+        (breaker-status (-last-item org-clone-iter-statuscodes))
         (subtree-end (save-excursion (org-end-of-subtree t)))
         (prev-point (point)))
     (save-excursion
       (outline-next-heading)
       (while (and (not (eq cur-status breaker-status))
                   (< prev-point (point) subtree-end))
-        (let ((kw (nd/is-todoitem-p))
+        (let ((kw (org-x-is-todoitem-p))
               (new-status))
           (when kw
             ;; test if project of atomic task
@@ -2752,22 +2752,22 @@ earlier ones."
             ;; to make checking easier
             (setq
              new-status
-             (if (nd/heading-has-children 'nd/is-todoitem-p)
-                 (nd/get-iterator-project-status kw)
-               (let ((ts (or (nd/is-scheduled-heading-p)
-                             (nd/is-deadlined-heading-p))))
+             (if (org-x-headline-has-children 'org-x-is-todoitem-p)
+                 (org-clone-get-iterator-project-status kw)
+               (let ((ts (or (org-x-is-scheduled-heading-p)
+                             (org-x-is-deadlined-heading-p))))
                  (cond
                   ((member kw org-done-keywords) :empt)
                   ((not ts) :unscheduled)
-                  ((< nd/iter-future-time (- ts (float-time))) :actv)
+                  ((< org-clone-iter-future-time (- ts (float-time))) :actv)
                   (t :empt)))))
-            (when (nd/compare-statuscodes > new-status cur-status nd/iter-statuscodes)
+            (when (org-x-compare-statuscodes > new-status cur-status org-clone-iter-statuscodes)
               (setq cur-status new-status))))
         (setq prev-point (point))
         (org-forward-heading-same-level 1 t)))
     cur-status))
     
-(defun nd/get-periodical-status ()
+(defun org-clone-get-periodical-status ()
   "Get the status of a periodical where allowed statuscodes are in list
  `nd/get-peri-statuscodes.' where latter codes in the list trump 
 earlier ones."
@@ -2775,7 +2775,7 @@ earlier ones."
       ((max-ts
         (lambda ()
           (-some-->
-           (nd/org-element-parse-headline)
+           (org-x-element-parse-headline)
            (org-element-map it 'timestamp #'identity)
            (--filter
             (memq (org-element-property :type it) '(active active-range))
@@ -2789,18 +2789,18 @@ earlier ones."
            (-max it))))
        (compare
         (lambda (s1 s2)
-          (if (nd/compare-statuscodes > s1 s2 nd/peri-statuscodes) s1 s2)))
+          (if (org-x-compare-statuscodes > s1 s2 org-clone-peri-statuscodes) s1 s2)))
        (new-status
         (lambda (ts)
           (-->
            ts
            (cond
             ((not it) :unscheduled)
-            ((< nd/peri-future-time (- it (float-time))) :actv)
+            ((< org-clone-peri-future-time (- it (float-time))) :actv)
             (t :empt))
            (funcall compare it cur-status))))
-       (cur-status (first nd/peri-statuscodes))
-       (breaker-status (-last-item nd/peri-statuscodes))
+       (cur-status (first org-clone-peri-statuscodes))
+       (breaker-status (-last-item org-clone-peri-statuscodes))
        (subtree-end (save-excursion (org-end-of-subtree t)))
        (prev-point (point)))
     (save-excursion
@@ -2817,16 +2817,16 @@ These are the primary means used to sort through tasks and build agenda block vi
 ****** helper skip functions and macros
 Subunits for skip functions. Not meant to be used or called from the custom commands api
 #+BEGIN_SRC emacs-lisp
-(defun nd/skip-heading ()
+(defun org-x-skip-heading ()
   "Skip forward to next heading."
   (save-excursion (or (outline-next-heading) (point-max))))
 
-(defun nd/skip-subtree ()
+(defun org-x-skip-subtree ()
   "Skip forward to next subtree."
   (save-excursion (or (org-end-of-subtree t) (point-max))))
 
 
-(defmacro nd/skip-heading-without (heading-fun test-fun)
+(defmacro org-x-skip-heading-without (heading-fun test-fun)
   "Skip headings accoring to certain characteristics. 
 
 HEADING-FUN is a function that tests the heading and returns the 
@@ -2839,12 +2839,12 @@ HEADING-FUN and TEST-FUN return true"
      (let ((keyword (,heading-fun)))
        ;; (message keyword)
        (if (not (and keyword ,test-fun))
-           (nd/skip-heading)))))
+           (org-x-skip-heading)))))
 #+END_SRC
 ****** headings
 Skip functions for headings which may or may not be todo-items.
 #+BEGIN_SRC emacs-lisp
-(defun nd/skip-headings-with-tags (pos-tags-list &optional neg-tags-list)
+(defun org-x-skip-headings-with-tags (pos-tags-list &optional neg-tags-list)
   "Skip headings that have tags in POS-TAGS-LIST and not in NEG-TAGS-LIST."
   (save-restriction
     (widen)
@@ -2852,163 +2852,163 @@ Skip functions for headings which may or may not be todo-items.
       (if (and (or (not pos-tags-list)
                    (intersection pos-tags-list heading-tags :test 'equal))
                (not (intersection neg-tags-list heading-tags :test 'equal)))
-          (nd/skip-heading)))))
+          (org-x-skip-heading)))))
 
-(defun nd/skip-non-stale-headings ()
+(defun org-x-skip-non-stale-headings ()
   "Skip headings that do not have stale timestamps and are not part of projects."
   (save-restriction
     (widen)
-    (let ((keyword (nd/is-todoitem-p)))
+    (let ((keyword (org-x-is-todoitem-p)))
       (if (not
-           (and (nd/is-stale-heading-p)
+           (and (org-x-is-stale-heading-p)
                 (not (member keyword org-done-keywords))
-                (not (nd/heading-has-children 'nd/is-todoitem-p))
-                (not (nd/heading-has-parent 'nd/is-todoitem-p))))
-          (nd/skip-heading)))))
+                (not (org-x-headline-has-children 'org-x-is-todoitem-p))
+                (not (org-x-headline-has-parent 'org-x-is-todoitem-p))))
+          (org-x-skip-heading)))))
 #+END_SRC
 ****** tasks
 A few functions apply to both atomic tasks and project tasks the same.
 #+BEGIN_SRC emacs-lisp
-(defun nd/skip-non-tasks ()
+(defun org-x-skip-non-tasks ()
   "Skip headlines that are not tasks."
   (save-restriction
     (widen)
-    (let ((keyword (nd/is-todoitem-p)))
+    (let ((keyword (org-x-is-todoitem-p)))
       (if keyword
-          (when (nd/heading-has-children 'nd/is-todoitem-p)
-              (if (member keyword nd/project-skip-todostates)
-                  (nd/skip-subtree)
-                (nd/skip-heading)))
-        (nd/skip-heading)))))
+          (when (org-x-headline-has-children 'org-x-is-todoitem-p)
+              (if (member keyword org-x-project-skip-todostates)
+                  (org-x-skip-subtree)
+                (org-x-skip-heading)))
+        (org-x-skip-heading)))))
 
-(defun nd/skip-non-created-tasks ()
+(defun org-x-skip-non-created-tasks ()
   "Skip tasks that do not have CREATED timestamp properties."
   (save-excursion
     (widen)
-    (if (not (and (nd/is-task-p)
-                  (not (nd/is-created-heading-p))))
-        (nd/skip-heading))))
+    (if (not (and (org-x-is-task-p)
+                  (not (org-x-is-created-heading-p))))
+        (org-x-skip-heading))))
 #+END_SRC
 ****** atomic tasks
 By definition these have no parents, so I don't need to worry about skipping over projects. Any todo state is valid and we only sort by done/canc
 #+BEGIN_SRC emacs-lisp
-(defun nd/skip-non-atomic-tasks ()
+(defun org-x-skip-non-atomic-tasks ()
   "Skip headings that are not atomic tasks."
   (save-excursion
     (widen)
-    (if (not (nd/is-atomic-task-p))
-        (nd/skip-heading))))
+    (if (not (org-x-is-atomic-task-p))
+        (org-x-skip-heading))))
 
-(defun nd/skip-non-closed-atomic-tasks ()
+(defun org-x-skip-non-closed-atomic-tasks ()
   "Skip headings that are not complete (but not archivable) atomic tasks."
-  (nd/skip-heading-without
-   nd/is-atomic-task-p
+  (org-x-skip-heading-without
+   org-x-is-atomic-task-p
    (and (member keyword org-done-keywords)
-        (not (nd/is-archivable-heading-p)))))
+        (not (org-x-is-archivable-heading-p)))))
 
-(defun nd/skip-non-archivable-atomic-tasks ()
+(defun org-x-skip-non-archivable-atomic-tasks ()
   "Skip headings that are not archivable atomic tasks."
-  (nd/skip-heading-without
-   nd/is-atomic-task-p
-   (nd/is-archivable-heading-p)))
+  (org-x-skip-heading-without
+   org-x-is-atomic-task-p
+   (org-x-is-archivable-heading-p)))
 #+END_SRC
 ****** repeaters
 These are headings marked with PARENT_TYPE property that have timestamped headings as children. They are to be refilled when all children are stale. Note that I only care about the parent headings as the children should always show up in the agenda simply because they have timestamps. Parents can be either fresh (at least one child in the future) or stale (all children in the past).
 #+BEGIN_SRC emacs-lisp
-(defun nd/skip-non-iterator-parent-headings ()
+(defun org-x-skip-non-iterator-parent-headings ()
   "Skip headings that are not toplevel iterator headings."
   (save-restriction
     (widen)
-    (if (not (and (nd/is-iterator-heading-p)
-                  (not (nd/heading-has-parent 'nd/is-iterator-heading-p))))
-        (nd/skip-heading))))
+    (if (not (and (org-x-is-iterator-heading-p)
+                  (not (org-x-headline-has-parent 'org-x-is-iterator-heading-p))))
+        (org-x-skip-heading))))
 
-;; (defun nd/skip-non-iterator-unscheduled ()
+;; (defun org-x-skip-non-iterator-unscheduled ()
 ;;   "Skip all headings that are not unscheduled iterator children."
-;;   (nd/skip-heading-without
-;;    nd/is-atomic-task-p
-;;    (not (or (nd/is-scheduled-heading-p)
-;;             (nd/is-deadlined-heading-p)))))
+;;   (org-x-skip-heading-without
+;;    org-x-is-atomic-task-p
+;;    (not (or (org-x-is-scheduled-heading-p)
+;;             (org-x-is-deadlined-heading-p)))))
             
-(defun nd/skip-non-periodical-parent-headings ()
+(defun org-x-skip-non-periodical-parent-headings ()
   "Skip headings that are not toplevel periodical headings."
   (save-restriction
     (widen)
     (unless (and
-             (nd/is-periodical-heading-p)
-             (not (nd/heading-has-parent 'nd/is-periodical-heading-p)))
-      (nd/skip-heading))))
+             (org-x-is-periodical-heading-p)
+             (not (org-x-headline-has-parent 'org-x-is-periodical-heading-p)))
+      (org-x-skip-heading))))
 
-;; (defun nd/skip-non-periodical-untimestamped ()
+;; (defun org-x-skip-non-periodical-untimestamped ()
 ;;   "Skip all headings that are not periodical children without a timestamp."
 ;;   (save-restriction
 ;;     (widen)
-;;     (if (not (and (nd/is-periodical-heading-p)
-;;                   (not (nd/is-timestamped-heading-p))
-;;                   (not (nd/heading-has-children 'nd/is-periodical-heading-p))))
-;;         (nd/skip-heading))))
+;;     (if (not (and (org-x-is-periodical-heading-p)
+;;                   (not (org-x-is-timestamped-heading-p))
+;;                   (not (org-x-headline-has-children 'org-x-is-periodical-heading-p))))
+;;         (org-x-skip-heading))))
 #+END_SRC
 ****** project tasks
 Note that I don't care about the timestamp in these cases because I don't archive these; I archive their parent projects. The keywords I care about are NEXT, WAIT, and HOLD because these are definitive project tasks that require/inhibit futher action. (TODO = stuck which I take care of at the project level, and DONE/CANC = archivable which is dealt with similarly)
  
 For performance, I need to assess if the parent project is skippable, in which case I jump to the next subtree.
 #+BEGIN_SRC emacs-lisp
-(defun nd/skip-non-project-tasks ()
+(defun org-x-skip-non-project-tasks ()
   "Skip headings that are not project tasks."
   (save-restriction
     (widen)
-    (let ((keyword (nd/is-todoitem-p)))
+    (let ((keyword (org-x-is-todoitem-p)))
       (if keyword
-          (if (nd/heading-has-children 'nd/is-todoitem-p)
-              (if (member keyword nd/project-skip-todostates)
-                  (nd/skip-subtree)
-                (nd/skip-heading))
-            (if (not (nd/heading-has-parent 'nd/is-todoitem-p))
-                (nd/skip-heading)))
-        (nd/skip-heading)))))
+          (if (org-x-headline-has-children 'org-x-is-todoitem-p)
+              (if (member keyword org-x-project-skip-todostates)
+                  (org-x-skip-subtree)
+                (org-x-skip-heading))
+            (if (not (org-x-headline-has-parent 'org-x-is-todoitem-p))
+                (org-x-skip-heading)))
+        (org-x-skip-heading)))))
 #+END_SRC
 ****** heading-level errors
 Some headings are invalid under certain conditions; these are tested here.
 #+BEGIN_SRC emacs-lisp
-(defun nd/skip-non-discontinuous-project-tasks ()
+(defun org-x-skip-non-discontinuous-project-tasks ()
   "Skip headings that are not discontinuous within projects."
-  (nd/skip-heading-without
-   nd/is-todoitem-p
-   (nd/has-discontinuous-parent)))
+  (org-x-skip-heading-without
+   org-x-is-todoitem-p
+   (org-x-has-discontinuous-parent)))
 
-(defun nd/skip-non-done-unclosed-todoitems ()
+(defun org-x-skip-non-done-unclosed-todoitems ()
   "Skip headings that are not completed without a closed timestamp."
-  (nd/skip-heading-without
-   nd/is-todoitem-p
+  (org-x-skip-heading-without
+   org-x-is-todoitem-p
    (and (member keyword org-done-keywords)
-        (not (nd/is-closed-heading-p)))))
+        (not (org-x-is-closed-heading-p)))))
 
-(defun nd/skip-non-undone-closed-todoitems ()
+(defun org-x-skip-non-undone-closed-todoitems ()
   "Skip headings that are not incomplete with a closed timestamp."
-  (nd/skip-heading-without
-   nd/is-todoitem-p
+  (org-x-skip-heading-without
+   org-x-is-todoitem-p
    (and (not (member keyword org-done-keywords))
-        (nd/is-closed-heading-p))))
+        (org-x-is-closed-heading-p))))
 #+END_SRC
 ****** projects
 Projects are handled quite simply. They have statuscodes for which I test, and this can all be handled by one function. Note that this is used for "normal" projects as well as repeaters.
 #+BEGIN_SRC emacs-lisp
-(defun nd/skip-non-projects (&optional ignore-toplevel)
+(defun org-x-skip-non-projects (&optional ignore-toplevel)
   "Skip headings that are not projects (toplevel-only if IGNORE-TOPLEVEL is t)."
   (save-restriction
     (widen)
-    (let ((keyword (nd/is-project-p)))
+    (let ((keyword (org-x-is-project-p)))
       (if keyword
-          (if (and nd/agenda-limit-project-toplevel
+          (if (and org-x-agenda-limit-project-toplevel
                    (not ignore-toplevel)
-                   (nd/heading-has-parent 'nd/is-todoitem-p))
-              (nd/skip-subtree))
-        (nd/skip-heading)))))
+                   (org-x-headline-has-parent 'org-x-is-todoitem-p))
+              (org-x-skip-subtree))
+        (org-x-skip-heading)))))
 #+END_SRC
 ***** sorting and filtering
 These are used to filter and sort within block agendas (note this is different from the other filtering functions above as these are non-interactive).
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-agenda-filter-prop (a-line filter prop-fun
+(defun org-x-agenda-filter-prop (a-line filter prop-fun
                                            &optional prop-key)
   "Filter for `org-agenda-before-sorting-filter-function' where
 A-LINE is a line from the agenda view, FILTER is an ordered list
@@ -3025,7 +3025,7 @@ if return value of PROP-FUN not in FILTER or A-LINE (modified or not)."
         (if (not prop-key) a-line
           (org-add-props a-line nil prop-key s)))))
                
-(defun nd/org-agenda-regexp-replace-props (props)
+(defun org-x-agenda-regexp-replace-props (props)
   (letrec
       ((replace-prop
         (lambda (p)
@@ -3046,10 +3046,10 @@ if return value of PROP-FUN not in FILTER or A-LINE (modified or not)."
 (add-hook
  'org-agenda-finalize-hook
  (lambda ()
-   (nd/org-agenda-regexp-replace-props '(("y" . atomic)
+   (org-x-agenda-regexp-replace-props '(("y" . atomic)
                                          ("xxxx" . statuscode)))))
 
-(defun nd/org-agenda-sort-prop (prop order a b)
+(defun org-x-agenda-sort-prop (prop order a b)
   "Sort a block agenda view by text property PROP given a list ORDER
 of said text properties in the desired order and lines A and B as 
 inputs. To be used with `org-agenda-cmp-user-defined'."
@@ -3061,7 +3061,7 @@ inputs. To be used with `org-agenda-cmp-user-defined'."
           ((< pa pb) +1)
           ((> pa pb) -1))))
 
-(defun nd/org-agenda-sort-multi (a b &rest funs)
+(defun org-x-agenda-sort-multi (a b &rest funs)
   "Sort lines A and B from block agenda view given functions FUNS.
 Functions in FUNS must take either A or B as their arguments and
 should return a positive integer indicating their rank. The FUNS
@@ -3073,26 +3073,26 @@ order."
     (cond
      ((< pa pb) +1)
      ((> pa pb) -1)
-     (t (-some->> funs cdr (apply #'nd/org-agenda-sort-multi a b))))))
+     (t (-some->> funs cdr (apply #'org-x-agenda-sort-multi a b))))))
 
-(defun nd/org-agenda-sort-task-todo (line)
+(defun org-x-agenda-sort-task-todo (line)
   (or
    (-some-> (get-text-property 1 'todo-state line)
-            (position nd/org-agenda-todo-sort-order :test #'equal))
-   (length nd/org-agenda-todo-sort-order)))
+            (position org-x-agenda-todo-sort-order :test #'equal))
+   (length org-x-agenda-todo-sort-order)))
   
-(defun nd/org-agenda-sort-status (line order)
+(defun org-x-agenda-sort-status (line order)
   (or
    (-some-> (get-text-property 1 'statuscode line) (position order))
    (length order)))
 
-(defun nd/org-agenda-sort-task-atomic (line)
+(defun org-x-agenda-sort-task-atomic (line)
   (if (eq '-!- (get-text-property 1 'atomic line)) 1 0))
 #+END_SRC
 ***** block view building macros
 Some useful shorthands to create block agenda views
 #+BEGIN_SRC emacs-lisp
-(defun nd/agenda-base-heading-cmd (match header skip-fun)
+(defun org-x-agenda-base-heading-cmd (match header skip-fun)
   "Make a tags agenda view that matches tags in string MATCH with
 header given as string HEADER and with skip function SKIP-FUN."
   `(tags
@@ -3101,7 +3101,7 @@ header given as string HEADER and with skip function SKIP-FUN."
      (org-agenda-skip-function ,skip-fun)
      (org-agenda-sorting-strategy '(category-keep)))))
 
-(defun nd/agenda-base-task-cmd (match header skip-fun &optional sort)
+(defun org-x-agenda-base-task-cmd (match header skip-fun &optional sort)
   "Make a tags-todo agenda view that matches tags in string MATCH with
 header given as string HEADER and with skip function SKIP-FUN. Also
 takes a sorting structure SORT which is passed to 
@@ -3114,7 +3114,7 @@ takes a sorting structure SORT which is passed to
      (org-agenda-todo-ignore-with-date t)
      (org-agenda-sorting-strategy ,sort))))
 
-(defun nd/agenda-base-task-cmd* (match header skip-fun kw-list status-fun
+(defun org-x-agenda-base-task-cmd* (match header skip-fun kw-list status-fun
                                          &optional status-px)
   (let ((prefix (if status-px
                     ''((tags . "  %-12:c $xxxx$: $y$ %-5:e "))
@@ -3128,20 +3128,20 @@ takes a sorting structure SORT which is passed to
         (lambda (l)
           (-some->
            l
-           (nd/org-agenda-filter-prop ,kw-list ,status-fun 'statuscode)
-           (nd/org-agenda-filter-prop
-            '(-*- -!-) (lambda () (if (nd/is-atomic-task-p) '-!- '-*-)) 'atomic))))
+           (org-x-agenda-filter-prop ,kw-list ,status-fun 'statuscode)
+           (org-x-agenda-filter-prop
+            '(-*- -!-) (lambda () (if (org-x-is-atomic-task-p) '-!- '-*-)) 'atomic))))
        (org-agenda-cmp-user-defined
         (lambda (a b)
-          (nd/org-agenda-sort-multi
+          (org-x-agenda-sort-multi
            a b
-           (lambda (l) (nd/org-agenda-sort-status l ,kw-list))
-           #'nd/org-agenda-sort-task-atomic
-           #'nd/org-agenda-sort-task-todo)))
+           (lambda (l) (org-x-agenda-sort-status l ,kw-list))
+           #'org-x-agenda-sort-task-atomic
+           #'org-x-agenda-sort-task-todo)))
        (org-agenda-prefix-format ,prefix)
        (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
 
-(defun nd/agenda-base-project-cmd (match header skip-fun kw-list status-fun
+(defun org-x-agenda-base-project-cmd (match header skip-fun kw-list status-fun
                                          &optional todo status-px)
   "Make a tags-todo agenda view that matches tags in string MATCH with
 header given as string HEADER and with skip function SKIP-FUN. KW-LIST
@@ -3159,23 +3159,23 @@ string."
       ((org-agenda-overriding-header ,header)
        (org-agenda-skip-function ,skip-fun)
        (org-agenda-before-sorting-filter-function
-        (lambda (l) (nd/org-agenda-filter-prop l ,kw-list ,status-fun 'statuscode)))
+        (lambda (l) (org-x-agenda-filter-prop l ,kw-list ,status-fun 'statuscode)))
        (org-agenda-cmp-user-defined
-        (lambda (a b) (nd/org-agenda-sort-prop 'statuscode ,kw-list a b)))
+        (lambda (a b) (org-x-agenda-sort-prop 'statuscode ,kw-list a b)))
        (org-agenda-prefix-format ,prefix)
        (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
 #+END_SRC
 ***** interactive functions
 This is basically a filter but since it is implemented through skip functions it makes more sense to include it here. It allows distinguishing between toplevel projects and projects that are subprojects of the toplevel project (I usually only care about the former).
 #+BEGIN_SRC emacs-lisp
-(defun nd/toggle-project-toplevel-display ()
+(defun org-x-toggle-project-toplevel-display ()
   "Toggle all project headings and toplevel only headings in project blocks."
   (interactive)
-  (setq nd/agenda-limit-project-toplevel (not nd/agenda-limit-project-toplevel))
+  (setq org-x-agenda-limit-project-toplevel (not org-x-agenda-limit-project-toplevel))
   (when (equal major-mode 'org-agenda-mode)
     (org-agenda-redo))
   (message "Showing %s project view in agenda"
-           (if nd/agenda-limit-project-toplevel "toplevel" "complete")))
+           (if org-x-agenda-limit-project-toplevel "toplevel" "complete")))
 #+END_SRC
 ***** advising
 Some org functions don't do exactly what I want. Re-educate them here
@@ -3186,7 +3186,7 @@ Fix that here by nullifying =org--matcher-tags-todo-only= which controls how the
 
 While this is usually more efficient, it may be counterproductive in cases where skip functions can be used to ignore huge sections of an org file (which is rarely for me; most only skip ahead to the next heading).
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-tags-view-advice (orig-fn &optional todo-only match)
+(defun org-x-tags-view-advice (orig-fn &optional todo-only match)
   "Advice to include done states in `org-tags-view' for tags-todo agenda types."
   (nd/with-advice
       ((#'org-make-tags-matcher
@@ -3195,7 +3195,7 @@ While this is usually more efficient, it may be counterproductive in cases where
                     (funcall f m)))))
     (funcall orig-fn todo-only match)))
 
-(advice-add #'org-tags-view :around #'nd/org-tags-view-advice)
+(advice-add #'org-tags-view :around #'org-x-tags-view-advice)
 #+END_SRC
 **** block agenda views
 ***** default sorting
@@ -3210,10 +3210,10 @@ By default I want block agendas to sort based on the todo keyword (with NEXT bei
       '(lambda (a b)
          (let ((pa (- (length (member
                                (get-text-property 1 'todo-state a)
-                               nd/org-agenda-todo-sort-order))))
+                               org-x-agenda-todo-sort-order))))
                (pb (- (length (member
                                (get-text-property 1 'todo-state b)
-                               nd/org-agenda-todo-sort-order)))))
+                               org-x-agenda-todo-sort-order)))))
            (cond ((or (null pa) (null pb)) nil)
                  ((> pa pb) +1)
                  ((< pa pb) -1)))))
@@ -3240,7 +3240,7 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
 
      ("t"
       "Task View"
-      (,(nd/agenda-base-task-cmd*
+      (,(org-x-agenda-base-task-cmd*
          ;; TODO, this can be better optimized if this view is split,
          ;; right now need to include DONE because may have
          ;; done-unclosed
@@ -3249,17 +3249,17 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
          "Tasks"
          ''nd/skip-non-tasks
          ''(:undone-closed :done-unclosed :actv :inrt)
-         ''nd/task-status t)))
+         ''org-x-task-status t)))
 
      ("p"
       "Project View"
-      (,(nd/agenda-base-project-cmd
+      (,(org-x-agenda-base-project-cmd
          act-no-rep-match
-         '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Projects")
+         '(concat (and org-x-agenda-limit-project-toplevel "Toplevel ") "Projects")
          ''nd/skip-non-projects
          ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
                                :stck :wait :held :actv :inrt)
-         ''nd/get-project-status t t)))
+         ''org-x-get-project-status t t)))
           
      ("i"
       "Incubator View"
@@ -3267,36 +3267,36 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
                    (org-agenda-span 7)
                    (org-agenda-time-grid nil)
                    (org-agenda-entry-types '(:deadline :timestamp :scheduled))))
-       ,(nd/agenda-base-heading-cmd "-NA-REFILE+%inc"
+       ,(org-x-agenda-base-heading-cmd "-NA-REFILE+%inc"
                                    "Stale Incubated Timestamps"
                                    ''nd/skip-non-stale-headings)
-       ,(nd/agenda-base-task-cmd "-NA-REFILE+%inc/!"
+       ,(org-x-agenda-base-task-cmd "-NA-REFILE+%inc/!"
                                  "Incubated Tasks"
                                  ''nd/skip-non-atomic-tasks)
-       ,(nd/agenda-base-project-cmd
+       ,(org-x-agenda-base-project-cmd
          "-NA-REFILE+%inc/!"
-         '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Incubated Projects")
+         '(concat (and org-x-agenda-limit-project-toplevel "Toplevel ") "Incubated Projects")
          ''nd/skip-non-projects
          ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
                                :stck :wait :held :actv)
-         ''nd/get-project-status
+         ''org-x-get-project-status
          t t)))
           
      ("P"
       "Periodical View"
-      (,(nd/agenda-base-project-cmd
+      (,(org-x-agenda-base-project-cmd
          (concat actionable "-" iterator "+" periodical "-" habit)
          "Periodical Status"
          ''nd/skip-non-periodical-parent-headings
-         'nd/peri-statuscodes ''nd/get-periodical-status nil t)))
+         'org-clone-peri-statuscodes ''org-clone-get-periodical-status nil t)))
 
      ("I"
       "Iterator View"
-      (,(nd/agenda-base-project-cmd
+      (,(org-x-agenda-base-project-cmd
          "-NA-REFILE+PARENT_TYPE=\"iterator\""
          "Iterator Status"
          ''nd/skip-non-iterator-parent-headings
-         'nd/iter-statuscodes ''nd/get-iterator-status nil t)))
+         'org-clone-iter-statuscodes ''org-clone-get-iterator-status nil t)))
 
      ("r" "Refile" ((tags "REFILE" ((org-agenda-overriding-header "Tasks to Refile"))
                           (org-tags-match-list-sublevels nil))))
@@ -3305,16 +3305,16 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
      
      ("e"
       "Critical Errors"
-      (,(nd/agenda-base-task-cmd task-match
+      (,(org-x-agenda-base-task-cmd task-match
                                  "Discontinous Project"
                                  ''nd/skip-non-discontinuous-project-tasks)
-       ,(nd/agenda-base-heading-cmd task-match
+       ,(org-x-agenda-base-heading-cmd task-match
                                     "Undone Closed"
                                     ''nd/skip-non-undone-closed-todoitems)
-       ,(nd/agenda-base-heading-cmd (concat actionable "-" periodical)
+       ,(org-x-agenda-base-heading-cmd (concat actionable "-" periodical)
                                     "Done Unclosed"
                                     ''nd/skip-non-done-unclosed-todoitems)
-       ,(nd/agenda-base-task-cmd (concat task-match)
+       ,(org-x-agenda-base-task-cmd (concat task-match)
                                  "Missing Creation Timestamp"
                                  ''nd/skip-non-created-tasks)))
        
@@ -3325,13 +3325,13 @@ These agenda commands are the center of the gtd workflow. Some are slower than d
                   ((org-agenda-overriding-header "Archivable Atomic Tasks and Iterators")
                    (org-agenda-sorting-strategy '(category-keep))
                    (org-agenda-skip-function 'nd/skip-non-archivable-atomic-tasks)))
-       ,(nd/agenda-base-heading-cmd (concat actionable "-" habit)
+       ,(org-x-agenda-base-heading-cmd (concat actionable "-" habit)
                                    "Stale Tasks and Periodicals"
                                    ''nd/skip-non-stale-headings)
-       ,(nd/agenda-base-project-cmd
+       ,(org-x-agenda-base-project-cmd
          (concat actionable "-" periodical "-" iterator "-" habit)
-         '(concat (and nd/agenda-limit-project-toplevel "Toplevel ") "Archivable Projects")
-         ''nd/skip-non-projects ''(:arch) ''nd/get-project-status))))))
+         '(concat (and org-x-agenda-limit-project-toplevel "Toplevel ") "Archivable Projects")
+         ''nd/skip-non-projects ''(:arch) ''org-x-get-project-status))))))
 #+END_SRC
 ** gtd next generation
 GTD is great but has many limitations...mostly due to the fact that it was originally made on paper. This is meant to extend the GTD workflow into a comprehensive tracking engine that can be used and analyze and project long-term plans and goals.
@@ -3363,7 +3363,7 @@ This function adds the =CREATED= property. Note that I only really care about TO
 (defun nd/org-set-creation-time (&optional always &rest args)
   "Set the creation time property of the current heading.
 Applies only to todo entries unless ALWAYS is t."
-  ;; (when (or always (nd/is-todoitem-p))
+  ;; (when (or always (org-x-is-todoitem-p))
     (let* ((ts (format-time-string (cdr org-time-stamp-formats)))
            (ts-ia (concat "[" (substring ts 1 -1) "]")))
       (funcall-interactively 'org-set-property "CREATED" ts-ia)))
@@ -3909,16 +3909,16 @@ Some of these commands just get in the way of being evil (which really means tha
   (evil-org-agenda-set-keys)
   ;; some of the defaults bug me...
   (evil-define-key 'motion org-agenda-mode-map
-    "t" 'nd/toggle-project-toplevel-display
+    "t" 'org-x-toggle-project-toplevel-display
     "D" 'org-agenda-day-view
     "W" 'org-agenda-week-view
     "M" 'org-agenda-month-view
     "Y" 'org-agenda-year-view
     "ct" nil
-    "sC" 'nd/org-agenda-filter-non-context
-    "sE" 'nd/org-agenda-filter-non-effort
-    "sD" 'nd/org-agenda-filter-delegate
-    "sP" 'nd/org-agenda-filter-non-peripheral
+    "sC" 'org-x-agenda-filter-non-context
+    "sE" 'org-x-agenda-filter-non-effort
+    "sD" 'org-x-agenda-filter-delegate
+    "sP" 'org-x-agenda-filter-non-peripheral
     "e" 'org-agenda-set-effort
     "ce" nil))
 #+END_SRC
@@ -4123,15 +4123,15 @@ These are for mode-specific bindings that can/should be outside of the evil maps
             (local-set-key (kbd "H-h") 'org-shiftleft)
 
             ;; this is just a useful function I made (actually I think I stole)
-            (local-set-key (kbd "C-c C-x x") 'nd/mark-subtree-done)
+            (local-set-key (kbd "C-c C-x x") 'org-x-mark-subtree-done)
 
             ;; this actually overrides org-clock-report (which I never use)
             ;; with a function to insert full clock entries for those times
             ;; I forget to clock in (often)
-            (local-set-key (kbd "C-c C-x C-r") 'nd/org-clock-range)
+            (local-set-key (kbd "C-c C-x C-r") 'org-x-clock-range)
 
             ;; override default org subtree cloning with something that clones and resets
-            (local-set-key (kbd "C-c C-x c") 'nd/org-clone-subtree-with-time-shift)
+            (local-set-key (kbd "C-c C-x c") 'org-x-clone-subtree-with-time-shift)
 
             ;; add clock in/out functions for tomato mode
             (local-set-key (kbd "C-x C-c C-x C-i") 'org-tomato-user-hl-clock-in)
@@ -4144,9 +4144,9 @@ These are for mode-specific bindings that can/should be outside of the evil maps
           (lambda ()
             (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)
             (local-set-key (kbd "C-c W") 'org-brain-refile)
-            (local-set-key (kbd "C-c C-x c") 'nd/org-agenda-clone-subtree-with-time-shift)
-            (local-set-key (kbd "C-c C-x C-b") 'nd/org-agenda-toggle-checkbox)
-            (local-set-key (kbd "C-c C-x C-r") 'nd/org-agenda-clock-range)
+            (local-set-key (kbd "C-c C-x c") 'org-x-agenda-clone-subtree-with-time-shift)
+            (local-set-key (kbd "C-c C-x C-b") 'org-x-agenda-toggle-checkbox)
+            (local-set-key (kbd "C-c C-x C-r") 'org-x-agenda-clock-range)
             (local-set-key (kbd "C-x C-c C-x C-i") 'org-tomato-user-hl-agenda-clock-in)
             (local-set-key (kbd "C-x C-c C-x C-o") 'org-tomato-user-hl-agenda-clock-out)))
 
