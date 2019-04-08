@@ -2536,11 +2536,13 @@ Filtering is useful for obvious reasons
 #+END_SRC
 ** pdf-tools
 #+BEGIN_SRC emacs-lisp
+;; TODO consider tagging this with :pin manual to upgrade seperately
 (use-package pdf-tools
   :ensure t
   :config
   (pdf-tools-install t)
   (setq pdf-view-display-size 'fit-page
+        pdf-view-resize-factor 1.1
         pdf-annot-activate-created-annotations t)
   (add-hook 'pdf-annot-list-mode-hook #'pdf-annot-list-follow-minor-mode))
 #+END_SRC
