@@ -2541,7 +2541,8 @@ Filtering is useful for obvious reasons
   :config
   (pdf-tools-install)
   (setq pdf-view-display-size 'fit-page
-        pdf-annot-activate-created-annotations t))
+        pdf-annot-activate-created-annotations t)
+  (add-hook 'pdf-annot-list-mode-hook #'pdf-annot-list-follow-minor-mode))
 #+END_SRC
 ** mu4e
 Since mu4e is an external program, need to check that it is installed before loading anything.
