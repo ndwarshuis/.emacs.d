@@ -3072,10 +3072,18 @@ I like tab completion...regardless of what the helm zealots say.
   (kbd "C-<tab>") 'helm-select-action)
 #+END_SRC
 **** pdf-view
-Apparently it needs to be set up after pdf-view is launched
 #+BEGIN_SRC emacs-lisp
+;; Apparently it needs to be set up after pdf-view is launched
 (add-hook 'pdf-view-mode-hook
           (lambda () (evil-collection-pdf-setup)))
+
+(evil-define-key '(normal visual) pdf-view-mode-map
+  "go" #'pdf-occur
+  "it" #'pdf-annot-add-text-annotation
+  "ih" #'pdf-annot-add-highlight-markup-annotation
+  "is" #'pdf-annot-add-squiggly-markup-annotation
+  "iu" #'pdf-annot-add-underline-markup-annotation
+  "io" #'pdf-annot-add-strikeout-markup-annotation)
 #+END_SRC
 **** package-menu
 #+BEGIN_SRC emacs-lisp
