@@ -648,6 +648,7 @@ Flycheck syntax checkers
 Flycheck syntax checkers to install (either globally or using =pip=)
 - flake8
 - python-pylint
+- python-black
 #+BEGIN_SRC emacs-lisp
 (use-package elpy
   :ensure t)
@@ -661,12 +662,11 @@ Flycheck syntax checkers to install (either globally or using =pip=)
          (python-mode . anaconda-mode)
          (python-mode . company-mode)
          (python-mode . nd/init-anaconda-company)
+         (python-mode . blacken-mode)
          (inferior-python-mode . company-mode)
          (inferior-python-mode . nd/init-anaconda-company))
   :config (setq indent-tabs-mode nil
-                py-indent-tabs-mode nil
                 tab-width 4
-                python-offset 4
                 python-shell-interpreter "ipython"
                 python-shell-interpreter-args "-i --simple-prompt"))
 
@@ -677,6 +677,9 @@ Flycheck syntax checkers to install (either globally or using =pip=)
 (use-package company-anaconda
   :ensure t
   :after (python company anaconda))
+
+(use-package blacken
+  :ensure t)
 #+END_SRC
 *** Ruby
 #+BEGIN_SRC emacs-lisp
