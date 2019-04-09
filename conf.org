@@ -743,7 +743,10 @@ Install auctex through emacs as this is OS independent and more automatic. Note 
    (LaTeX-mode . flyspell-mode)
    (LaTeX-mode . fci-mode)
    ;; sync tex buffer positions to output pdf
-   (LaTeX-mode . TeX-source-correlate-mode)))
+   (LaTeX-mode . TeX-source-correlate-mode))
+  :config
+  (setq TeX-after-compilation-finished-functions
+        '(TeX-revert-document-buffer)))
 #+END_SRC
 **** external viewers
 AUCTeX can launch external viewers to show compiled documents.
