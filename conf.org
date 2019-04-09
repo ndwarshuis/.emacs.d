@@ -737,29 +737,33 @@ For flycheck, install =luacheck= (from AUR on Arch).
 Install auctex through emacs as this is OS independent and more automatic. Note that the Tex package libraries (eg TeXLive) still need to be installed to do anything useful.
 #+BEGIN_SRC emacs-lisp
 (use-package tex
-  :ensure auctex)
+  :ensure auctex
+  :hook
+  ((LaTeX-mode . flycheck-mode)
+   (LaTeX-mode . flyspell-mode)
+   (LaTeX-mode . fci-mode)
+   ;; sync tex buffer positions to output pdf
+   (LaTeX-mode . TeX-source-correlate-mode)))
 #+END_SRC
 **** external viewers
-AUCTeX can launch external viewers to show compiled documents. I use Okular for PDFs.
+AUCTeX can launch external viewers to show compiled documents.
 #+BEGIN_SRC emacs-lisp
-(setq TeX-view-program-selection '(((output-dvi has-no-display-manager)
-                                    "dvi2tty")
-                                   ((output-dvi style-pstricks)
-                                    "dvips and gv")
-                                   (output-dvi "xdvi")
-                                   (output-pdf "Okular")
-                                   (output-html "xdg-open")))
+(setq TeX-view-program-selection
+      '(((output-dvi has-no-display-manager) "dvi2tty")
+        ((output-dvi style-pstricks) "dvips and gv")
+        (output-dvi "xdvi")
+        (output-pdf "PDF Tools")
+        (output-html "xdg-open")))
 #+END_SRC
 **** outline mode
 ***** folding
 I like how =org-mode= folds with the TAB key, so bring the same thing to AUCTeX here with =outline-magic=.
 #+BEGIN_SRC emacs-lisp
-(add-hook 'LaTeX-mode-hook (lambda () (outline-minor-mode 1)))
-(add-hook 'Tex-latex-mode-hook (lambda () (outline-minor-mode 1)))
-
 (use-package outline-magic
   :ensure t
-  :after outline)
+  :after outline
+  :hook
+  ((LaTeX-mode . outline-minor-mode)))
 #+END_SRC
 ***** fonts
 The section fonts are too big by default. Now the fonts are all kept equal with hatchet, axe, and saw :)
@@ -771,6 +775,7 @@ There are two backends which (kinda) complement each other. The =company-math= p
 #+BEGIN_SRC emacs-lisp
 (defun nd/init-company-auctex ()
   "Set the company backends for auctex modes."
+  (company-mode)
   (setq-local company-backends '((company-auctex-labels
                                   company-auctex-bibs
                                   company-auctex-macros
@@ -782,30 +787,16 @@ There are two backends which (kinda) complement each other. The =company-math= p
 
 (use-package company-math
   :ensure t
-  :after company
+  :after (tex company)
   :config
   (setq company-math-allow-unicode-symbols-in-faces '(font-latex-math-face)
         company-math-disallow-latex-symbols-in-faces nil))
 
 (use-package company-auctex
   :ensure t
-  :after (company company-math)
+  :after (tex company company-math)
   :hook
-  ((LaTeX-mode . company-mode)
-   (LaTeX-mode . nd/init-company-auctex)
-   (Tex-latex-mode . company-mode)
-   (Tex-latex-mode . nd/init-company-auctex)))
-#+END_SRC
-**** syntax check
-Flycheck should work out of the box.
-#+BEGIN_SRC emacs-lisp
-(add-hook 'LaTeX-mode-hook #'flycheck-mode)
-(add-hook 'Tex-latex-mode-hook #'flycheck-mode)
-#+END_SRC
-**** spell check
-Spell checking is important for prose
-#+BEGIN_SRC emacs-lisp
-(add-hook 'LaTeX-mode-hook (lambda () (flyspell-mode 1)))
+  ((LaTeX-mode . nd/init-company-auctex)))
 #+END_SRC
 **** line wrap
 I like having my lines short and readable (also easier to git). Turn on autofill here and also make a nice vertical line at 80 chars (=visual-line-mode=).
@@ -814,9 +805,8 @@ I like having my lines short and readable (also easier to git). Turn on autofill
   "Prompts user to turn on `auto-fill-mode'."
   (when (y-or-n-p "Activate Auto Fill Mode? ")
     (turn-on-auto-fill)))
-  
+
 (add-hook 'LaTeX-mode-hook #'nd/turn-on-auto-fill-maybe)
-(add-hook 'LaTeX-mode-hook #'fci-mode)
 #+END_SRC
 **** local variables
 #+BEGIN_SRC emacs-lisp
