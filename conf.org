@@ -256,6 +256,16 @@ If FRONT is t, do to the front of current values instead of the back."
   (split-window-right)
   (balance-windows)
   (other-window 1))
+
+(defun nd/switch-to-last-window ()
+  "Switch to most recently used window."
+  (interactive)
+  (let ((win (get-mru-window t t t)))
+    (unless win (error "Last window not found"))
+    (let ((frame (window-frame win)))
+      (raise-frame frame)
+      (select-frame frame)
+      (select-window win))))
     
 (defun nd/switch-to-previous-buffer ()
   "Switch the buffer to the last opened buffer."
@@ -3371,6 +3381,7 @@ The function keys are nice because they are almost (not always) free in every mo
 #+END_SRC
 *** control/meta
 #+BEGIN_SRC emacs-lisp
+;; TODO this should not be in global map
 (global-set-key (kbd "C-<SPC>") 'company-complete)
 
 (global-set-key (kbd "C-c e") 'nd/config-visit)
@@ -3398,6 +3409,7 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "M-w") #'ace-swap-window)
 (global-set-key (kbd "M-x") 'helm-M-x)
 
+(global-set-key (kbd "H-M-o") #'nd/switch-to-last-window)
 (global-set-key (kbd "H-M-k") #'enlarge-window)
 (global-set-key (kbd "H-M-j") #'shrink-window)
 (global-set-key (kbd "H-M-h") #'enlarge-window-horizontally)
