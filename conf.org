@@ -3396,4 +3396,10 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "M-s") 'avy-goto-char)
 (global-set-key (kbd "M-w") #'ace-swap-window)
 (global-set-key (kbd "M-x") 'helm-M-x)
+
+(global-set-key (kbd "H-M-k") #'enlarge-window)
+(global-set-key (kbd "H-M-j") #'shrink-window)
+(global-set-key (kbd "H-M-h") #'enlarge-window-horizontally)
+(global-set-key (kbd "H-M-l") #'shrink-window-horizontally)
+(global-set-key (kbd "H-M-=") #'balance-windows)
 #+END_SRC
