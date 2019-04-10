@@ -2163,9 +2163,6 @@ earlier ones."
     cur-status))
 #+END_SRC
 **** super agenda
-:PROPERTIES:
-:CREATED:  [2019-04-06 Sat 18:50]
-:END:
 #+BEGIN_SRC emacs-lisp
 (use-package org-super-agenda
   :ensure t
