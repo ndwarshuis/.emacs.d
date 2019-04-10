@@ -2256,15 +2256,18 @@ original org entry before executing BODY."
        (org-super-agenda-groups
         `((:auto-map
            ,(nd/org-x-mk-super-agenda-pred
-             (let ((prefix (cl-case (org-x-task-status)
-                             (:undone-closed "0. Undone Closed")
-                             (:done-unclosed "0. Done Closed")
-                             (:actv "1. Active")
-                             (:inrt "2. Inert")
-                             (t "3. Other")))
-                   (sufix (if (org-x-is-atomic-task-p)
-                              " 2-(α)" " 1-(σ)")))
-               (concat prefix sufix))))))))))
+             (let* ((status (org-x-task-status))
+                    (priority (alist-get status nd/org-x-task-status-priorities))
+                    (is-atomic (org-x-is-atomic-task-p)))
+               (if (< priority 0) "99. Other"
+                 (--> status
+                      (symbol-name it)
+                      (substring it 1)
+                      (s-replace "-" " " it)
+                      (s-titleize it)
+                      (concat "%s.%s " it)
+                      (format it priority (if is-atomic 1 0))
+                      (concat it (if is-atomic " (α)" " (σ)")))))))))))))
 
    ("p"
     "Project View"
