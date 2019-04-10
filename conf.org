@@ -2157,43 +2157,18 @@ earlier ones."
         (org-forward-heading-same-level 1 t)))
     cur-status))
 #+END_SRC
-***** skip functions
-These are the primary means used to sort through tasks and build agenda block views
-****** repeaters
-These are headings marked with PARENT_TYPE property that have timestamped headings as children. They are to be refilled when all children are stale. Note that I only care about the parent headings as the children should always show up in the agenda simply because they have timestamps. Parents can be either fresh (at least one child in the future) or stale (all children in the past).
+**** super agenda
+:PROPERTIES:
+:CREATED:  [2019-04-06 Sat 18:50]
+:END:
 #+BEGIN_SRC emacs-lisp
-(defun org-x-skip-non-iterator-parent-headings ()
-  "Skip headings that are not toplevel iterator headings."
-  (save-restriction
-    (widen)
-    (if (not (and (org-x-is-iterator-heading-p)
-                  (not (org-x-headline-has-parent 'org-x-is-iterator-heading-p))))
-        (org-x-skip-heading))))
+(use-package org-super-agenda
+  :ensure t
+  :config (org-super-agenda-mode))
 
-;; (defun org-x-skip-non-iterator-unscheduled ()
-;;   "Skip all headings that are not unscheduled iterator children."
-;;   (org-x-skip-heading-without
-;;    org-x-is-atomic-task-p
-;;    (not (or (org-x-is-scheduled-heading-p)
-;;             (org-x-is-deadlined-heading-p)))))
-            
-(defun org-x-skip-non-periodical-parent-headings ()
-  "Skip headings that are not toplevel periodical headings."
-  (save-restriction
-    (widen)
-    (unless (and
-             (org-x-is-periodical-heading-p)
-             (not (org-x-headline-has-parent 'org-x-is-periodical-heading-p)))
-      (org-x-skip-heading))))
-
-;; (defun org-x-skip-non-periodical-untimestamped ()
-;;   "Skip all headings that are not periodical children without a timestamp."
-;;   (save-restriction
-;;     (widen)
-;;     (if (not (and (org-x-is-periodical-heading-p)
-;;                   (not (org-x-is-timestamped-heading-p))
-;;                   (not (org-x-headline-has-children 'org-x-is-periodical-heading-p))))
-;;         (org-x-skip-heading))))
+(use-package origami
+  :ensure t
+  :hook (org-agenda-mode . origami-mode))
 #+END_SRC
 **** block agenda views
 ***** default sorting
@@ -2220,116 +2195,281 @@ By default I want block agendas to sort based on the todo keyword (with NEXT bei
 ***** custom commands
 These agenda commands are the center of the gtd workflow. Some are slower than dirt but that's ok becuase the load times are far less than the that I would waste rifling through each org file trying to find a task.
 #+BEGIN_SRC emacs-lisp
-(let* ((actionable "-NA-REFILE-%inc")
-       (periodical "PARENT_TYPE=\"periodical\"")
-       (iterator "PARENT_TYPE=\"iterator\"")
-       (habit "STYLE=\"habit\"")
-       (task-match (concat actionable "-" periodical "-" habit "/!"))
-       (act-no-rep-match (concat actionable "-" periodical "-" iterator "-" habit "/!"))
-       (peri-match (concat actionable "+" periodical "-" iterator "-" habit))
-       (iter-match (concat actionable "-" periodical "+" iterator "-" habit "/!")))
+(defmacro nd/org-x-mk-skip-function (&rest body)
+  "Return a skip function with BODY.
+The only thing this function does is `save-excursion' and `widen'."
+  `(lambda () (save-excursion (widen) ,@body)))
 
-  (setq
-   org-agenda-custom-commands
-   `(("a"
-      "Calendar View"
-      ((agenda "" ((org-agenda-skip-function '(org-x-skip-headings-with-tags '("%inc" "REFILE")))
-                        (org-agenda-include-diary t)))))
+(defmacro nd/org-x-mk-super-agenda-pred (&rest body)
+  "Return a predicate function with BODY.
+This is meant to be used in `org-super-agenda-groups'. For each item,
+the returned function will navigate from the agenda buffer to the
+original org entry before executing BODY."
+  `(lambda (item)
+     (let ((marker (get-text-property 1 'org-marker item)))
+       (with-current-buffer (marker-buffer marker)
+         (goto-char marker)
+         ,@body))))
 
-     ("t"
-      "Task View"
-      (,(org-x-agenda-base-task-cmd*
-         ;; TODO, this can be better optimized if this view is split,
-         ;; right now need to include DONE because may have
-         ;; done-unclosed
-         (concat actionable "-" periodical "-" habit "-" iterator)
-         ;; act-no-rep-match
-         "Tasks"
-         ''org-x-skip-non-tasks
-         ''(:undone-closed :done-unclosed :actv :inrt)
-         ''org-x-task-status t)))
+(setq
+ org-agenda-custom-commands
+ `(("a"
+    "Calendar View"
+    ((agenda "" ((org-agenda-skip-function
+                  '(org-x-skip-headings-with-tags '("%inc" "REFILE")))
+                 (org-agenda-include-diary t)))))
 
-     ("p"
-      "Project View"
-      (,(org-x-agenda-base-project-cmd
-         act-no-rep-match
-         '(concat (and org-x-agenda-limit-project-toplevel "Toplevel ") "Projects")
-         ''org-x-skip-non-projects
-         ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
-                               :stck :wait :held :actv :inrt)
-         ''org-x-get-project-status t t)))
-          
-     ("i"
-      "Incubator View"
-      ((agenda "" ((org-agenda-skip-function '(org-x-skip-headings-with-tags nil '("%inc")))
-                   (org-agenda-span 7)
-                   (org-agenda-time-grid nil)
-                   (org-agenda-entry-types '(:deadline :timestamp :scheduled))))
-       ,(org-x-agenda-base-heading-cmd "-NA-REFILE+%inc"
-                                   "Stale Incubated Timestamps"
-                                   ''org-x-skip-non-stale-headings)
-       ,(org-x-agenda-base-task-cmd "-NA-REFILE+%inc/!"
-                                 "Incubated Tasks"
-                                 ''org-x-skip-non-atomic-tasks)
-       ,(org-x-agenda-base-project-cmd
-         "-NA-REFILE+%inc/!"
-         '(concat (and org-x-agenda-limit-project-toplevel "Toplevel ") "Incubated Projects")
-         ''org-x-skip-non-projects
-         ''(:scheduled-project :invalid-todostate :undone-complete :done-incomplete
-                               :stck :wait :held :actv)
-         ''org-x-get-project-status
-         t t)))
-          
-     ("P"
-      "Periodical View"
-      (,(org-x-agenda-base-project-cmd
-         (concat actionable "-" iterator "+" periodical "-" habit)
-         "Periodical Status"
-         ''org-x-skip-non-periodical-parent-headings
-         'org-clone-peri-statuscodes ''org-clone-get-periodical-status nil t)))
+   ("t"
+    "Task View"
+    ((tags-todo
+      "-NA-REFILE-%inc/TODO|NEXT|WAIT|HOLD|CANC"
+      ((org-agenda-overriding-header "Tasks")
+       (org-agenda-skip-function
+        ,(nd/org-x-mk-skip-function
+          (let ((keyword (org-x-is-todoitem-p)))
+            ;; currently we assume that periodicals have no TODOs
+            (cond
+             ;; skip over held/canc projects
+             ((and (member keyword org-x-project-skip-todostates)
+                   (org-x-is-project-p))
+              (org-x-skip-subtree))
+             ;; skip iterators
+             ((org-x-is-iterator-heading-p)
+              (org-x-skip-heading))
+             ;; skip project headings
+             ((org-x-is-project-p)
+              (org-x-skip-heading))
+             ;; skip canceled tasks
+             ((and (equal keyword "CANC")
+                   (org-x-is-task-p))
+              (org-x-skip-heading))
+             ;; skip habits
+             ((org-x-is-habit-heading-p)
+              (org-x-skip-heading))))))
+       (org-agenda-todo-ignore-with-date t)
+       (org-agenda-sorting-strategy '(user-defined-up category-keep))
+       (org-super-agenda-groups
+        `((:auto-map
+           ,(nd/org-x-mk-super-agenda-pred
+             (let ((prefix (cl-case (org-x-task-status)
+                             (:undone-closed "0. Undone Closed")
+                             (:done-unclosed "0. Done Closed")
+                             (:actv "1. Active")
+                             (:inrt "2. Inert")
+                             (t "3. Other")))
+                   (sufix (if (org-x-is-atomic-task-p)
+                              " 2-(α)" " 1-(σ)")))
+               (concat prefix sufix))))))))))
 
-     ("I"
-      "Iterator View"
-      (,(org-x-agenda-base-project-cmd
-         "-NA-REFILE+PARENT_TYPE=\"iterator\""
-         "Iterator Status"
-         ''org-x-skip-non-iterator-parent-headings
-         'org-clone-iter-statuscodes ''org-clone-get-iterator-status nil t)))
+   ("p"
+    "Project View"
+    ((tags-todo
+      "-NA-REFILE-%inc/!"
+      ((org-agenda-overriding-header
+        (concat (and org-x-agenda-limit-project-toplevel "Toplevel ") "Projects"))
+       (org-agenda-skip-function
+        ,(nd/org-x-mk-skip-function
+          (let ((keyword (org-x-is-project-p)))
+            (cond
+             ((not keyword)
+              (org-x-skip-heading))
+             ((and org-x-agenda-limit-project-toplevel
+                   (org-x-headline-has-parent 'org-x-is-todoitem-p))
+              (org-x-skip-subtree))))))
+       (org-agenda-sorting-strategy '(category-keep))
+       (org-super-agenda-groups
+        `((:auto-map
+           ,(nd/org-x-mk-super-agenda-pred
+             (cl-case (org-x-get-project-status)
+               (:scheduled-project "0. Scheduled Project")
+               (:invalid-todostate "0. Invalid TODO State")
+               (:undone-complete "0. Undone Complete")
+               (:done-incomplete "0. Done Incomplete")
+               (:stck "0. Stuck")
+               (:wait "1. Wait")
+               (:held "2. Held")
+               (:actv "3. Active")
+               (:inrt "4. Inert")
+               (t "5. Other"))))))))))
+   
+   ("i"
+    "Incubator View"
+    ((tags
+      "-NA-REFILE+%inc"
+      ((org-agenda-overriding-header "Incubator")
+       (org-agenda-skip-function
+        ,(nd/org-x-mk-skip-function
+          (let ((keyword (org-x-is-todoitem-p)))
+            (cond
+             ;; skip done/canc projects
+             ((and (member keyword org-done-keywords)
+                   (org-x-is-project-p))
+              (org-x-skip-subtree))
+             ;; skip project tasks
+             ((and keyword (org-x-is-project-task-p))
+              (org-x-skip-heading))
+             ;; skip done/canc tasks
+             ((member keyword org-done-keywords)
+              (org-x-skip-heading))
+             ;; skip non-tasks if they don't have a timestamp
+             ((and (not keyword)
+                   (not (org-x-is-timestamped-heading-p)))
+              (org-x-skip-heading))))))
+       (org-agenda-sorting-strategy '(category-keep))
+       (org-super-agenda-groups
+        `((:name "Past Deadlines" :deadline past)
+          (:name "Future Deadlines" :deadline future)
+          (:name "Stale Appointments" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   (org-x-is-stale-heading-p)))
+          (:name "Future Appointments" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   (and (not (org-x-is-todoitem-p)))))
+          (:name "Tasks" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   (org-x-is-task-p)))
+          (:name "Toplevel Projects" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   (and (not (org-x-headline-has-parent #'org-x-is-todoitem-p))
+                        (org-x-is-project-p))))
+          (:name "Projects" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   (and (org-x-headline-has-parent #'org-x-is-todoitem-p)
+                        (org-x-is-project-p))))
+          (:discard (:anything t))))))))
+   
+   ("P"
+    "Periodical View"
+    ((tags
+      "-NA-REFILE"
+      ((org-agenda-overriding-header "Iterator Status")
+       (org-agenda-skip-function
+        ,(nd/org-x-mk-skip-function
+          (cond
+           ((not (org-x-is-periodical-heading-p))
+            (org-x-skip-heading))
+           ((org-x-headline-has-parent 'org-x-is-periodical-heading-p)
+            (org-x-skip-heading)))))
+       (org-agenda-sorting-strategy '(category-keep))
+       (org-super-agenda-groups
+        `((:auto-map
+           ,(nd/org-x-mk-super-agenda-pred
+             (cl-case (org-clone-get-periodical-status)
+               (:uninit "0. Uninitiatlized")
+               (:unscheduled "0. Unscheduled")
+               (:empt "1. Empty")
+               (:actv "2. Active")
+               (t "3. Other"))))))))))
 
-     ("r" "Refile" ((tags "REFILE" ((org-agenda-overriding-header "Tasks to Refile"))
-                          (org-tags-match-list-sublevels nil))))
-     
-     ("f" "Flagged" ((tags "%flag" ((org-agenda-overriding-header "Flagged Tasks")))))
-     
-     ("e"
-      "Critical Errors"
-      (,(org-x-agenda-base-task-cmd task-match
-                                 "Discontinous Project"
-                                 ''org-x-skip-non-discontinuous-project-tasks)
-       ,(org-x-agenda-base-heading-cmd task-match
-                                    "Undone Closed"
-                                    ''org-x-skip-non-undone-closed-todoitems)
-       ,(org-x-agenda-base-heading-cmd (concat actionable "-" periodical)
-                                    "Done Unclosed"
-                                    ''org-x-skip-non-done-unclosed-todoitems)
-       ,(org-x-agenda-base-task-cmd (concat task-match)
-                                 "Missing Creation Timestamp"
-                                 ''org-x-skip-non-created-tasks)))
-       
+   ("I"
+    "Iterator View"
+    ((tags
+      "-NA-REFILE"
+      ((org-agenda-overriding-header "Iterator Status")
+       (org-agenda-skip-function
+        ,(nd/org-x-mk-skip-function
+          (cond
+           ((not (org-x-is-iterator-heading-p))
+            (org-x-skip-heading))
+           ((org-x-headline-has-parent 'org-x-is-iterator-heading-p)
+            (org-x-skip-heading)))))
+       (org-agenda-sorting-strategy '(category-keep))
+       (org-super-agenda-groups
+        `((:auto-map
+           ,(nd/org-x-mk-super-agenda-pred
+             (cl-case (org-clone-get-iterator-status)
+               (:uninit "0. Uninitiatlized")
+               (:project-error "0. Project Error")
+               (:unscheduled "0. Unscheduled")
+               (:empt "1. Empty")
+               (:actv "2. Active")
+               (t "3. Other"))))))))))
 
-     ("A"
-      "Archivable Tasks and Projects"
-      ((tags-todo ,(concat actionable "-" periodical "-" habit "/DONE|CANC")
-                  ((org-agenda-overriding-header "Archivable Atomic Tasks and Iterators")
-                   (org-agenda-sorting-strategy '(category-keep))
-                   (org-agenda-skip-function 'org-x-skip-non-archivable-atomic-tasks)))
-       ,(org-x-agenda-base-heading-cmd (concat actionable "-" habit)
-                                   "Stale Tasks and Periodicals"
-                                   ''org-x-skip-non-stale-headings)
-       ,(org-x-agenda-base-project-cmd
-         (concat actionable "-" periodical "-" iterator "-" habit)
-         '(concat (and org-x-agenda-limit-project-toplevel "Toplevel ") "Archivable Projects")
-         ''org-x-skip-non-projects ''(:arch) ''org-x-get-project-status))))))
+   ("r" "Refile"
+    ((tags "REFILE" ((org-agenda-overriding-header "Tasks to Refile"))
+           (org-tags-match-list-sublevels nil))))
+   
+   ("f" "Flagged"
+    ((tags "%flag" ((org-agenda-overriding-header "Flagged Tasks")))))
+   
+   ("e"
+    "Critical Errors"
+    ((tags
+      "-NA-REFILE-%inc"
+      ((org-agenda-overriding-header "Critical Errors")
+       (org-agenda-skip-function
+        ,(nd/org-x-mk-skip-function
+          (let ((keyword (org-x-is-todoitem-p)))
+            (cond
+             ((org-x-is-habit-heading-p)
+              (org-x-skip-heading))
+             ((org-x-is-iterator-heading-p)
+              (org-x-skip-subtree))
+             ((org-x-is-periodical-heading-p)
+              (org-x-skip-subtree))))))
+       (org-super-agenda-groups
+        `((:name "Discontinuous Projects" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   (and (org-x-is-todoitem-p)
+                        (org-x-has-discontinuous-parent))))
+          (:name "Done Unclosed" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   (let ((keyword (org-x-is-todoitem-p)))
+                     (and keyword
+                          (member keyword org-done-keywords)
+                          (not (org-x-is-closed-heading-p))))))
+          (:name "Undone Closed" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   (let ((keyword (org-x-is-todoitem-p)))
+                     (and keyword
+                          (not (member keyword org-done-keywords))
+                          (org-x-is-closed-heading-p)))))
+          (:name "Missing Creation Timestamp" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   ;; TODO extend this to non-todoitems
+                   (let ((keyword (org-x-is-todoitem-p)))
+                     (and keyword
+                          (org-x-is-task-p)
+                          (not (member keyword org-done-keywords))
+                          (not (org-x-is-created-heading-p))))))
+          (:discard (:anything t))))))))
+
+   ("A"
+    "Archivable Tasks and Projects"
+    ((tags
+      "-NA-REFILE"
+      ((org-agenda-overriding-header "Archive")
+       (org-agenda-skip-function
+        ,(nd/org-x-mk-skip-function
+          (let ((keyword (org-x-is-todoitem-p)))
+            (cond
+             ;; skip all non-archivable projects
+             ((and keyword
+                   (org-x-headline-has-children 'org-x-is-todoitem-p)
+                   (not (eq :arch (org-x-get-project-status))))
+              (org-x-skip-subtree))
+             ;; skip all project tasks
+             ((and keyword
+                   (org-x-headline-has-parent 'org-x-is-todoitem-p))
+              (org-x-skip-heading))
+             ;; skip all tasks not marked done or archivable
+             ((and keyword
+                   (not (and (member keyword org-done-keywords)
+                             (org-x-is-archivable-heading-p))))
+              (org-x-skip-heading))
+             ;; skip all non-todoitems that are not stale
+             ((and (not keyword)
+                   (not (org-x-is-stale-heading-p)))
+              (org-x-skip-heading))))))
+       (org-agenda-sorting-strategy '(category-keep))
+       (org-super-agenda-groups
+        `((:name "Atomic Tasks" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   (org-x-is-atomic-task-p)))
+          (:name "Projects" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   (org-x-is-project-p)))
+          (:name "Appointments" :anything)))))))))
 #+END_SRC
 ** gtd next generation
 GTD is great but has many limitations...mostly due to the fact that it was originally made on paper. This is meant to extend the GTD workflow into a comprehensive tracking engine that can be used and analyze and project long-term plans and goals.
@@ -3139,9 +3279,18 @@ These are for mode-specific bindings that can/should be outside of the evil maps
             (local-set-key (kbd "C-x C-c C-x C-i") 'org-tomato-user-hl-agenda-clock-in)
             (local-set-key (kbd "C-x C-c C-x C-o") 'org-tomato-user-hl-agenda-clock-out)))
 
+(setq org-super-agenda-header-map (make-sparse-keymap))
+(define-key org-super-agenda-header-map (kbd "<tab>") #'origami-toggle-node)
 #+END_SRC
 *** mu4e
 #+BEGIN_SRC emacs-lisp
+;; (defun nd/mu4e-open-attachment-in-emacs (&optional msg attnum)
+;;   "Open attachments using pdf tools or doc view."
+;;   (interactive)
+;;   (let* ((msg (or msg (mu4e-message-at-point)))
+;;          (attnum (or attnum (mu4e~view-get-attach-num "Attachment to open" msg))))
+;;     (mu4e-view-open-attachment-emacs msg attnum)))
+
 (nd/when-bin
  "mu"
  (define-key mu4e-headers-mode-map (kbd "C-c C-l") 'org-store-link)
