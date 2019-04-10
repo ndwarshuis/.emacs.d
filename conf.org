@@ -79,6 +79,11 @@ Using an org file like this offers several advantages. First, org files are fold
 * library
 This is code that is used generally throughout the emacs config
 ** external
+*** s
+#+BEGIN_SRC emacs-lisp
+(use-package s
+  :ensure t)
+#+END_SRC
 *** dash
 #+BEGIN_SRC emacs-lisp
 (use-package dash
