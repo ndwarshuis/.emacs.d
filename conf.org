@@ -2216,6 +2216,14 @@ original org entry before executing BODY."
          (goto-char marker)
          ,@body))))
 
+(defconst nd/org-x-task-status-priorities
+  '((:archivable . -1)
+    (:complete . -1)
+    (:done-unclosed . 0)
+    (:undone-closed . 0)
+    (:active . 1)
+    (:inert . 2)))
+
 (setq
  org-agenda-custom-commands
  `(("a"
