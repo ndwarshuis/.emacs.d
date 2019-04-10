@@ -2195,7 +2195,7 @@ By default I want block agendas to sort based on the todo keyword (with NEXT bei
 
 #+END_SRC
 ***** custom commands
-These agenda commands are the center of the gtd workflow. Some are slower than dirt but that's ok becuase the load times are far less than the that I would waste rifling through each org file trying to find a task.
+These agenda commands are the center of the gtd workflow.
 #+BEGIN_SRC emacs-lisp
 (defmacro nd/org-x-mk-skip-function (&rest body)
   "Return a skip function with BODY.
@@ -2298,11 +2298,11 @@ original org entry before executing BODY."
                (:invalid-todostate "0. Invalid TODO State")
                (:undone-complete "0. Undone Complete")
                (:done-incomplete "0. Done Incomplete")
-               (:stck "0. Stuck")
+               (:stuck "0. Stuck")
                (:wait "1. Wait")
                (:held "2. Held")
-               (:actv "3. Active")
-               (:inrt "4. Inert")
+               (:active "3. Active")
+               (:inert "4. Inert")
                (t "5. Other"))))))))))
    
    ("i"
@@ -2425,6 +2425,8 @@ original org entry before executing BODY."
                  ,(nd/org-x-mk-super-agenda-pred
                    (and (org-x-is-todoitem-p)
                         (org-x-has-discontinuous-parent))))
+          ;; TODO this is redundant, only thing this checks is
+          ;; project headers
           (:name "Done Unclosed" :pred
                  ,(nd/org-x-mk-super-agenda-pred
                    (let ((keyword (org-x-is-todoitem-p)))
@@ -2458,17 +2460,16 @@ original org entry before executing BODY."
             (cond
              ;; skip all non-archivable projects
              ((and keyword
-                   (org-x-headline-has-children 'org-x-is-todoitem-p)
-                   (not (eq :arch (org-x-get-project-status))))
+                   (org-x-is-project-p)
+                   (not (eq :archivable (org-x-get-project-status))))
               (org-x-skip-subtree))
              ;; skip all project tasks
-             ((and keyword
-                   (org-x-headline-has-parent 'org-x-is-todoitem-p))
+             ((and keyword (org-x-is-project-task-p))
               (org-x-skip-heading))
              ;; skip all tasks not marked done or archivable
              ((and keyword
-                   (not (and (member keyword org-done-keywords)
-                             (org-x-is-archivable-heading-p))))
+                   (org-x-is-task-p)
+                   (not (eq :archivable (org-x-task-status))))
               (org-x-skip-heading))
              ;; skip all non-todoitems that are not stale
              ((and (not keyword)
@@ -2479,9 +2480,14 @@ original org entry before executing BODY."
         `((:name "Atomic Tasks" :pred
                  ,(nd/org-x-mk-super-agenda-pred
                    (org-x-is-atomic-task-p)))
+          (:name "Toplevel Projects" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   (and (not (org-x-headline-has-parent #'org-x-is-todoitem-p))
+                        (org-x-is-project-p))))
           (:name "Projects" :pred
                  ,(nd/org-x-mk-super-agenda-pred
-                   (org-x-is-project-p)))
+                   (and (org-x-headline-has-parent #'org-x-is-todoitem-p)
+                        (org-x-is-project-p))))
           (:name "Appointments" :anything)))))))))
 #+END_SRC
 ** gtd next generation
