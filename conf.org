@@ -3394,5 +3394,6 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "M-i") 'imenu)
 (global-set-key (kbd "M-o") 'ace-window)
 (global-set-key (kbd "M-s") 'avy-goto-char)
+(global-set-key (kbd "M-w") #'ace-swap-window)
 (global-set-key (kbd "M-x") 'helm-M-x)
 #+END_SRC
