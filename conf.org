@@ -3012,6 +3012,22 @@ delightfully ripped off from vim plugins
   :config
   (evil-replace-with-register-install))
 #+END_SRC
+**** twiddle case
+#+BEGIN_SRC emacs-lisp
+(defun nd/evil-twiddle-case (beg end)
+  (interactive "r")
+  (when (use-region-p)
+    (let ((string (buffer-substring-no-properties beg end))
+          (deactivate-mark))
+      (funcall (cond
+                ((string-equal string (upcase string)) #'downcase-region)
+                ((string-equal string (downcase string)) #'capitalize-region)
+                (t #'upcase-region))
+               beg end))))
+
+               
+(define-key evil-visual-state-map "~" #'nd/evil-twiddle-case)
+#+END_SRC
 *** unbind emacs keys
 Some of these commands just get in the way of being evil (which really means that I keep pressing them on accident). Rather than nullifying them completely, tuck them away in the emacs state map in case I actually want them.
 #+BEGIN_SRC emacs-lisp
