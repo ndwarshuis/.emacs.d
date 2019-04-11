@@ -2175,7 +2175,7 @@ earlier ones."
 #+BEGIN_SRC emacs-lisp
 (use-package org-super-agenda
   :straight t
-  :config (org-super-agenda-mode))
+  :config (let ((inhibit-message t)) (org-super-agenda-mode)))
 
 (use-package origami
   :straight t
