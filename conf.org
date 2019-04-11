@@ -82,25 +82,24 @@ This is code that is used generally throughout the emacs config
 *** s
 #+BEGIN_SRC emacs-lisp
 (use-package s
-  :ensure t)
+  :straight t)
 #+END_SRC
 *** dash
 #+BEGIN_SRC emacs-lisp
 (use-package dash
-  :ensure t
+  :straight t
   :config
   (setq dash-enable-fontlock t))
 #+END_SRC
 *** dash functional
 #+BEGIN_SRC emacs-lisp
 (use-package dash-functional
-  :ensure t
-  :config)
+  :straight t)
 #+END_SRC
 *** sound-wav
 #+BEGIN_SRC emacs-lisp
 (use-package sound-wav
-  :ensure t)
+  :straight t)
 #+END_SRC
 ** macros
 #+BEGIN_SRC emacs-lisp
@@ -309,7 +308,7 @@ The general look and feel, as well as interactive functionality
 This theme has good functionality for many different modes without being over-the-top or overly complex. It also comes with an easy way to set custom colors.
 #+BEGIN_SRC emacs-lisp
 (use-package spacemacs-theme
-  :ensure t
+  :straight t
   :defer t
   :config
   (setq spacemacs-theme-custom-colors '((lnum . "#64707c"))))
@@ -347,7 +346,7 @@ Since I run emacs in [[https://www.gnu.org/software/emacs/manual/html_node/emacs
 This modeline goes along with the =spacemacs-theme=. It also has nice integration with =evil-mode= (see keybindings below).
 #+BEGIN_SRC emacs-lisp
 (use-package spaceline
-  :ensure t
+  :straight t
   :config
   (require 'spaceline-config)
   (setq powerline-default-separator 'arrow
@@ -362,7 +361,7 @@ This modeline goes along with the =spacemacs-theme=. It also has nice integratio
 I like to keep the modeline clean and uncluttered. This package prevents certain mode names from showing in the modeline (it also has support for =use-package= through the =:delight= keyword)
 #+BEGIN_SRC emacs-lisp
 (use-package delight
-  :ensure t)
+  :straight t)
 #+END_SRC
 ** remove interface bars
 Emacs comes with some useless garbage by default. IMHO (in my haughty opinion), text editors should be boxes with text in them. No menu bars, scroll bars, or toolbars (and certainly no ribbons). 
@@ -396,7 +395,7 @@ Instead use a dashboard, and display days until predicted death...you know, as a
                  (format "%s days until death" it)))))
   
 (use-package dashboard
-  :ensure t
+  :straight t
   :config 
   (setq dashboard-banner-logo-title nil
         dashboard-startup-banner "~/.emacs.d/dashlogo.png"
@@ -414,7 +413,7 @@ Some modes like to make popup windows (eg ediff). This prevents that.
 This is an elegant window selector. It displays a number in the corner when activated, and windows may be chosen by pressing the corresponding number. Note that spacemacs fails to make the numbers look nice so the theme code is a workaround to make them smaller and prettier.
 #+BEGIN_SRC emacs-lisp
 (use-package ace-window
-  :ensure t
+  :straight t
   :config
   (setq aw-background t)
   (custom-set-faces '(aw-leading-char-face 
@@ -428,7 +427,7 @@ This is an elegant window selector. It displays a number in the corner when acti
 One of the best packages for emacs. Helm is basically a search and completion engine (other exanples being =ido-mode= and =ivy-mode=) which is mainly used for finding files and selecting commands (which are obviously used often). It also integrates well with many other modes such as =evil-mode= and =org-mode=.
 #+BEGIN_SRC emacs-lisp
 (use-package helm
-  :ensure t
+  :straight t
   :delight
   :init
   (helm-mode 1)
@@ -452,21 +451,21 @@ One of the best packages for emacs. Helm is basically a search and completion en
 *** helm-swoop
 #+BEGIN_SRC emacs-lisp
 (use-package helm-swoop
-  :ensure t)
+  :straight t)
 #+END_SRC
 *** avy
 Allows jumping to any character in any window with a few keystrokes. Goodbye mouse :)
 #+BEGIN_SRC emacs-lisp
-  (use-package avy
-    :ensure t
-    :config
-    (setq avy-background t))
+(use-package avy
+  :straight t
+  :config
+  (setq avy-background t))
 #+END_SRC
 ** cursor
 This makes a nice glowy effect on the cursor when switching window focus. Very elegant way of saving time in finding where you left off.
 #+BEGIN_SRC emacs-lisp
 (use-package beacon
-  :ensure t
+  :straight t
   :delight
   :init
   (beacon-mode 1))
@@ -508,7 +507,7 @@ Saving files continuously is actually really annoying and clutters my disk. Turn
 Allows certain processes to run in multithreaded manner. For things like IO this makes sense.
 #+BEGIN_SRC emacs-lisp
 (use-package async
-  :ensure t
+  :straight t
   :delight dired-async-mode
   :init
   (dired-async-mode 1))
@@ -526,7 +525,7 @@ Who uses tabs in their programs? Make tabs actually equal 4 spaces. Also, alledg
 Alot of languages at least semi-adhere to the 80-characters-per-line rule. =fci-mode= displays a line as a guide for column width.
 #+BEGIN_SRC emacs-lisp
 (use-package fill-column-indicator
-  :ensure t
+  :straight t
   :config
   (setq fci-rule-use-dashes t)
   :hook
@@ -536,7 +535,7 @@ Alot of languages at least semi-adhere to the 80-characters-per-line rule. =fci-
 I use the built-in =flyspell-mode= to handle spellchecking. Obviously I am going to use =helm= when I spellcheck something.
 #+BEGIN_SRC emacs-lisp
 (use-package flyspell-correct-helm
-  :ensure t
+  :straight t
   :after (helm flyspell))
 #+END_SRC
 
@@ -559,7 +558,7 @@ Additionally, I want to automatically highlight errors whenever =flyspell-mode= 
 Flycheck will highlight and explain syntax errors in code and formatting. See each language below for external tools that need to be installed to make flycheck work to the fullest.
 #+BEGIN_SRC emacs-lisp
 (use-package flycheck
-  :ensure t
+  :straight t
   :hook
   (prog-mode . flycheck-mode)
   :config
@@ -574,7 +573,7 @@ Flycheck will highlight and explain syntax errors in code and formatting. See ea
 *** packaging
 #+BEGIN_SRC emacs-lisp
 (use-package flycheck-package
-  :ensure t
+  :straight t
   :after flycheck
   :config
   (eval-after-load 'flycheck '(flycheck-package-setup)))
@@ -583,7 +582,7 @@ Flycheck will highlight and explain syntax errors in code and formatting. See ea
 Company provides a dropdown of completion options. It has many backends which are configured in each language and format elsewhere.
 #+BEGIN_SRC emacs-lisp
 (use-package company
-  :ensure t
+  :straight t
   :delight "κ"
   :config
   (setq company-idle-delay 0
@@ -595,7 +594,7 @@ I find it weird that most programs do not have a tree-like tool to navigate undo
 =undo-tree= package adds a nice undo tree buffer to visualize history and also displays diffs to easily show what changed.
 #+BEGIN_SRC emacs-lisp
 (use-package undo-tree
-  :ensure t
+  :straight t
   :delight
   :config
   (setq undo-tree-visualizer-diff t)
@@ -605,7 +604,7 @@ I find it weird that most programs do not have a tree-like tool to navigate undo
 This color-codes matching parenthesis. Enable pretty much everywhere.
 #+BEGIN_SRC emacs-lisp
 (use-package rainbow-delimiters
-  :ensure t
+  :straight t
   :delight
   :hook
   ((prog-mode . rainbow-delimiters-mode)
@@ -621,8 +620,8 @@ Use pretty symbols (like lambda in lisp)
 ** sudo edit
 Allows opening a file with sudo elevation.
 #+BEGIN_SRC emacs-lisp
-  (use-package sudo-edit
-    :ensure t)
+(use-package sudo-edit
+  :straight t)
 #+END_SRC
 ** formats and languages
 *** Elisp
@@ -641,7 +640,7 @@ Flycheck syntax checkers
   (setq-local company-backends '((company-R-objects company-R-args))))
 
 (use-package ess
-  :ensure t
+  :straight t
   :init
   (load "ess-site")
   :hook
@@ -666,7 +665,7 @@ Flycheck syntax checkers to install (either globally or using =pip=)
 - python-black
 #+BEGIN_SRC emacs-lisp
 (use-package elpy
-  :ensure t)
+  :straight t)
 
 (defun nd/init-anaconda-company ()
   "Set the company backends for anaconda mode."
@@ -686,27 +685,27 @@ Flycheck syntax checkers to install (either globally or using =pip=)
                 python-shell-interpreter-args "-i --simple-prompt"))
 
 (use-package anaconda-mode
-  :ensure t
+  :straight t
   :after python)
 
 (use-package company-anaconda
-  :ensure t
+  :straight t
   :after (python company anaconda))
 
 (use-package blacken
-  :ensure t)
+  :straight t)
 #+END_SRC
 *** Ruby
 #+BEGIN_SRC emacs-lisp
 (use-package inf-ruby
-  :ensure t)
+  :straight t)
 
 (use-package robe
-  :ensure t
+  :straight t
   :hook (ruby-mode . robe))
 
 (use-package ruby-test-mode
-  :ensure t)
+  :straight t)
 #+END_SRC
 *** Haskell
 **** stack
@@ -716,7 +715,7 @@ This also provides GHC which is used by flycheck for syntax checking.
 **** major mode
 #+BEGIN_SRC emacs-lisp
 (use-package haskell-mode
-  :ensure t
+  :straight t
   :config
   (setq haskell-interactive-popup-errors nil))
 #+END_SRC
@@ -724,7 +723,7 @@ This also provides GHC which is used by flycheck for syntax checking.
 Provides shell, autocomplete, and syntax checking. Requires the =intero= binary to be installed through stack (=stack install intero=).
 #+BEGIN_SRC emacs-lisp
 (use-package intero
-  :ensure t
+  :straight t
   :after haskell-mode
   :hook
   (haskell-mode . intero-mode))
@@ -745,14 +744,14 @@ Additional syntax checking can be enabled with the =hlint= program (=stack insta
 For flycheck, install =luacheck= (from AUR on Arch).
 #+BEGIN_SRC emacs-lisp
 (use-package lua-mode
-  :ensure t)
+  :straight t)
 #+END_SRC
 *** TeX
 **** AUCTeX
 Install auctex through emacs as this is OS independent and more automatic. Note that the Tex package libraries (eg TeXLive) still need to be installed to do anything useful.
 #+BEGIN_SRC emacs-lisp
 (use-package tex
-  :ensure auctex
+  :straight auctex
   :hook
   ((LaTeX-mode . flycheck-mode)
    (LaTeX-mode . flyspell-mode)
@@ -778,7 +777,7 @@ AUCTeX can launch external viewers to show compiled documents.
 I like how =org-mode= folds with the TAB key, so bring the same thing to AUCTeX here with =outline-magic=.
 #+BEGIN_SRC emacs-lisp
 (use-package outline-magic
-  :ensure t
+  :straight t
   :after outline
   :hook
   ((LaTeX-mode . outline-minor-mode)))
@@ -804,14 +803,14 @@ There are two backends which (kinda) complement each other. The =company-math= p
                                   company-math-symbols-unicode))))
 
 (use-package company-math
-  :ensure t
+  :straight t
   :after (tex company)
   :config
   (setq company-math-allow-unicode-symbols-in-faces '(font-latex-math-face)
         company-math-disallow-latex-symbols-in-faces nil))
 
 (use-package company-auctex
-  :ensure t
+  :straight t
   :after (tex company company-math)
   :hook
   ((LaTeX-mode . nd/init-company-auctex)))
@@ -836,7 +835,7 @@ I like having my lines short and readable (also easier to git). Turn on autofill
 ***** database management
 #+BEGIN_SRC emacs-lisp
 (use-package ebib
-  :ensure t
+  :straight t
   :config
   (setq ebib-autogenerate-keys t
         ebib-uniquify-keys t))
@@ -845,7 +844,7 @@ I like having my lines short and readable (also easier to git). Turn on autofill
 Together, =org-ref= and =helm-bibtex= provide a nice pipeline to search a BibTex database and insert citations.
 #+BEGIN_SRC emacs-lisp
 (use-package org-ref
-  :ensure t
+  :straight t
   :after org
   :config
   (setq reftex-default-bibliography (expand-file-name "~/BibTeX/master.bib")
@@ -853,7 +852,7 @@ Together, =org-ref= and =helm-bibtex= provide a nice pipeline to search a BibTex
         org-ref-default-bibliography (expand-file-name "~/BibTeX/master.bib")))
         
 (use-package helm-bibtex
-  :ensure t
+  :straight t
   :after helm
   :config
   (setq bibtex-completion-bibliography (expand-file-name "~/BibTeX/master.bib")
@@ -866,14 +865,13 @@ For flycheck, install =tidy= (privides the =html-tidy= binary).
 Overlays hex color codes with matching colors in certain modes like css and html. For flycheck, install =stylelint= (from the AUR on Arch).
 #+BEGIN_SRC emacs-lisp
 (use-package rainbow-mode
-  :ensure t)
+  :straight t)
 #+END_SRC
 *** Javascript
 #+BEGIN_SRC emacs-lisp
 (use-package js-comint
-  :ensure t)
+  :straight t)
 #+END_SRC
-
 *** markdown
 Make font sizes smaller and less intrusive for headers
 #+BEGIN_SRC emacs-lisp
@@ -891,7 +889,7 @@ Make font sizes smaller and less intrusive for headers
 R-markdown is enabled via polymode, which allows multiple modes in one buffer (this is actually as crazy as it sounds). In this case, the modes are yaml, R, markdown, and others. Installing =poly-R= will pull in all required dependencies.
 #+BEGIN_SRC emacs-lisp
 (use-package poly-R
-  :ensure t
+  :straight t
   :mode
   (("\\.Rmd\\'" . poly-markdown+r-mode)
    ("\\.rmd\\'" . poly-markdown+r-mode)))
@@ -900,13 +898,13 @@ R-markdown is enabled via polymode, which allows multiple modes in one buffer (t
 This adds support for csv files. Almost makes them editable like a spreadsheet. The lambda function enables alignment by default.
 #+BEGIN_SRC emacs-lisp
 (use-package csv-mode
-  :ensure t
+  :straight t
   :hook (csv-mode . (lambda () (csv-align-fields nil (point-min) (point-max)))))
 #+END_SRC
 *** Arch Linux
 #+BEGIN_SRC emacs-lisp
 (use-package pkgbuild-mode
-  :ensure t)
+  :straight t)
 #+END_SRC
 *** Unix Shell
 No custom code here, but flycheck needs =shellcheck= (a Haskell program). On Arch (or any other distro that loves dynamic binding) easiest way to install is via =stack install ShellCheck=
@@ -918,7 +916,7 @@ No custom code here, but flycheck needs =sqlint= (on Arch available through the 
 Org has several extensions in the form of loadable modules. =org-protocol= is used as a backend for external programs to communicate with =org-mode=. =org-habit= allows the habit todoitem which is used as a more flexible recurring task.
 #+BEGIN_SRC emacs-lisp
 (setq org-modules '(org-habit org-protocol))
-(require 'org)
+(straight-use-package '(org :type built-in))
 ;; make sure everything else works that I have customly defined
 (require 'org-agenda)
 (require 'org-protocol)
@@ -970,7 +968,7 @@ TODO: These don't work in evil mode (using the usual line commands).
 These are just so much better to read
 #+BEGIN_SRC emacs-lisp
 (use-package org-bullets
-  :ensure t
+  :straight t
   :hook
   (org-mode . org-bullets-mode))
 #+END_SRC
@@ -1005,7 +1003,7 @@ Make todo insertion respect contents
 Since I use org mode as my config file, makes sense to have a table of contents so others can easily naviagate this crazy empire I have created :)
 #+BEGIN_SRC emacs-lisp
 (use-package toc-org
-  :ensure t
+  :straight t
   :hook
   (org-mode . toc-org-mode))
 #+END_SRC
@@ -1020,7 +1018,7 @@ Since I use org mode as my config file, makes sense to have a table of contents 
 *** rifle
 #+BEGIN_SRC emacs-lisp
 (use-package helm-org-rifle
-  :ensure t
+  :straight t
   :after (org helm))
 
 (defun nd/helm-org-rifle-brain ()
@@ -1032,7 +1030,7 @@ Since I use org mode as my config file, makes sense to have a table of contents 
 This is a nifty calendar...sometimes way faster than the agenda buffer for looking at long term things.
 #+BEGIN_SRC emacs-lisp
 (use-package calfw
-  :ensure t
+  :straight t
   :config
   (setq cfw:fchar-junction ?╋
         cfw:fchar-vertical-line ?┃
@@ -1044,7 +1042,7 @@ This is a nifty calendar...sometimes way faster than the agenda buffer for looki
         cfw:fchar-top-right-corner ?┓))
 
 (use-package calfw-org
-  :ensure t
+  :straight t
   :after calfw
   :config
   (setq cfw:org-agenda-schedule-args
@@ -2175,11 +2173,11 @@ earlier ones."
 **** super agenda
 #+BEGIN_SRC emacs-lisp
 (use-package org-super-agenda
-  :ensure t
+  :straight t
   :config (org-super-agenda-mode))
 
 (use-package origami
-  :ensure t
+  :straight t
   :hook (org-agenda-mode . origami-mode))
 #+END_SRC
 **** block agenda views
@@ -2575,11 +2573,11 @@ This really means "super awesome pomodoro implementation." =Tomato-mode= sounds 
 ** brain
 #+BEGIN_SRC emacs-lisp
 (use-package org-brain
+  :straight t
   :init
   (setq org-brain-path "~/Org/reference")
   (with-eval-after-load 'evil
-    (evil-set-initial-state 'org-brain-visualize-mode 'emacs))
-  :ensure t)
+    (evil-set-initial-state 'org-brain-visualize-mode 'emacs)))
 #+END_SRC
 * tools
 ** printing
@@ -2594,7 +2592,7 @@ For some reason there is no default way to get a "print prompt." Instead one nee
 ** magit
 #+BEGIN_SRC emacs-lisp
 (use-package magit
-  :ensure t
+  :straight t
   :config
   :delight auto-revert-mode
   (setq magit-push-always-verify nil
@@ -2666,7 +2664,7 @@ By default the included gnus-dired package does not understan mu4e, so override 
 By default dired uses =ls -whatever= to get its output. This does not have recursive directory contents by default. This nitfy package solves this. This is not on default because navigation is much slower and the du output adds very little in many situations (toggle when needed).
 #+BEGIN_SRC emacs-lisp
 (use-package dired-du
-  :ensure t
+  :straight t
   :config
   (setq dired-du-size-format t))
 #+END_SRC
@@ -2705,13 +2703,13 @@ If dired is to replace all other file managers it must handle devices. This func
 Filtering is useful for obvious reasons
 #+BEGIN_SRC emacs-lisp
 (use-package dired-narrow
-  :ensure t)
+  :straight t)
 #+END_SRC
 ** pdf-tools
 #+BEGIN_SRC emacs-lisp
 ;; TODO consider tagging this with :pin manual to upgrade seperately
 (use-package pdf-tools
-  :ensure t
+  :straight t
   :config
   (pdf-tools-install t)
   (setq pdf-view-display-size 'fit-page
@@ -2872,16 +2870,17 @@ Since mu4e is an external program, need to check that it is installed before loa
  ;; (add-to-list 'auth-sources "secrets:default")
  (setq send-mail-function 'smtpmail-send-it
        message-send-mail-function 'smtpmail-send-it)
- (add-to-list 'auth-sources (expand-file-name "~/.emacs.d/.authinfo_mu4e.gpg"))
+ (add-to-list 'auth-sources (expand-file-name "~/.emacs.d/.authinfo_mu4e.gpg")))
 
- (use-package org-mu4e
-   :after (org mu4e)
-   :config
-   (setq
-    ;; for using mu4e in org-capture templates
-    org-mu4e-link-query-in-headers-mode nil
-    ;; for composing rich-text emails using org mode
-    org-mu4e-convert-to-html t)))
+ ;; (use-package org-mu4e
+ ;;   :straight t
+ ;;   :after (org mu4e)
+ ;;   :config
+ ;;   (setq
+ ;;    ;; for using mu4e in org-capture templates
+ ;;    org-mu4e-link-query-in-headers-mode nil
+ ;;    ;; for composing rich-text emails using org mode
+ ;;    org-mu4e-convert-to-html t)))
 #+END_SRC
 ** shell
 #+begin_src emacs-lisp
@@ -2901,12 +2900,12 @@ Since mu4e is an external program, need to check that it is installed before loa
 ** jupyter
 #+BEGIN_SRC emacs-lisp
 (use-package ein
-  :ensure t)
+  :straight t)
 #+END_SRC
 ** excorporate
 #+BEGIN_SRC emacs-lisp
 (use-package excorporate
-  :ensure t
+  :straight t
   :config
   (require 'excorporate-org)
   (setq excorporate-configuration
@@ -2932,7 +2931,7 @@ Since mu4e is an external program, need to check that it is installed before loa
 Assumes that =transmission-cli= is installed (official Arch package) and that the transmission-daemon is running (=systemctl start transmission=).
 #+BEGIN_SRC emacs-lisp
 (use-package transmission
-  :ensure t)
+  :straight t)
 #+END_SRC
 * keybindings
 For the sake of my sanity, all bindings go here. Note this means I don't use =:bind= in use-package forms.
@@ -2951,7 +2950,7 @@ Most of my modifiers are reloacted using xkb and xcape. Below is a summary where
 Everyone forgets keybindings. When typing a key chord, this will display a window with all possible completions and their commands.
 #+BEGIN_SRC emacs-lisp
 (use-package which-key
-  :ensure t
+  :straight t
   :delight
   :init
   (which-key-mode))
@@ -2961,7 +2960,7 @@ I like being evil. All package and custom bindings go here.
 *** base
 #+BEGIN_SRC emacs-lisp
 (use-package evil
-  :ensure t
+  :straight t
   :init
   ;; this is required to make evil collection work
   (setq evil-want-integration nil
@@ -2990,7 +2989,7 @@ delightfully ripped off from vim plugins
 **** surround
 #+BEGIN_SRC emacs-lisp
 (use-package evil-surround
-  :ensure t
+  :straight t
   :after evil
   :config
   (global-evil-surround-mode 1))
@@ -2998,7 +2997,7 @@ delightfully ripped off from vim plugins
 **** commentary
 #+BEGIN_SRC emacs-lisp
 (use-package evil-commentary
-  :ensure t
+  :straight t
   :after evil
   :delight
   :config
@@ -3007,7 +3006,7 @@ delightfully ripped off from vim plugins
 **** replace with register
 #+BEGIN_SRC emacs-lisp
 (use-package evil-replace-with-register
-  :ensure t
+  :straight t
   :after evil
   :config
   (evil-replace-with-register-install))
@@ -3056,7 +3055,7 @@ Some of these commands just get in the way of being evil (which really means tha
 *** evil-org
 #+BEGIN_SRC emacs-lisp
 (use-package evil-org
-  :ensure t
+  :straight t
   :after (evil org)
   :delight
   :config
@@ -3082,7 +3081,7 @@ Some of these commands just get in the way of being evil (which really means tha
 *** evil-magit
 #+BEGIN_SRC emacs-lisp
 (use-package evil-magit
-  :ensure t
+  :straight t
   :after (evil magit))
 #+END_SRC
 *** visual line mode
@@ -3098,7 +3097,7 @@ This is somewhat strange because all I really care about is moving between lines
 Most packages that don't have an evil version are in this one. Some don't behave the way I like so those are further modified below.
 #+BEGIN_SRC emacs-lisp
 (use-package evil-collection
-  :ensure t
+  :straight t
   :after evil
   :init
   (setq evil-collection-mode-list
