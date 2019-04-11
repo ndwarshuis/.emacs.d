@@ -2231,6 +2231,19 @@ original org entry before executing BODY."
     (:active . 1)
     (:inert . 2)))
 
+(defconst nd/org-x-project-status-priorities
+  '((:archivable . -1)
+    (:complete . -1)
+    (:scheduled-project . 0)
+    (:invalid-todostate . 0)
+    (:undone-complete . 0)
+    (:done-incomplete . 0)
+    (:stuck . 0)
+    (:wait . 1)
+    (:held . 2)
+    (:active . 3)
+    (:inert . 4)))
+
 (setq
  org-agenda-custom-commands
  `(("a"
@@ -2292,28 +2305,24 @@ original org entry before executing BODY."
         (concat (and org-x-agenda-limit-project-toplevel "Toplevel ") "Projects"))
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
-          (let ((keyword (org-x-is-project-p)))
-            (cond
-             ((not keyword)
-              (org-x-skip-heading))
-             ((and org-x-agenda-limit-project-toplevel
-                   (org-x-headline-has-parent 'org-x-is-todoitem-p))
-              (org-x-skip-subtree))))))
+          (unless (org-x-is-project-p) (org-x-skip-heading))))
        (org-agenda-sorting-strategy '(category-keep))
        (org-super-agenda-groups
         `((:auto-map
            ,(nd/org-x-mk-super-agenda-pred
-             (cl-case (org-x-get-project-status)
-               (:scheduled-project "0. Scheduled Project")
-               (:invalid-todostate "0. Invalid TODO State")
-               (:undone-complete "0. Undone Complete")
-               (:done-incomplete "0. Done Incomplete")
-               (:stuck "0. Stuck")
-               (:wait "1. Wait")
-               (:held "2. Held")
-               (:active "3. Active")
-               (:inert "4. Inert")
-               (t "5. Other"))))))))))
+             ;; TODO this ain't DRY
+             (let* ((status (org-x-get-project-status))
+                    (priority (alist-get status nd/org-x-project-status-priorities))
+                    (is-toplevel (org-x-headline-has-parent 'org-x-is-todoitem-p)))
+               (if (< priority 0) "99. Other"
+                 (--> status
+                      (symbol-name it)
+                      (substring it 1)
+                      (s-replace "-" " " it)
+                      (s-titleize it)
+                      (concat "%s.%s " it)
+                      (format it (if is-toplevel 1 0) priority)
+                      (concat it (if is-toplevel " (τ)" " (σ)")))))))))))))
    
    ("i"
     "Incubator View"
