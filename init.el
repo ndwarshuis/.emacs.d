@@ -17,6 +17,14 @@
       (eval-print-last-sexp)))
   (load bootstrap-file nil 'nomessage))
 
+;; watch for repo modifications if we have python3 and watchexec
+;; otherwise just use a save hook
+(setq straight-check-for-modifications
+      (if (and (executable-find "python3")
+               (executable-find "watchexec"))
+          '(watch-files find-when-checking)
+        '(check-on-save find-when-checking)))
+
 (straight-use-package 'use-package)
 
 ;; (unless (package-installed-p 'use-package)
