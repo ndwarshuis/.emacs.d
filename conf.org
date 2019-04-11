@@ -2301,8 +2301,7 @@ original org entry before executing BODY."
     "Project View"
     ((tags-todo
       "-NA-REFILE-%inc/!"
-      ((org-agenda-overriding-header
-        (concat (and org-x-agenda-limit-project-toplevel "Toplevel ") "Projects"))
+      ((org-agenda-overriding-header "Projects")
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
           (unless (org-x-is-project-p) (org-x-skip-heading))))
@@ -2321,7 +2320,7 @@ original org entry before executing BODY."
                       (s-replace "-" " " it)
                       (s-titleize it)
                       (concat "%s.%s " it)
-                      (format it (if is-toplevel 1 0) priority)
+                      (format it (if is-toplevel 0 1) priority)
                       (concat it (if is-toplevel " (τ)" " (σ)")))))))))))))
    
    ("i"
@@ -3068,7 +3067,6 @@ Some of these commands just get in the way of being evil (which really means tha
   (evil-org-agenda-set-keys)
   ;; some of the defaults bug me...
   (evil-define-key 'motion org-agenda-mode-map
-    "t" 'org-x-toggle-project-toplevel-display
     "D" 'org-agenda-day-view
     "W" 'org-agenda-week-view
     "M" 'org-agenda-month-view
