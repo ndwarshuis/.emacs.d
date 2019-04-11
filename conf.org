@@ -642,7 +642,8 @@ Flycheck syntax checkers
 (use-package ess
   :straight t
   :init
-  (load "ess-site")
+  ;; (load "ess-site")
+  (require 'ess-r-mode)
   :hook
   ((ess-mode . flycheck-mode)
    (ess-mode . company-mode)
