@@ -534,7 +534,11 @@ Alot of languages at least semi-adhere to the 80-characters-per-line rule. =fci-
 *** spell checking
 I use the built-in =flyspell-mode= to handle spellchecking. Obviously I am going to use =helm= when I spellcheck something.
 #+BEGIN_SRC emacs-lisp
-(use-package flyspell-correct-helm
+;; (use-package flyspell-correct-helm
+;;   :straight flyspell-correct
+;;   :after (helm flyspell))
+
+(use-package helm-flyspell
   :straight t
   :after (helm flyspell))
 #+END_SRC
