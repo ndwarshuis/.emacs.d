@@ -2871,17 +2871,16 @@ Since mu4e is an external program, need to check that it is installed before loa
  ;; (add-to-list 'auth-sources "secrets:default")
  (setq send-mail-function 'smtpmail-send-it
        message-send-mail-function 'smtpmail-send-it)
- (add-to-list 'auth-sources (expand-file-name "~/.emacs.d/.authinfo_mu4e.gpg")))
+ (add-to-list 'auth-sources (expand-file-name "~/.emacs.d/.authinfo_mu4e.gpg"))
 
- ;; (use-package org-mu4e
- ;;   :straight t
- ;;   :after (org mu4e)
- ;;   :config
- ;;   (setq
- ;;    ;; for using mu4e in org-capture templates
- ;;    org-mu4e-link-query-in-headers-mode nil
- ;;    ;; for composing rich-text emails using org mode
- ;;    org-mu4e-convert-to-html t)))
+ (use-package org-mu4e
+   :after (org mu4e)
+   :config
+   (setq
+    ;; for using mu4e in org-capture templates
+    org-mu4e-link-query-in-headers-mode nil
+    ;; for composing rich-text emails using org mode
+    org-mu4e-convert-to-html t)))
 #+END_SRC
 ** shell
 #+begin_src emacs-lisp
