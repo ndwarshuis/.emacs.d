@@ -895,6 +895,11 @@ R-markdown is enabled via polymode, which allows multiple modes in one buffer (t
   (("\\.Rmd\\'" . poly-markdown+r-mode)
    ("\\.rmd\\'" . poly-markdown+r-mode)))
 #+END_SRC
+*** YAML
+#+BEGIN_SRC emacs-lisp
+(use-package yaml-mode
+  :straight t)
+#+END_SRC
 *** csv files
 This adds support for csv files. Almost makes them editable like a spreadsheet. The lambda function enables alignment by default.
 #+BEGIN_SRC emacs-lisp
