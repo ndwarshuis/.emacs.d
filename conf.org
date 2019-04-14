@@ -2468,11 +2468,18 @@ original org entry before executing BODY."
           (:name "Missing Creation Timestamp" :pred
                  ,(nd/org-x-mk-super-agenda-pred
                    ;; TODO extend this to non-todoitems
-                   (let ((keyword (org-x-is-todoitem-p)))
-                     (and keyword
-                          (org-x-is-task-p)
-                          (not (member keyword org-done-keywords))
-                          (not (org-x-is-created-heading-p))))))
+                   (-when-let (kw (org-x-is-task-p))
+                     (and
+                      (not (member kw org-done-keywords))
+                      (not (org-x-is-created-heading-p))))))
+          (:name "Future Creation Timestamp" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   ;; TODO extend this to non-todoitems
+                   (-when-let (kw (org-x-is-task-p))
+                     (and
+                      (not (member kw org-done-keywords))
+                      (org-x-heading-compare-timestamp
+                       #'org-x-is-created-heading-p 0 t)))))
           (:discard (:anything t))))))))
 
    ("A"
