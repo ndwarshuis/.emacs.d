@@ -2320,7 +2320,7 @@ original org entry before executing BODY."
              ;; TODO this ain't DRY
              (let* ((status (org-x-get-project-status))
                     (priority (alist-get status nd/org-x-project-status-priorities))
-                    (is-toplevel (org-x-headline-has-parent 'org-x-is-todoitem-p)))
+                    (is-subproject (org-x-headline-has-parent 'org-x-is-todoitem-p)))
                (if (< priority 0) "99. Other"
                  (--> status
                       (symbol-name it)
@@ -2328,8 +2328,8 @@ original org entry before executing BODY."
                       (s-replace "-" " " it)
                       (s-titleize it)
                       (concat "%s.%s " it)
-                      (format it (if is-toplevel 0 1) priority)
-                      (concat it (if is-toplevel " (τ)" " (σ)")))))))))))))
+                      (format it (if is-subproject 1 0) priority)
+                      (concat it (if is-subproject " (σ)" " (τ)")))))))))))))
    
    ("i"
     "Incubator View"
