@@ -52,7 +52,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#ediff][ediff]]
   - [[#jupyter][jupyter]]
   - [[#excorporate][excorporate]]
-  - [[#transmission][transmission]]
+  - [[#elfeed][elfeed]]
 - [[#keybindings][keybindings]]
   - [[#setup][setup]]
   - [[#whichkey][whichkey]]
@@ -2955,11 +2955,23 @@ Since mu4e is an external program, need to check that it is installed before loa
     (save-current-buffer
       (apply #'nd/exco-org-show-day-save date))))
 #+END_SRC
-** transmission
-Assumes that =transmission-cli= is installed (official Arch package) and that the transmission-daemon is running (=systemctl start transmission=).
+** elfeed
 #+BEGIN_SRC emacs-lisp
-(use-package transmission
-  :straight t)
+(use-package elfeed
+  :straight t
+  :config)
+
+(use-package elfeed-protocol
+  :straight t
+  :after elfeed
+  :config
+  ;; cannot validate this as the elfeed package requires an invalid type
+  (setq elfeed-feeds
+        `(("ttrss+https://ndwar@portnoy4prez.yavin4.ch/tt-rss"
+           :password ,(shell-command-to-string
+                       "secret-tool lookup protocol ttrss"))))
+  (elfeed-protocol-enable))
+
 #+END_SRC
 * keybindings
 For the sake of my sanity, all bindings go here. Note this means I don't use =:bind= in use-package forms.
@@ -3147,8 +3159,8 @@ Most packages that don't have an evil version are in this one. Some don't behave
   :init
   (setq evil-collection-mode-list
         '(anaconda-mode company comint custom debug dired doc-view
-                        ebib ediff flycheck helm help minibuffer mu4e
-                        profiler term transmission which-key))
+                        ebib ediff elfeed flycheck helm help
+                        minibuffer mu4e profiler term which-key))
   (setq evil-collection-setup-minibuffer t)
   :config
   (evil-collection-init))
