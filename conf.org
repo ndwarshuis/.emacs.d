@@ -879,6 +879,11 @@ Overlays hex color codes with matching colors in certain modes like css and html
 (use-package rainbow-mode
   :straight t)
 #+END_SRC
+*** JSON
+#+BEGIN_SRC emacs-lisp
+(use-package json-mode
+  :straight t)
+#+END_SRC
 *** Javascript
 #+BEGIN_SRC emacs-lisp
 (use-package js-comint
