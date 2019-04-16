@@ -1420,7 +1420,7 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
 
           ;; for useful reference information that may be grouped with tasks
           ("n" "note" entry (file ,capfile)
-           "* %?  :\\%note:\n%U\n")
+           "* %?\n%U\n")
 
           ;; for non-actionable events that happen at a certain time
           ("a" "appointment" entry (file ,capfile)
@@ -1441,6 +1441,16 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
           ;; for interruptions that produce useful reference material
           ("m" "meeting" entry (file ,capfile)
            "* meeting with%?  :\\%note:\n%U\n")
+
+          ;; TODO add entries here for asynchronously performed tasks
+          ;; that can be tracked
+          ;; target these to a specific headline in general.org
+          ("A" "Asynchronous")
+          ;; eating food
+          ;; prepping food
+          ;; showering
+          ;; driving
+          ;; blablabla
 
           ;; for capturing web pages with web browser
           ("p" "org-protocol" entry (file ,capfile)
