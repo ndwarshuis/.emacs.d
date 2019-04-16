@@ -439,8 +439,7 @@ One of the best packages for emacs. Helm is basically a search and completion en
   :init
   (helm-mode 1)
   :config
-  (setq helm-autoresize-max-height 0
-        helm-autoresize-max-height 40
+  (setq helm-autoresize-max-height 40
         helm-M-x-fuzzy-match t
         helm-buffers-fuzzy-matching t
         helm-recentf-fuzzy-match t
