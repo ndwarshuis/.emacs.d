@@ -2930,6 +2930,16 @@ Since mu4e is an external program, need to check that it is installed before loa
   "Send a raw escape character to the running terminal."
   (interactive)
   (term-send-raw-string "\e"))
+  
+(defun nd/term-send-raw-up ()
+  "Send a raw up arrow character to the running terminal."
+  (interactive)
+  (term-send-raw-string "\e[A"))
+  
+(defun nd/term-send-raw-down ()
+  "Send a raw down character to the running terminal."
+  (interactive)
+  (term-send-raw-string "\e[B"))
 #+END_SRC
 ** ediff
 #+BEGIN_SRC emacs-lisp
@@ -3344,7 +3354,11 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
 #+BEGIN_SRC emacs-lisp
 (evil-define-key 'insert term-raw-map
   (kbd "<escape>") 'nd/term-send-raw-escape
-  (kbd "C-<escape>") 'evil-normal-state)
+  (kbd "C-<escape>") 'evil-normal-state
+  (kbd "C-k") 'nd/term-send-raw-up
+  (kbd "H-k") 'nd/term-send-raw-up
+  (kbd "C-j") 'nd/term-send-raw-down
+  (kbd "H-j") 'nd/term-send-raw-down)
 #+END_SRC
 ** local
 These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future).
