@@ -3430,12 +3430,52 @@ They removed the underscore-inserts-arrow feature. Bring it back.
 #+BEGIN_SRC emacs-lisp
 (define-key ess-r-mode-map "_" #'ess-insert-assign)
 (define-key inferior-ess-r-mode-map "_" #'ess-insert-assign)
+
+(defhydra hydra-ess-r-inferior (ess-r-mode-map "M-i" :exit t)
+  ("M-i" ess-eval-line)
+  ("I" ess-eval-line-and-step :exit nil)
+  ("C-i" ess-eval-line-and-go)
+
+  ("g" ess-eval-paragraph)
+  ("G" ess-eval-paragraph-and-step :exit nil)
+  ("C-G" ess-eval-paragraph-and-go)
+
+  ("b" ess-eval-buffer)
+  ("B" ess-eval-buffer-and-go)
+
+  ;; TODO add process kill commands
+  ("z" ess-switch-to-inferior-or-script-buffer))
 #+END_SRC
 *** python
 The only thing I like about elpy is the interactive shell
 #+BEGIN_SRC emacs-lisp
-(define-key python-mode-map (kbd "C-c C-z") #'elpy-shell-switch-to-shell)
-(define-key python-mode-map (kbd "C-M-x") #'elpy-shell-send-statement-and-step)
+;; (define-key python-mode-map (kbd "C-c C-z") #'elpy-shell-switch-to-shell)
+;; (define-key python-mode-map (kbd "C-M-x") #'elpy-shell-send-statement-and-step)
+
+;; python inferior mode map
+(defhydra hydra-python-inf (python-mode-map "M-i" :exit t)
+  "python inferior commands"
+  ("M-i" elpy-shell-send-statement)
+  ("I" elpy-shell-send-statement-and-step :exit nil)
+  ("C-i" elpy-shell-send-statement-and-go)
+
+  ("g" elpy-shell-send-group)
+  ("G" elpy-shell-send-group-and-step :exit nil)
+  ("C-g" elpy-shell-send-group-and-go)
+
+  ("b" elpy-shell-send-region-or-buffer)
+  ("C-b" elpy-shell-send-region-or-buffer-and-go)
+
+  ("z" elpy-shell-switch-to-shell)
+  ("k" elpy-shell-kill)
+  ("K" elpy-shell-kill-all))
+
+; TODO add hydras for docs, testing, search, etc
+#+END_SRC
+*** magit
+#+BEGIN_SRC emacs-lisp
+;; interferes with window hydra
+(define-key magit-mode-map (kbd "M-w") nil)
 #+END_SRC
 ** global
 *** function
@@ -3481,7 +3521,7 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "C-M-S-e") #'flycheck-list-errors)
 
 (global-set-key (kbd "M-b") 'nd/switch-to-previous-buffer)
-(global-set-key (kbd "M-i") 'imenu)
+(global-set-key (kbd "M-S-i") 'imenu)
 ;; (global-set-key (kbd "M-o") 'ace-window)
 (global-set-key (kbd "M-s") 'avy-goto-char)
 ;; (global-set-key (kbd "M-w") #'ace-swap-window)
