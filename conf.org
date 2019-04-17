@@ -56,6 +56,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
 - [[#keybindings][keybindings]]
   - [[#setup][setup]]
   - [[#whichkey][whichkey]]
+  - [[#hydra][hydra]]
   - [[#evil][evil]]
   - [[#local][local]]
   - [[#global][global]]
@@ -3004,6 +3005,11 @@ Everyone forgets keybindings. When typing a key chord, this will display a windo
   :init
   (which-key-mode))
 #+END_SRC
+** hydra
+#+BEGIN_SRC emacs-lisp
+(use-package hydra
+  :straight t)
+#+END_SRC
 ** evil
 I like being evil. All package and custom bindings go here.
 *** base
@@ -3476,15 +3482,27 @@ The function keys are nice because they are almost (not always) free in every mo
 
 (global-set-key (kbd "M-b") 'nd/switch-to-previous-buffer)
 (global-set-key (kbd "M-i") 'imenu)
-(global-set-key (kbd "M-o") 'ace-window)
+;; (global-set-key (kbd "M-o") 'ace-window)
 (global-set-key (kbd "M-s") 'avy-goto-char)
-(global-set-key (kbd "M-w") #'ace-swap-window)
+;; (global-set-key (kbd "M-w") #'ace-swap-window)
 (global-set-key (kbd "M-x") 'helm-M-x)
 
-(global-set-key (kbd "H-M-o") #'nd/switch-to-last-window)
-(global-set-key (kbd "H-M-k") #'enlarge-window)
-(global-set-key (kbd "H-M-j") #'shrink-window)
-(global-set-key (kbd "H-M-h") #'enlarge-window-horizontally)
-(global-set-key (kbd "H-M-l") #'shrink-window-horizontally)
-(global-set-key (kbd "H-M-=") #'balance-windows)
+;; (global-set-key (kbd "H-M-o") #'nd/switch-to-last-window)
+;; (global-set-key (kbd "H-M-k") #'enlarge-window)
+;; (global-set-key (kbd "H-M-j") #'shrink-window)
+;; (global-set-key (kbd "H-M-h") #'enlarge-window-horizontally)
+;; (global-set-key (kbd "H-M-l") #'shrink-window-horizontally)
+;; (global-set-key (kbd "H-M-=") #'balance-windows)
+
+(defhydra hydra-window (global-map "M-w")
+  "window"
+  ;; TODO this might make more sense to switch to last window
+  ("M-w" ace-window :exit t)
+  ("s" ace-swap-window :exit t)
+  ("o" #'nd/switch-to-last-window :exit t)
+  ("k" #'enlarge-window)
+  ("j" #'shrink-window)
+  ("h" #'enlarge-window-horizontally)
+  ("l" #'shrink-window-horizontally)
+  ("=" #'balance-windows :exit t))
 #+END_SRC
