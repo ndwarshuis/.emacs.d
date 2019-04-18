@@ -498,11 +498,22 @@ Some prompts require literal "yes" or "no" to decide action. Life is short and I
 #+BEGIN_SRC emacs-lisp
 (defalias 'yes-or-no-p 'y-or-n-p)
 #+END_SRC
+*** folding
+#+BEGIN_SRC emacs-lisp
+(use-package origami
+  :straight t
+  :config
+  ;; weirdly, delight does not do this automatically
+  (unless (assq 'origami-mode minor-mode-alist)
+    (setq minor-mode-alist (cons '(origami-mode "Origami")
+                                 minor-mode-alist)))
+  (delight 'origami-mode "Ω" "origami"))
+#+END_SRC
 * low-level config
 General configuation for behind-the-scenes behavior
 ** user information
 #+BEGIN_SRC emacs-lisp
-(setq user-full-name "Dwarshuis, Nathan J")
+(validate-setq user-full-name "Dwarshuis, Nathan J")
 #+END_SRC
 ** autosave
 Saving files continuously is actually really annoying and clutters my disk. Turn it off.
@@ -658,6 +669,7 @@ Flycheck syntax checkers
   :hook
   ((ess-mode . flycheck-mode)
    (ess-mode . company-mode)
+   (ess-mode . origami-mode)
    (ess-mode . nd/init-ess-company)
    (ess-mode . prettify-symbols-mode)
    (ess-mode . fci-mode)
@@ -685,6 +697,7 @@ Flycheck syntax checkers to install (either globally or using =pip=)
 
 (use-package python
   :hook ((python-mode . flycheck-mode)
+         (python-mode . origami-mode)
          (python-mode . anaconda-mode)
          (python-mode . company-mode)
          (python-mode . nd/init-anaconda-company)
@@ -728,6 +741,7 @@ This also provides GHC which is used by flycheck for syntax checking.
 #+BEGIN_SRC emacs-lisp
 (use-package haskell-mode
   :straight t
+  :hook (haskell-mode . origami-mode)
   :config
   (setq haskell-interactive-popup-errors nil))
 #+END_SRC
@@ -2210,11 +2224,10 @@ earlier ones."
 #+BEGIN_SRC emacs-lisp
 (use-package org-super-agenda
   :straight t
-  :config (let ((inhibit-message t)) (org-super-agenda-mode 1)))
-
-(use-package origami
-  :straight t
-  :hook (org-agenda-mode . origami-mode))
+  :config
+  (let ((inhibit-message t)) (org-super-agenda-mode 1))
+  (add-hook 'org-agenda-mode-hook 'origami-mode))
+ 
 #+END_SRC
 **** block agenda views
 ***** default sorting
