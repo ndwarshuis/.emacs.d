@@ -650,6 +650,10 @@ Allows opening a file with sudo elevation.
 Elisp can use vanilla company with no plugins
 #+BEGIN_SRC emacs-lisp
 (add-hook 'emacs-lisp-mode-hook 'company-mode)
+(add-hook 'emacs-lisp-mode-hook 'origami-mode)
+
+(use-package lispy
+  :straight t)
 #+END_SRC
 *** ESS (Emacs Speaks Statistics)
 For me this means R but ess also supports S-plus, SAS, Stata, and other statistical black-magic languages. Note that ESS is not part of =prog-mode= so it must be added manually to hooks.
