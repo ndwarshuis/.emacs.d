@@ -1130,7 +1130,7 @@ By default, the tag selection window obliterates all but the current window...ho
       ((#'delete-other-windows :override #'ignore)
        ;; pretty sure I just got lucky here...
        (#'split-window-vertically :override #'(lambda (&optional size)
-                                                (split-window-below (or size -9)))))
+                                                (split-window-below (or size -10)))))
     (unwind-protect (funcall orig-fn current inherited table todo-table))))
 
 (advice-add #'org-fast-tag-selection :around #'nd/org-tag-window-advice)
@@ -1359,8 +1359,11 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
         ;; denotes reference information
         ("%note" . ?n)
         
-        ;; incubator
+        ;; incubator (the someday/maybe list)
         ("%inc" . ?i)
+
+        ;; maybe (for things I might want to do, to be used with %inc)
+        ("%maybe" . ?m)
         
         ;; denotes tasks that need further subdivision to turn into true project
         ("%subdiv" . ?s)
