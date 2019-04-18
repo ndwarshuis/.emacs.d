@@ -3019,6 +3019,78 @@ Everyone forgets keybindings. When typing a key chord, this will display a windo
 #+BEGIN_SRC emacs-lisp
 (use-package hydra
   :straight t)
+
+;; TODO C-g is a bad combo because it is used to exit things
+(defvar nd/hydra-standard-interactive-map
+  '(("M-i" :exit t)
+    (:send-line "M-i")
+    (:send-line-step "I" :exit nil)
+    (:send-line-follow "C-i")
+    (:send-group "g")
+    (:send-group-step "G" :exit nil)
+    (:send-group-follow "C-g")
+    (:send-buffer "b")
+    (:send-buffer-follow "C-b")
+    (:shell-start "z")
+    (:shell-start-follow "C-z")
+    (:shell-kill "k")
+    (:shell-kill-all "K"))
+  "Standard hydra keymap for interactive REPL workflow.")
+
+(defmacro nd/hydra-standard (hydra-map suffix keymap &rest cmds)
+  "Docstring"
+  (unless (s-match "-mode-map" (symbol-name keymap))
+    (error "Not a valid keymap: %s" keymap))
+  (let* ((hydra-name (--> keymap
+                          (symbol-name keymap)
+                          (s-replace "-mode-map" "" it)
+                          (format "*%s-%s" it suffix)
+                          (make-symbol it)))
+         (docstring (format "%s %s hydra" hydra-name suffix))
+         (body (cons keymap (car hydra-map)))
+         (head-keys (cdr hydra-map))
+         (mk-head-form
+          (lambda (cmd)
+            (-if-let (head-key (alist-get (car it) head-keys))
+                ;; (progn (print (-insert-at 1 (cdr it) head-key))
+                       (-insert-at 1 (cdr it) head-key)
+                       ;; )
+              (error "Invalid head keyword: %s" (car it)))))
+         (heads (--map (funcall mk-head-form it) cmds)))
+    `(defhydra ,hydra-name ,body ,docstring ,@heads)))
+
+(defmacro nd/hydra-standard-int (keymap &rest cmds)
+  "Docstring"
+  `(nd/hydra-standard ,nd/hydra-standard-interactive-map "int"
+                      ,keymap ,@cmds))
+
+;; ;; TODO this can be generalized
+;; (defmacro nd/hydra-standard-int (name map docstring &rest keys)
+;;   "Create a standardized hydra map for process interaction."
+;;   ;; TODO this should be outside with a docstring so it is easy to look up
+;;   (let* ((nav-key-alist
+;;           '((:send-line "M-i")
+;;             (:send-line-step "I" :exit nil)
+;;             (:send-line-follow "C-i")
+;;             (:send-group "g")
+;;             (:send-group-step "G" :exit nil)
+;;             (:send-group-follow "C-g")
+;;             (:send-buffer "b")
+;;             (:send-buffer-follow "C-b")
+;;             (:shell-start "z")
+;;             (:shell-start-follow "C-z")
+;;             (:shell-kill "k")
+;;             (:shell-kill-all "K")))
+;;          ;; TODO warning if a keyword is wrong
+;;          (set-keys
+;;           (--map (-when-let (key (alist-get (car it) nav-key-alist))
+;;                    (append (list (car key)) (cdr it) (cdr key)))
+;;                  keys)))
+;;     ;; TODO get the previous binding for the command and unset it
+;;     ;; (--> set-keys
+;;     ;;     (-map #'car it)
+;;     ;;     (--each it (define-key (eval map) (kbd it) nil)))
+;;     `(defhydra ,name (,map "M-i" :exit t) ,docstring ,@set-keys)))
 #+END_SRC
 ** evil
 I like being evil. All package and custom bindings go here.
@@ -3445,20 +3517,32 @@ They removed the underscore-inserts-arrow feature. Bring it back.
 (define-key ess-r-mode-map "_" #'ess-insert-assign)
 (define-key inferior-ess-r-mode-map "_" #'ess-insert-assign)
 
-(defhydra hydra-ess-r-inferior (ess-r-mode-map "M-i" :exit t)
-  ("M-i" ess-eval-line)
-  ("I" ess-eval-line-and-step :exit nil)
-  ("C-i" ess-eval-line-and-go)
+;; (defhydra hydra-ess-r-inferior (ess-r-mode-map "M-i" :exit t)
+;;   ("M-i" ess-eval-line)
+;;   ("I" ess-eval-line-and-step :exit nil)
+;;   ("C-i" ess-eval-line-and-go)
 
-  ("g" ess-eval-paragraph)
-  ("G" ess-eval-paragraph-and-step :exit nil)
-  ("C-G" ess-eval-paragraph-and-go)
+;;   ("g" ess-eval-paragraph)
+;;   ("G" ess-eval-paragraph-and-step :exit nil)
+;;   ("C-G" ess-eval-paragraph-and-go)
 
-  ("b" ess-eval-buffer)
-  ("B" ess-eval-buffer-and-go)
+;;   ("b" ess-eval-buffer)
+;;   ("B" ess-eval-buffer-and-go)
 
-  ;; TODO add process kill commands
-  ("z" ess-switch-to-inferior-or-script-buffer))
+;;   ;; TODO add process kill commands
+;;   ("z" ess-switch-to-inferior-or-script-buffer))
+
+(nd/hydra-standard-int ess-r-mode-map
+ (:send-line ess-eval-line)
+ (:send-line-step ess-eval-line-and-step)
+ (:send-line-follow ess-eval-line-and-go)
+ (:send-group ess-eval-paragraph)
+ (:send-group-step ess-eval-paragraph-and-step)
+ (:send-group-follow ess-eval-paragraph-and-go)
+ (:send-buffer ess-eval-buffer)
+ (:send-buffer-follow ess-eval-buffer-and-go)
+ ;; TODO add process kill commands
+ (:shell-start ess-switch-to-inferior-or-script-buffer))
 #+END_SRC
 *** python
 The only thing I like about elpy is the interactive shell
@@ -3467,26 +3551,40 @@ The only thing I like about elpy is the interactive shell
 ;; (define-key python-mode-map (kbd "C-M-x") #'elpy-shell-send-statement-and-step)
 
 ;; python inferior mode map
-(defhydra hydra (python-mode-map "M-i" :exit t)
-  "python inferior commands"
-  ("M-i" elpy-shell-send-statement)
-  ("I" elpy-shell-send-statement-and-step :exit nil)
-  ("C-i" elpy-shell-send-statement-and-go)
+;; (defhydra hydra (python-mode-map "M-i" :exit t)
+;;   "python inferior commands"
+;;   ("M-i" elpy-shell-send-statement)
+;;   ("I" elpy-shell-send-statement-and-step :exit nil)
+;;   ("C-i" elpy-shell-send-statement-and-go)
 
-  ("g" elpy-shell-send-group)
-  ("G" elpy-shell-send-group-and-step :exit nil)
-  ("C-g" elpy-shell-send-group-and-go)
+;;   ("g" elpy-shell-send-group)
+;;   ("G" elpy-shell-send-group-and-step :exit nil)
+;;   ("C-g" elpy-shell-send-group-and-go)
 
-  ("b" elpy-shell-send-region-or-buffer)
-  ("C-b" elpy-shell-send-region-or-buffer-and-go)
+;;   ("b" elpy-shell-send-region-or-buffer)
+;;   ("C-b" elpy-shell-send-region-or-buffer-and-go)
 
-  ("z" elpy-shell-switch-to-shell)
-  ("k" elpy-shell-kill)
-  ("K" elpy-shell-kill-all))
+;;   ("z" elpy-shell-switch-to-shell)
+;;   ("k" elpy-shell-kill)
+;;   ("K" elpy-shell-kill-all))
 
 ; TODO add hydras for docs, testing, search, etc
+;;; Code:
 
-(defhydra hydra (python-mode-map "M-n" :exit t)
+(nd/hydra-standard-int python-mode-map
+ (:send-line elpy-shell-send-statement)
+ (:send-line-step elpy-shell-send-statement-and-step)
+ (:send-line-follow elpy-shell-send-statement-and-go)
+ (:send-group elpy-shell-send-group)
+ (:send-group-step elpy-shell-send-group-and-step)
+ (:send-group-follow elpy-shell-send-group-and-go)
+ (:send-buffer elpy-shell-send-region-or-buffer)
+ (:send-buffer-follow elpy-shell-send-region-or-buffer-and-go)
+ (:shell-start elpy-shell-switch-to-shell)
+ (:shell-kill elpy-shell-kill)
+ (:shell-kill-all elpy-shell-kill-all))
+
+(defhydra hydra-nav (python-mode-map "M-n" :exit t)
   "python query commands"
   ("M-n" anaconda-mode-find-definitions)
   ("N" anaconda-mode-find-definitions-other-window)
@@ -3502,34 +3600,42 @@ The only thing I like about elpy is the interactive shell
 #+END_SRC
 *** haskell
 #+BEGIN_SRC emacs-lisp
-(defhydra hydra (intero-mode-map "M-i" :exit t)
-  "haskell inferior commands"
-  ("M-i" intero-repl-eval-region)
-  ;; need a go function here
-  ;; ("C-i" )
+(with-eval-after-load 'intero
+  (nd/hydra-standard-int intero-mode-map
+    (:send-line intero-repl-eval-region)
+    ;; TODO add a go function here
+    ;; TODO add group functions
+    (:send-buffer intero-repl-load)
+    ;; TODO add kill repl function
+    (:shell-start intero-repl))
+  ;; (defhydra hyd-haskell-int (intero-mode-map "M-i" :exit t)
+  ;;   "haskell inferior commands"
+  ;;   ("M-i" intero-repl-eval-region)
+  ;;   ;; need a go function here
+  ;;   ;; ("C-i" )
 
-  ;; need group functions
-  ;; ("g" elpy-shell-send-group)
-  ;; ("G" elpy-shell-send-group-and-step :exit nil)
-  ;; ("C-g" elpy-shell-send-group-and-go)
+  ;;   ;; need group functions
+  ;;   ;; ("g" elpy-shell-send-group)
+  ;;   ;; ("G" elpy-shell-send-group-and-step :exit nil)
+  ;;   ;; ("C-g" elpy-shell-send-group-and-go)
 
-  ("b" intero-repl-load)
-  ;; need a go function
-  ;; ("C-b" )
+  ;;   ("b" intero-repl-load)
+  ;;   ;; need a go function
+  ;;   ;; ("C-b" )
 
-  ("z" intero-repl))
-  ;; add kill functions
+  ;;   ("z" intero-repl))
+  ;; ;; add kill functions
 
-(defhydra hydra (intero-mode-map "M-n" :exit t)
-  "haskell query commands"
-  ("M-n" intero-goto-definition)
-  ;; TODO add other window
-  ;; TODO expand-at-slice and apply suggestion
+  (defhydra hyd-haskell-nav (intero-mode-map "M-n" :exit t)
+    "haskell query commands"
+    ("M-n" intero-goto-definition)
+    ;; TODO add other window
+    ;; TODO expand-at-slice and apply suggestion
 
-  ("r" intero-uses-at)
-  ("t" intero-type-at)
-  ("b" xref-pop-marker-stack)
-  ("?" intero-info))
+    ("r" intero-uses-at)
+    ("t" intero-type-at)
+    ("b" xref-pop-marker-stack)
+    ("?" intero-info)))
 #+END_SRC
 *** magit
 #+BEGIN_SRC emacs-lisp
