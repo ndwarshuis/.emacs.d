@@ -3467,7 +3467,7 @@ The only thing I like about elpy is the interactive shell
 ;; (define-key python-mode-map (kbd "C-M-x") #'elpy-shell-send-statement-and-step)
 
 ;; python inferior mode map
-(defhydra hydra-python-inf (python-mode-map "M-i" :exit t)
+(defhydra hydra (python-mode-map "M-i" :exit t)
   "python inferior commands"
   ("M-i" elpy-shell-send-statement)
   ("I" elpy-shell-send-statement-and-step :exit nil)
@@ -3485,6 +3485,40 @@ The only thing I like about elpy is the interactive shell
   ("K" elpy-shell-kill-all))
 
 ; TODO add hydras for docs, testing, search, etc
+
+(defhydra hydra (python-mode-map "M-n" :exit t)
+  "python query commands"
+  ("M-n" anaconda-mode-find-definitions)
+  ("N" anaconda-mode-find-definitions-other-window)
+
+  ("a" anaconda-mode-find-assignments)
+  ("A" anaconda-mode-find-assignments-other-window)
+
+  ("r" anaconda-mode-find-references)
+  ("R" anaconda-mode-find-references-other-window)
+
+  ("b" xref-pop-marker-stack)
+  ("?" anaconda-mode-show-doc))
+#+END_SRC
+*** haskell
+#+BEGIN_SRC emacs-lisp
+;; (defhydra hydra-haskell-inf (intero-mode-map "M-i" :exit t)
+  ;; "haskell inferior commands"
+  ;; ("M-i" intero-repl-eval-region)
+  ;; ;; need a go function here
+  ;; ;; ("C-i" )
+;; 
+  ;; ;; need group functions
+  ;; ;; ("g" elpy-shell-send-group)
+  ;; ;; ("G" elpy-shell-send-group-and-step :exit nil)
+  ;; ;; ("C-g" elpy-shell-send-group-and-go)
+;; 
+  ;; ("b" intero-repl-load)
+  ;; ;; need a go function
+  ;; ;; ("C-b" )
+;; 
+  ;; ("z" intero-repl))
+  ;; ;; add kill functions
 #+END_SRC
 *** magit
 #+BEGIN_SRC emacs-lisp
@@ -3535,7 +3569,7 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "C-M-S-e") #'flycheck-list-errors)
 
 (global-set-key (kbd "M-b") 'nd/switch-to-previous-buffer)
-(global-set-key (kbd "M-S-i") 'imenu)
+(global-set-key (kbd "M-I") 'imenu)
 ;; (global-set-key (kbd "M-o") 'ace-window)
 (global-set-key (kbd "M-s") 'avy-goto-char)
 ;; (global-set-key (kbd "M-w") #'ace-swap-window)
@@ -3548,12 +3582,12 @@ The function keys are nice because they are almost (not always) free in every mo
 ;; (global-set-key (kbd "H-M-l") #'shrink-window-horizontally)
 ;; (global-set-key (kbd "H-M-=") #'balance-windows)
 
-(defhydra hydra-window (global-map "M-w")
+(defhydra hydra-window (global-map "M-o")
   "window"
   ;; TODO this might make more sense to switch to last window
-  ("M-w" ace-window :exit t)
+  ("M-o" ace-window :exit t)
   ("s" ace-swap-window :exit t)
-  ("o" #'nd/switch-to-last-window :exit t)
+  ("w" #'nd/switch-to-last-window :exit t)
   ("k" #'enlarge-window)
   ("j" #'shrink-window)
   ("h" #'enlarge-window-horizontally)
