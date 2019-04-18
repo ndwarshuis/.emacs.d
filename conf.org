@@ -892,6 +892,10 @@ Overlays hex color codes with matching colors in certain modes like css and html
 *** markdown
 Make font sizes smaller and less intrusive for headers
 #+BEGIN_SRC emacs-lisp
+(use-package markdown-mode
+  :straight t
+  :hook (markdown-mode . outline-minor-mode))
+
 (add-hook 'markdown-mode-hook
           (lambda ()
             (let ((heading-height 1.15))
