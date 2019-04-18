@@ -3502,23 +3502,34 @@ The only thing I like about elpy is the interactive shell
 #+END_SRC
 *** haskell
 #+BEGIN_SRC emacs-lisp
-;; (defhydra hydra-haskell-inf (intero-mode-map "M-i" :exit t)
-  ;; "haskell inferior commands"
-  ;; ("M-i" intero-repl-eval-region)
-  ;; ;; need a go function here
-  ;; ;; ("C-i" )
-;; 
-  ;; ;; need group functions
-  ;; ;; ("g" elpy-shell-send-group)
-  ;; ;; ("G" elpy-shell-send-group-and-step :exit nil)
-  ;; ;; ("C-g" elpy-shell-send-group-and-go)
-;; 
-  ;; ("b" intero-repl-load)
-  ;; ;; need a go function
-  ;; ;; ("C-b" )
-;; 
-  ;; ("z" intero-repl))
-  ;; ;; add kill functions
+(defhydra hydra (intero-mode-map "M-i" :exit t)
+  "haskell inferior commands"
+  ("M-i" intero-repl-eval-region)
+  ;; need a go function here
+  ;; ("C-i" )
+
+  ;; need group functions
+  ;; ("g" elpy-shell-send-group)
+  ;; ("G" elpy-shell-send-group-and-step :exit nil)
+  ;; ("C-g" elpy-shell-send-group-and-go)
+
+  ("b" intero-repl-load)
+  ;; need a go function
+  ;; ("C-b" )
+
+  ("z" intero-repl))
+  ;; add kill functions
+
+(defhydra hydra (intero-mode-map "M-n" :exit t)
+  "haskell query commands"
+  ("M-n" intero-goto-definition)
+  ;; TODO add other window
+  ;; TODO expand-at-slice and apply suggestion
+
+  ("r" intero-uses-at)
+  ("t" intero-type-at)
+  ("b" xref-pop-marker-stack)
+  ("?" intero-info))
 #+END_SRC
 *** magit
 #+BEGIN_SRC emacs-lisp
