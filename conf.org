@@ -3542,16 +3542,19 @@ They removed the underscore-inserts-arrow feature. Bring it back.
 (define-key inferior-ess-r-mode-map "_" #'ess-insert-assign)
 
 (nd/hydra-standard-int ess-r-mode-map
- (:send-line ess-eval-line)
- (:send-line-step ess-eval-line-and-step)
- (:send-line-follow ess-eval-line-and-go)
- (:send-group ess-eval-paragraph)
- (:send-group-step ess-eval-paragraph-and-step)
- (:send-group-follow ess-eval-paragraph-and-go)
- (:send-buffer ess-eval-buffer)
- (:send-buffer-follow ess-eval-buffer-and-go)
+ (:send-line . ess-eval-line)
+ (:send-line-step . ess-eval-line-and-step)
+ (:send-line-follow . ess-eval-line-and-go)
+ (:send-group . ess-eval-paragraph)
+ (:send-group-step . ess-eval-paragraph-and-step)
+ (:send-group-follow . ess-eval-paragraph-and-go)
+ (:send-region . ess-eval-region)
+ (:send-region-step . ess-eval-region-and-step)
+ (:send-region-follow . ess-eval-region-and-go)
+ (:send-buffer . ess-eval-buffer)
+ (:send-buffer-follow . ess-eval-buffer-and-go)
  ;; TODO add process kill commands
- (:shell-start ess-switch-to-inferior-or-script-buffer))
+ (:shell-start . ess-switch-to-inferior-or-script-buffer))
 #+END_SRC
 *** python
 The only thing I like about elpy is the interactive shell
