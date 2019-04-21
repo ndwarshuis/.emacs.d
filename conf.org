@@ -3208,6 +3208,7 @@ Some of these commands just get in the way of being evil (which really means tha
         (kbd "C-b")
         (kbd "C-a")
         (kbd "C-e")
+        (kbd "C-r")
         (kbd "C-<SPC>")
         
         (kbd "C-x C-;")
