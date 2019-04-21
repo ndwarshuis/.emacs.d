@@ -3631,12 +3631,20 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "<f4>") 'org-clock-goto)
 (global-set-key (kbd "C-<f4>") 'org-tomato-user-get-summary)
 (global-set-key (kbd "C-S-<f4>") 'org-tomato-user-pomodoro-goto)
-(global-set-key (kbd "<f5>") 'ansi-term)
 (global-set-key (kbd "<f8>") 'helm-command-prefix)
-(global-set-key (kbd "C-<f5>") 'nd/open-urxvt)
-(nd/when-bin "mu" (global-set-key (kbd "<f12>") 'mu4e))
-(global-set-key (kbd "C-<f12>") 'global-hl-line-mode)
-(global-set-key (kbd "S-<f12>") 'display-line-numbers-mode)
+
+(defhydra hydra-modes (global-map "<f11>" :exit t)
+  "convenient mode toggles"
+  ("v" visual-line-mode)
+  ("h" global-hl-line-mode)
+  ("n" display-line-numbers-mode))
+
+(defhydra hydra-tools (global-map "<f12>" :exit t)
+  "convenient tool shortcuts"
+  ("m" mu4e)
+  ("e" elfeed)
+  ("t" ansi-term)
+  ("T" nd/open-urxvt))
 #+END_SRC
 *** control/meta
 #+BEGIN_SRC emacs-lisp
