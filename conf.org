@@ -3550,7 +3550,8 @@ They removed the underscore-inserts-arrow feature. Bring it back.
 (define-key ess-r-mode-map "_" #'ess-insert-assign)
 (define-key inferior-ess-r-mode-map "_" #'ess-insert-assign)
 
-(nd/hydra-standard-int ess-r-mode-map
+(nd/hydra-standard-int
+ ess-r-mode-map
  (:send-line . ess-eval-line)
  (:send-line-step . ess-eval-line-and-step)
  (:send-line-follow . ess-eval-line-and-go)
@@ -3564,6 +3565,12 @@ They removed the underscore-inserts-arrow feature. Bring it back.
  (:send-buffer-follow . ess-eval-buffer-and-go)
  ;; TODO add process kill commands
  (:shell-start . ess-switch-to-inferior-or-script-buffer))
+
+(nd/hydra-standard-nav
+ ess-r-mode-map
+ (:def-at . xref-find-definitions)
+ (:def-at-new-win . xref-find-definitions-other-window)
+ (:doc-at . ess-display-help-on-object))
 #+END_SRC
 *** python
 The only thing I like about elpy is the interactive shell
