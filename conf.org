@@ -3094,12 +3094,16 @@ Everyone forgets keybindings. When typing a key chord, this will display a windo
          (mk-head-form
           (lambda (cmd)
             (-if-let (head-key (alist-get (car it) head-keys))
-                ;; (progn (print (-insert-at 1 (cdr it) head-key))
-                       (-insert-at 1 (cdr it) head-key)
-                       ;; )
+                (-insert-at 1 (cdr it) head-key)
               (error "Invalid head keyword: %s" (car it)))))
          (heads (--map (funcall mk-head-form it) cmds)))
-    `(defhydra ,hydra-name ,body ,docstring ,@heads)))
+    `(progn
+       (defhydra ,hydra-name ,body ,docstring ,@heads)
+       (--> ',heads
+            (--map (nth 1 it) it)
+            (--map (where-is-internal it ,keymap nil t) it)
+            (--each it
+              (--each it (define-key ,keymap it nil)))))))
 
 (defmacro nd/hydra-standard-int (keymap &rest cmds)
   "Create a standardized interactive REPL hydra keymap.
