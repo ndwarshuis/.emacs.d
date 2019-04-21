@@ -3594,24 +3594,24 @@ The only thing I like about elpy is the interactive shell
 *** haskell
 #+BEGIN_SRC emacs-lisp
 (with-eval-after-load 'intero
-  (nd/hydra-standard-int intero-mode-map
-    (:send-line intero-repl-eval-region)
-    ;; TODO add a go function here
-    ;; TODO add group functions
-    (:send-buffer intero-repl-load)
-    ;; TODO add kill repl function
-    (:shell-start intero-repl))
+  (nd/hydra-standard-int
+   intero-mode-map
+   (:send-line . intero-repl-eval-region)
+   ;; TODO add a go function here
+   ;; TODO add group functions
+   (:send-buffer . intero-repl-load)
+   ;; TODO add kill repl function
+   (:shell-start . intero-repl))
 
-  (defhydra hyd-haskell-nav (intero-mode-map "M-n" :exit t)
-    "haskell query commands"
-    ("M-n" intero-goto-definition)
-    ;; TODO add other window
-    ;; TODO expand-at-slice and apply suggestion
-
-    ("r" intero-uses-at)
-    ("t" intero-type-at)
-    ("b" xref-pop-marker-stack)
-    ("?" intero-info)))
+  (nd/hydra-standard-nav
+   intero-mode-map
+   (:def-at . intero-goto-definition)
+   ;; TODO add other window
+   ;; TODO expand-at-slice and apply suggestion
+   (:ref-at . intero-uses-at)
+   (:type-at . intero-type-at)
+   (:pop-marker-stack . xref-pop-marker-stack)
+   (:doc-at . intero-info)))
 #+END_SRC
 *** magit
 #+BEGIN_SRC emacs-lisp
