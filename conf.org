@@ -3470,6 +3470,14 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
   (kbd "C-j") 'nd/term-send-raw-down
   (kbd "H-j") 'nd/term-send-raw-down)
 #+END_SRC
+**** lisp
+#+BEGIN_SRC emacs-lisp
+(evil-define-key 'normal emacs-lisp-mode-map
+  "gh" #'lispy-left
+  "gl" #'lispy-flow
+  "gj" #'lispy-down
+  "gk" #'lispy-up)
+#+END_SRC
 ** local
 These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future).
 *** org-mode
