@@ -3582,21 +3582,28 @@ They removed the underscore-inserts-arrow feature. Bring it back.
  (:def-at-new-win . xref-find-definitions-other-window)
  (:doc-at . ess-display-help-on-object))
 #+END_SRC
+*** elisp
+#+BEGIN_SRC emacs-lisp
+(nd/hydra-standard-int emacs-lisp-mode-map
+ (:send-line . eval-last-sexp)
+ (:send-group . eval-defun)
+ (:send-buffer . eval-buffer))
+#+END_SRC
 *** python
 The only thing I like about elpy is the interactive shell
 #+BEGIN_SRC emacs-lisp
 (nd/hydra-standard-int python-mode-map
- (:send-line elpy-shell-send-statement)
- (:send-line-step elpy-shell-send-statement-and-step)
- (:send-line-follow elpy-shell-send-statement-and-go)
- (:send-group elpy-shell-send-group)
- (:send-group-step elpy-shell-send-group-and-step)
- (:send-group-follow elpy-shell-send-group-and-go)
- (:send-buffer elpy-shell-send-region-or-buffer)
- (:send-buffer-follow elpy-shell-send-region-or-buffer-and-go)
- (:shell-start elpy-shell-switch-to-shell)
- (:shell-kill elpy-shell-kill)
- (:shell-kill-all elpy-shell-kill-all))
+ (:send-line . elpy-shell-send-statement)
+ (:send-line-step . elpy-shell-send-statement-and-step)
+ (:send-line-follow . elpy-shell-send-statement-and-go)
+ (:send-group . elpy-shell-send-group)
+ (:send-group-step . elpy-shell-send-group-and-step)
+ (:send-group-follow . elpy-shell-send-group-and-go)
+ (:send-buffer . elpy-shell-send-region-or-buffer)
+ (:send-buffer-follow . elpy-shell-send-region-or-buffer-and-go)
+ (:shell-start . elpy-shell-switch-to-shell)
+ (:shell-kill . elpy-shell-kill)
+ (:shell-kill-all . elpy-shell-kill-all))
 
 (nd/hydra-standard-nav python-mode-map
   (:def-at . anaconda-mode-find-definitions)
