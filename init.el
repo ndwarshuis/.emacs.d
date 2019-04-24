@@ -1,8 +1,3 @@
-;; (require 'package)
-;; (add-to-list 'package-archives '("melpa" . "http://melpa.org/packages/") t)
-;; (add-to-list 'package-archives '("org" . "http://orgmode.org/elpa/") t)
-;; (package-initialize)
-
 ;; init the straight package manager
 (defvar bootstrap-version)
 (let ((bootstrap-file
@@ -27,14 +22,14 @@
 
 (straight-use-package 'use-package)
 
-;; (unless (package-installed-p 'use-package)
-;;   (package-refresh-contents)
-;;   (package-install 'use-package))
-
 (defvar nd/conf-dir "~/.emacs.d/"
   "The absolute path to the EMACS configuration directory.")
 
 (defvar nd/conf-main (expand-file-name "conf.org" nd/conf-dir)
   "The absolute path the main EMACS configuration file.")
+
+;; ensure we don't use built-in org mode
+(use-package org :straight org-plus-contrib)
+;; (straight-use-package '(org :type built-in))
 
 (org-babel-load-file nd/conf-main)

@@ -954,8 +954,8 @@ No custom code here, but flycheck needs =sqlint= (on Arch available through the 
 *** modules
 Org has several extensions in the form of loadable modules. =org-protocol= is used as a backend for external programs to communicate with =org-mode=. =org-habit= allows the habit todoitem which is used as a more flexible recurring task.
 #+BEGIN_SRC emacs-lisp
-(setq org-modules '(org-habit org-protocol))
-(straight-use-package '(org :type built-in))
+(org-set-modules 'org-modules '(org-habit org-protocol))
+
 ;; make sure everything else works that I have customly defined
 (require 'org-agenda)
 (require 'org-protocol)
