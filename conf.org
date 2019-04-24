@@ -3227,6 +3227,7 @@ Some of these commands just get in the way of being evil (which really means tha
         (kbd "M-k")
         (kbd "M-l")
         (kbd "M-m")
+        (kbd "M-o")
         (kbd "M-q")
         (kbd "M-w")
         (kbd "M-t")
@@ -3698,7 +3699,6 @@ The function keys are nice because they are almost (not always) free in every mo
 
 (defhydra hydra-window (global-map "M-o")
   "window"
-  ;; TODO this might make more sense to switch to last window
   ("M-o" #'nd/switch-to-last-window :exit t)
   ("o" #'ace-window :exit t)
   ("s" #'ace-swap-window :exit t)
