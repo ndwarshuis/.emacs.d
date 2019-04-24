@@ -267,12 +267,7 @@ If FRONT is t, do to the front of current values instead of the back."
 (defun nd/switch-to-last-window ()
   "Switch to most recently used window."
   (interactive)
-  (let ((win (get-mru-window t t t)))
-    (unless win (error "Last window not found"))
-    (let ((frame (window-frame win)))
-      (raise-frame frame)
-      (select-frame frame)
-      (select-window win))))
+  (aw-switch-to-window (get-mru-window t t t)))
     
 (defun nd/switch-to-previous-buffer ()
   "Switch the buffer to the last opened buffer."
@@ -3695,15 +3690,25 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "M-s") 'avy-goto-char)
 (global-set-key (kbd "M-x") 'helm-M-x)
 
+;; (defhydra hydra-buffer (global-map "M-b" :exit t)
+;;   "buffer functions"
+;;   ("M-b" nd/switch-to-previous-buffer)
+;;   ("k" nd/kill-current-buffer)
+;;   ("l" helm-buffers-list))
+
 (defhydra hydra-window (global-map "M-o")
   "window"
   ;; TODO this might make more sense to switch to last window
-  ("M-o" ace-window :exit t)
-  ("s" ace-swap-window :exit t)
-  ("w" #'nd/switch-to-last-window :exit t)
-  ("k" #'enlarge-window)
-  ("j" #'shrink-window)
-  ("h" #'enlarge-window-horizontally)
-  ("l" #'shrink-window-horizontally)
+  ("M-o" #'nd/switch-to-last-window :exit t)
+  ("o" #'ace-window :exit t)
+  ("s" #'ace-swap-window :exit t)
+  ("k" #'windmove-up)
+  ("j" #'windmove-down)
+  ("h" #'windmove-left)
+  ("l" #'windmove-right)
+  ("K" #'enlarge-window)
+  ("K" #'shrink-window)
+  ("H" #'enlarge-window-horizontally)
+  ("L" #'shrink-window-horizontally)
   ("=" #'balance-windows :exit t))
 #+END_SRC
