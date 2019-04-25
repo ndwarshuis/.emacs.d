@@ -1181,14 +1181,66 @@ The default is XHTML for some reason (which few use and makes certain barbaric w
 ** gantt charts
 This is custom, non-MELPA package, so it must be loaded manually. See [[https://github.com/swillner/org-gantt/blob/master/org-gantt-manual.org][here]] for guide.
 #+BEGIN_SRC emacs-lisp
-(add-to-list 'load-path "~/.emacs.d/untracked/org-gantt/")
-(require 'org-gantt)
+;; (add-to-list 'load-path "~/.emacs.d/untracked/org-gantt/")
+;; (require 'org-gantt)
 #+END_SRC
 
 It is also useful to define a block template for gantt chart creation
 #+BEGIN_SRC emacs-lisp
-(add-to-list 'org-structure-template-alist
-             '("og" "#+BEGIN: org-gantt-chart\n?\n#+END"))
+;; (add-to-list 'org-structure-template-alist
+;;              '("og" . "org-gantt-chart"))
+#+END_SRC
+
+#+BEGIN_SRC emacs-lisp
+(require 'ox-taskjuggler)
+(setq org-taskjuggler-target-version 3.6
+
+      org-taskjuggler-process-command
+      ;; TODO abstract out the config file
+      "tj3client -c /home/ndwar/.config/tj3/taskjugglerrc add %f")
+
+(defun nd/org-tj3-load ()
+  "Load tj3 files"
+  (interactive)
+  (let ((project-files
+         (->> (directory-files nd/org-export-publishing-directory t)
+              (--filter (equal (file-name-extension it t)
+                               org-taskjuggler-extension)))))
+    (helm
+     :sources
+     (list
+      (helm-build-sync-source "Project Files"
+        ;; TODO make these project ids
+        :candidates project-files
+        :action
+        ;; TODO add load and view using function below
+        '(("Load" .
+           (lambda (s)
+             (call-process-shell-command
+              (format "tj3client -c /home/ndwar/.config/tj3/taskjugglerrc add %s" s)))))))
+     :buffer "*helm taskjuggler buffer*"
+     :prompt "Project: ")))
+
+(defun nd/org-tj3-open-in-browser (file)
+  (--> (with-temp-buffer (insert-file-contents file) (buffer-string))
+       (s-match "project \\([^[:space:]]+\\) " it)
+       (nth 1 it)
+       ;; TODO make port a variable
+       (browse-url (format "http://localhost:8081/taskjuggler?project=%s;report=report" it))))
+
+(defun nd/org-taskjuggler-compile-advice (orig-fn &rest args)
+  "Advice to fix window placement in `org-fast-tags-selection'."
+  (nd/with-advice
+      ;; don't make a reports directory
+      ((#'make-directory :override #'ignore)
+       ;; don't freak out when we have errors
+       ;; (ruby likes to throw warnings)
+       (#'org-taskjuggler--collect-errors :override #'ignore))
+    (unwind-protect (apply orig-fn args))))
+
+
+(advice-add #'org-taskjuggler-compile :around
+            #'nd/org-taskjuggler-compile-advice)
 #+END_SRC
 ** gtd implementation
 *** overview
