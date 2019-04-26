@@ -1243,9 +1243,31 @@ It is also useful to define a block template for gantt chart creation
        (#'org-taskjuggler--collect-errors :override #'ignore))
     (unwind-protect (apply orig-fn args))))
 
-
 (advice-add #'org-taskjuggler-compile :around
             #'nd/org-taskjuggler-compile-advice)
+
+(defvar nd/org-taskjuggler-default-attributes
+  '(("timingresolution" . "5 min")))
+
+(defun nd/org-taskjuggler-add-attributes (orig-fun &rest args)
+  "Add extra attributes to exported projects."
+  ;; assume the original list is a newline-delimited string
+  ;; break this string into cons cells of keyval pairs
+  (let* ((orig-attributes
+          (--> (apply orig-fun args)
+               (s-split "\n" it t)
+               (--map (s-split-up-to " " it 1 t) it)
+               (--map (cons (car it) (cadr it)) it)))
+         (add-attributes
+          (--> nd/org-taskjuggler-default-attributes
+               (--remove (assoc-string (car it) orig-attributes) it))))
+    (--> orig-attributes
+         (append it add-attributes)
+         (--map (format "%s %s\n" (car it) (cdr it)) it)
+         (string-join it))))
+
+(advice-add #'org-taskjuggler--build-attributes :around
+            #'nd/org-taskjuggler-add-attributes)
 #+END_SRC
 ** gtd implementation
 *** overview
