@@ -37,7 +37,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#calfw][calfw]]
   - [[#window-splitting][window splitting]]
   - [[#exporting][exporting]]
-  - [[#gantt-charts][gantt charts]]
+  - [[#project-management][project management]]
   - [[#gtd-implementation][gtd implementation]]
   - [[#gtd-next-generation][gtd next generation]]
   - [[#tomato-mode][tomato mode]]
@@ -1200,6 +1200,11 @@ In this case, the native export commands translate as follows:
 Taskjuggler is provided by an external package that provides the command line tools (available in the AUR for Arch Linux). Org-mode has "native" export support through a contrib module.
 #+BEGIN_SRC emacs-lisp
 (require 'ox-taskjuggler)
+
+;; from here: https://www.skamphausen.de/cgi-bin/ska/taskjuggler-mode.el
+(add-to-list 'load-path "~/.emacs.d/dvl/taskjuggler")
+(require 'taskjuggler-mode)
+
 (setq org-taskjuggler-target-version 3.6
       ;; nice and short :)
       org-taskjuggler-report-tag "tjrep"
