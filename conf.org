@@ -1183,46 +1183,36 @@ The default is XHTML for some reason (which few use and makes certain barbaric w
 #+BEGIN_SRC emacs-lisp
 (setq org-html-doctype "html5")
 #+END_SRC
-** gantt charts
+** project management
+[[https://github.com/taskjuggler/TaskJuggler][TaskJuggler]] is software that is most likely used by some super-intelligent alien species to plan their invasions of nearby planets and develop sophisticated means of social control.
+
+Basically it is really complicated and powerful. For now I use it to make cute gantt charts.
+*** workflow
+Under default settings, the exporter will turn an org-mode file or subtree into a taskjuggler file (basically a markdown file) which is then "compiled" into a bunch of web files that can be viewed in the browser.
+
+I don't like that because it needlessly litters my filesystem. Luckily TaskJuggler has a native way to lauch a web server which can then accept project files and display them in a web browser, effectively bypassing the need to compile. This is provided by two programs, =tj3d= and =tj3webd=, which I launch independently as systemd services on boot.
+
+In this case, the native export commands translate as follows:
+- export: convert org markdown to a taskjuggler file
+- export and compile: export and send the project to the TaskJuggler daemon/webserver
+- export, compile, and open: export, send to webserver, and open in a web browser
+*** general
+Taskjuggler is provided by an external package that provides the command line tools (available in the AUR for Arch Linux). Org-mode has "native" export support through a contrib module.
 #+BEGIN_SRC emacs-lisp
 (require 'ox-taskjuggler)
 (setq org-taskjuggler-target-version 3.6
-
-      org-taskjuggler-process-command
+      ;; nice and short :)
+      org-taskjuggler-report-tag "tjrep"
+      org-taskjuggler-project-tag "tjprj"
+      org-taskjuggler-resource-tag "tjres")
+#+END_SRC
+*** fix compile functions
+Since "compile" really means "send to webserver", need to update the processing command and tell the compile function not to make a directory for compiled output.
+#+BEGIN_SRC emacs-lisp
+(setq org-taskjuggler-process-command
       ;; TODO abstract out the config file
       "tj3client -c /home/ndwar/.config/tj3/taskjugglerrc add %f")
-
-(defun nd/org-tj3-load ()
-  "Load tj3 files"
-  (interactive)
-  (let ((project-files
-         (->> (directory-files nd/org-export-publishing-directory t)
-              (--filter (equal (file-name-extension it t)
-                               org-taskjuggler-extension)))))
-    (helm
-     :sources
-     (list
-      (helm-build-sync-source "Project Files"
-        ;; TODO make these project ids
-        :candidates project-files
-        :action
-        ;; TODO add load and view using function below
-        '(("Load" . #'nd/org-tj3-add-to-server))))
-     :buffer "*helm taskjuggler buffer*"
-     :prompt "Project: ")))
-
-(defun nd/org-tj3-add-to-server (file)
-  "Add tj3 project FILE to web server."
-  (call-process-shell-command
-   (format "tj3client -c /home/ndwar/.config/tj3/taskjugglerrc add %s" file)))
-
-(defun nd/org-tj3-open-in-browser (file)
-  (--> (with-temp-buffer (insert-file-contents file) (buffer-string))
-       (s-match "project \\([^[:space:]]+\\) " it)
-       (nth 1 it)
-       ;; TODO make port a variable
-       (browse-url (format "http://localhost:8081/taskjuggler?project=%s;report=report" it))))
-
+      
 (defun nd/org-tj3-compile-advice (orig-fn file)
   "Advice to fix window placement in `org-fast-tags-selection'."
   (let ((file (expand-file-name file)))
@@ -1234,11 +1224,35 @@ The default is XHTML for some reason (which few use and makes certain barbaric w
          (#'org-taskjuggler--collect-errors :override #'ignore))
       (funcall orig-fn file))
     ;; just return the file path when done
+    ;; the list is necessary for org-taskjuggler-export-process-and-open
+    ;; since the code that opens the files is actually a loop that
+    ;; expects a list
     (list file)))
 
 (advice-add #'org-taskjuggler-compile :around
             #'nd/org-tj3-compile-advice)
+#+END_SRC
+*** fix open functions
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-tj3-open-in-browser (file)
+  ;; TODO check if project is loaded and load if not loaded
+  (--> (with-temp-buffer (insert-file-contents file) (buffer-string))
+       (s-match "project \\([^[:space:]]+\\) " it)
+       (nth 1 it)
+       ;; TODO make port a variable
+       (browse-url (format "http://localhost:8081/taskjuggler?project=%s;report=report" it))))
+       
+(defun nd/org-tj3-export-process-and-open-web (orig-fun &rest args)
+  (nd/with-advice
+      ((#'org-open-file :override #'nd/org-tj3-open-in-browser))
+    (unwind-protect (apply orig-fun args))))
 
+(advice-add #'org-taskjuggler-export-process-and-open :around
+            #'nd/org-tj3-export-process-and-open-web)
+#+END_SRC
+*** default attributes
+By default the exporter blindly converts properties to attributes. However, this is annoying because it requires every project to have its attributes set when there are sensible defaults. This adds those sensible defaults.
+#+BEGIN_SRC emacs-lisp
 (defvar nd/org-taskjuggler-default-attributes
   '(("timingresolution" . "5 min")))
 
@@ -1265,19 +1279,35 @@ The default is XHTML for some reason (which few use and makes certain barbaric w
         :around #'nd/org-tj3-add-attributes))
     (apply orig-fun args)))
                                             
-(advice-add #'org-taskjuggler--build-attributes :around
+(advice-add #'org-taskjuggler--build-project :around
             #'nd/org-tj3-add-project-attributes)
+#+END_SRC
+*** interactive functions
+Some functions to help outside the normal export-compile-open workflow.
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-tj3-add-to-server (file)
+  "Add tj3 project FILE to web server."
+  (call-process-shell-command
+   (format "tj3client -c /home/ndwar/.config/tj3/taskjugglerrc add %s" file)))
 
-(defun nd/org-tj3-export-process-and-open-web (orig-fun &rest args)
-  (nd/with-advice
-      ((#'org-open-file :override
-                        (lambda (file)
-                          (nd/org-tj3-add-to-server file)
-                          (nd/org-tj3-open-in-browser file))))
-    (unwind-protect (apply orig-fun args))))
-
-(advice-add #'org-taskjuggler-export-process-and-open :around
-            #'nd/org-tj3-export-process-and-open-web)
+(defun nd/org-tj3-load ()
+  "Load tj3 files"
+  (interactive)
+  (let ((project-files
+         (->> (directory-files nd/org-export-publishing-directory t)
+              (--filter (equal (file-name-extension it t)
+                               org-taskjuggler-extension)))))
+    (helm
+     :sources
+     (list
+      (helm-build-sync-source "Project Files"
+        ;; TODO make these project ids
+        :candidates project-files
+        :action
+        ;; TODO add load and view using function below
+        '(("Load" . #'nd/org-tj3-add-to-server))))
+     :buffer "*helm taskjuggler buffer*"
+     :prompt "Project: ")))
 #+END_SRC
 ** gtd implementation
 *** overview
