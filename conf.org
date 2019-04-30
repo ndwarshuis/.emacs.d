@@ -1474,7 +1474,7 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
 #+BEGIN_SRC emacs-lisp
 (setq org-tag-alist
       ;; (@) gtd location context
-      '((:startgroup)
+      `((:startgroup)
         ("@errand" . ?e)
         ("@home" . ?h)
         ("@work" . ?w)
@@ -1498,9 +1498,16 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
         
         ;; denotes tasks that need further subdivision to turn into true project
         ("%subdiv" . ?s)
-        
+
         ;; catchall to mark important headings, usually for meetings
         ("%flag" . ?f)
+
+        ;; taskjuggler
+        (:startgroup)
+        (,org-taskjuggler-project-tag . ?x)
+        (,org-taskjuggler-resource-tag . ?y)
+        (,org-taskjuggler-report-tag . ?z)
+        (:endgroup)
         
         ;; (_) life categories, used for gtd priorities
         (:startgroup)
@@ -1530,6 +1537,7 @@ Each group also has its own color, defined by its prefix symbol.
 (nd/add-tag-face "SkyBlue" "#")
 (nd/add-tag-face "PaleGoldenrod" "%")
 (nd/add-tag-face "violet" "_")
+(nd/add-tag-face "OrangeRed1" "τ")
 #+END_SRC
 *** properties
 The built-in =effort= is used as the fourth and final homonymous GTD context (the other three being covered above using tags). It is further restricted with =Effort_All= to allow easier filtering in the agenda.
