@@ -663,7 +663,6 @@ Flycheck syntax checkers
 (use-package ess
   :straight t
   :init
-  ;; (load "ess-site")
   (require 'ess-r-mode)
   :hook
   ((ess-mode . flycheck-mode)
@@ -677,9 +676,22 @@ Flycheck syntax checkers
    (inferior-ess-mode . nd/init-ess-company)
    (inferior-ess-mode . prettify-symbols-mode))
   :config
-  (setq inferior-R-args "--quiet --no-save"
+  (setq inferior-R-program "R"
+        inferior-R-args "--quiet --no-save"
         ess-history-file "session.Rhistory"
         ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
+
+;; fast compile
+(defun nd/ess-r-add-env (orig-fun inf-buf proc-name start-args)
+  (let ((process-environment (cons "MAKEFLAGS=-j8" process-environment)))
+    (funcall orig-fun inf-buf proc-name start-args)))
+
+(defun nd/ess-r-start-env (orig-fun &rest args)
+  (nd/with-advice
+      ((#'inferior-ess--start-process :around #'nd/ess-r-add-env))
+    (apply orig-fun args)))
+
+(advice-add #'run-ess-r :around #'nd/ess-r-start-env)
 #+END_SRC
 *** Python
 Flycheck syntax checkers to install (either globally or using =pip=)
