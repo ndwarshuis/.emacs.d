@@ -1219,112 +1219,12 @@ Taskjuggler is provided by an external package that provides the command line to
 
 (setq org-taskjuggler-target-version 3.6
       ;; nice and short :)
-      org-taskjuggler-report-tag "tjrep"
-      org-taskjuggler-project-tag "tjprj"
-      org-taskjuggler-resource-tag "tjres")
-#+END_SRC
-*** fix compile functions
-Since "compile" really means "send to webserver", need to update the processing command and tell the compile function not to make a directory for compiled output.
-#+BEGIN_SRC emacs-lisp
-(setq org-taskjuggler-process-command
-      ;; TODO abstract out the config file
-      "tj3client -c /home/ndwar/.config/tj3/taskjugglerrc add %f")
+      org-taskjuggler-report-tag "τrep"
+      org-taskjuggler-project-tag "τprj"
+      org-taskjuggler-resource-tag "τres")
       
-(defun nd/org-tj3-compile-advice (orig-fn file)
-  "Advice to fix window placement in `org-fast-tags-selection'."
-  (let ((file (expand-file-name file)))
-    (nd/with-advice
-        ;; don't make a reports directory
-        ((#'make-directory :override #'ignore)
-         ;; don't freak out when we have errors
-         ;; (ruby likes to throw warnings)
-         (#'org-taskjuggler--collect-errors :override #'ignore))
-      (funcall orig-fn file))
-    ;; just return the file path when done
-    ;; the list is necessary for org-taskjuggler-export-process-and-open
-    ;; since the code that opens the files is actually a loop that
-    ;; expects a list
-    (list file)))
-
-(advice-add #'org-taskjuggler-compile :around
-            #'nd/org-tj3-compile-advice)
-#+END_SRC
-*** fix open functions
-#+BEGIN_SRC emacs-lisp
-(defun nd/org-tj3-open-in-browser (file)
-  ;; TODO check if project is loaded and load if not loaded
-  (--> (with-temp-buffer (insert-file-contents file) (buffer-string))
-       (s-match "project \\([^[:space:]]+\\) " it)
-       (nth 1 it)
-       ;; TODO make port a variable
-       (browse-url (format "http://localhost:8081/taskjuggler?project=%s;report=report" it))))
-       
-(defun nd/org-tj3-export-process-and-open-web (orig-fun &rest args)
-  (nd/with-advice
-      ((#'org-open-file :override #'nd/org-tj3-open-in-browser))
-    (unwind-protect (apply orig-fun args))))
-
-(advice-add #'org-taskjuggler-export-process-and-open :around
-            #'nd/org-tj3-export-process-and-open-web)
-#+END_SRC
-*** default attributes
-By default the exporter blindly converts properties to attributes. However, this is annoying because it requires every project to have its attributes set when there are sensible defaults. This adds those sensible defaults.
-#+BEGIN_SRC emacs-lisp
-(defvar nd/org-taskjuggler-default-attributes
-  '(("timingresolution" . "5 min")))
-
-(defun nd/org-tj3-add-attributes (orig-fun &rest args)
-  "Add extra attributes to exported projects."
-  ;; assume the original list is a newline-delimited string
-  ;; break this string into cons cells of keyval pairs
-  (let* ((orig-attributes
-          (--> (apply orig-fun args)
-               (s-split "\n" it t)
-               (--map (s-split-up-to " " it 1 t) it)
-               (--map (cons (car it) (cadr it)) it)))
-         (add-attributes
-          (--> nd/org-taskjuggler-default-attributes
-               (--remove (assoc-string (car it) orig-attributes) it))))
-    (--> orig-attributes
-         (append it add-attributes)
-         (--map (format "%s %s\n" (car it) (cdr it)) it)
-         (string-join it))))
-
-(defun nd/org-tj3-add-project-attributes (orig-fun &rest args)
-  (nd/with-advice
-      ((#'org-taskjuggler--build-attributes
-        :around #'nd/org-tj3-add-attributes))
-    (apply orig-fun args)))
-                                            
-(advice-add #'org-taskjuggler--build-project :around
-            #'nd/org-tj3-add-project-attributes)
-#+END_SRC
-*** interactive functions
-Some functions to help outside the normal export-compile-open workflow.
-#+BEGIN_SRC emacs-lisp
-(defun nd/org-tj3-add-to-server (file)
-  "Add tj3 project FILE to web server."
-  (call-process-shell-command
-   (format "tj3client -c /home/ndwar/.config/tj3/taskjugglerrc add %s" file)))
-
-(defun nd/org-tj3-load ()
-  "Load tj3 files"
-  (interactive)
-  (let ((project-files
-         (->> (directory-files nd/org-export-publishing-directory t)
-              (--filter (equal (file-name-extension it t)
-                               org-taskjuggler-extension)))))
-    (helm
-     :sources
-     (list
-      (helm-build-sync-source "Project Files"
-        ;; TODO make these project ids
-        :candidates project-files
-        :action
-        ;; TODO add load and view using function below
-        '(("Load" . #'nd/org-tj3-add-to-server))))
-     :buffer "*helm taskjuggler buffer*"
-     :prompt "Project: ")))
+(add-to-list 'load-path "~/.emacs.d/dvl/org-tj3")
+(require 'org-tj3)
 #+END_SRC
 ** gtd implementation
 *** overview
