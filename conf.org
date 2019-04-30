@@ -898,6 +898,12 @@ Together, =org-ref= and =helm-bibtex= provide a nice pipeline to search a BibTex
 #+END_SRC
 *** HTML
 For flycheck, install =tidy= (privides the =html-tidy= binary).
+#+BEGIN_SRC emacs-lisp
+(use-package impatient-mode
+  :straight t
+  :config
+  (setq httpd-port 18080))
+#+END_SRC
 *** CSS
 Overlays hex color codes with matching colors in certain modes like css and html. For flycheck, install =stylelint= (from the AUR on Arch).
 #+BEGIN_SRC emacs-lisp
