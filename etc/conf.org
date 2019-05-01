@@ -532,7 +532,7 @@ Some prompts require literal "yes" or "no" to decide action. Life is short and I
 General configuation for behind-the-scenes behavior
 ** user information
 #+BEGIN_SRC emacs-lisp
-(validate-setq user-full-name "Dwarshuis, Nathan J")
+(setq user-full-name "Dwarshuis, Nathan J")
 #+END_SRC
 ** autosave
 Saving files continuously is actually really annoying and clutters my disk. Turn it off.
@@ -3061,7 +3061,6 @@ Since mu4e is an external program, need to check that it is installed before loa
   :straight t
   :after elfeed
   :config
-  ;; cannot validate this as the elfeed package requires an invalid type
   (setq elfeed-feeds
         `(("ttrss+https://ndwar@portnoy4prez.yavin4.ch/tt-rss"
            :password ,(shell-command-to-string
