@@ -20,16 +20,21 @@
           '(watch-files find-when-checking)
         '(check-on-save find-when-checking)))
 
+;; install use-package itself
 (straight-use-package 'use-package)
+
+;; configure all config paths before anything else is loaded
+(use-package no-littering :straight t)
 
 (defvar nd/conf-dir "~/.emacs.d/"
   "The absolute path to the EMACS configuration directory.")
 
-(defvar nd/conf-main (expand-file-name "conf.org" nd/conf-dir)
+(defvar nd/conf-main (no-littering-expand-etc-file-name "conf.org")
   "The absolute path the main EMACS configuration file.")
 
 ;; ensure we don't use built-in org mode
 (use-package org :straight org-plus-contrib)
 ;; (straight-use-package '(org :type built-in))
 
+;; load everything else
 (org-babel-load-file nd/conf-main)
