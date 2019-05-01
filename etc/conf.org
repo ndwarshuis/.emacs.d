@@ -104,6 +104,7 @@ Some useful external libraries that I use all over the place
   :straight t)
 #+END_SRC
 ** internal
+Define a path to internal libraries (either things I am developing or external =.el= files I find useful)
 #+BEGIN_SRC emacs-lisp
 (defvar nd/local-pkg-directory "local/share/")
 
@@ -1269,8 +1270,8 @@ Taskjuggler is provided by an external package that provides the command line to
       org-taskjuggler-project-tag "τprj"
       org-taskjuggler-resource-tag "τres")
       
-(add-to-list 'load-path (nd/expand-local-pkg-directory "org-tj3"))
-(require 'org-tj3)
+(add-to-list 'load-path (nd/expand-local-pkg-directory "org-tj"))
+(require 'org-tj)
 #+END_SRC
 ** gtd implementation
 *** overview
