@@ -6,7 +6,6 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#for-new-users][for new users]]
   - [[#config-structure][config structure]]
 - [[#library][library]]
-  - [[#validation][validation]]
   - [[#external][external]]
   - [[#macros][macros]]
   - [[#functions][functions]]
@@ -79,52 +78,6 @@ Once loaded, the =init.el= pulls in another file called =conf.el= with the funct
 Using an org file like this offers several advantages. First, org files are foldable in emacs which makes navigation easy. Second, they allow code snippets (the bit that actually go into =conf.el=) which allows for explanatory prose to be written around them, making documentation easy and clear. Third, =org-mode= has an automatic table of contents through the =toc-org= package, which makes naviagation even easier. Fourth, github itself is awesome enough to recognize org files as valid markdown and will render all the text, code snippets, headers, and table of contents in the nice html that you are reading now if on github. The result is a nearly self-documenting, self-organizing configuration that is easy to maintain and also easy to view for other users. Using the =init.el= itself would just have plain eLisp, which gets cluttered quickly. Some people break the =init.el= down into multiple files to keep everything sane, but I personally think it is easier to use one giant file that itself can be folded and abstracted to reduce the clutter.
 * library
 This is code that is used generally throughout the emacs config
-** validation
-This provides =validate-setq= which acts like a type checker for customizable variables. It must be loaded first since any other package may use it.
-#+BEGIN_SRC emacs-lisp
-(use-package validate
-  :straight t)
-  
-(defun get-invalid ()
-  (let (ret)
-    (mapatoms
-     (lambda (x)
-       (when (and (custom-variable-p x) (custom-invalid-p x))
-         (let ((val (symbol-value x))
-               (cur (car (get x 'customized-value)))
-               (sav (car (get x 'saved-value)))
-               (std (car (get x 'standard-value))))
-           ;; (when (equal cur std)
-             (setq ret (cons (list x val cur sav std) ret))))))
-    ret))
-
-(defun custom-invalid-p (symbol)
-  "Return non-nil if SYMBOL has invalid customization."
-  (when (get symbol 'custom-type)
-    (let* ((type (custom-variable-type symbol))
-       (conv (and type (widget-convert type))))
-      (and (widgetp conv)
-       (null (condition-case nil
-             (widget-apply conv :match (symbol-value symbol))
-           (error t)))))))
-
-(defun custom-invalid-vars ()
-  "Print list of variables with non-matching custom-type."
-  (interactive)
-  (when (called-interactively-p 'any)
-    (with-current-buffer (get-buffer-create "*Custom: Invalid Vars*")
-      (delete-region (point-min) (point-max))
-      (insert (mapconcat
-               (lambda (c) (format "%s | %s | %s | %s | %s"
-                              (nth 0 c)
-                              (nth 1 c)
-                              (nth 2 c)
-                              (nth 3 c)
-                              (nth 4 c)))
-               (get-invalid)
-               "\n"))
-      (display-buffer (current-buffer)))))
-#+END_SRC
 ** external
 *** s
 #+BEGIN_SRC emacs-lisp
