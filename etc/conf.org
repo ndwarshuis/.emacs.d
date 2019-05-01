@@ -7,6 +7,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#config-structure][config structure]]
 - [[#library][library]]
   - [[#external][external]]
+  - [[#internal][internal]]
   - [[#macros][macros]]
   - [[#functions][functions]]
   - [[#interactive][interactive]]
@@ -100,6 +101,16 @@ This is code that is used generally throughout the emacs config
 #+BEGIN_SRC emacs-lisp
 (use-package sound-wav
   :straight t)
+#+END_SRC
+** internal
+#+BEGIN_SRC emacs-lisp
+(defvar nd/local-pkg-directory
+  (expand-file-name (convert-standard-filename "local/share/")
+                    user-emacs-directory))
+
+(defun nd/expand-local-pkg-directory (path)
+  (expand-file-name (convert-standard-filename path)
+                    nd/local-pkg-directory))
 #+END_SRC
 ** macros
 #+BEGIN_SRC emacs-lisp
@@ -993,7 +1004,7 @@ This adds support for csv files. Almost makes them editable like a spreadsheet. 
 *** Unix Shell
 No custom code here, but flycheck needs =shellcheck= (a Haskell program). On Arch (or any other distro that loves dynamic binding) easiest way to install is via =stack install ShellCheck=
 #+BEGIN_SRC emacs-lisp
-(add-to-list 'load-path "~/.emacs.d/dvl/essh/")
+(add-to-list 'load-path (nd/expand-local-pkg-directory "essh"))
 (require 'essh)
 #+END_SRC
 *** SQL
@@ -1034,7 +1045,7 @@ Save all org buffers 1 minute before the hour.
 *** libraries
 Org extras
 #+BEGIN_SRC emacs-lisp
-(add-to-list 'load-path "~/.emacs.d/dvl/org-x/")
+(add-to-list 'load-path (nd/expand-local-pkg-directory "org-x"))
 (require 'org-x)
 #+END_SRC
 ** buffer interface
@@ -1251,7 +1262,7 @@ Taskjuggler is provided by an external package that provides the command line to
 (require 'ox-taskjuggler)
 
 ;; from here: https://www.skamphausen.de/cgi-bin/ska/taskjuggler-mode.el
-(add-to-list 'load-path "~/.emacs.d/dvl/taskjuggler")
+(add-to-list 'load-path (nd/expand-local-pkg-directory "taskjuggler"))
 (require 'taskjuggler-mode)
 
 (setq org-taskjuggler-target-version 3.6
@@ -1260,7 +1271,7 @@ Taskjuggler is provided by an external package that provides the command line to
       org-taskjuggler-project-tag "τprj"
       org-taskjuggler-resource-tag "τres")
       
-(add-to-list 'load-path "~/.emacs.d/dvl/org-tj3")
+(add-to-list 'load-path (nd/expand-local-pkg-directory "org-tj3"))
 (require 'org-tj3)
 #+END_SRC
 ** gtd implementation
@@ -2669,7 +2680,7 @@ In these cases, it is nice to know what happened during each cycle, so force not
 Org mode is great and all, but in many cases, text files just won't cut it. Hardcore data analysis is one of them, so make functions to shove org files (specifically archive files) into a sqlite database
 **** load path
 #+BEGIN_SRC emacs-lisp
-(add-to-list 'load-path "~/.emacs.d/dvl/org-sql/")
+(add-to-list 'load-path (nd/expand-local-pkg-directory "org-sql"))
 (require 'org-sql)
 #+END_SRC
 **** customized variables
@@ -2704,7 +2715,7 @@ These are variables that I set for my use but will not go into the eventual pack
 ** tomato mode
 This really means "super awesome pomodoro implementation." =Tomato-mode= sounds cooler and more emacs like.
 #+BEGIN_SRC emacs-lisp
-(add-to-list 'load-path "~/.emacs.d/dvl/org-tomato/")
+(add-to-list 'load-path (nd/expand-local-pkg-directory "org-tomato"))
 (require 'org-tomato)
 
 (setq org-tomato-timer-sound (no-littering-expand-etc-file-name
