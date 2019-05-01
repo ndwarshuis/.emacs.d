@@ -3,3 +3,7 @@
 !conf.org
 !README.org
 !init.el
+
+!etc
+etc/*
+!etc/conf.org
