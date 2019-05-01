@@ -80,37 +80,35 @@ Using an org file like this offers several advantages. First, org files are fold
 * library
 This is code that is used generally throughout the emacs config
 ** external
-*** s
+Some useful external libraries that I use all over the place
+*** string manipulation
 #+BEGIN_SRC emacs-lisp
 (use-package s
   :straight t)
 #+END_SRC
-*** dash
+*** functional programming
 #+BEGIN_SRC emacs-lisp
 (use-package dash
   :straight t
   :config
   (setq dash-enable-fontlock t))
 #+END_SRC
-*** dash functional
+
 #+BEGIN_SRC emacs-lisp
 (use-package dash-functional
   :straight t)
 #+END_SRC
-*** sound-wav
+*** file operations
 #+BEGIN_SRC emacs-lisp
-(use-package sound-wav
+(use-package f
   :straight t)
 #+END_SRC
 ** internal
 #+BEGIN_SRC emacs-lisp
-(defvar nd/local-pkg-directory
-  (expand-file-name (convert-standard-filename "local/share/")
-                    user-emacs-directory))
+(defvar nd/local-pkg-directory "local/share/")
 
 (defun nd/expand-local-pkg-directory (path)
-  (expand-file-name (convert-standard-filename path)
-                    nd/local-pkg-directory))
+  (f-join user-emacs-directory nd/local-pkg-directory path))
 #+END_SRC
 ** macros
 #+BEGIN_SRC emacs-lisp
