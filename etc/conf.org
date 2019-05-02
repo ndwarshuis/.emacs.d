@@ -2320,7 +2320,14 @@ earlier ones."
   :config
   (let ((inhibit-message t)) (org-super-agenda-mode 1))
   (add-hook 'org-agenda-mode-hook 'origami-mode))
- 
+
+;; make the super agenda headers actual agenda headers
+(defun nd/org-super-agenda-add-header-property (orig-fun s)
+  "Add the default header property to header string S from ORIG-FUN."
+  (org-add-props (funcall orig-fun s) nil 'org-agenda-structural-header t))
+
+(advice-add #'org-super-agenda--make-agenda-header :around
+            #'nd/org-super-agenda-add-header-property)
 #+END_SRC
 **** block agenda views
 ***** default sorting
