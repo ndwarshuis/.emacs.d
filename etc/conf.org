@@ -3329,6 +3329,8 @@ Some of these commands just get in the way of being evil (which really means tha
     "sE" 'org-x-agenda-filter-non-effort
     "sD" 'org-x-agenda-filter-delegate
     "sP" 'org-x-agenda-filter-non-peripheral
+    "gk" #'org-x-agenda-previous-heading
+    "gj" #'org-x-agenda-next-heading
     "e" 'org-agenda-set-effort
     "ce" nil))
 #+END_SRC
