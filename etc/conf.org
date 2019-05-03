@@ -2722,6 +2722,7 @@ These are variables that I set for my use but will not go into the eventual pack
 ** tomato mode
 This really means "super awesome pomodoro implementation." =Tomato-mode= sounds cooler and more emacs like.
 #+BEGIN_SRC emacs-lisp
+(use-package sound-wav :straight t)
 (add-to-list 'load-path (nd/expand-local-pkg-directory "org-tomato"))
 (require 'org-tomato)
 
