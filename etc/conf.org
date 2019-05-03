@@ -1246,17 +1246,8 @@ The default is XHTML for some reason (which few use and makes certain barbaric w
 [[https://github.com/taskjuggler/TaskJuggler][TaskJuggler]] is software that is most likely used by some super-intelligent alien species to plan their invasions of nearby planets and develop sophisticated means of social control.
 
 Basically it is really complicated and powerful. For now I use it to make cute gantt charts.
-*** workflow
-Under default settings, the exporter will turn an org-mode file or subtree into a taskjuggler file (basically a markdown file) which is then "compiled" into a bunch of web files that can be viewed in the browser.
 
-I don't like that because it needlessly litters my filesystem. Luckily TaskJuggler has a native way to lauch a web server which can then accept project files and display them in a web browser, effectively bypassing the need to compile. This is provided by two programs, =tj3d= and =tj3webd=, which I launch independently as systemd services on boot.
-
-In this case, the native export commands translate as follows:
-- export: convert org markdown to a taskjuggler file
-- export and compile: export and send the project to the TaskJuggler daemon/webserver
-- export, compile, and open: export, send to webserver, and open in a web browser
-*** general
-Taskjuggler is provided by an external package that provides the command line tools (available in the AUR for Arch Linux). Org-mode has "native" export support through a contrib module.
+Taskjuggler is provided by an external package that provides the command line tools (available in the AUR for Arch Linux). Org-mode has "native" export support through a contrib module. I maintain a separate package with extra functions with taskjuggler web interface support in a separate package loaded here.
 #+BEGIN_SRC emacs-lisp
 (require 'ox-taskjuggler)
 
@@ -1270,8 +1261,12 @@ Taskjuggler is provided by an external package that provides the command line to
       org-taskjuggler-project-tag "τprj"
       org-taskjuggler-resource-tag "τres")
       
+;; my own package
 (add-to-list 'load-path (nd/expand-local-pkg-directory "org-tj"))
 (require 'org-tj)
+
+;; force org to listen to the ORDERED property
+(org-enforce-todo-dependencies t)
 #+END_SRC
 ** gtd implementation
 *** overview
