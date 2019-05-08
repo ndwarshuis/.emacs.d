@@ -3526,11 +3526,6 @@ I like tab completion...regardless of what the helm zealots say.
   "iu" #'pdf-annot-add-underline-markup-annotation
   "io" #'pdf-annot-add-strikeout-markup-annotation)
 #+END_SRC
-**** package-menu
-#+BEGIN_SRC emacs-lisp
-(add-hook 'package-menu-mode-hook
-          (lambda () (evil-collection-package-menu-setup)))
-#+END_SRC
 **** term
 Since I use vi mode in my terminal emulator, need to preserve the escape key's raw behavior
 #+BEGIN_SRC emacs-lisp
