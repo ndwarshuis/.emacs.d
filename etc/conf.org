@@ -2944,7 +2944,7 @@ Since mu4e is an external program, need to check that it is installed before loa
        (string-join
         '("Nathan Dwarshuis"
           ""
-          "PhD Student - Biomedical Engineering - Krish Roy Lab"
+          "PhD Candidate - Biomedical Engineering - Krish Roy Lab"
           "Georgia Institute of Technology and Emory University"
           "ndwarshuis3@gatech.edu")
         "\n")
