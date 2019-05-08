@@ -3357,6 +3357,15 @@ This is somewhat strange because all I really care about is moving between lines
   "0" 'beginning-of-visual-line
   "$" 'end-of-visual-line)
 #+END_SRC
+*** outline-minor-mode
+#+BEGIN_SRC emacs-lisp
+(evil-define-key '(normal visual) outline-minor-mode-map
+  "gk" #'outline-backward-same-level
+  "gj" #'outline-forward-same-level
+  (kbd "M-k") #'outline-move-subtree-up ; requires outline magic
+  (kbd "M-j") #'outline-move-subtree-down ; requires outline magic
+  (kbd "M-RET") #'outline-insert-heading)
+#+END_SRC
 *** collection
 Most packages that don't have an evil version are in this one. Some don't behave the way I like so those are further modified below.
 #+BEGIN_SRC emacs-lisp
