@@ -1266,7 +1266,7 @@ Taskjuggler is provided by an external package that provides the command line to
 (require 'org-tj)
 
 ;; force org to listen to the ORDERED property
-(setq org-enforce-todo-dependencies t)
+(setq org-enforce-todo-dependencies nil)
 
 (setq org-taskjuggler-valid-report-attributes
       '(headline columns definitions timeformat hideresource
