@@ -2396,7 +2396,7 @@ original org entry before executing BODY."
     "Calendar View"
     ((agenda "" ((org-agenda-skip-function
                   '(org-x-skip-headings-with-tags
-                    '("NA" "%inc" "REFILE")))
+                    '("NA" "%maybe" "REFILE")))
                  (org-agenda-include-diary t)))))
 
    ("t"
