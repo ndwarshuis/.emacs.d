@@ -149,6 +149,14 @@ OS is one of those in `system-type'."
   "Execute BODY if the program BIN exists."
   `(if (executable-find ,bin) (progn ,@body)
      (print (format "Executable %s not found. Skipping." ,bin))))
+
+(defmacro nd/time-exec (&rest body)
+  "Measure time it takes to execute BODY."
+  `(let ((-time (current-time)))
+     ,@body
+     (->> -time time-since float-time
+          (format "Run time: %.06f seconds"))))
+
 #+END_SRC
 ** functions
 #+BEGIN_SRC emacs-lisp
