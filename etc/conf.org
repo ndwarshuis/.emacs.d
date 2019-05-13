@@ -2225,9 +2225,9 @@ Iterators and periodicals are tested similarly to projects in that they have sta
      (lambda (k)
        (let ((ts (org-x-is-scheduled-heading-p)))
          (cond
-          ((not ts) 1)
-          ((< org-clone-iter-future-time (- ts (float-time))) 2)
-          (t 0))))
+          ((not ts) 0)
+          ((> org-clone-iter-future-time (- ts (float-time))) 1)
+          (t 2))))
      #'org-clone-get-iterator-project-status))
    
    (t (error (concat "invalid keyword detected: " kw)))))
