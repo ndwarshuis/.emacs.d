@@ -3744,6 +3744,7 @@ The function keys are nice because they are almost (not always) free in every mo
   "convenient mode toggles"
   ("v" visual-line-mode)
   ("h" global-hl-line-mode)
+  ("r" rainbow-mode)
   ("n" display-line-numbers-mode))
 
 (defhydra hydra-tools (global-map "<f12>" :exit t)
