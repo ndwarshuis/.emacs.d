@@ -156,7 +156,6 @@ OS is one of those in `system-type'."
      ,@body
      (->> -time time-since float-time
           (format "Run time: %.06f seconds"))))
-
 #+END_SRC
 ** functions
 #+BEGIN_SRC emacs-lisp
@@ -1260,17 +1259,16 @@ Basically it is really complicated and powerful. For now I use it to make cute g
 
 Taskjuggler is provided by an external package that provides the command line tools (available in the AUR for Arch Linux). Org-mode has "native" export support through a contrib module. I maintain a separate package with extra functions with taskjuggler web interface support in a separate package loaded here.
 #+BEGIN_SRC emacs-lisp
-(require 'ox-taskjuggler)
+;; (require 'ox-taskjuggler)
 
 ;; from here: https://www.skamphausen.de/cgi-bin/ska/taskjuggler-mode.el
 (add-to-list 'load-path (nd/expand-local-pkg-directory "taskjuggler"))
 (require 'taskjuggler-mode)
 
-(setq org-taskjuggler-target-version 3.6
-      ;; nice and short :)
-      org-taskjuggler-report-tag "τrep"
-      org-taskjuggler-project-tag "τprj"
-      org-taskjuggler-resource-tag "τres")
+;; nice and short :)
+(setq org-tj-report-tag "τrep"
+      org-tj-project-tag "τprj"
+      org-tj-resource-tag "τres")
       
 ;; my own package
 (add-to-list 'load-path (nd/expand-local-pkg-directory "org-tj"))
@@ -1279,7 +1277,7 @@ Taskjuggler is provided by an external package that provides the command line to
 ;; force org to listen to the ORDERED property
 (setq org-enforce-todo-dependencies nil)
 
-(setq org-taskjuggler-valid-report-attributes
+(setq org-tj-valid-report-attributes
       '(headline columns definitions timeformat hideresource
                  hidetask loadunit sorttasks formats period header center))
 #+END_SRC
@@ -1461,9 +1459,9 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
 
         ;; taskjuggler
         (:startgroup)
-        (,org-taskjuggler-project-tag . ?x)
-        (,org-taskjuggler-resource-tag . ?y)
-        (,org-taskjuggler-report-tag . ?z)
+        (,org-tj-project-tag . ?x)
+        (,org-tj-resource-tag . ?y)
+        (,org-tj-report-tag . ?z)
         (:endgroup)
         
         ;; (_) life categories, used for gtd priorities
