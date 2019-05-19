@@ -2719,13 +2719,12 @@ These are variables that I set for my use but will not go into the eventual pack
       org-sql-files '(
                       "~/Org/.archive/" 
                       "~/Org/general.org_archive" 
-                      "~/Org/general_2018.org_archive" 
                       "~/Org/general.org" 
                       ;; "~/Org/test1.org_archive" 
                       ;; "~/Org/test2.org_archive" 
                       "~/Org/incubator.org" 
                       "~/Org/projects/"
-                      "~/Org/repeater.org_archive/"
+                      "~/Org/repeater.org_archive"
                       ))
 #+END_SRC
 ** tomato mode
