@@ -569,7 +569,7 @@ Allows certain processes to run in multithreaded manner. For things like IO this
 For options that specifically affect programming or editing modes
 ** standardization
 *** tabs and alignment
-Who uses tabs in their programs? Make tabs actually equal 4 spaces. Also, alledgedly I could [[https://stackoverflow.blog/2017/06/15/developers-use-spaces-make-money-use-tabs/][make more money]] if I use spaces :)
+Who uses tabs in their programs? Make tabs actually equal 4 spaces. Also, allegedly I could [[https://stackoverflow.blog/2017/06/15/developers-use-spaces-make-money-use-tabs/][make more money]] if I use spaces :)
 #+BEGIN_SRC emacs-lisp
 (setq-default indent-tabs-mode nil
               tab-width 4)
