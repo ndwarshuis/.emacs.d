@@ -51,7 +51,6 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#shell][shell]]
   - [[#ediff][ediff]]
   - [[#jupyter][jupyter]]
-  - [[#elfeed][elfeed]]
 - [[#keybindings][keybindings]]
   - [[#setup][setup]]
   - [[#whichkey][whichkey]]
@@ -3078,23 +3077,6 @@ Since mu4e is an external program, need to check that it is installed before loa
 #+BEGIN_SRC emacs-lisp
 (use-package ein
   :straight t)
-#+END_SRC
-** elfeed
-#+BEGIN_SRC emacs-lisp
-(use-package elfeed
-  :straight t
-  :config)
-
-(use-package elfeed-protocol
-  :straight t
-  :after elfeed
-  :config
-  (setq elfeed-feeds
-        `(("ttrss+https://ndwar@portnoy4prez.yavin4.ch/tt-rss"
-           :password ,(shell-command-to-string
-                       "secret-tool lookup protocol ttrss"))))
-  (elfeed-protocol-enable))
-
 #+END_SRC
 * keybindings
 For the sake of my sanity, all bindings go here. Note this means I don't use =:bind= in use-package forms.
