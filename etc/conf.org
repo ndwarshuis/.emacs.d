@@ -950,16 +950,22 @@ Overlays hex color codes with matching colors in certain modes like css and html
 (use-package rainbow-mode
   :straight t)
 #+END_SRC
-*** JSON
+*** Javascript
+**** tabs
+An exception to the rule
+#+BEGIN_SRC emacs-lisp
+(setq js-indent-level 2)
+#+END_SRC
+**** inferior mode
+#+BEGIN_SRC emacs-lisp
+(use-package js-comint
+  :straight t)
+#+END_SRC
+**** JSON
 #+BEGIN_SRC emacs-lisp
 (use-package json-mode
   :straight t
   :hook (json-mode . origami-mode))
-#+END_SRC
-*** Javascript
-#+BEGIN_SRC emacs-lisp
-(use-package js-comint
-  :straight t)
 #+END_SRC
 *** markdown
 Make font sizes smaller and less intrusive for headers
