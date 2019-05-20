@@ -954,7 +954,8 @@ Overlays hex color codes with matching colors in certain modes like css and html
 *** JSON
 #+BEGIN_SRC emacs-lisp
 (use-package json-mode
-  :straight t)
+  :straight t
+  :hook (json-mode . origami-mode))
 #+END_SRC
 *** Javascript
 #+BEGIN_SRC emacs-lisp
