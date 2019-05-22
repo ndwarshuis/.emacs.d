@@ -3619,11 +3619,12 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 *** helm-prefix
 Some of these are useful enough that I make give them a direct binding without requiring a prefix. For now this is fine.
 #+BEGIN_SRC emacs-lisp
-(define-key helm-command-prefix (kbd "b") 'helm-bibtex)
-(define-key helm-command-prefix (kbd "B") 'helm-bibtex-with-local-bibliography)
-(define-key helm-command-prefix (kbd "s") 'helm-swoop)
-(define-key helm-command-prefix (kbd "S") 'helm-surfraw)
-(define-key helm-command-prefix (kbd "<f8>") 'helm-resume)
+(define-key helm-command-prefix (kbd "b") #'helm-bibtex)
+(define-key helm-command-prefix (kbd "B") #'helm-bibtex-with-local-bibliography)
+(define-key helm-command-prefix (kbd "s") #'helm-swoop)
+(define-key helm-command-prefix (kbd "S") #'helm-surfraw)
+(define-key helm-command-prefix (kbd "o") #'helm-org-rifle)
+(define-key helm-command-prefix (kbd "<f8>") #'helm-resume)
 #+END_SRC
 
 Give =f= to =nd/helm-flyspell-correct= instead of =helm-multi-files= and give the latter =F= (used much less).
