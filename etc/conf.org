@@ -734,14 +734,15 @@ Flycheck syntax checkers
 (advice-add #'run-ess-r :around #'nd/ess-r-start-env)
 #+END_SRC
 *** Python
-Flycheck syntax checkers to install (either globally or using =pip=)
-- flake8
-- python-pylint
-- python-black
+**** inferior shell
+I don't really use elpy, but it has really nice inferior process commands, so import but don't call =elpy-enable=.
 #+BEGIN_SRC emacs-lisp
 (use-package elpy
   :straight t)
-
+#+END_SRC
+**** anaconda and ipython
+Anaconda (not related to the Python/R distribution?) is much lighter and easier than elpy. Also use ipython instead of the built-in shell. (Note this requires ipython to be installed externally).
+#+BEGIN_SRC emacs-lisp
 (defun nd/init-anaconda-company ()
   "Set the company backends for anaconda mode."
   (setq-local company-backends '(company-anaconda)))
@@ -753,12 +754,12 @@ Flycheck syntax checkers to install (either globally or using =pip=)
          (python-mode . company-mode)
          (python-mode . nd/init-anaconda-company)
          (python-mode . blacken-mode)
+         (python-mode . pyenv-mode)
          (inferior-python-mode . company-mode)
          (inferior-python-mode . nd/init-anaconda-company))
   :config (setq indent-tabs-mode nil
-                tab-width 4
                 python-shell-interpreter "ipython"
-                python-shell-interpreter-args "-i --simple-prompt"))
+                python-shell-interpreter-args "-i --simple-prompt --quiet --no-banner"))
 
 (use-package anaconda-mode
   :straight t
@@ -767,9 +768,32 @@ Flycheck syntax checkers to install (either globally or using =pip=)
 (use-package company-anaconda
   :straight t
   :after (python company anaconda))
-
+#+END_SRC
+**** syntax checking
+=Flycheck= has built in support for syntax checking and can be additionally enhanced by installing the following:
+- flake8
+- pylint
+**** formatting
+[[https://github.com/python/black][Black]] is a really nice syntax formatter. It must be externally installed to work.
+#+BEGIN_SRC emacs-lisp
 (use-package blacken
   :straight t)
+#+END_SRC
+**** pyenv
+For isolation I use [[https://github.com/pyenv/pyenv][pyenv]] and [[https://github.com/pyenv/pyenv-virtualenv][pyenv-virtualenv]]. The only external addition needed to make this work is to add =${PYENV_ROOT}/shims= to PATH as well as adding a =.pythong-version= file in the project root specifying the desired version/environment.
+
+Note this also requires all external packages to be installed in each environement (eg ipython, black, flake8, and pylint).
+#+BEGIN_SRC emacs-lisp
+(use-package pyenv-mode
+  :straight t
+  :after python
+  :init (-some--> (getenv "PYENV_ROOT")
+                  (f-join it "versions")
+                  (add-to-list 'exec-path it)))
+
+;; resolve symlinks when setting the pyenv, otherwise we get some
+;; strange errors when activating a symlinked env
+(advice-add #'pyenv-mode-full-path :filter-return #'file-truename)
 #+END_SRC
 *** Ruby
 #+BEGIN_SRC emacs-lisp
