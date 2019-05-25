@@ -3492,7 +3492,7 @@ Note this assumes there are no sorting switches on `dired-ls'"
   "G" #'evil-goto-line
   "^" #'nd/dired-move-to-parent-directory
   "q" #'nd/kill-current-buffer
-  "n" #'dired-narrow
+  (kbd "M-n") #'dired-narrow
   (kbd "<return>") #'dired-find-alternate-file
   (kbd "C-<return>") #'nd/dired-xdg-open
   (kbd "M-<return>") #'nd/dired-open-with)
