@@ -510,7 +510,11 @@ This makes a nice glowy effect on the cursor when switching window focus. Very e
   :straight t
   :delight
   :init
-  (beacon-mode 1))
+  (beacon-mode 1)
+  :config
+  (setq beacon-blink-duration 0.2
+        beacon-blink-delay 0.1
+        beacon-size 20))
 #+END_SRC
 ** misc
 *** line wrap
