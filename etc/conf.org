@@ -694,6 +694,9 @@ Elisp can use vanilla company with no plugins
 
 (use-package lispy
   :straight t)
+
+(use-package emr
+  :straight t)
 #+END_SRC
 *** ESS (Emacs Speaks Statistics)
 For me this means R but ess also supports S-plus, SAS, Stata, and other statistical black-magic languages. Note that ESS is not part of =prog-mode= so it must be added manually to hooks.
@@ -3698,6 +3701,8 @@ They removed the underscore-inserts-arrow feature. Bring it back.
  (:send-line . eval-last-sexp)
  (:send-group . eval-defun)
  (:send-buffer . eval-buffer))
+
+(define-key emacs-lisp-mode-map (kbd "M-RET") #'emr-show-refactor-menu)
 #+END_SRC
 *** python
 The only thing I like about elpy is the interactive shell
