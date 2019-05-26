@@ -51,6 +51,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#shell][shell]]
   - [[#ediff][ediff]]
   - [[#jupyter][jupyter]]
+  - [[#mulitmedia-controls][mulitmedia controls]]
 - [[#keybindings][keybindings]]
   - [[#setup][setup]]
   - [[#whichkey][whichkey]]
@@ -3116,6 +3117,14 @@ Since mu4e is an external program, need to check that it is installed before loa
 (use-package ein
   :straight t)
 #+END_SRC
+** mulitmedia controls
+#+BEGIN_SRC emacs-lisp
+(use-package mingus
+  :straight t
+  :config
+  (setq mingus-mpd-host "localhost"
+        mingus-mpd-port 6600))
+#+END_SRC
 * keybindings
 For the sake of my sanity, all bindings go here. Note this means I don't use =:bind= in use-package forms.
 ** setup
@@ -3394,6 +3403,20 @@ This is somewhat strange because all I really care about is moving between lines
   (kbd "M-k") #'outline-move-subtree-up ; requires outline magic
   (kbd "M-j") #'outline-move-subtree-down ; requires outline magic
   (kbd "M-RET") #'outline-insert-heading)
+#+END_SRC
+*** mingus
+#+BEGIN_SRC emacs-lisp
+(evil-define-key '(visual normal) mingus-browse-map
+  (kbd "RET") #'mingus-down-dir-or-play-song
+  "^" #'mingus-open-parent
+  "s" #'mingus-search
+  "a" #'mingus-add-things-at-p)
+
+(evil-define-key '(visual normal) mingus-playlist-map
+  (kbd "RET") #'mingus-play
+  "m" #'mingus-mark
+  "D" #'mingus-del-marked
+  "U" #'mingus-unmark-all)
 #+END_SRC
 *** collection
 Most packages that don't have an evil version are in this one. Some don't behave the way I like so those are further modified below.
@@ -3771,6 +3794,21 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "C-<f4>") 'org-tomato-user-get-summary)
 (global-set-key (kbd "C-S-<f4>") 'org-tomato-user-pomodoro-goto)
 (global-set-key (kbd "<f8>") 'helm-command-prefix)
+
+(defhydra hydra-multimedia (global-map "<f10>" :exit t)
+  "convenient multimedia controls"
+  ("<f10>" mingus)
+  ("b" mingus-browse)
+  ("c" mingus-clear)
+  ("p" mingus-pause)
+  ("v" mingus-volume)
+  ("r" mingus-repeat)
+  ("-" mingus-vol-down :exit nil)
+  ("=" mingus-vol-up :exit nil)
+  ("]" mingus-seek :exit nil)
+  ("[" mingus-seek-backward :exit nil)
+  (">" mingus-next :exit nil)
+  ("<" mingus-prev :exit nil))
 
 (defhydra hydra-modes (global-map "<f11>" :exit t)
   "convenient mode toggles"
