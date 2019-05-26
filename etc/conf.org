@@ -3803,6 +3803,7 @@ The function keys are nice because they are almost (not always) free in every mo
   ("p" mingus-pause)
   ("v" mingus-volume)
   ("r" mingus-repeat)
+  ("s" mingus-stop)
   ("-" mingus-vol-down :exit nil)
   ("=" mingus-vol-up :exit nil)
   ("]" mingus-seek :exit nil)
