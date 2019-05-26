@@ -435,13 +435,10 @@ Instead use a dashboard, and display days until predicted death...you know, as a
                  (/ it 86400)
                  (round it)
                  (format "%s days until death" it)))))
-  
+
 (use-package dashboard
   :straight t
-  ;; trick the banner to think activated packages are those built by straight
-  ;; TODO this is a silly hack and probably not necessary in the long run
-  ;; (why do I care about how many packages are loaded?)
-  :init (setq package-activated-list (hash-table-count straight--build-cache))
+  :after package
   :config 
   (setq dashboard-banner-logo-title nil
         dashboard-startup-banner (no-littering-expand-etc-file-name
