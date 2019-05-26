@@ -3140,7 +3140,6 @@ Everyone forgets keybindings. When typing a key chord, this will display a windo
 (use-package hydra
   :straight t)
 
-;; TODO C-g is a bad combo because it is used to exit things
 (defvar nd/hydra-standard-interactive-map
   '(("M-i" :exit t)
     (:send-line "M-i")
