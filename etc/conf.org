@@ -3781,6 +3781,11 @@ The only thing I like about elpy is the interactive shell
 ;; interferes with window hydra
 (define-key magit-mode-map (kbd "M-w") nil)
 #+END_SRC
+*** pyenv
+This key collides with plenty of other stuff, notably scheduling in org mode
+#+BEGIN_SRC emacs-lisp
+(define-key pyenv-mode-map (kbd "C-c C-s") nil)
+#+END_SRC
 ** global
 *** function
 The function keys are nice because they are almost (not always) free in every mode. Therefore I use these for functions that I need to access anywhere, but not necessary extremely often (because they are out of the way and harder to reach).
