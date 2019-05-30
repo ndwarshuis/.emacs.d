@@ -815,6 +815,9 @@ Note this also requires all external packages to be installed in each environeme
 
 (use-package ruby-test-mode
   :straight t)
+
+(use-package rvm
+  :straight t)
 #+END_SRC
 *** Haskell
 **** stack
