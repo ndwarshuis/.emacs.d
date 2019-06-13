@@ -738,9 +738,17 @@ Flycheck syntax checkers
 (defun nd/ess-r-start-env (orig-fun &rest args)
   (nd/with-advice
       ((#'inferior-ess--start-process :around #'nd/ess-r-add-env))
+      ((#'ess-set-working-directory :around #'nd/ess-setwd-here))
+    (apply orig-fun args)))
+
+(defun nd/ess-r-setwd-maybe (orig-fun &rest args)
+  (nd/with-advice
+      ((#'ess-set-working-directory :override #'ignore))
     (apply orig-fun args)))
 
 (advice-add #'run-ess-r :around #'nd/ess-r-start-env)
+
+(advice-add #'run-ess-r :around #'nd/ess-r-setwd-maybe)
 #+END_SRC
 *** Python
 **** inferior shell
