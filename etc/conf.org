@@ -1057,6 +1057,11 @@ No custom code here, but flycheck needs =shellcheck= (a Haskell program). On Arc
 #+END_SRC
 *** SQL
 No custom code here, but flycheck needs =sqlint= (on Arch available through the AUR).
+*** Docker
+#+BEGIN_SRC emacs-lisp
+(use-package dockerfile-mode
+  :straight t)
+#+END_SRC
 * org-mode
 ** low-level config
 *** modules
