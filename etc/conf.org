@@ -830,7 +830,10 @@ This also provides GHC which is used by flycheck for syntax checking.
   :straight t
   :hook (haskell-mode . origami-mode)
   :config
-  (setq haskell-interactive-popup-errors nil))
+  (setq haskell-interactive-popup-errors nil
+        ;; we use stack...which counterintuitively means we set th
+        ;; cabal build command to be stack
+        haskell-compile-cabal-build-command "stack build"))
 #+END_SRC
 **** intero
 Provides shell, autocomplete, and syntax checking. Requires the =intero= binary to be installed through stack (=stack install intero=).
