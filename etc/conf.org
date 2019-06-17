@@ -1595,15 +1595,15 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
 
           ;; for useful reference information that may be grouped with tasks
           ("n" "note" entry (file ,capfile)
-           "* %?\n%U\n")
+           "* %?\n")
 
           ;; for non-actionable events that happen at a certain time
           ("a" "appointment" entry (file ,capfile)
-           "* %?\n%U\n%^t\n")
+           "* %?\n%^t\n")
 
           ;; like appointment but multiple days
           ("s" "appointment-span" entry (file ,capfile)
-           "* %?\n%U\n%^t--%^t\n")
+           "* %?\n%^t--%^t\n")
 
           ;; task with a deadline
           ("d" "deadline" entry (file ,capfile)
@@ -1615,7 +1615,7 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
 
           ;; for interruptions that produce useful reference material
           ("m" "meeting" entry (file ,capfile)
-           "* meeting with%?  :\\%note:\n%U\n")
+           "* meeting with%?  :\\%note:\n")
 
           ;; TODO add entries here for asynchronously performed tasks
           ;; that can be tracked
@@ -1629,12 +1629,12 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
 
           ;; for capturing web pages with web browser
           ("p" "org-protocol" entry (file ,capfile)
-           "* %^{Title} :\\%note:\n%u\n#+BEGIN_QUOTE\n%i\n#+END_QUOTE"
+           "* %^{Title} :\\%note:\n#+BEGIN_QUOTE\n%i\n#+END_QUOTE"
            :immediate-finish t)
 
           ;; or capturing links with web browser
           ("L" "org-protocol link" entry (file ,capfile)
-           "* %^{Title} :\\%note:\n[[%:link][%:description]]\n%U"
+           "* %^{Title} :\\%note:\n[[%:link][%:description]]"
            :immediate-finish t))))
 #+END_SRC
 **** insert mode
