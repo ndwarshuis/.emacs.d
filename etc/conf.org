@@ -745,9 +745,19 @@ Flycheck syntax checkers
       ((#'ess-set-working-directory :override #'ignore))
     (apply orig-fun args)))
 
+
 (advice-add #'run-ess-r :around #'nd/ess-r-start-env)
 
 (advice-add #'run-ess-r :around #'nd/ess-r-setwd-maybe)
+
+;; force flycheck to use the system-wide R install instead of whatever
+;; is in docker
+(defun nd/flycheck-find-exe-no-docker (orig-fun exe)
+  (if (or (equal exe "R") (s-starts-with? "R " exe))
+      "/bin/R" (apply orig-fun args)))
+
+(advice-add #'flycheck-default-executable-find :around
+            #'nd/flycheck-find-exe-no-docker)
 #+END_SRC
 *** Python
 **** inferior shell
