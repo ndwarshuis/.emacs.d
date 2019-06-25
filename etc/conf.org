@@ -50,7 +50,6 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#mu4e][mu4e]]
   - [[#shell][shell]]
   - [[#ediff][ediff]]
-  - [[#jupyter][jupyter]]
   - [[#mulitmedia-controls][mulitmedia controls]]
 - [[#keybindings][keybindings]]
   - [[#setup][setup]]
