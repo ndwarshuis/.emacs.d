@@ -2709,6 +2709,9 @@ original org entry before executing BODY."
                    (org-x-is-project-p)
                    (not (eq :archivable (org-x-get-project-status))))
               (org-x-skip-subtree))
+             ;; skip all incubator tasks
+             ((org-x-headline-has-tag-p "%inc")
+              (org-x-skip-heading))
              ;; skip all project tasks
              ((and keyword (org-x-is-project-task-p))
               (org-x-skip-heading))
