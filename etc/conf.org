@@ -3035,12 +3035,18 @@ Since mu4e is an external program, need to check that it is installed before loa
        ;; contexts (multiple inboxes)
        mu4e-context-policy 'pick-first
        mu4e-compose-context-policy 'ask-if-none
-       mu4e-user-mail-address-list '("natedwarshuis@gmail.com"
+       mu4e-user-mail-address-list '("ndwar@yavin4.ch"
+                                     "natedwarshuis@gmail.com"
                                      "ndwarshuis3@gatech.edu"
                                      "ndwarsh@emory.edu")
        mu4e-contexts
        (list
         (nd/make-mu4e-context "personal"
+                              "yavin4"
+                              "ndwar@yavin4.ch"
+                              "peart4prez.yavin4.ch"
+                              'sent)
+        (nd/make-mu4e-context "alpha"
                               "gmail"
                               "natedwarshuis@gmail.com"
                               "smtp.gmail.com"
