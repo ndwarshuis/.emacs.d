@@ -744,7 +744,6 @@ Flycheck syntax checkers
       ((#'ess-set-working-directory :override #'ignore))
     (apply orig-fun args)))
 
-
 (advice-add #'run-ess-r :around #'nd/ess-r-start-env)
 
 (advice-add #'run-ess-r :around #'nd/ess-r-setwd-maybe)
