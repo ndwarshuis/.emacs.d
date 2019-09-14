@@ -3026,6 +3026,10 @@ Since mu4e is an external program, need to check that it is installed before loa
           "ndwarshuis3@gatech.edu")
         "\n")
 
+       ;; aliases
+       mail-personal-alias-file (no-littering-expand-etc-file-name
+                                 "mailrc")
+
        ;; yanking (aka citing)
        message-yank-prefix "" ;; the ">" characters are annoying
        message-yank-cited-prefix ""
