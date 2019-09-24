@@ -3098,10 +3098,7 @@ Since mu4e is an external program, need to check that it is installed before loa
            ;; oops, mu4e screwed up
            (mu4e-html2text-command
             (if (executable-find "pandoc")
-                ;; use printf here to insert a newline in front of pandoc's output
-                ;; note that for some reason there needs to be a space in front
-                ;; of the newline or else it is stripped
-                "printf \" \\n%s\" \"$(pandoc -f html -t plain --reference-links)\""
+                "pandoc -f html -t plain --reference-links"
               'mu4e-shr2text)))
       (when (and html mu4e-view-prefer-html (member compose-type '(reply forward)))
         ;; hackity hack, since the normal mu4e-message-body-text function
