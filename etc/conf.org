@@ -3115,6 +3115,7 @@ Since mu4e is an external program, need to check that it is installed before loa
   ;; (setq secrets-enabled t)
   ;; (add-to-list 'auth-sources "secrets:default")
   (setq send-mail-function 'smtpmail-send-it
+        smtpmail-debug-info nil
         message-send-mail-function 'smtpmail-send-it)
   (add-to-list 'auth-sources (no-littering-expand-etc-file-name "authinfo_mu4e.gpg"))
 
@@ -3280,7 +3281,7 @@ I like being evil. All package and custom bindings go here.
   :straight t
   :init
   ;; this is required to make evil collection work
-  (setq evil-want-integration nil
+  (setq evil-want-integration t
         evil-want-keybinding nil)
   :config
   (evil-mode 1))
