@@ -11,6 +11,12 @@
 ;;           '(watch-files find-when-checking)
 ;;         '(check-on-save find-when-checking)))
 
+;; add pinned packages to straight
+;; (setq straight-profiles
+;;      '((nil . "default.el")
+;;        ;; Packages which are pinned to a specific commit.
+;;        (pinned . "pinned.el")))
+
 ;; bootstrap straight
 (defvar bootstrap-version)
 (let ((bootstrap-file
@@ -24,6 +30,10 @@
       (goto-char (point-max))
       (eval-print-last-sexp)))
   (load bootstrap-file nil 'nomessage))
+
+;; load experimental straight functions for pinning
+;; (autoload #'straight-x-pull-all "straight-x")
+;; (autoload #'straight-x-freeze-versions "straight-x")
 
 ;; install use-package itself
 (straight-use-package 'use-package)
