@@ -755,7 +755,7 @@ Flycheck syntax checkers
 ;; is in docker
 (defun nd/flycheck-find-exe-no-docker (orig-fun exe)
   (if (or (equal exe "R") (s-starts-with? "R " exe))
-      "/bin/R" (apply orig-fun args)))
+      "/bin/R" (funcall orig-fun exe)))
 
 (advice-add #'flycheck-default-executable-find :around
             #'nd/flycheck-find-exe-no-docker)
