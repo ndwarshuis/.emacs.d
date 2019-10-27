@@ -3024,7 +3024,10 @@ Since mu4e is an external program, need to check that it is installed before loa
            ""
            "PhD Candidate - Biomedical Engineering - Krish Roy Lab"
            "Georgia Institute of Technology and Emory University"
-           "ndwarshuis3@gatech.edu")
+           "ndwarshuis3@gatech.edu - (616) 307-4957"
+           ""
+           "NOTE - I do not use email on my mobile devices"
+           "Please use my phone number for urgent messages")
          "\n")
 
         ;; aliases
@@ -3699,8 +3702,13 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 ;;     (mu4e-view-open-attachment-emacs msg attnum)))
 
 (nd/when-bin "mu"
-  (define-key mu4e-headers-mode-map (kbd "C-c C-l") 'org-store-link)
-  (define-key mu4e-view-mode-map (kbd "C-c C-l") 'org-store-link))
+  (defun nd/insert-mu4e-signature-at-point ()
+    (interactive)
+    (insert mu4e-compose-signature))
+
+  (define-key mu4e-compose-mode-map (kbd "C-c w") #'nd/insert-mu4e-signature-at-point)
+  (define-key mu4e-headers-mode-map (kbd "C-c C-l") #'org-store-link)
+  (define-key mu4e-view-mode-map (kbd "C-c C-l") #'org-store-link))
 #+END_SRC
 *** dired
 #+BEGIN_SRC emacs-lisp
