@@ -1024,6 +1024,11 @@ An exception to the rule
   :straight t
   :hook (json-mode . origami-mode))
 #+END_SRC
+*** PHP
+#+BEGIN_SRC emacs-lisp
+(use-package php-mode
+  :straight t)
+#+END_SRC
 *** markdown
 Make font sizes smaller and less intrusive for headers
 #+BEGIN_SRC emacs-lisp
