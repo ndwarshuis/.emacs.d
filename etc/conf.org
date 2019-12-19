@@ -90,7 +90,7 @@ Some useful external libraries that I use all over the place
 (use-package dash
   :straight t
   :config
-  (setq dash-enable-fontlock t))
+  (dash-enable-font-lock))
 #+END_SRC
 
 #+BEGIN_SRC emacs-lisp
