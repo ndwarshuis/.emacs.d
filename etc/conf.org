@@ -2639,7 +2639,7 @@ original org entry before executing BODY."
         `((:auto-map
            ,(nd/org-x-mk-super-agenda-pred
              (cl-case (org-clone-get-iterator-status)
-               (:uninit "0. Uninitiatlized")
+               (:uninit "0. Uninitialized")
                (:project-error "0. Project Error")
                (:unscheduled "0. Unscheduled")
                (:empt "1. Empty")
