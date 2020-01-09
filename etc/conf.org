@@ -1585,6 +1585,9 @@ Also here are the properties for repeated tasks and a few others (see comments i
         ;; defines the time shift for repeater groups
         "TIME_SHIFT"
 
+        ;; defines an email thread
+        "THREAD"
+
         ;; defines a goal
         "GOAL"
 
