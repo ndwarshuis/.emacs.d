@@ -322,6 +322,12 @@ If FRONT is t, do to the front of current values instead of the back."
   (let ((cwd (expand-file-name default-directory)))
     (call-process "urxvt" nil 0 nil "-cd" cwd)))
 
+(defun nd/open-fm ()
+  "Launch filemanager in the current directory."
+  (interactive)
+  (let ((cwd (expand-file-name default-directory)))
+    (call-process "pcmanfm" nil 0 nil cwd)))
+
 ;; (defun nd/sh-send-line-or-region (&optional step)
 ;;   (interactive)
 ;;   (let ((proc (get-process "*ansi-term*"))
@@ -3884,7 +3890,8 @@ The function keys are nice because they are almost (not always) free in every mo
   ("m" mu4e)
   ("e" elfeed)
   ("t" ansi-term)
-  ("T" nd/open-urxvt))
+  ("T" nd/open-urxvt)
+  ("f" nd/open-fm))
 #+END_SRC
 *** control/meta
 #+BEGIN_SRC emacs-lisp
