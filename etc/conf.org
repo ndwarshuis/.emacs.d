@@ -2905,22 +2905,14 @@ By default dired uses =ls -whatever= to get its output. This does not have recur
 *** mounted devices
 I handle device mounting using rofi and a custom mounting script (elsewhere in my dotfiles). The only functionality I need/want here is the ability to quickly navigate to mounted directories using dired.
 #+BEGIN_SRC emacs-lisp
-(defun nd/helm-devices ()
+(defun nd/find-devices ()
   "Navigate to mounted devices."
   (interactive)
-  (let* ((mounted (mapcar
-                   (lambda (d)
-                     `(,(file-name-base d) . ,d))
-                   (nd/get-mounted-directories))))
-    (helm
-     :sources
-     (list
-      (helm-build-sync-source "Mounted Devices"
-        :candidates mounted
-        :action
-        '(("Open" . (lambda (s) (find-file s))))))
-     :buffer "*helm device buffer*"
-     :prompt "Device: ")))
+  (let ((mounted (-annotate #'f-filename (nd/get-mounted-directories))))
+    (-when-let (dev (completing-read "Go to device: " mounted))
+      (-if-let (path (alist-get dev mounted nil nil #'equal))
+          (find-file path)
+        (message "Invalid device: %s" dev)))))
 #+END_SRC
 *** filtering
 Filtering is useful for obvious reasons
@@ -3875,7 +3867,7 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-unset-key (kbd "C-x c"))
 (global-set-key (kbd "C-x k") 'nd/kill-current-buffer)
 (global-set-key (kbd "C-x C-d") 'helm-bookmarks)
-(global-set-key (kbd "C-x C-c C-d") 'nd/helm-devices)
+(global-set-key (kbd "C-x C-c C-d") 'nd/find-devices)
 (global-set-key (kbd "C-x C-f") 'helm-find-files)
 (global-set-key (kbd "C-x C-b") 'helm-buffers-list)
 
