@@ -207,38 +207,17 @@ desktop file exec directive."
          (mt (shell-command-to-string cmd)))
     (replace-regexp-in-string "\n\\'" "" mt)))
 
-(defvar nd/device-mount-dir (concat "/media/" (user-login-name)))
+(defconst nd/device-mount-dirs
+  (list
+   (f-join "/media" (user-login-name))
+   (f-join "/run" "media" (user-login-name))))
 
-(defun nd/get-mounted-directories (&optional mount-path)
-  "Scan MOUNT-PATH (defaults to /media/$USER for devices that have
-been mounted by udevil."
-  (seq-filter #'file-directory-p (directory-files nd/device-mount-dir t "^\\([^.]\\|\\.[^.]\\|\\.\\..\\)")))
-
-(defun nd/device-mountable-p (devpath)
-  "Returns label or uuid if device at DEVPATH is has a readable 
-filesystem and is a usb drive."
-  (let ((devprops (shell-command-to-string (concat "udevadm info --query=property " devpath))))
-    (and (string-match-p (regexp-quote "ID_FS_TYPE") devprops)
-         (string-match-p (regexp-quote "ID_BUS=usb") devprops)
-         (progn
-           (or (string-match "ID_FS_LABEL=\\(.*\\)\n" devprops)
-               (string-match "ID_FS_UUID=\\(.*\\)\n" devprops))
-           (match-string 1 devprops)))))
-
-(defun nd/get-mountable-devices ()
-  "Return paths of all mountable devices. (see `nd/device-mountable-p')."
-  (seq-filter #'car
-              (mapcar (lambda (d) `(,(nd/device-mountable-p d) . ,d))
-                      (directory-files "/dev" t "sd.[0-9]+"))))
-
-(defun nd/mount-device (dev &rest opts)
-  "Mount device DEV using udevil."
-  (call-process "udevil" nil nil nil "mount" dev))
-
-(defun nd/get-mountpoint (dev)
-  "Get the filesystem mountpoint for device DEV."
-  (let ((mp (shell-command-to-string (concat "printf %s \"$(findmnt -n -o TARGET " dev ")\""))))
-    (and (not (equal "" mp)) mp)))
+(defun nd/get-mounted-directories ()
+  "Return list of mountpoints for active devices.
+Will only consider directories in `nd/device-mount-dirs'."
+  (->> (-filter #'f-exists? nd/device-mount-dirs)
+       (-mapcat #'f-directories)
+       (-filter #'file-directory-p)))
 
 (defun nd/print-args (orig-fun &rest args)
   "Prints ARGS of ORIG-FUN. Intended as :around advice."
@@ -2924,33 +2903,22 @@ By default dired uses =ls -whatever= to get its output. This does not have recur
   (setq dired-du-size-format t))
 #+END_SRC
 *** mounted devices
-If dired is to replace all other file managers it must handle devices. This function assumes all my devices are mounted on =/media/$USER= and that udevil is installed. It provides mount and mount/follow ops for all usb removable media and follow/unmount for all mounted devices (note the latter includes things that are not mounted here such as samba drives, which I normally hotkey to my window manager). This /almost/ replicates the functionality of gvfs that I actually use without the bloat; the only missing piece is MPT for android (which will come later).
+I handle device mounting using rofi and a custom mounting script (elsewhere in my dotfiles). The only functionality I need/want here is the ability to quickly navigate to mounted directories using dired.
 #+BEGIN_SRC emacs-lisp
 (defun nd/helm-devices ()
-  "Mount, unmount, and navigate to removable media using helm."
+  "Navigate to mounted devices."
   (interactive)
   (let* ((mounted (mapcar
                    (lambda (d)
                      `(,(file-name-base d) . ,d))
-                   (nd/get-mounted-directories)))
-         (mountable (seq-filter
-                     (lambda (d) (not (member (car d) (mapcar #'car mounted))))
-                     (nd/get-mountable-devices))))
+                   (nd/get-mounted-directories))))
     (helm
      :sources
      (list
       (helm-build-sync-source "Mounted Devices"
         :candidates mounted
         :action
-        '(("Open" . (lambda (s) (find-file s)))
-          ("Unmount" . (lambda (s) (start-process "unmount" nil "udevil" "unmount" s)))))
-      (helm-build-sync-source "Mountable Devices"
-        :candidates mountable
-        :action
-        '(("Mount and Follow" . (lambda (s)
-                                  (nd/mount-device s)
-                                  (find-file (nd/get-mountpoint s))))
-          ("Mount" . (lambda (s) (nd/mount-device s))))))
+        '(("Open" . (lambda (s) (find-file s))))))
      :buffer "*helm device buffer*"
      :prompt "Device: ")))
 #+END_SRC
