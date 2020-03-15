@@ -3795,7 +3795,11 @@ The only thing I like about elpy is the interactive shell
    (:ref-at . intero-uses-at)
    (:type-at . intero-type-at)
    (:pop-marker-stack . xref-pop-marker-stack)
-   (:doc-at . intero-info)))
+   (:doc-at . intero-info))
+   
+  ;; this shadows the intero type-at command
+  (define-key intero-mode-map (kbd "C-c C-t") 'intero-type-at))
+
 #+END_SRC
 *** magit
 #+BEGIN_SRC emacs-lisp
