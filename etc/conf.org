@@ -825,39 +825,53 @@ Note this also requires all external packages to be installed in each environeme
 *** Haskell
 **** stack
 On Arch, all packages are dynamically linked (very bad for Haskell). The solution is to install [[https://docs.haskellstack.org/en/stable/README/][stack]] via the =stack-static= package through the AUR and then install all Haskell programs through stack using static linking. 
-
-This also provides GHC which is used by flycheck for syntax checking. 
 **** major mode
+The major mode package =haskell-mode= is quite comprehensive and has most of what I need out of the box, including:
+- syntax highlighting
+- indentation
+- autocompletion
+- flycheck integration
+- type checking/insertion/annotation
+- function info
+
+Since most of these need a GHC session to run properly, just run =haskell-process-load-or-reload= in one of the project files.
+
+I have also found this to be much simpler and conflicting with other packages such as =dante= and =intero= (and probably =haskell-ide-engine= and friends).
 #+BEGIN_SRC emacs-lisp
+(defun nd/init-haskell-company ()
+  "Set the company backends for haskell mode."
+  (setq-local company-backends
+              ;; capf is standard completion and dabbrev provides
+              ;; local completions in 'where' and 'let' clauses
+              '((company-capf company-dabbrev))))
+
+;; this minor mode name is long and unnecessary
+(delight 'interactive-haskell-mode nil "haskell-interactive-mode")
+
 (use-package haskell-mode
   :straight t
-  :hook (haskell-mode . origami-mode)
+  :hook ((haskell-mode . origami-mode)
+         (haskell-mode . company-mode)
+         (haskell-mode . haskell-indentation-mode)
+         (haskell-mode . interactive-haskell-mode)
+         (haskell-mode . nd/init-haskell-company))
   :config
   (setq haskell-interactive-popup-errors nil
-        ;; we use stack...which counterintuitively means we set th
+        ;; we use stack...which counterintuitively means we set the
         ;; cabal build command to be stack
         haskell-compile-cabal-build-command "stack build"))
 #+END_SRC
-**** intero
-Provides shell, autocomplete, and syntax checking. Requires the =intero= binary to be installed through stack (=stack install intero=).
+**** hlint
+This is an additional syntax checker and requires the =hlint= binary (install through stack).
 #+BEGIN_SRC emacs-lisp
-(use-package intero
-  :straight t
-  :after haskell-mode
-  :hook
-  (haskell-mode . intero-mode))
+(with-eval-after-load 'haskell
+  (flycheck-add-next-checker 'haskell-stack-ghc '(t . haskell-hlint)))
 #+END_SRC
 **** camelCase
 The defacto style for haskell mandates camelcase, so use subword mode.
 #+BEGIN_SRC emacs-lisp
 (add-hook 'haskell-mode-hook #'subword-mode)
 (delight 'subword-mode nil "subword")
-#+END_SRC
-**** hlint
-Additional syntax checking can be enabled with the =hlint= program (=stack install hlint=).
-#+BEGIN_SRC emacs-lisp
-(with-eval-after-load 'intero
-  (flycheck-add-next-checker 'intero '(t . haskell-hlint)))
 #+END_SRC
 *** Lua
 For flycheck, install =luacheck= (from AUR on Arch).
@@ -3777,29 +3791,25 @@ The only thing I like about elpy is the interactive shell
 #+END_SRC
 *** haskell
 #+BEGIN_SRC emacs-lisp
-(with-eval-after-load 'intero
+(with-eval-after-load 'haskell-mode
   (nd/hydra-standard-int
-   intero-mode-map
-   (:send-line . intero-repl-eval-region)
+   haskell-mode-map
+   ;; (:send-line . intero-repl-eval-region)
    ;; TODO add a go function here
    ;; TODO add group functions
-   (:send-buffer . intero-repl-load)
+   (:send-buffer . haskell-process-load-or-reload)
    ;; TODO add kill repl function
-   (:shell-start . intero-repl))
+   (:shell-start . run-haskell))
 
   (nd/hydra-standard-nav
-   intero-mode-map
-   (:def-at . intero-goto-definition)
+   haskell-mode-map
+   ;; (:def-at . intero-goto-definition)
    ;; TODO add other window
    ;; TODO expand-at-slice and apply suggestion
-   (:ref-at . intero-uses-at)
-   (:type-at . intero-type-at)
+   ;; (:ref-at . intero-uses-at)
+   (:type-at . haskell-process-do-type-at)
    (:pop-marker-stack . xref-pop-marker-stack)
-   (:doc-at . intero-info))
-   
-  ;; this shadows the intero type-at command
-  (define-key intero-mode-map (kbd "C-c C-t") 'intero-type-at))
-
+   (:doc-at . haskell-process-do-info)))
 #+END_SRC
 *** magit
 #+BEGIN_SRC emacs-lisp
