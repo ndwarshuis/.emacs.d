@@ -845,9 +845,6 @@ I have also found this to be much simpler and conflicting with other packages su
               ;; local completions in 'where' and 'let' clauses
               '((company-capf company-dabbrev))))
 
-;; this minor mode name is long and unnecessary
-(delight 'interactive-haskell-mode nil "haskell-interactive-mode")
-
 (use-package haskell-mode
   :straight t
   :hook ((haskell-mode . origami-mode)
@@ -860,6 +857,9 @@ I have also found this to be much simpler and conflicting with other packages su
         ;; we use stack...which counterintuitively means we set the
         ;; cabal build command to be stack
         haskell-compile-cabal-build-command "stack build"))
+
+;; this minor mode name is long and unnecessary
+(delight 'interactive-haskell-mode nil "haskell")
 #+END_SRC
 **** hlint
 This is an additional syntax checker and requires the =hlint= binary (install through stack).
