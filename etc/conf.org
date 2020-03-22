@@ -858,7 +858,8 @@ I have also found this to be much simpler and conflicting with other packages su
   (setq haskell-interactive-popup-errors nil
         ;; we use stack...which counterintuitively means we set the
         ;; cabal build command to be stack
-        haskell-compile-cabal-build-command "stack build"))
+        haskell-compile-cabal-build-command "stack build"
+        haskell-stylish-on-save t))
 
 ;; this minor mode name is long and unnecessary
 (delight 'interactive-haskell-mode nil "haskell")
