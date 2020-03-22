@@ -355,6 +355,7 @@ Since I run emacs in [[https://www.gnu.org/software/emacs/manual/html_node/emacs
     (add-hook 'after-make-frame-functions
               (lambda (frame)
                 (select-frame frame)
+                (set-default-font "Dejavu Sans Mono-11")
                 (if (window-system frame)
                     (unless nd/theme-window-loaded
                       (if nd/theme-terminal-loaded
