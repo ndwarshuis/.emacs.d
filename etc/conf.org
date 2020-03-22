@@ -570,6 +570,8 @@ Who uses tabs in their programs? Make tabs actually equal 4 spaces. Also, allege
 *** short column width
 Alot of languages at least semi-adhere to the 80-characters-per-line rule. =fci-mode= displays a line as a guide for column width.
 #+BEGIN_SRC emacs-lisp
+(setq-default fill-column 80)
+
 (use-package fill-column-indicator
   :straight t
   :config
