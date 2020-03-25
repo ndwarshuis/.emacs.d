@@ -873,7 +873,9 @@ I have also found this to be much simpler and conflicting with other packages su
         haskell-stylish-on-save t
         ;; use some handy suggestions
         haskell-process-suggest-remove-import-lines t
-        haskell-process-auto-import-loaded-modules t))
+        haskell-process-auto-import-loaded-modules t
+        ;; use TAGS file
+        haskell-tags-on-save t))
 
 ;; this minor mode name is long and unnecessary
 (delight 'interactive-haskell-mode nil "haskell")
@@ -3825,7 +3827,7 @@ The only thing I like about elpy is the interactive shell
 
   (nd/hydra-standard-nav
    haskell-mode-map
-   (:asgn-at . haskell-mode-jump-to-def)
+   (:asgn-at . haskell-mode-jump-to-def-or-tag)
    (:type-at . haskell-process-do-type-at)
    (:pop-marker-stack . xref-pop-marker-stack)
    (:doc-at . haskell-process-do-info)))
