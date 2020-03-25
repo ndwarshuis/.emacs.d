@@ -874,7 +874,7 @@ I have also found this to be much simpler and conflicting with other packages su
         ;; use some handy suggestions
         haskell-process-suggest-remove-import-lines t
         haskell-process-auto-import-loaded-modules t
-        ;; use TAGS file
+        ;; use TAGS file (requires hasktags binary to be in $PATH)
         haskell-tags-on-save t))
 
 ;; this minor mode name is long and unnecessary
