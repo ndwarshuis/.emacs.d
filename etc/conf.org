@@ -848,13 +848,19 @@ I have also found this to be much simpler and conflicting with other packages su
               ;; local completions in 'where' and 'let' clauses
               '((company-capf company-dabbrev))))
 
+(defun nd/haskell-load-maybe ()
+  "Prompts user to turn on `auto-fill-mode'."
+  (when (y-or-n-p "Load Haskell source into GHCi? ")
+    (haskell-process-load-or-reload)))
+
 (use-package haskell-mode
   :straight t
   :hook ((haskell-mode . origami-mode)
          (haskell-mode . company-mode)
          (haskell-mode . haskell-indentation-mode)
          (haskell-mode . interactive-haskell-mode)
-         (haskell-mode . nd/init-haskell-company))
+         (haskell-mode . nd/init-haskell-company)
+         (haskell-mode . nd/haskell-load-maybe))
   :config
   (setq haskell-interactive-popup-errors nil
         ;; we use stack...which counterintuitively means we set the
@@ -876,6 +882,18 @@ The defacto style for haskell mandates camelcase, so use subword mode.
 #+BEGIN_SRC emacs-lisp
 (add-hook 'haskell-mode-hook #'subword-mode)
 (delight 'subword-mode nil "subword")
+#+END_SRC
+**** helper functions
+Other helper functions that make haskell even more fun.
+#+BEGIN_SRC emacs-lisp
+(defun nd/haskell-switch-to-process ()
+  "Switch to the current session buffer (after starting if it doesn't exist)."
+  (interactive)
+  (-if-let (buf (alist-get 'interactive-buffer haskell-session))
+      (if (-contains? (buffer-list) buf)
+          (pop-to-buffer buf)
+        (haskell-process-load-or-reload))
+    (haskell-process-load-or-reload)))
 #+END_SRC
 *** Lua
 For flycheck, install =luacheck= (from AUR on Arch).
@@ -3798,19 +3816,11 @@ The only thing I like about elpy is the interactive shell
 (with-eval-after-load 'haskell-mode
   (nd/hydra-standard-int
    haskell-mode-map
-   ;; (:send-line . intero-repl-eval-region)
-   ;; TODO add a go function here
-   ;; TODO add group functions
    (:send-buffer . haskell-process-load-or-reload)
-   ;; TODO add kill repl function
-   (:shell-start . run-haskell))
+   (:shell-start . nd/haskell-switch-to-process))
 
   (nd/hydra-standard-nav
    haskell-mode-map
-   ;; (:def-at . intero-goto-definition)
-   ;; TODO add other window
-   ;; TODO expand-at-slice and apply suggestion
-   ;; (:ref-at . intero-uses-at)
    (:type-at . haskell-process-do-type-at)
    (:pop-marker-stack . xref-pop-marker-stack)
    (:doc-at . haskell-process-do-info)))
