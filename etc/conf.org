@@ -3622,10 +3622,12 @@ REPL. If no SEND-INPUT-CMD then `comint-send-input' is used."
 Not to be confused with =interactive-haskell-mode= which is part of the editing buffer
 #+BEGIN_SRC emacs-lisp
 (evil-define-key '(normal insert) haskell-interactive-mode-map
-  (kbd "[[") #'haskell-interactive-mode-prompt-previous
-  (kbd "]]") #'haskell-interactive-mode-prompt-next
   (kbd "C-k") #'haskell-interactive-mode-history-previous
   (kbd "C-j") #'haskell-interactive-mode-history-next)
+
+(evil-define-key 'normal haskell-interactive-mode-map
+  (kbd "[[") #'haskell-interactive-mode-prompt-previous
+  (kbd "]]") #'haskell-interactive-mode-prompt-next)
 #+END_SRC
 **** helm
 I like tab completion...regardless of what the helm zealots say.
