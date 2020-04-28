@@ -3126,7 +3126,7 @@ Since mu4e is an external program, need to check that it is installed before loa
              (if (executable-find "pandoc")
                  "pandoc -f html -t plain --reference-links"
                'mu4e-shr2text)))
-       (when (and html mu4e-view-prefer-html (member compose-type '(reply forward)))
+       (when (and html mu4e-view-prefer-html (member mu4e-compose-type '(reply forward)))
          ;; hackity hack, since the normal mu4e-message-body-text function
          ;; does not render the desired html, do it here and force the
          ;; aforementioned function to only look at text by removing
