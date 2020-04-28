@@ -2977,21 +2977,32 @@ Filtering is useful for obvious reasons
   (add-hook 'pdf-annot-list-mode-hook #'pdf-annot-list-follow-minor-mode))
 #+END_SRC
 ** mu4e
-Since mu4e is an external program, need to check that it is installed before loading anything.
+Initialize by running the following command in a shell to tell mu about my personal email addresses and where mail should be stored:
+#+BEGIN_SRC sh
+mu init --my-address=ndwar@yavin4.ch --my-address=natedwarshuis@gmail.com --my-address=ndwarshuis3@gatech.edu --my-address=ndwarsh@emory.edu --maildir=/mnt/data/Mail
+#+END_SRC
+
+The following will only run if the =mu= command is found (which it won't be if this is run on windows).
 #+BEGIN_SRC emacs-lisp
 (nd/when-bin "mu"
   (require 'mu4e)
   (defun nd/make-mu4e-context (name dir addr smtp-srv sent-behavior)
-    (let ((trash (format "/%s/trash" dir))
+    (let* ((trash (format "/%s/trash" dir))
           (drafts (format "/%s/drafts" dir))
           (sent (format "/%s/sent" dir))
           (archive (format "/%s/archive" dir))
           (inbox (format "/%s/inbox" dir))
+          (shortcuts (--map (list :maildir (car it) :key (cdr it))
+                            `((,trash . ?t)
+                              (,drafts . ?d)
+                              (,sent . ?s)
+                              (,archive . ?a)
+                              (,inbox . ?i))))
+
           (mf (lambda (d msg)
-                (-some-->
-                 msg
-                 (mu4e-message-field it :maildir)
-                 (string-prefix-p (concat "/" d) it)))))
+                (-some--> msg
+                          (mu4e-message-field it :maildir)
+                          (string-prefix-p (concat "/" d) it)))))
       (make-mu4e-context
        :name name
        :match-func (-partial mf dir) ; use lexical scope here
@@ -3005,11 +3016,7 @@ Since mu4e is an external program, need to check that it is installed before loa
                (smtpmail-smtp-service . 587)
                (smtpmail-smtp-user . ,addr)
                (user-mail-address . ,addr)
-               (mu4e-maildir-shortcuts . ((,inbox . ?i)
-                                          (,sent . ?s)
-                                          (,trash . ?t)
-                                          (,drafts . ?d)
-                                          (,archive . ?a)))))))
+               (mu4e-maildir-shortcuts . ,shortcuts)))))
   (setq mail-user-agent 'mu4e-user-agent
         message-kill-buffer-on-exit t
 
@@ -3021,7 +3028,6 @@ Since mu4e is an external program, need to check that it is installed before loa
         mu4e-use-fancy-chars nil
 
         ;; directories
-        mu4e-maildir "/mnt/data/Mail"
         mu4e-attachment-dir "~/Downloads"
         
         ;; headers
@@ -3064,10 +3070,6 @@ Since mu4e is an external program, need to check that it is installed before loa
         ;; contexts (multiple inboxes)
         mu4e-context-policy 'pick-first
         mu4e-compose-context-policy 'ask-if-none
-        mu4e-user-mail-address-list '("ndwar@yavin4.ch"
-                                      "natedwarshuis@gmail.com"
-                                      "ndwarshuis3@gatech.edu"
-                                      "ndwarsh@emory.edu")
         mu4e-contexts
         (list
          (nd/make-mu4e-context "personal"
