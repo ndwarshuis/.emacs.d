@@ -2567,7 +2567,7 @@ original org entry before executing BODY."
    ("p"
     "Project View"
     ((tags-todo
-      "-NA-REFILE-%inc/!"
+      "-NA-REFILE-%inc"
       ((org-agenda-overriding-header "Projects")
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
@@ -2580,7 +2580,7 @@ original org entry before executing BODY."
              (let* ((status (org-x-get-project-status))
                     (priority (alist-get status nd/org-x-project-status-priorities))
                     (is-subproject (org-x-headline-has-parent 'org-x-is-todoitem-p)))
-               (if (< priority 0) "99. Other"
+               (unless (< priority 0)
                  (--> status
                       (symbol-name it)
                       (substring it 1)
@@ -2588,7 +2588,8 @@ original org entry before executing BODY."
                       (s-titleize it)
                       (concat "%s.%s " it)
                       (format it (if is-subproject 1 0) priority)
-                      (concat it (if is-subproject " (σ)" " (τ)")))))))))))))
+                      (concat it (if is-subproject " (σ)" " (τ)")))))))
+          (:discard (:anything t))))))))
    
    ("i"
     "Incubator View"
