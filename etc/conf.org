@@ -1159,8 +1159,8 @@ Save all org buffers 1 minute before the hour.
 Org extras
 #+BEGIN_SRC emacs-lisp
 (add-to-list 'load-path (nd/expand-local-pkg-directory "org-x"))
-(add-to-list 'load-path (nd/expand-local-pkg-directory "om"))
-(require 'om)
+(add-to-list 'load-path (nd/expand-local-pkg-directory "org-ml"))
+(require 'org-ml)
 (require 'org-x)
 #+END_SRC
 ** buffer interface
