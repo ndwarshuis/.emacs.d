@@ -3196,16 +3196,23 @@ This controls the music player daemon (MPD) which in my case is modidy with seve
 * keybindings
 For the sake of my sanity, all bindings go here. Note this means I don't use =:bind= in use-package forms.
 ** setup
-Most of my modifiers are reloacted using xkb and xcape. Below is a summary where each item is in the form <original key> -> <new key action> (<key release action if used>) 
-- tab -> l_super (tab)
-- backslash -> r_super (backslash)
-- caps -> l_ctrl (escape)
-- return -> r_ctrl (return)
-- l_ctrl -> l_hyper
-- l_super -> iso_l3_shift (xf86search)
-- space -> r_alt (space)
-- r_alt -> r_hyper
-- r_ctrl -> caps
+Most of my modifiers are reloacted using xkb and [[https://github.com/alols/xcape][xcape]].
+
+The xkb layout can be found [[https://github.com/ndwarshuis/xkb-hypermode][here]].
+
+Below is a summary of the remapped xcape keys.
+
+| original key  | new xkb keycode  | xcape keycode/shifted | comment              |
+|---------------+------------------+-----------------------+----------------------|
+| Tab           | Super_L          | Tab/ISO_Left_Tab      |                      |
+| Backslash     | Super_R          | Backslash/Bar         |                      |
+| Capslock      | Control_L        | Escape                |                      |
+| Return        | Control_R        | Return                |                      |
+| Left Control  | Hyper_L          |                       |                      |
+| Left Super    | ISO_Level3_Shift | XF86Search            | XF86Search for dmenu |
+| Space         | Alt_R            | Space                 |                      |
+| Right Alt     | Hyper_R          |                       |                      |
+| Right Control | Caps_Lock        |                       |                      |
 ** whichkey
 Everyone forgets keybindings. When typing a key chord, this will display a window with all possible completions and their commands.
 #+BEGIN_SRC emacs-lisp
