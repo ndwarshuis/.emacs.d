@@ -763,6 +763,7 @@ Anaconda (not related to the Python/R distribution?) is much lighter and easier 
   (setq-local company-backends '(company-anaconda)))
 
 (use-package python
+  :after flycheck
   :hook ((python-mode . flycheck-mode)
          (python-mode . origami-mode)
          (python-mode . anaconda-mode)
