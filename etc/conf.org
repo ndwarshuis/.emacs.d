@@ -1189,7 +1189,10 @@ These are just so much better to read
 (use-package org-bullets
   :straight t
   :hook
-  (org-mode . org-bullets-mode))
+  (org-mode . org-bullets-mode)
+  :config
+  ;; this might speed up bullet rendering at the expense of larger memory footprint
+  (setq inhibit-compacting-font-caches t))
 #+END_SRC
 *** font height
 The fonts in org headings bug me; make them smaller and less invasive.
