@@ -2555,10 +2555,13 @@ original org entry before executing BODY."
        (org-super-agenda-groups
         `((:auto-map
            ,(nd/org-x-mk-super-agenda-pred
-             (let* ((status (org-x-task-status))
-                    (priority (alist-get status nd/org-x-task-status-priorities))
-                    (is-atomic (org-x-is-atomic-task-p)))
-               (if (< priority 0) "99. Other"
+             (let* ((is-atomic (org-x-is-atomic-task-p))
+                    ;; lump inert and active non-atomic tasks together
+                    (status (--> (org-x-task-status)
+                                 (if (and (not is-atomic) (eq it :inert))
+                                     :active it)))
+                    (priority (alist-get status nd/org-x-task-status-priorities)))
+               (unless (< priority 0)
                  (--> status
                       (symbol-name it)
                       (substring it 1)
@@ -2566,7 +2569,8 @@ original org entry before executing BODY."
                       (s-titleize it)
                       (concat "%s.%s " it)
                       (format it priority (if is-atomic 1 0))
-                      (concat it (if is-atomic " (α)" " (σ)")))))))))))))
+                      (concat it (if is-atomic " (α)" " (σ)")))))))
+          (:discard (:anything t))))))))
 
    ("p"
     "Project View"
@@ -2575,7 +2579,11 @@ original org entry before executing BODY."
       ((org-agenda-overriding-header "Projects")
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
-          (unless (org-x-is-project-p) (org-x-skip-heading))))
+          (cond ((or (org-x-is-iterator-heading-p)
+                    (org-x-is-periodical-heading-p))
+                 (org-x-skip-subtree))
+                ((not (org-x-is-project-p))
+                 (org-x-skip-heading)))))
        (org-agenda-sorting-strategy '(category-keep))
        (org-super-agenda-groups
         `((:auto-map
@@ -2583,8 +2591,12 @@ original org entry before executing BODY."
              ;; TODO this ain't DRY
              (let* ((status (org-x-get-project-status))
                     (priority (alist-get status nd/org-x-project-status-priorities))
-                    (is-subproject (org-x-headline-has-parent 'org-x-is-todoitem-p)))
-               (unless (< priority 0)
+                    (is-subproject (org-x-headline-has-parent 'org-x-is-todoitem-p))
+                    ;; skip anything that is in a CANC or HOLD project
+                    (is-masked (when is-subproject
+                                 (or (org-x-is-todo-child "CANC")
+                                     (org-x-is-todo-child "HOLD")))))
+               (unless (or is-masked (< priority 0))
                  (--> status
                       (symbol-name it)
                       (substring it 1)
