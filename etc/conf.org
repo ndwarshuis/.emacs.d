@@ -3152,7 +3152,9 @@ The following will only run if the =mu= command is found (which it won't be if t
   (setq send-mail-function 'smtpmail-send-it
         smtpmail-debug-info nil
         message-send-mail-function 'smtpmail-send-it)
-  (add-to-list 'auth-sources (no-littering-expand-etc-file-name "authinfo_mu4e.gpg"))
+  (setq auth-sources `(,(no-littering-expand-etc-file-name "authinfo_mu4e.gpg")))
+  ;; TODO get this to work
+  ;; (setq auth-sources '("secret:Default Keyring"))
 
   (use-package org-mu4e
     :after (org mu4e)
