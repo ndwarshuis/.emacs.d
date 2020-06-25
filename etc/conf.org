@@ -81,11 +81,17 @@ This is code that is used generally throughout the emacs config
 ** external
 Some useful external libraries that I use all over the place
 *** string manipulation
+:PROPERTIES:
+:ID:       3e3ccda6-0bbb-44f0-8057-9eca89f6df4c
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package s
   :straight t)
 #+END_SRC
 *** functional programming
+:PROPERTIES:
+:ID:       0d45f98c-4285-4a97-be38-a43d3621a4f7
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package dash
   :straight t
@@ -98,11 +104,17 @@ Some useful external libraries that I use all over the place
   :straight t)
 #+END_SRC
 *** file operations
+:PROPERTIES:
+:ID:       57f6bcfd-3bb3-4380-b408-c23844c7da9c
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package f
   :straight t)
 #+END_SRC
 ** internal
+:PROPERTIES:
+:ID:       d0696764-48ab-4ec6-ab42-42775dc8f793
+:END:
 Define a path to internal libraries (either things I am developing or external =.el= files I find useful)
 #+BEGIN_SRC emacs-lisp
 (defvar nd/local-pkg-directory "local/share/")
@@ -111,6 +123,9 @@ Define a path to internal libraries (either things I am developing or external =
   (f-join user-emacs-directory nd/local-pkg-directory path))
 #+END_SRC
 ** macros
+:PROPERTIES:
+:ID:       c83dc04a-754a-4ae4-b7da-cad984a7cb18
+:END:
 #+BEGIN_SRC emacs-lisp
 ;; lovingly stolen from aaron harris
 (defmacro nd/with-advice (adlist &rest body)
@@ -160,6 +175,9 @@ OS is one of those in `system-type'."
           (format "Run time: %.06f seconds"))))
 #+END_SRC
 ** functions
+:PROPERTIES:
+:ID:       c0d8cc5c-47e4-4f27-8a96-c5abee6d1e01
+:END:
 #+BEGIN_SRC emacs-lisp
 (defun nd/move-key (keymap-from keymap-to key)
   "Move KEY from KEYMAP-FROM keymap to KEYMAP-TO keymap."
@@ -245,6 +263,9 @@ If FRONT is t, do to the front of current values instead of the back."
     (define-key keymap it nil)))
 #+END_SRC
 ** interactive
+:PROPERTIES:
+:ID:       2fdcb908-a078-4451-9a93-08eba95cde0a
+:END:
 #+BEGIN_SRC emacs-lisp
 (defun nd/split-and-follow-horizontally ()
   "Split window horizontally and move focus."
@@ -335,6 +356,9 @@ If FRONT is t, do to the front of current values instead of the back."
 * user interface
 The general look and feel, as well as interactive functionality
 ** theme
+:PROPERTIES:
+:ID:       69569592-9930-4aee-b157-816105f394c9
+:END:
 This theme has good functionality for many different modes without being over-the-top or overly complex. It also comes with an easy way to set custom colors.
 #+BEGIN_SRC emacs-lisp
 (use-package spacemacs-theme
@@ -374,6 +398,9 @@ Since I run emacs in [[https://www.gnu.org/software/emacs/manual/html_node/emacs
       (setq nd/theme-terminal-loaded t))))
 #+END_SRC
 ** modeline
+:PROPERTIES:
+:ID:       b2a59968-a880-4ac7-b7e1-ff9738d442bf
+:END:
 This modeline goes along with the =spacemacs-theme=. It also has nice integration with =evil-mode= (see keybindings below).
 #+BEGIN_SRC emacs-lisp
 (use-package spaceline
@@ -389,12 +416,18 @@ This modeline goes along with the =spacemacs-theme=. It also has nice integratio
 (column-number-mode 1)
 #+END_SRC
 *** delight
+:PROPERTIES:
+:ID:       c1af4f46-dfd9-41a0-87e1-4ae8286495eb
+:END:
 I like to keep the modeline clean and uncluttered. This package prevents certain mode names from showing in the modeline (it also has support for =use-package= through the =:delight= keyword)
 #+BEGIN_SRC emacs-lisp
 (use-package delight
   :straight t)
 #+END_SRC
 ** remove interface bars
+:PROPERTIES:
+:ID:       4455f032-746d-40b8-b847-8173c1365bd2
+:END:
 Emacs comes with some useless garbage by default. IMHO (in my haughty opinion), text editors should be boxes with text in them. No menu bars, scroll bars, or toolbars (and certainly no ribbons). 
 #+BEGIN_SRC emacs-lisp
 (tool-bar-mode -1)
@@ -402,6 +435,9 @@ Emacs comes with some useless garbage by default. IMHO (in my haughty opinion), 
 (scroll-bar-mode -1)
 #+END_SRC
 ** startup screen
+:PROPERTIES:
+:ID:       6a966ba3-b4e2-45cd-b92d-b58ddc139bb0
+:END:
 Default startup screen is silly
 #+BEGIN_SRC emacs-lisp
 (setq inhibit-startup-screen t)
@@ -438,11 +474,17 @@ Instead use a dashboard, and display days until predicted death...you know, as a
 #+END_SRC
 ** windows
 *** popup windows
+:PROPERTIES:
+:ID:       cf715208-ec0f-4c3b-b9e8-5189de4e64c9
+:END:
 Some modes like to make popup windows (eg ediff). This prevents that.
 #+BEGIN_SRC emacs-lisp
 (setq pop-up-windows nil)
 #+END_SRC
 *** ace-window
+:PROPERTIES:
+:ID:       dc3f296e-0373-4641-9ccd-7083bd01761b
+:END:
 This is an elegant window selector. It displays a number in the corner when activated, and windows may be chosen by pressing the corresponding number. Note that spacemacs fails to make the numbers look nice so the theme code is a workaround to make them smaller and prettier.
 #+BEGIN_SRC emacs-lisp
 (use-package ace-window
@@ -457,6 +499,9 @@ This is an elegant window selector. It displays a number in the corner when acti
 #+END_SRC
 ** navigation
 *** helm
+:PROPERTIES:
+:ID:       919f08f5-dd1a-45c6-b791-2beb8d14747c
+:END:
 One of the best packages for emacs. Helm is basically a search and completion engine (other exanples being =ido-mode= and =ivy-mode=) which is mainly used for finding files and selecting commands (which are obviously used often). It also integrates well with many other modes such as =evil-mode= and =org-mode=.
 #+BEGIN_SRC emacs-lisp
 (use-package helm
@@ -481,11 +526,17 @@ One of the best packages for emacs. Helm is basically a search and completion en
   (require 'helm-config))
 #+END_SRC
 *** helm-swoop
+:PROPERTIES:
+:ID:       e94756f2-8d24-426d-a77c-83ed76bedf42
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package helm-swoop
   :straight t)
 #+END_SRC
 *** avy
+:PROPERTIES:
+:ID:       516f0610-4766-4711-a697-aaff0107a94b
+:END:
 Allows jumping to any character in any window with a few keystrokes. Goodbye mouse :)
 #+BEGIN_SRC emacs-lisp
 (use-package avy
@@ -494,6 +545,9 @@ Allows jumping to any character in any window with a few keystrokes. Goodbye mou
   (setq avy-background t))
 #+END_SRC
 ** cursor
+:PROPERTIES:
+:ID:       172b379f-817a-4e53-b0dd-17dcd3f89834
+:END:
 This makes a nice glowy effect on the cursor when switching window focus. Very elegant way of saving time in finding where you left off.
 #+BEGIN_SRC emacs-lisp
 (use-package beacon
@@ -508,26 +562,41 @@ This makes a nice glowy effect on the cursor when switching window focus. Very e
 #+END_SRC
 ** misc
 *** line wrap
+:PROPERTIES:
+:ID:       30d780b8-f904-4b37-9c99-0e423bc14869
+:END:
 I don't like line wrap
 #+BEGIN_SRC emacs-lisp
 (set-default 'truncate-lines t)
 #+END_SRC
 *** smooth scrolling
+:PROPERTIES:
+:ID:       04e772b4-b011-4f04-bab2-9f78349f276a
+:END:
 This makes scrolling smoother
 #+BEGIN_SRC emacs-lisp
 (setq scroll-conservatively 100)
 #+END_SRC
 *** imagemagick
+:PROPERTIES:
+:ID:       37664cf5-0abd-495a-86be-901278566d35
+:END:
 #+BEGIN_SRC emacs-lisp
 (when (fboundp 'imagemagick-register-types)
   (imagemagick-register-types))
 #+END_SRC
 *** yes-no prompt
+:PROPERTIES:
+:ID:       68c6e54c-cd43-4387-b5d0-a7e2f2128015
+:END:
 Some prompts require literal "yes" or "no" to decide action. Life is short and I would rather not waste keystrokes typing whole words. This makes all "yes/no" prompts only require "y" or "n."
 #+BEGIN_SRC emacs-lisp
 (defalias 'yes-or-no-p 'y-or-n-p)
 #+END_SRC
 *** folding
+:PROPERTIES:
+:ID:       da4dc93b-9895-4deb-a5bc-e8c68387b75b
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package origami
   :straight t
@@ -541,16 +610,25 @@ Some prompts require literal "yes" or "no" to decide action. Life is short and I
 * low-level config
 General configuation for behind-the-scenes behavior
 ** user information
+:PROPERTIES:
+:ID:       422a47ff-872b-4f14-acb1-406a36e0c237
+:END:
 #+BEGIN_SRC emacs-lisp
 (setq user-full-name "Dwarshuis, Nathan J")
 #+END_SRC
 ** autosave
+:PROPERTIES:
+:ID:       c008f4fb-d814-44bf-a750-ddd48238ee1c
+:END:
 Saving files continuously is actually really annoying and clutters my disk. Turn it off.
 #+BEGIN_SRC emacs-lisp
 (setq make-backup-files nil)
 (setq auto-save-default nil)
 #+END_SRC
 ** async
+:PROPERTIES:
+:ID:       cba2e250-ab93-472e-b747-b325bf6bc04a
+:END:
 Allows certain processes to run in multithreaded manner. For things like IO this makes sense.
 #+BEGIN_SRC emacs-lisp
 (use-package async
@@ -563,12 +641,18 @@ Allows certain processes to run in multithreaded manner. For things like IO this
 For options that specifically affect programming or editing modes
 ** standardization
 *** tabs and alignment
+:PROPERTIES:
+:ID:       4206ea47-73d9-4b15-b2da-f09e8a85190a
+:END:
 Who uses tabs in their programs? Make tabs actually equal 4 spaces. Also, allegedly I could [[https://stackoverflow.blog/2017/06/15/developers-use-spaces-make-money-use-tabs/][make more money]] if I use spaces :)
 #+BEGIN_SRC emacs-lisp
 (setq-default indent-tabs-mode nil
               tab-width 4)
 #+END_SRC
 *** short column width
+:PROPERTIES:
+:ID:       41952f6d-ce56-4acb-ac23-4bbce4cb0d34
+:END:
 Alot of languages at least semi-adhere to the 80-characters-per-line rule. =fci-mode= displays a line as a guide for column width.
 #+BEGIN_SRC emacs-lisp
 (setq-default fill-column 80)
@@ -581,6 +665,9 @@ Alot of languages at least semi-adhere to the 80-characters-per-line rule. =fci-
   (prog-mode . fci-mode))
 #+END_SRC
 *** spell checking
+:PROPERTIES:
+:ID:       d2ea7a4e-e955-4f55-9e73-e71c8a167592
+:END:
 I use the built-in =flyspell-mode= to handle spellchecking. Obviously I am going to use =helm= when I spellcheck something.
 #+BEGIN_SRC emacs-lisp
 ;; (use-package flyspell-correct-helm
@@ -608,6 +695,9 @@ Additionally, I want to automatically highlight errors whenever =flyspell-mode= 
 ;; (add-hook 'flyspell-mode-hook 'flyspell-buffer)
 #+END_SRC
 *** syntax checking
+:PROPERTIES:
+:ID:       efbac4ba-e2d4-498a-bd20-ad330aa2b8e8
+:END:
 Flycheck will highlight and explain syntax errors in code and formatting. See each language below for external tools that need to be installed to make flycheck work to the fullest.
 #+BEGIN_SRC emacs-lisp
 (use-package flycheck
@@ -624,6 +714,9 @@ Flycheck will highlight and explain syntax errors in code and formatting. See ea
   (delight 'flycheck-mode "ϕ" "flycheck"))
 #+END_SRC
 *** packaging
+:PROPERTIES:
+:ID:       ce31c62a-d4b9-44a7-9f30-5d035f8d0671
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package flycheck-package
   :straight t
@@ -632,6 +725,9 @@ Flycheck will highlight and explain syntax errors in code and formatting. See ea
   (eval-after-load 'flycheck '(flycheck-package-setup)))
 #+END_SRC
 ** auto completion
+:PROPERTIES:
+:ID:       90b3798e-342d-4b1e-84a2-6f594dcec619
+:END:
 Company provides a dropdown of completion options. It has many backends which are configured in each language and format elsewhere.
 #+BEGIN_SRC emacs-lisp
 (use-package company
@@ -642,6 +738,9 @@ Company provides a dropdown of completion options. It has many backends which ar
         company-minimum-prefix-length 3))
 #+END_SRC
 ** undo
+:PROPERTIES:
+:ID:       4e1b46fe-6e34-4b5e-9ff3-e4331c939f39
+:END:
 I find it weird that most programs do not have a tree-like tool to navigate undo information...because this is literally how most programs store this data.
 
 =undo-tree= package adds a nice undo tree buffer to visualize history and also displays diffs to easily show what changed.
@@ -654,6 +753,9 @@ I find it weird that most programs do not have a tree-like tool to navigate undo
   (global-undo-tree-mode))
 #+END_SRC
 ** parenthesis matching
+:PROPERTIES:
+:ID:       a8d75763-b67d-448e-a95f-04cfee0fb824
+:END:
 This color-codes matching parenthesis. Enable pretty much everywhere.
 #+BEGIN_SRC emacs-lisp
 (use-package rainbow-delimiters
@@ -671,6 +773,9 @@ Use pretty symbols (like lambda in lisp)
 (add-hook 'prog-mode-hook #'prettify-symbols-mode)
 #+END_SRC
 ** sudo edit
+:PROPERTIES:
+:ID:       03b80001-f784-44b7-814f-01bcf5c8b77b
+:END:
 Allows opening a file with sudo elevation.
 #+BEGIN_SRC emacs-lisp
 (use-package sudo-edit
@@ -678,6 +783,9 @@ Allows opening a file with sudo elevation.
 #+END_SRC
 ** formats and languages
 *** Elisp
+:PROPERTIES:
+:ID:       fb09bff5-002a-40b7-a00c-a21eb8dbfa78
+:END:
 Elisp can use vanilla company with no plugins
 #+BEGIN_SRC emacs-lisp
 (add-hook 'emacs-lisp-mode-hook 'company-mode)
@@ -690,6 +798,9 @@ Elisp can use vanilla company with no plugins
   :straight t)
 #+END_SRC
 *** ESS (Emacs Speaks Statistics)
+:PROPERTIES:
+:ID:       7e1017a8-8780-403e-9222-9cb097380c57
+:END:
 For me this means R but ess also supports S-plus, SAS, Stata, and other statistical black-magic languages. Note that ESS is not part of =prog-mode= so it must be added manually to hooks.
 
 Flycheck syntax checkers
@@ -750,12 +861,18 @@ Flycheck syntax checkers
 #+END_SRC
 *** Python
 **** inferior shell
+:PROPERTIES:
+:ID:       3e13c380-d9a6-4dc7-a0ca-03ee823271d8
+:END:
 I don't really use elpy, but it has really nice inferior process commands, so import but don't call =elpy-enable=.
 #+BEGIN_SRC emacs-lisp
 (use-package elpy
   :straight t)
 #+END_SRC
 **** anaconda and ipython
+:PROPERTIES:
+:ID:       320b60fe-2082-4644-913b-f7c703c1642e
+:END:
 Anaconda (not related to the Python/R distribution?) is much lighter and easier than elpy. Also use ipython instead of the built-in shell. (Note this requires ipython to be installed externally).
 #+BEGIN_SRC emacs-lisp
 (defun nd/init-anaconda-company ()
@@ -793,12 +910,18 @@ Anaconda (not related to the Python/R distribution?) is much lighter and easier 
 - flake8
 - pylint
 **** formatting
+:PROPERTIES:
+:ID:       4ed019d1-fdce-4552-be1e-5644ebcacdb7
+:END:
 [[https://github.com/python/black][Black]] is a really nice syntax formatter. It must be externally installed to work.
 #+BEGIN_SRC emacs-lisp
 (use-package blacken
   :straight t)
 #+END_SRC
 **** pyenv
+:PROPERTIES:
+:ID:       77045cce-5b0c-4caa-aa24-24f6651e9dbb
+:END:
 For isolation I use [[https://github.com/pyenv/pyenv][pyenv]] and [[https://github.com/pyenv/pyenv-virtualenv][pyenv-virtualenv]]. The only external addition needed to make this work is to add =${PYENV_ROOT}/shims= to PATH as well as adding a =.pythong-version= file in the project root specifying the desired version/environment.
 
 Note this also requires all external packages to be installed in each environement (eg ipython, black, flake8, and pylint).
@@ -815,6 +938,9 @@ Note this also requires all external packages to be installed in each environeme
 (advice-add #'pyenv-mode-full-path :filter-return #'file-truename)
 #+END_SRC
 *** Ruby
+:PROPERTIES:
+:ID:       bd1723ec-daec-4c45-82c5-41430e9b02fc
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package inf-ruby
   :straight t)
@@ -833,6 +959,9 @@ Note this also requires all external packages to be installed in each environeme
 **** stack
 On Arch, all packages are dynamically linked (very bad for Haskell). The solution is to install [[https://docs.haskellstack.org/en/stable/README/][stack]] via the =stack-static= package through the AUR and then install all Haskell programs through stack using static linking. 
 **** major mode
+:PROPERTIES:
+:ID:       825bc193-dde8-4978-8843-05ff76138159
+:END:
 The major mode package =haskell-mode= is quite comprehensive and has most of what I need out of the box, including:
 - syntax highlighting
 - indentation
@@ -890,12 +1019,18 @@ I have also found this to be much simpler and conflicting with other packages su
 (delight 'subword-mode nil "subword")
 #+END_SRC
 **** hlint
+:PROPERTIES:
+:ID:       004cd31c-efe1-47e1-9ded-b7fc375d2ee3
+:END:
 This is an additional syntax checker and requires the =hlint= binary (install through stack).
 #+BEGIN_SRC emacs-lisp
 (with-eval-after-load 'haskell
   (flycheck-add-next-checker 'haskell-stack-ghc '(t . haskell-hlint)))
 #+END_SRC
 **** helper functions
+:PROPERTIES:
+:ID:       056b3fc4-b853-4646-87d5-ec62dc84bd23
+:END:
 Other helper functions that make haskell even more fun.
 #+BEGIN_SRC emacs-lisp
 (defun nd/haskell-switch-to-process ()
@@ -908,6 +1043,9 @@ Other helper functions that make haskell even more fun.
     (haskell-process-load-or-reload)))
 #+END_SRC
 *** Lua
+:PROPERTIES:
+:ID:       31252e83-5cc2-4048-b5c2-70c10d1e271f
+:END:
 For flycheck, install =luacheck= (from AUR on Arch).
 #+BEGIN_SRC emacs-lisp
 (use-package lua-mode
@@ -915,6 +1053,9 @@ For flycheck, install =luacheck= (from AUR on Arch).
 #+END_SRC
 *** TeX
 **** AUCTeX
+:PROPERTIES:
+:ID:       48d49c12-7fac-4646-9ac0-14bf592fc0d1
+:END:
 Install auctex through emacs as this is OS independent and more automatic. Note that the Tex package libraries (eg TeXLive) still need to be installed to do anything useful.
 #+BEGIN_SRC emacs-lisp
 (use-package tex
@@ -930,6 +1071,9 @@ Install auctex through emacs as this is OS independent and more automatic. Note 
         '(TeX-revert-document-buffer)))
 #+END_SRC
 **** external viewers
+:PROPERTIES:
+:ID:       65c80df3-5354-460b-9400-a6a13d9a4296
+:END:
 AUCTeX can launch external viewers to show compiled documents.
 #+BEGIN_SRC emacs-lisp
 (setq TeX-view-program-selection
@@ -941,6 +1085,9 @@ AUCTeX can launch external viewers to show compiled documents.
 #+END_SRC
 **** outline mode
 ***** folding
+:PROPERTIES:
+:ID:       faf47efc-fccb-4ac4-9f8b-12fc09bb423a
+:END:
 I like how =org-mode= folds with the TAB key, so bring the same thing to AUCTeX here with =outline-magic=.
 #+BEGIN_SRC emacs-lisp
 (use-package outline-magic
@@ -950,11 +1097,17 @@ I like how =org-mode= folds with the TAB key, so bring the same thing to AUCTeX 
   ((LaTeX-mode . outline-minor-mode)))
 #+END_SRC
 ***** fonts
+:PROPERTIES:
+:ID:       eb950e96-8c64-4a77-b007-fa38f3490527
+:END:
 The section fonts are too big by default. Now the fonts are all kept equal with hatchet, axe, and saw :)
 #+BEGIN_SRC emacs-lisp
 (setq font-latex-fontify-sectioning 'color)
 #+END_SRC
 **** auto completion
+:PROPERTIES:
+:ID:       aa2837d5-1554-412b-bd81-a460a941032c
+:END:
 There are two backends which (kinda) complement each other. The =company-math= package should privide completion for math symbols and the =company-auctex= package should cover pretty much everything else.
 #+BEGIN_SRC emacs-lisp
 (defun nd/init-company-auctex ()
@@ -983,6 +1136,9 @@ There are two backends which (kinda) complement each other. The =company-math= p
   ((LaTeX-mode . nd/init-company-auctex)))
 #+END_SRC
 **** line wrap
+:PROPERTIES:
+:ID:       a6be7216-225f-4aec-abdd-77e94b9d8078
+:END:
 I like having my lines short and readable (also easier to git). Turn on autofill here and also make a nice vertical line at 80 chars (=visual-line-mode=).
 #+BEGIN_SRC emacs-lisp
 (defun nd/turn-on-auto-fill-maybe ()
@@ -993,6 +1149,9 @@ I like having my lines short and readable (also easier to git). Turn on autofill
 (add-hook 'LaTeX-mode-hook #'nd/turn-on-auto-fill-maybe)
 #+END_SRC
 **** local variables
+:PROPERTIES:
+:ID:       9f0c94f8-e4c0-4f7b-93b4-d24d0abb773f
+:END:
 #+BEGIN_SRC emacs-lisp
 (with-eval-after-load 'tex
   (add-to-list 'safe-local-variable-values
@@ -1000,6 +1159,9 @@ I like having my lines short and readable (also easier to git). Turn on autofill
 #+END_SRC
 **** BibTeX
 ***** database management
+:PROPERTIES:
+:ID:       ef1365fe-eb66-4a98-8f7a-cb5c0d8e89bc
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package ebib
   :straight t
@@ -1008,6 +1170,9 @@ I like having my lines short and readable (also easier to git). Turn on autofill
         ebib-uniquify-keys t))
 #+END_SRC
 ***** citation search and insertion
+:PROPERTIES:
+:ID:       13b5981b-4f22-4565-97a7-933570009797
+:END:
 Together, =org-ref= and =helm-bibtex= provide a nice pipeline to search a BibTex database and insert citations.
 #+BEGIN_SRC emacs-lisp
 (use-package org-ref
@@ -1027,6 +1192,9 @@ Together, =org-ref= and =helm-bibtex= provide a nice pipeline to search a BibTex
         bibtex-completion-pdf-field "File"))
 #+END_SRC
 *** HTML
+:PROPERTIES:
+:ID:       cc7e3f8a-1efc-4f41-9437-364d37b436d0
+:END:
 For flycheck, install =tidy= (privides the =html-tidy= binary).
 #+BEGIN_SRC emacs-lisp
 (use-package impatient-mode
@@ -1035,6 +1203,9 @@ For flycheck, install =tidy= (privides the =html-tidy= binary).
   (setq httpd-port 18080))
 #+END_SRC
 *** CSS
+:PROPERTIES:
+:ID:       5a3ae52d-e091-404e-9af8-753fd399a05d
+:END:
 Overlays hex color codes with matching colors in certain modes like css and html. For flycheck, install =stylelint= (from the AUR on Arch).
 #+BEGIN_SRC emacs-lisp
 (use-package rainbow-mode
@@ -1042,27 +1213,42 @@ Overlays hex color codes with matching colors in certain modes like css and html
 #+END_SRC
 *** Javascript
 **** tabs
+:PROPERTIES:
+:ID:       09b95fc7-fc23-4fd9-8c1d-12fce4c0fad8
+:END:
 An exception to the rule
 #+BEGIN_SRC emacs-lisp
 (setq js-indent-level 2)
 #+END_SRC
 **** inferior mode
+:PROPERTIES:
+:ID:       af009285-2261-47b1-8bf1-01434b87dec0
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package js-comint
   :straight t)
 #+END_SRC
 **** JSON
+:PROPERTIES:
+:ID:       7fea0119-e73b-473c-987d-7dfb2f71604c
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package json-mode
   :straight t
   :hook (json-mode . origami-mode))
 #+END_SRC
 *** PHP
+:PROPERTIES:
+:ID:       6fded61d-5a77-464a-b22c-e3164371f091
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package php-mode
   :straight t)
 #+END_SRC
 *** markdown
+:PROPERTIES:
+:ID:       ea4abeb2-fdc5-44ad-ad55-2e7aa3e4d45e
+:END:
 Make font sizes smaller and less intrusive for headers
 #+BEGIN_SRC emacs-lisp
 (use-package markdown-mode
@@ -1082,6 +1268,9 @@ Make font sizes smaller and less intrusive for headers
 (add-hook 'markdown-mode-hook #'nd/turn-on-auto-fill-maybe)
 #+END_SRC
 *** R-markdown
+:PROPERTIES:
+:ID:       6b333283-36c7-4f22-8c95-f1dd78eb098a
+:END:
 R-markdown is enabled via polymode, which allows multiple modes in one buffer (this is actually as crazy as it sounds). In this case, the modes are yaml, R, markdown, and others. Installing =poly-R= will pull in all required dependencies.
 #+BEGIN_SRC emacs-lisp
 (use-package poly-R
@@ -1091,11 +1280,17 @@ R-markdown is enabled via polymode, which allows multiple modes in one buffer (t
    ("\\.rmd\\'" . poly-markdown+r-mode)))
 #+END_SRC
 *** YAML
+:PROPERTIES:
+:ID:       995cd47c-e0af-43a8-bd7c-a46ae1fae258
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package yaml-mode
   :straight t)
 #+END_SRC
 *** csv files
+:PROPERTIES:
+:ID:       f554238f-d7b3-4e2d-ad59-7b4e88ed39a9
+:END:
 This adds support for csv files. Almost makes them editable like a spreadsheet. The lambda function enables alignment by default.
 #+BEGIN_SRC emacs-lisp
 (use-package csv-mode
@@ -1103,6 +1298,9 @@ This adds support for csv files. Almost makes them editable like a spreadsheet. 
   :hook (csv-mode . (lambda () (csv-align-fields nil (point-min) (point-max)))))
 #+END_SRC
 *** Arch Linux
+:PROPERTIES:
+:ID:       7d4a9077-3b71-47d9-998a-282f56f48d33
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package pkgbuild-mode
   :straight t)
@@ -1111,6 +1309,9 @@ This adds support for csv files. Almost makes them editable like a spreadsheet. 
   :straight systemd)
 #+END_SRC
 *** Unix Shell
+:PROPERTIES:
+:ID:       8d8cf098-eea1-469b-9ada-1d2e709c6977
+:END:
 No custom code here, but flycheck needs =shellcheck= (a Haskell program). On Arch (or any other distro that loves dynamic binding) easiest way to install is via =stack install ShellCheck=
 #+BEGIN_SRC emacs-lisp
 (add-to-list 'load-path (nd/expand-local-pkg-directory "essh"))
@@ -1119,6 +1320,9 @@ No custom code here, but flycheck needs =shellcheck= (a Haskell program). On Arc
 *** SQL
 No custom code here, but flycheck needs =sqlint= (on Arch available through the AUR).
 *** Docker
+:PROPERTIES:
+:ID:       ce24b075-ede6-4d6c-81db-4c6aa40e4fd0
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package dockerfile-mode
   :straight t)
@@ -1126,6 +1330,9 @@ No custom code here, but flycheck needs =sqlint= (on Arch available through the 
 * org-mode
 ** low-level config
 *** modules
+:PROPERTIES:
+:ID:       d4b978f4-7002-45e8-a84c-6c7bb40c02f6
+:END:
 Org has several extensions in the form of loadable modules. =org-protocol= is used as a backend for external programs to communicate with =org-mode=. =org-habit= allows the habit todoitem which is used as a more flexible recurring task.
 #+BEGIN_SRC emacs-lisp
 (org-set-modules 'org-modules
@@ -1142,11 +1349,17 @@ Org has several extensions in the form of loadable modules. =org-protocol= is us
 ;;(require 'org-tempo) ;; required for 9.2
 #+END_SRC
 *** directory
+:PROPERTIES:
+:ID:       69bfcaa5-db1d-4507-8397-7dee3cb902f5
+:END:
 I keep all my org files in one place.
 #+BEGIN_SRC emacs-lisp
 (setq org-directory "~/Org")
 #+END_SRC
 *** autosave
+:PROPERTIES:
+:ID:       4320f373-175b-44c8-a564-bb54452da44f
+:END:
 Save all org buffers 1 minute before the hour. 
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-save-all-org-buffers ()
@@ -1157,6 +1370,9 @@ Save all org buffers 1 minute before the hour.
 (run-at-time "00:59" 3600 #'nd/org-save-all-org-buffers)
 #+END_SRC
 *** libraries
+:PROPERTIES:
+:ID:       455ce793-920c-4244-a25d-ec40fdf74bc1
+:END:
 Org extras
 #+BEGIN_SRC emacs-lisp
 (add-to-list 'load-path (nd/expand-local-pkg-directory "org-x"))
@@ -1166,18 +1382,27 @@ Org extras
 #+END_SRC
 ** buffer interface
 *** line wrap
+:PROPERTIES:
+:ID:       02b52d3a-485c-4bb7-bea5-f2b9abbc633f
+:END:
 I often write long, lengthy prose in org buffers, so use =visual-line-mode= to make lines wrap in automatic and sane manner.
 #+BEGIN_SRC emacs-lisp
 (add-hook 'org-mode-hook #'visual-line-mode)
 (delight 'visual-line-mode nil 'simple)
 #+END_SRC
 *** indentation
+:PROPERTIES:
+:ID:       3caee325-0567-4743-b78c-c51db1254a94
+:END:
 By default all org content is squished to the left side of the buffer regardless of its level in the outline. This is annoying and I would rather have content indented based on its level just like most bulleted lists. This is what =org-indent-mode= does.
 #+BEGIN_SRC emacs-lisp
 (setq org-startup-indented t)
 (delight 'org-indent-mode nil "org-indent")
 #+END_SRC
 *** special key behavior
+:PROPERTIES:
+:ID:       d72f63d5-7adc-469b-8ec1-f5198b2babac
+:END:
 TODO: These don't work in evil mode (using the usual line commands).
 #+BEGIN_SRC emacs-lisp
 (setq org-special-ctrl-a/e t
@@ -1185,6 +1410,9 @@ TODO: These don't work in evil mode (using the usual line commands).
       org-yank-adjusted-subtrees t)
 #+END_SRC
 *** bullets
+:PROPERTIES:
+:ID:       109afbf1-164e-4da5-b6e8-6c1f6fc4b1fd
+:END:
 These are just so much better to read
 #+BEGIN_SRC emacs-lisp
 (use-package org-bullets
@@ -1196,6 +1424,9 @@ These are just so much better to read
   (setq inhibit-compacting-font-caches t))
 #+END_SRC
 *** font height
+:PROPERTIES:
+:ID:       b3f385ab-ae8c-4fc6-b303-a1efd2212cb6
+:END:
 The fonts in org headings bug me; make them smaller and less invasive.
 #+BEGIN_SRC emacs-lisp
 (add-hook 'org-mode-hook
@@ -1208,6 +1439,9 @@ The fonts in org headings bug me; make them smaller and less invasive.
               (set-face-attribute 'org-level-5 nil :weight 'normal :height heading-height))))
 #+END_SRC
 *** src blocks
+:PROPERTIES:
+:ID:       2805a86e-065e-4680-b11f-f45a815ccac5
+:END:
 Enable shortcuts for embedding code in org text bodies.
 #+BEGIN_SRC emacs-lisp
 (setq org-src-window-setup 'current-window
@@ -1220,11 +1454,17 @@ Enable shortcuts for embedding code in org text bodies.
              '("el" "#+BEGIN_SRC emacs-lisp\n?\n#+END_SRC"))
 #+END_SRC
 *** todo insertion
+:PROPERTIES:
+:ID:       af72b28d-6673-4237-8ff4-5de64360bea9
+:END:
 Make todo insertion respect contents
 #+BEGIN_SRC emacs-lisp
 (setq org-insert-heading-respect-content t)
 #+END_SRC
 *** table of contents
+:PROPERTIES:
+:ID:       77cd66b2-08b8-4c53-bdd3-4af3b9eade2e
+:END:
 Since I use org mode as my config file, makes sense to have a table of contents so others can easily naviagate this crazy empire I have created :)
 #+BEGIN_SRC emacs-lisp
 (use-package toc-org
@@ -1233,6 +1473,9 @@ Since I use org mode as my config file, makes sense to have a table of contents 
   (org-mode . toc-org-mode))
 #+END_SRC
 *** column view
+:PROPERTIES:
+:ID:       50532a03-13cf-47b3-92a3-2ee34a3b75ae
+:END:
 #+BEGIN_SRC emacs-lisp
 (setq org-columns-default-format
       (s-join
@@ -1244,6 +1487,9 @@ Since I use org mode as my config file, makes sense to have a table of contents 
 ;; org-columns-summary-types
 #+END_SRC
 *** rifle
+:PROPERTIES:
+:ID:       97ff686e-05d8-4d32-9354-eaaf8691f940
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package helm-org-rifle
   :straight t
@@ -1255,6 +1501,9 @@ Since I use org mode as my config file, makes sense to have a table of contents 
   (helm-org-rifle-directories (list org-brain-path)))
 #+END_SRC
 ** calfw
+:PROPERTIES:
+:ID:       57d3105c-eab1-4784-ab27-cf63e6c56b05
+:END:
 This is a nifty calendar...sometimes way faster than the agenda buffer for looking at long term things.
 #+BEGIN_SRC emacs-lisp
 (use-package calfw
@@ -1279,6 +1528,9 @@ This is a nifty calendar...sometimes way faster than the agenda buffer for looki
 ** window splitting
 Org mode is great and all, but the windows never show up in the right place. The solutions here are simple, but have the downside that the window sizing must be changed when tags/capture templates/todo items are changed. This is because the buffer size is not known at window creation time and I didn't feel like making a function to predict it
 *** todo selection
+:PROPERTIES:
+:ID:       5c61f3ce-37b7-44ad-af8f-79546536df1a
+:END:
 I only need a teeny tiny window below my current window for todo selection
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-todo-position (buffer alist)
@@ -1306,6 +1558,9 @@ I only need a teeny tiny window below my current window for todo selection
 (advice-add #'org-fast-todo-selection :around #'nd/org-todo-window-advice)
 #+END_SRC
 *** tag selection
+:PROPERTIES:
+:ID:       d4974e0b-8ee7-4522-97f9-58a8daf550ad
+:END:
 By default, the tag selection window obliterates all but the current window...how disorienting :/
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-tag-window-advice (orig-fn current inherited table &optional todo-table)
@@ -1320,10 +1575,13 @@ By default, the tag selection window obliterates all but the current window...ho
 (advice-add #'org-fast-tag-selection :around #'nd/org-tag-window-advice)
 #+END_SRC
 *** capture
+:PROPERTIES:
+:ID:       db0d7970-452e-44d9-9ab0-a59939e3771d
+:END:
 Capture should show up in the bottom of any currently active buffer
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-capture-position (buffer alist)
-  (let ((new (split-window (get-buffer-window) -14 'below)))
+  (let ((new (split-window (get-buffer-window) -19 'below)))
     (set-window-buffer new buffer)
     new))
 
@@ -1341,11 +1599,17 @@ Capture should show up in the bottom of any currently active buffer
 #+END_SRC
 ** exporting
 *** latex to pdf command
+:PROPERTIES:
+:ID:       20f66f2e-6358-4b89-be02-7bebbf0ad28f
+:END:
 Use =latexmk= instead of =pdflatex= as it is more flexible and doesn't require running the process zillion times just to make a bibliography work. Importantly, add support here for BibTeX as well as the custom output directory (see below).
 #+BEGIN_SRC emacs-lisp
 (setq org-latex-pdf-process (list "latexmk -output-directory=%o -shell-escape -bibtex -f -pdf %f"))
 #+END_SRC
 *** custom output directory
+:PROPERTIES:
+:ID:       11985805-b6bf-4760-8e31-00cd09e097ff
+:END:
 By default org export files to the same location as the buffer. This is insanity and clutters my org directory with =.tex= and friends. Force org to export to a separate location.
 #+BEGIN_SRC emacs-lisp
 (defvar nd/org-export-publishing-directory
@@ -1363,11 +1627,17 @@ By default org export files to the same location as the buffer. This is insanity
 (advice-add 'org-export-output-file-name :around #'nd/org-export-output-file-name)
 #+END_SRC
 *** html5
+:PROPERTIES:
+:ID:       fbe3cb50-3d30-4fb0-ba7f-3b7fa2bbdf46
+:END:
 The default is XHTML for some reason (which few use and makes certain barbaric word processors complain). Use the much-superior html5.
 #+BEGIN_SRC emacs-lisp
 (setq org-html-doctype "html5")
 #+END_SRC
 ** project management
+:PROPERTIES:
+:ID:       69ab9162-b137-48b5-833d-559c09cdffaa
+:END:
 [[https://github.com/taskjuggler/TaskJuggler][TaskJuggler]] is software that is most likely used by some super-intelligent alien species to plan their invasions of nearby planets and develop sophisticated means of social control.
 
 Basically it is really complicated and powerful. For now I use it to make cute gantt charts.
@@ -1502,6 +1772,9 @@ These conventions are used throughout to be precise when naming functions/variab
 - fresh: refers to timestamps that are in the future
 *** todo states
 **** sequences
+:PROPERTIES:
+:ID:       5c1c4731-54a1-4a68-99f2-688505347dec
+:END:
 These keywords are used universally for all org files (see below on quick explanation for each, they are all quite straightforward). Note that projects have a more specific meaning for these keywords in defining project status (see the library of agenda function). Also, it looks way better in the agenda buffer when they are all the same number of chars. 
 
 In terms of logging, I like to record the time of each change upon leaving any state, and I like recording information in notes when waiting, holding, or canceling (as these usually have some external trigger or barrier that should be specified).
@@ -1528,6 +1801,9 @@ In terms of logging, I like to record the time of each change upon leaving any s
          "CANC(c@/!)")))
 #+END_SRC
 **** colors
+:PROPERTIES:
+:ID:       cd3770aa-4e16-4365-a4ec-c32eb17df9a5
+:END:
 Aesthetically, I like all my keywords to have bold colors.
 #+BEGIN_SRC emacs-lisp
 (setq   org-todo-keyword-faces
@@ -1538,8 +1814,19 @@ Aesthetically, I like all my keywords to have bold colors.
         ("HOLD" :foreground "violet" :weight bold)
         ("CANC" :foreground "deep sky blue" :weight bold)))
 #+END_SRC
+*** links and IDs
+:PROPERTIES:
+:ID:       9131356e-b290-402e-86cf-15242082c622
+:END:
+IDs and links are useful for meetings where I either reference tasks to discuss or reference action items to do in the future.
+#+BEGIN_SRC emacs-lisp
+(setq org-id-link-to-org-use-id t)
+#+END_SRC
 *** tags
 **** alist
+:PROPERTIES:
+:ID:       2913dba5-20f6-4a37-b2dc-bac9efb7f098
+:END:
 I use tags for agenda filtering (primarily for GTD contexts, see below). Each tag here starts with a symbol to define its group (note, only the special chars "_", "@", "#", and "%" seem to be allowed; anything else will do weird things in the hotkey prompt). Some groups are mutually exclusive. By convention, any tag not part of these groups is ALLCAPS (not very common) and set at the file level. 
 #+BEGIN_SRC emacs-lisp
 (setq org-tag-alist
@@ -1592,6 +1879,9 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
         (:endgroup)))
 #+END_SRC
 **** colors
+:PROPERTIES:
+:ID:       aec2918e-a8a9-483c-9387-0974fa2e0e88
+:END:
 Each group also has its own color, defined by its prefix symbol.
 #+BEGIN_SRC emacs-lisp
 (defun nd/add-tag-face (fg-name prefix)
@@ -1610,6 +1900,9 @@ Each group also has its own color, defined by its prefix symbol.
 (nd/add-tag-face "OrangeRed1" "τ")
 #+END_SRC
 *** properties
+:PROPERTIES:
+:ID:       91bad6fb-d454-47a5-8335-f97853f78c31
+:END:
 The built-in =effort= is used as the fourth and final homonymous GTD context (the other three being covered above using tags). It is further restricted with =Effort_All= to allow easier filtering in the agenda.
 
 Also here are the properties for repeated tasks and a few others (see comments in code).
@@ -1639,18 +1932,25 @@ Also here are the properties for repeated tasks and a few others (see comments i
 #+END_SRC
 *** capture
 **** templates
+:PROPERTIES:
+:ID:       582110fe-566f-476f-a64e-b432d513c921
+:END:
 As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F2= (see keybindings section) which allows access in just about every mode and brings a template up in two keystrokes.
+
+NOTE: Capitalized entries store a link to the capture along with writing to the capture file. The =:x-autolink= is a non-standard key that I interpret in a [[id:53df8748-78c6-4c5b-b8ff-c2a9598dca48][hook]].
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-timestamp-future (days)
   "Inserts an active org timestamp DAYS after the current time."
   (format-time-string (org-time-stamp-format nil)
                       (time-add (current-time) (days-to-time 1))))
 
-(let ((capfile "~/Org/capture.org"))
+(let* ((capfile "~/Org/capture.org")
+       (todo-options `(entry (file ,capfile) "* TODO %?\n"))
+       (deadline-options `(entry (file ,capfile) "* TODO %?\nDEADLINE: %^t\n")))
   (setq org-capture-templates
         ;; regular TODO task
-        `(("t" "todo" entry (file ,capfile)
-           "* TODO %?\n")
+        `(("t" "todo" ,@todo-options)
+          ("T" "todo (store link)" ,@todo-options :x-autolink t)
 
           ;; for useful reference information that may be grouped with tasks
           ("n" "note" entry (file ,capfile)
@@ -1665,8 +1965,8 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
            "* %?\n%^t--%^t\n")
 
           ;; task with a deadline
-          ("d" "deadline" entry (file ,capfile)
-           "* TODO %?\nDEADLINE: %^t\n")
+          ("d" "deadline" ,@deadline-options)
+          ("D" "deadline (store link)" ,@deadline-options :x-autolink t)
 
           ;; for converting mu4e emails to tasks, defaults to next-day deadline
           ("e" "email" entry (file ,capfile)
@@ -1679,7 +1979,7 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
           ;; TODO add entries here for asynchronously performed tasks
           ;; that can be tracked
           ;; target these to a specific headline in general.org
-          ("A" "Asynchronous")
+          ;; ("A" "Asynchronous")
           ;; eating food
           ;; prepping food
           ;; showering
@@ -1697,11 +1997,30 @@ As per Bernt's guide, capture is meant to be fast. The dispatcher is bound to =F
            :immediate-finish t))))
 #+END_SRC
 **** insert mode
+:PROPERTIES:
+:ID:       999d6090-7851-4882-9e7d-73084adbfc1a
+:END:
 To save one more keystroke (since I use evil mode), trigger insert mode upon opening capture template.
 #+BEGIN_SRC emacs-lisp
 (add-hook 'org-capture-mode-hook (lambda () (evil-append 1)))
 #+END_SRC
+**** autolink
+:PROPERTIES:
+:ID:       53df8748-78c6-4c5b-b8ff-c2a9598dca48
+:END:
+In some capture templates I want to automatically store a link to the entry so I can use it later. This can be done using one the the capture-finalize hooks and simply running =org-store-link= on the capture (note this only makes sense for headlines).
+#+BEGIN_SRC emacs-lisp
+(setq org-capture-before-finalize-hook
+      (lambda ()
+        (when (org-capture-get :x-autolink)
+          (save-excursion
+            (org-back-to-heading)
+            (call-interactively #'org-store-link)))))
+#+END_SRC
 *** refile
+:PROPERTIES:
+:ID:       8316d4a9-1365-40a7-89ab-e4670c30303c
+:END:
 Refile (like capture) should be fast, and I search all org file simultaneously using helm (setting =org-outline-path-complete-in-steps= to =nil= makes search happen for entire trees at once and not just the current level). Refiling is easiest to do from a block agenda view (see below) where headings can be moved in bulk.
 #+BEGIN_SRC emacs-lisp
 (setq org-refile-targets '((nil :maxlevel . 9)
@@ -1733,6 +2052,9 @@ Prevent accidental refiling under tasks with done keywords
 #+END_SRC
 *** clocking
 **** general
+:PROPERTIES:
+:ID:       82484193-9c46-48be-9092-f62fd0b80f5d
+:END:
 Clocking is still new and experimental (I'm not a ninja like Bernt yet). I mostly use clocking now as a way to make clean breaks between tasks (eg to discourage "mixing" tasks which is a slippery multitasking slope). I bound =F4= to =org-clock-goto= as an easy way to find my current/last clocked task in any mode (see keybindigs).
 #+BEGIN_SRC emacs-lisp
 (setq org-clock-history-length 23
@@ -1741,6 +2063,9 @@ Clocking is still new and experimental (I'm not a ninja like Bernt yet). I mostl
       org-clock-report-include-clocking-task t)
 #+END_SRC
 **** modeline
+:PROPERTIES:
+:ID:       9d32382c-5860-4e15-a8ad-12afb45dc59c
+:END:
 The modeline is a nice place to indicate if something is clocked in or out. Unfortunately, sometimes is is so crowded that I can't see the text for the currently clocked task. Solution, use colors.
 #+BEGIN_SRC emacs-lisp
 (defface nd/spaceline-highlight-clocked-face
@@ -1760,6 +2085,9 @@ The modeline is a nice place to indicate if something is clocked in or out. Unfo
 *** clustering
 Org mode has no way of detecting if conflicts exist. It also has no way of alerting someone if they have overbooked their schedule
 **** extraction filters
+:PROPERTIES:
+:ID:       8384e715-dfe2-4197-9b0e-88bb32c3afa0
+:END:
 These control which types of headlines are processed by org-cluster
 #+BEGIN_SRC emacs-lisp
 (defvar nd/org-cluster-filter-files t
@@ -1789,6 +2117,9 @@ also non-nil.")
   "Set to t to exclude habits from org-cluster analysis.")
 #+END_SRC
 **** timestamp extraction and filtering
+:PROPERTIES:
+:ID:       3f39fe19-b89e-47f1-80d4-e6a532788527
+:END:
 Conflicts and overloads begin with the same list to process, which is created using =org-element-parse-buffer= and a variety of filtering functions to extract relevent timestamps.
 
 The main object that is passed around during extraction and processing is the timestamp-plist as described in =nd/org-cluster-make-tsp= below.
@@ -1948,6 +2279,9 @@ and added to accumulator ACC."
    nd/org-cluster-filter-past))
 #+END_SRC
 **** conflict detection
+:PROPERTIES:
+:ID:       6b777ec6-3898-4855-8664-84b13f468920
+:END:
 This algorithm builds a list of pairs, with each pair being a two tasks that conflict and should be O(n) (best case/no conflicts) to O(n^2) (worst case/everything conflicts).
 
 Steps for this:
@@ -1992,6 +2326,9 @@ Each member in the cons cell is a timestamp-plist."
    nd/org-cluster-build-conlist))
 #+END_SRC
 **** overload detection
+:PROPERTIES:
+:ID:       fe65a792-6b2c-47c0-84a1-98fc4115a04b
+:END:
 Overloads are defined as days that have more than 24 hours worth of scheduled material. The algorithm is O(n) as it is basically just a bunch of filtering functions that walk through the list.
 
 Steps for the algorithm:
@@ -2068,6 +2405,9 @@ in the returned list."
    (--filter (nd/org-cluster-overloaded-p it))))
 #+END_SRC
 **** frontend
+:PROPERTIES:
+:ID:       43ad0b41-43a7-4d66-a260-0c0e3767469b
+:END:
 I could just fetch the org headings and throw them into a new buffer. But that's boring, and quite limiting. I basically want all the perks of an agenda buffer...tab-follow, the nice parent display at the bottom, time adjust hotkeys, etc. So the obvious and hacky solution is to throw together a quick-n-dirty agenda buffer.
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-cluster-headline-text (ts-entry)
@@ -2227,6 +2567,9 @@ MARKER for use in the conflict agenda view."
 #+END_SRC
 *** agenda
 **** targets
+:PROPERTIES:
+:ID:       5807d294-b7a6-47d7-a3a2-913a4bac4f3d
+:END:
 The agenda files are limited to as few as possible to keep scanning and startup reasonably fast.
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-files '("~/Org"
@@ -2235,15 +2578,24 @@ The agenda files are limited to as few as possible to keep scanning and startup 
 #+END_SRC
 **** appearence
 ***** sticky agendas
+:PROPERTIES:
+:ID:       f0c465f4-d501-43de-a234-e2c5c22ab458
+:END:
 I personally like having sticky agendas by default so I can use multiple windows
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-sticky t)
 #+END_SRC
 ***** tag alignment
+:PROPERTIES:
+:ID:       fe6255b4-7569-41d1-b496-8db9888c0282
+:END:
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-tags-column 'auto)
 #+END_SRC 
 ***** prefix format
+:PROPERTIES:
+:ID:       e0e6d1e6-889d-489a-a542-f750551fd765
+:END:
 This controls what each line on the block agenda looks like. This is reformated to include effort and remove icons.
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-prefix-format
@@ -2253,6 +2605,9 @@ This controls what each line on the block agenda looks like. This is reformated 
         (search . "  %-12:c")))
 #+END_SRC
 ***** modeline
+:PROPERTIES:
+:ID:       ee4c00a9-6144-4ad7-9f96-5cba07ee1e9c
+:END:
 Hide the various modules that may be present
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-agenda-trim-modeline (orig-fn &rest args)
@@ -2266,6 +2621,9 @@ Hide the various modules that may be present
 (advice-add #'org-agenda-set-mode-name :around #'nd/org-agenda-trim-modeline)
 #+END_SRC
 ***** misc
+:PROPERTIES:
+:ID:       154728a2-6212-41cf-b942-413b16d0843b
+:END:
 These are just some options to enable/disable some aesthetic things.
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-dim-blocked-tasks nil
@@ -2281,12 +2639,18 @@ Based on my screen size and usage patterns, this seems to be a good value to ena
 (setq org-habit-graph-column 50)
 #+END_SRC
 **** bulk actions
+:PROPERTIES:
+:ID:       7fefa0dc-70f2-4208-8f48-d10cab8b5bee
+:END:
 These add to the existing bulk actions in the agenda view.
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-bulk-custom-functions
       '((?D org-x-agenda-delete-subtree)))
 #+END_SRC
 **** holidays and birthdays
+:PROPERTIES:
+:ID:       e7fe3dfb-b3e4-4d45-bf05-be49eb5f0479
+:END:
 If I don't include this, I actually forget about major holidays.
 #+BEGIN_SRC emacs-lisp
 (setq holiday-bahai-holidays nil
@@ -2300,6 +2664,9 @@ If I don't include this, I actually forget about major holidays.
 **** block agenda library
 These are functions and variables exclusively for agenda block manipulation within the context of =org-custom-agenda-commands=.
 ***** constants
+:PROPERTIES:
+:ID:       eea59f33-b2c5-462b-9377-4c0dedd90c56
+:END:
 #+BEGIN_SRC emacs-lisp
 (defconst org-clone-iter-future-time (* 7 24 60 60)
   "Iterators must have at least one task greater into the future to be active.")
@@ -2316,6 +2683,9 @@ These are functions and variables exclusively for agenda block manipulation with
 ***** task helper functions
 These are the building blocks for skip functions.
 ****** repeater testing
+:PROPERTIES:
+:ID:       44657755-b47e-4b2a-85c4-5f82d830618a
+:END:
 Iterators and periodicals are tested similarly to projects in that they have statuscodes.
 #+BEGIN_SRC emacs-lisp
 (defun org-clone-get-iterator-project-status (kw)
@@ -2437,6 +2807,9 @@ earlier ones."
     cur-status))
 #+END_SRC
 **** super agenda
+:PROPERTIES:
+:ID:       6bd2a7c9-2104-4b18-9f56-c1581ed86d82
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package org-super-agenda
   :straight t
@@ -2454,6 +2827,9 @@ earlier ones."
 #+END_SRC
 **** block agenda views
 ***** default sorting
+:PROPERTIES:
+:ID:       5b2e0510-1100-421e-ad47-ddc663d6efad
+:END:
 This gives more flexibility in ignoring items with timestamps
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-tags-todo-honor-ignore-options t)
@@ -2475,6 +2851,9 @@ By default I want block agendas to sort based on the todo keyword (with NEXT bei
 
 #+END_SRC
 ***** custom commands
+:PROPERTIES:
+:ID:       c82f432c-be19-477f-b20f-b768bc573c70
+:END:
 These agenda commands are the center of the gtd workflow.
 #+BEGIN_SRC emacs-lisp
 (defmacro nd/org-x-mk-skip-function (&rest body)
@@ -2806,11 +3185,17 @@ original org entry before executing BODY."
 GTD is great but has many limitations...mostly due to the fact that it was originally made on paper. This is meant to extend the GTD workflow into a comprehensive tracking engine that can be used and analyze and project long-term plans and goals.
 *** logging
 **** drawer
+:PROPERTIES:
+:ID:       ff6c8da8-a1dd-442a-aa64-89eabe6ba21e
+:END:
 I prefer all logging to go in a seperate drawer (aptly named) which allows easier navigation and parsing for data analytics.
 #+BEGIN_SRC emacs-lisp
 (setq org-log-into-drawer "LOGBOOK")
 #+END_SRC
 **** events
+:PROPERTIES:
+:ID:       9d45274d-92c3-4a52-842e-14af7173a8c3
+:END:
 Events are nice to record because it enables tracking of my behavior (eg how often I reschedule, which may indicate how well I can predict when things should happen).
 #+BEGIN_SRC emacs-lisp
 (setq org-log-done 'time
@@ -2818,6 +3203,9 @@ Events are nice to record because it enables tracking of my behavior (eg how oft
       org-log-reschedule 'time)
 #+END_SRC
 **** repeated tasks
+:PROPERTIES:
+:ID:       6da71583-1bb7-4031-92f1-9dc0e1f422bf
+:END:
 In these cases, it is nice to know what happened during each cycle, so force notes.
 #+BEGIN_SRC emacs-lisp
 (setq org-log-repeat 'note)
@@ -2825,11 +3213,17 @@ In these cases, it is nice to know what happened during each cycle, so force not
 *** sqlite backend
 Org mode is great and all, but in many cases, text files just won't cut it. Hardcore data analysis is one of them, so make functions to shove org files (specifically archive files) into a sqlite database
 **** load path
+:PROPERTIES:
+:ID:       78bf6eb7-d3d7-43e9-8a03-ecedd7ca19e3
+:END:
 #+BEGIN_SRC emacs-lisp
 (add-to-list 'load-path (nd/expand-local-pkg-directory "org-sql"))
 (require 'org-sql)
 #+END_SRC
 **** customized variables
+:PROPERTIES:
+:ID:       9b5b3587-676a-45da-84c8-c88a5f0ac348
+:END:
 These are variables that I set for my use but will not go into the eventual package
 #+BEGIN_SRC emacs-lisp
 (setq org-sql-use-tag-inheritance t
@@ -2860,6 +3254,9 @@ These are variables that I set for my use but will not go into the eventual pack
                       ))
 #+END_SRC
 ** tomato mode
+:PROPERTIES:
+:ID:       2ea3cbd8-ce5d-40d7-8528-2370a499d020
+:END:
 This really means "super awesome pomodoro implementation." =Tomato-mode= sounds cooler and more emacs like.
 #+BEGIN_SRC emacs-lisp
 (use-package sound-wav :straight t)
@@ -2870,6 +3267,9 @@ This really means "super awesome pomodoro implementation." =Tomato-mode= sounds 
                               "you_suffer.wav"))
 #+END_SRC
 ** brain
+:PROPERTIES:
+:ID:       08853295-71db-438f-b78f-20277d73ff46
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package org-brain
   :straight t
@@ -2880,6 +3280,9 @@ This really means "super awesome pomodoro implementation." =Tomato-mode= sounds 
 #+END_SRC
 * tools
 ** printing
+:PROPERTIES:
+:ID:       43e2e3eb-81e7-4b95-90c2-0a5cc3efc3e6
+:END:
 For some reason there is no default way to get a "print prompt." Instead one needs to either install some third-party helper or make a function like this.
 #+BEGIN_SRC emacs-lisp
 (defun nd/helm-set-printer-name ()
@@ -2889,6 +3292,9 @@ For some reason there is no default way to get a "print prompt." Instead one nee
     (if pl (setq printer-name (helm-comp-read "Printer: " pl)))))
 #+END_SRC
 ** magit
+:PROPERTIES:
+:ID:       67e11402-a9e5-4aae-8644-0e2c4f9ad2bc
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package magit
   :straight t
@@ -2899,11 +3305,17 @@ For some reason there is no default way to get a "print prompt." Instead one nee
 #+END_SRC
 ** dired
 *** no confirm
+:PROPERTIES:
+:ID:       4639e71a-4fca-4e5f-b973-b720ca24605b
+:END:
 Keeping confirmation enabled does weird stuff with helm. Not ideal at the moment but we shall see if I find something better.
 #+BEGIN_SRC emacs-lisp
 (setq dired-no-confirm '(move copy))
 #+END_SRC
 *** compression
+:PROPERTIES:
+:ID:       2b3bb88b-c161-4cc0-a6c9-2674ad067cdb
+:END:
 Only supports tar.gz, tar.bz2, tar.xz, and .zip by default. Add support for more fun algos such as lzo and zpaq
 #+BEGIN_SRC emacs-lisp
 (if (file-exists-p "/usr/bin/7z")
@@ -2931,11 +3343,17 @@ Only supports tar.gz, tar.bz2, tar.xz, and .zip by default. Add support for more
                    '("\\.tar\\.zpaq\\'" . "lrztar -z -L 9 -o %o %i &"))))
 #+END_SRC
 *** formatting for humans
+:PROPERTIES:
+:ID:       543a708a-d655-4adb-8cfd-2b14f840a552
+:END:
 make sizes human readable
 #+BEGIN_SRC emacs-lisp
 (setq dired-listing-switches "-Alh")
 #+END_SRC
 *** mu4e attachments
+:PROPERTIES:
+:ID:       dcef1a29-0ef1-4404-893d-136589ed9b2f
+:END:
 By default the included gnus-dired package does not understan mu4e, so override the existing =gnus-dired-mail-buffers= function to fix. This allows going to a dired buffer, marking files, and attaching them interactively to mu4e draft buffers.
 #+BEGIN_SRC emacs-lisp
 (nd/when-bin "mu"
@@ -2959,6 +3377,9 @@ By default the included gnus-dired package does not understan mu4e, so override 
   (add-hook 'dired-mode-hook 'turn-on-gnus-dired-mode))
 #+END_SRC
 *** directory sized
+:PROPERTIES:
+:ID:       ea8dd806-2c66-43b3-ac58-13a0e95f9e42
+:END:
 By default dired uses =ls -whatever= to get its output. This does not have recursive directory contents by default. This nitfy package solves this. This is not on default because navigation is much slower and the du output adds very little in many situations (toggle when needed).
 #+BEGIN_SRC emacs-lisp
 (use-package dired-du
@@ -2967,6 +3388,9 @@ By default dired uses =ls -whatever= to get its output. This does not have recur
   (setq dired-du-size-format t))
 #+END_SRC
 *** mounted devices
+:PROPERTIES:
+:ID:       8217345a-5ad4-4118-8c4f-8d5742cca393
+:END:
 I handle device mounting using rofi and a custom mounting script (elsewhere in my dotfiles). The only functionality I need/want here is the ability to quickly navigate to mounted directories using dired.
 #+BEGIN_SRC emacs-lisp
 (defun nd/find-devices ()
@@ -2979,12 +3403,18 @@ I handle device mounting using rofi and a custom mounting script (elsewhere in m
         (message "Invalid device: %s" dev)))))
 #+END_SRC
 *** filtering
+:PROPERTIES:
+:ID:       90203849-e008-49a9-94de-029bb845c06b
+:END:
 Filtering is useful for obvious reasons
 #+BEGIN_SRC emacs-lisp
 (use-package dired-narrow
   :straight t)
 #+END_SRC
 ** pdf-tools
+:PROPERTIES:
+:ID:       41b3ccf4-1169-45d1-b6db-88a216eed9c3
+:END:
 #+BEGIN_SRC emacs-lisp
 ;; TODO consider tagging this with :pin manual to upgrade seperately
 (use-package pdf-tools
@@ -2997,6 +3427,9 @@ Filtering is useful for obvious reasons
   (add-hook 'pdf-annot-list-mode-hook #'pdf-annot-list-follow-minor-mode))
 #+END_SRC
 ** mu4e
+:PROPERTIES:
+:ID:       c23cee1b-00bf-48bd-94f6-f280f01777ea
+:END:
 Initialize by running the following command in a shell to tell mu about my personal email addresses and where mail should be stored:
 #+BEGIN_SRC sh
 mu init --my-address=ndwar@yavin4.ch --my-address=natedwarshuis@gmail.com --my-address=ndwarshuis3@gatech.edu --my-address=ndwarsh@emory.edu --maildir=/mnt/data/Mail
@@ -3178,6 +3611,9 @@ The following will only run if the =mu= command is found (which it won't be if t
      org-mu4e-convert-to-html t)))
 #+END_SRC
 ** shell
+:PROPERTIES:
+:ID:       ef1d527b-2cf3-418a-8112-9add9951ab64
+:END:
 #+begin_src emacs-lisp
 (defadvice ansi-term (before force-bash)
   (interactive (list "/bin/zsh")))
@@ -3199,10 +3635,16 @@ The following will only run if the =mu= command is found (which it won't be if t
   (term-send-raw-string "\e[B"))
 #+END_SRC
 ** ediff
+:PROPERTIES:
+:ID:       209f5eb6-aa73-423d-87a1-038e97902c57
+:END:
 #+BEGIN_SRC emacs-lisp
 (setq ediff-window-setup-function 'ediff-setup-windows-plain)
 #+END_SRC
 ** mulitmedia controls
+:PROPERTIES:
+:ID:       46d2458c-5c6d-4487-b066-ecf250911fe3
+:END:
 This controls the music player daemon (MPD) which in my case is modidy with several backends (notably a subsonic client).
 #+BEGIN_SRC emacs-lisp
 (use-package mingus
@@ -3232,6 +3674,9 @@ Below is a summary of the remapped xcape keys.
 | Right Alt     | Hyper_R          |                       |                      |
 | Right Control | Caps_Lock        |                       |                      |
 ** whichkey
+:PROPERTIES:
+:ID:       34ea6396-6a8d-4db9-a2e2-c14b5a6c8f36
+:END:
 Everyone forgets keybindings. When typing a key chord, this will display a window with all possible completions and their commands.
 #+BEGIN_SRC emacs-lisp
 (use-package which-key
@@ -3241,6 +3686,9 @@ Everyone forgets keybindings. When typing a key chord, this will display a windo
   (which-key-mode))
 #+END_SRC
 ** hydra
+:PROPERTIES:
+:ID:       13437ca2-ef6a-40a4-b528-85ea019cceb1
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package hydra
   :straight t)
@@ -3332,6 +3780,9 @@ with their corresponding body/head hydra keys."
 ** evil
 I like being evil. All package and custom bindings go here.
 *** base
+:PROPERTIES:
+:ID:       07d06b91-fa97-41f5-8d12-ac0d1e86c988
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package evil
   :straight t
@@ -3343,16 +3794,25 @@ I like being evil. All package and custom bindings go here.
   (evil-mode 1))
 #+END_SRC
 *** search
+:PROPERTIES:
+:ID:       475d48cc-c9a8-4dc5-89c4-93ff277521a9
+:END:
 By default search uses the default emacs built-in search module. Not evil enough (which really means vim search has features that I like)
 #+BEGIN_SRC emacs-lisp
 (evil-select-search-module 'evil-search-module 'evil-search)
 #+END_SRC
 *** motion
+:PROPERTIES:
+:ID:       e0e0cdb4-4152-47a2-86bd-adaac1c8bbf9
+:END:
 By default, emacs counts a sentence as having at least 2 spaces after punctuation. Make this behave more like vim.
 #+BEGIN_SRC emacs-lisp
 (setq sentence-end-double-space nil)
 #+END_SRC
 *** evil state defaults
+:PROPERTIES:
+:ID:       198d6658-b9e4-4ebc-9bcd-894d270561da
+:END:
 Some modes use primitive emacs bindings by default. Educate them.
 #+BEGIN_SRC emacs-lisp
 (add-to-list 'evil-motion-state-modes 'ess-help-mode)
@@ -3361,6 +3821,9 @@ Some modes use primitive emacs bindings by default. Educate them.
 *** enhancements
 delightfully ripped off from vim plugins
 **** surround
+:PROPERTIES:
+:ID:       3a7c0910-e15f-4cc6-857e-60abf7959834
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package evil-surround
   :straight t
@@ -3369,6 +3832,9 @@ delightfully ripped off from vim plugins
   (global-evil-surround-mode 1))
 #+END_SRC
 **** commentary
+:PROPERTIES:
+:ID:       a6659e64-d165-408e-9225-801988ca36c6
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package evil-commentary
   :straight t
@@ -3378,6 +3844,9 @@ delightfully ripped off from vim plugins
   (evil-commentary-mode))
 #+END_SRC
 **** replace with register
+:PROPERTIES:
+:ID:       7da0c78b-cf6f-4457-b9ba-5b797a8ce817
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package evil-replace-with-register
   :straight t
@@ -3386,6 +3855,9 @@ delightfully ripped off from vim plugins
   (evil-replace-with-register-install))
 #+END_SRC
 **** twiddle case
+:PROPERTIES:
+:ID:       179a2614-176b-43d3-98f8-4eda09240539
+:END:
 #+BEGIN_SRC emacs-lisp
 (defun nd/evil-twiddle-case (beg end)
   (interactive "r")
@@ -3402,6 +3874,9 @@ delightfully ripped off from vim plugins
 (define-key evil-visual-state-map "~" #'nd/evil-twiddle-case)
 #+END_SRC
 *** unbind emacs keys
+:PROPERTIES:
+:ID:       eae4df13-d158-4a7c-8cce-5b00ae4325f4
+:END:
 Some of these commands just get in the way of being evil (which really means that I keep pressing them on accident). Rather than nullifying them completely, tuck them away in the emacs state map in case I actually want them.
 #+BEGIN_SRC emacs-lisp
 (mapc (lambda (k) (nd/move-key global-map evil-emacs-state-map (eval k)))
@@ -3445,6 +3920,9 @@ Some of these commands just get in the way of being evil (which really means tha
         (kbd "M-DEL")))
 #+END_SRC
 *** evil-org
+:PROPERTIES:
+:ID:       ea04f214-0510-4a04-8ee4-2ac8e6955dde
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package evil-org
   :straight t
@@ -3474,12 +3952,18 @@ Some of these commands just get in the way of being evil (which really means tha
     "ce" nil))
 #+END_SRC
 *** evil-magit
+:PROPERTIES:
+:ID:       97e88553-f0ae-46ae-9409-f473886c7850
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package evil-magit
   :straight t
   :after (evil magit))
 #+END_SRC
 *** visual line mode
+:PROPERTIES:
+:ID:       17a6fa9c-ba87-49d1-bf3d-d9253d632831
+:END:
 This is somewhat strange because all I really care about is moving between lines and to the beginning and end as normal. However, I like the idea of thinking of paragraphs as one line (eg df. deletes a sentence even if on multiple lines). Opinion subject to change.
 #+BEGIN_SRC emacs-lisp
 (evil-define-key '(normal visual) 'visual-line-mode
@@ -3489,6 +3973,9 @@ This is somewhat strange because all I really care about is moving between lines
   "$" 'end-of-visual-line)
 #+END_SRC
 *** outline-minor-mode
+:PROPERTIES:
+:ID:       f218f536-b80b-4b73-8059-ad013bed901b
+:END:
 #+BEGIN_SRC emacs-lisp
 (evil-define-key '(normal visual) outline-minor-mode-map
   "gk" #'outline-backward-same-level
@@ -3498,6 +3985,9 @@ This is somewhat strange because all I really care about is moving between lines
   (kbd "M-RET") #'outline-insert-heading)
 #+END_SRC
 *** mingus
+:PROPERTIES:
+:ID:       d4c70a6b-db7f-4707-a694-d5b0b96fff2d
+:END:
 #+BEGIN_SRC emacs-lisp
 (evil-define-key '(visual normal) mingus-browse-map
   (kbd "RET") #'mingus-down-dir-or-play-song
@@ -3512,6 +4002,9 @@ This is somewhat strange because all I really care about is moving between lines
   "U" #'mingus-unmark-all)
 #+END_SRC
 *** collection
+:PROPERTIES:
+:ID:       a209edf3-33d2-4d71-958d-02f11c7b74f8
+:END:
 Most packages that don't have an evil version are in this one. Some don't behave the way I like so those are further modified below.
 #+BEGIN_SRC emacs-lisp
 (use-package evil-collection
@@ -3527,6 +4020,9 @@ Most packages that don't have an evil version are in this one. Some don't behave
   (evil-collection-init))
 #+END_SRC
 **** dired
+:PROPERTIES:
+:ID:       88bf6ee9-a893-4953-a7f1-b6235cffbbdc
+:END:
 Dired makes new buffers by default. Use =find-alternate-file= to avoid this.
 #+BEGIN_SRC emacs-lisp
 (defun nd/dired-move-to-parent-directory ()
@@ -3618,6 +4114,9 @@ Note this assumes there are no sorting switches on `dired-ls'"
 #+END_SRC
 **** comint
 ***** common
+:PROPERTIES:
+:ID:       6e4a7b7a-2898-4135-a9a8-268f096b8b3e
+:END:
 #+BEGIN_SRC emacs-lisp
 ;; (defun nd/comint-char-mode-evil-insert ()
 ;;   "If not at the last line, go to the end of the buffer and enter insert mode.  Else just enter insert mode."
@@ -3639,6 +4138,9 @@ REPL. If no SEND-INPUT-CMD then `comint-send-input' is used."
   (kbd "C-j") 'comint-next-input)
 #+END_SRC
 ***** ess
+:PROPERTIES:
+:ID:       80febc0a-836b-49d9-bdb7-8d479a54af2c
+:END:
 #+BEGIN_SRC emacs-lisp
 (evil-define-key 'normal inferior-ess-mode-map
   (kbd "RET") (lambda () nd/comint-send-input-evil-insert
@@ -3650,6 +4152,9 @@ REPL. If no SEND-INPUT-CMD then `comint-send-input' is used."
 ;;                       'nd/comint-char-mode-evil-insert nil t)))
 #+END_SRC
 ***** haskell interactive mode
+:PROPERTIES:
+:ID:       b163e760-8fbc-42c4-ac09-944870333732
+:END:
 Not to be confused with =interactive-haskell-mode= which is part of the editing buffer
 #+BEGIN_SRC emacs-lisp
 (evil-define-key '(normal insert) haskell-interactive-mode-map
@@ -3661,6 +4166,9 @@ Not to be confused with =interactive-haskell-mode= which is part of the editing 
   (kbd "]]") #'haskell-interactive-mode-prompt-next)
 #+END_SRC
 **** helm
+:PROPERTIES:
+:ID:       dea59175-276f-40ff-8e0a-0f6e2a60ce30
+:END:
 I like tab completion...regardless of what the helm zealots say.
 #+BEGIN_SRC emacs-lisp
 (evil-define-key '(normal insert) helm-map
@@ -3668,6 +4176,9 @@ I like tab completion...regardless of what the helm zealots say.
   (kbd "C-<tab>") 'helm-select-action)
 #+END_SRC
 **** pdf-view
+:PROPERTIES:
+:ID:       e2613015-2a9d-40c8-a9bc-5342ae90b5bf
+:END:
 #+BEGIN_SRC emacs-lisp
 ;; Apparently it needs to be set up after pdf-view is launched
 (add-hook 'pdf-view-mode-hook
@@ -3682,6 +4193,9 @@ I like tab completion...regardless of what the helm zealots say.
   "io" #'pdf-annot-add-strikeout-markup-annotation)
 #+END_SRC
 **** term
+:PROPERTIES:
+:ID:       2d80ac4a-27ef-425c-ac5e-c31afd36d77c
+:END:
 Since I use vi mode in my terminal emulator, need to preserve the escape key's raw behavior
 #+BEGIN_SRC emacs-lisp
 (evil-define-key 'insert term-raw-map
@@ -3693,6 +4207,9 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
   (kbd "H-j") 'nd/term-send-raw-down)
 #+END_SRC
 **** lisp
+:PROPERTIES:
+:ID:       4da53afd-d42d-46e1-9d4b-eb78a3d7b7d5
+:END:
 #+BEGIN_SRC emacs-lisp
 (evil-define-key 'normal emacs-lisp-mode-map
   "gh" #'lispy-left
@@ -3703,6 +4220,9 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
 ** local
 These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future).
 *** org-mode
+:PROPERTIES:
+:ID:       b911386e-b056-4816-bbf5-fae2ec689a0e
+:END:
 #+BEGIN_SRC emacs-lisp
 (add-hook 'org-mode-hook
           (lambda ()
@@ -3711,6 +4231,9 @@ These are for mode-specific bindings that can/should be outside of the evil maps
             (local-set-key (kbd "H-l") 'org-shiftright)
             (local-set-key (kbd "H-j") 'org-shiftdown)
             (local-set-key (kbd "H-h") 'org-shiftleft)
+
+            ;; storing links is important, make a shortcut
+            (local-set-key (kbd "C-c l") 'org-store-link)
 
             ;; this is just a useful function I made (actually I think I stole)
             (local-set-key (kbd "C-c C-x x") 'org-x-mark-subtree-done)
@@ -3747,6 +4270,9 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 (define-key org-super-agenda-header-map (kbd "<tab>") #'origami-toggle-node)
 #+END_SRC
 *** mu4e
+:PROPERTIES:
+:ID:       63ca7479-3ddb-4480-a2ed-b55031238958
+:END:
 #+BEGIN_SRC emacs-lisp
 ;; (defun nd/mu4e-open-attachment-in-emacs (&optional msg attnum)
 ;;   "Open attachments using pdf tools or doc view."
@@ -3765,10 +4291,16 @@ These are for mode-specific bindings that can/should be outside of the evil maps
   (define-key mu4e-view-mode-map (kbd "C-c C-l") #'org-store-link))
 #+END_SRC
 *** dired
+:PROPERTIES:
+:ID:       6fbd3521-81ae-48ad-a7e3-626073fd3fdc
+:END:
 #+BEGIN_SRC emacs-lisp
 (define-key dired-mode-map (kbd "C-x g") 'magit)
 #+END_SRC
 *** helm-prefix
+:PROPERTIES:
+:ID:       fc0b586b-97cc-4fc0-8bcd-977c5de12545
+:END:
 Some of these are useful enough that I make give them a direct binding without requiring a prefix. For now this is fine.
 #+BEGIN_SRC emacs-lisp
 (define-key helm-command-prefix (kbd "b") #'helm-bibtex)
@@ -3785,10 +4317,16 @@ Give =f= to =nd/helm-flyspell-correct= instead of =helm-multi-files= and give th
 (define-key helm-command-prefix (kbd "F") 'helm-multi-files)
 #+END_SRC
 *** outline-magic
+:PROPERTIES:
+:ID:       2810a854-29d6-4f34-866e-767f9c64c3c1
+:END:
 #+BEGIN_SRC emacs-lisp
 (define-key outline-minor-mode-map (kbd "<tab>") 'outline-cycle)
 #+END_SRC
 *** ess
+:PROPERTIES:
+:ID:       2e826475-500e-40fc-8271-4dc835ebce04
+:END:
 They removed the underscore-inserts-arrow feature. Bring it back.
 #+BEGIN_SRC emacs-lisp
 (define-key ess-r-mode-map "_" #'ess-insert-assign)
@@ -3817,6 +4355,9 @@ They removed the underscore-inserts-arrow feature. Bring it back.
  (:doc-at . ess-display-help-on-object))
 #+END_SRC
 *** elisp
+:PROPERTIES:
+:ID:       60ef91fb-d0ba-42d1-84f5-24e8a5cd0507
+:END:
 #+BEGIN_SRC emacs-lisp
 (nd/hydra-standard-int emacs-lisp-mode-map
  (:send-line . eval-last-sexp)
@@ -3826,6 +4367,9 @@ They removed the underscore-inserts-arrow feature. Bring it back.
 (define-key emacs-lisp-mode-map (kbd "M-RET") #'emr-show-refactor-menu)
 #+END_SRC
 *** python
+:PROPERTIES:
+:ID:       fa4e5b43-256c-4028-b1e0-c7a535f0750c
+:END:
 The only thing I like about elpy is the interactive shell
 #+BEGIN_SRC emacs-lisp
 (nd/hydra-standard-int python-mode-map
@@ -3852,6 +4396,9 @@ The only thing I like about elpy is the interactive shell
   (:doc-at . anaconda-mode-show-doc))
 #+END_SRC
 *** haskell
+:PROPERTIES:
+:ID:       13ba50e8-b72d-498f-b7d8-d9f24cbb138d
+:END:
 #+BEGIN_SRC emacs-lisp
 (with-eval-after-load 'haskell-mode
   (nd/hydra-standard-int
@@ -3867,17 +4414,26 @@ The only thing I like about elpy is the interactive shell
    (:doc-at . haskell-process-do-info)))
 #+END_SRC
 *** magit
+:PROPERTIES:
+:ID:       b9f20b72-adda-4b89-a053-4f391e4cc95e
+:END:
 #+BEGIN_SRC emacs-lisp
 ;; interferes with window hydra
 (define-key magit-mode-map (kbd "M-w") nil)
 #+END_SRC
 *** pyenv
+:PROPERTIES:
+:ID:       64283681-e36f-4199-9f51-72b668a15bac
+:END:
 This key collides with plenty of other stuff, notably scheduling in org mode
 #+BEGIN_SRC emacs-lisp
 (define-key pyenv-mode-map (kbd "C-c C-s") nil)
 #+END_SRC
 ** global
 *** function
+:PROPERTIES:
+:ID:       0a301da7-8d12-45f6-8cfd-4feb9ff50504
+:END:
 The function keys are nice because they are almost (not always) free in every mode. Therefore I use these for functions that I need to access anywhere, but not necessary extremely often (because they are out of the way and harder to reach).
 #+BEGIN_SRC emacs-lisp
 (global-set-key (kbd "<f1>") 'org-agenda)
@@ -3923,6 +4479,9 @@ The function keys are nice because they are almost (not always) free in every mo
   ("f" nd/open-fm))
 #+END_SRC
 *** control/meta
+:PROPERTIES:
+:ID:       10325f1e-a084-4a37-9f37-6f8fd9acb960
+:END:
 #+BEGIN_SRC emacs-lisp
 ;; TODO this should not be in global map
 (global-set-key (kbd "C-<SPC>") 'company-complete)
