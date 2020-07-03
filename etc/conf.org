@@ -1814,6 +1814,16 @@ Aesthetically, I like all my keywords to have bold colors.
         ("HOLD" :foreground "violet" :weight bold)
         ("CANC" :foreground "deep sky blue" :weight bold)))
 #+END_SRC
+**** habits
+Habits consider any "done" todo keyword as "complete." I have =CANC= as a done keyword, which I don't want to be displayed as "complete" in the habit tracker. Override this hardcoded behavior with advice.
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-habit-parse-todo-advice (orig-fn &rest args)
+  "Advice to make the habit tracker only mark DONE habits as complete."
+  (let ((org-done-keywords '("DONE")))
+    (unwind-protect (apply orig-fn args))))
+
+(advice-add #'org-habit-parse-todo :around #'nd/org-habit-parse-todo-advice)
+#+END_SRC
 *** links and IDs
 :PROPERTIES:
 :ID:       9131356e-b290-402e-86cf-15242082c622
