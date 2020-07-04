@@ -1815,6 +1815,9 @@ Aesthetically, I like all my keywords to have bold colors.
         ("CANC" :foreground "deep sky blue" :weight bold)))
 #+END_SRC
 **** habits
+:PROPERTIES:
+:ID:       c02e0799-10e0-41c1-96dd-9d7ee335a408
+:END:
 Habits consider any "done" todo keyword as "complete." I have =CANC= as a done keyword, which I don't want to be displayed as "complete" in the habit tracker. Override this hardcoded behavior with advice.
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-habit-parse-todo-advice (orig-fn &rest args)
@@ -2020,12 +2023,12 @@ To save one more keystroke (since I use evil mode), trigger insert mode upon ope
 :END:
 In some capture templates I want to automatically store a link to the entry so I can use it later. This can be done using one the the capture-finalize hooks and simply running =org-store-link= on the capture (note this only makes sense for headlines).
 #+BEGIN_SRC emacs-lisp
-(setq org-capture-before-finalize-hook
-      (lambda ()
-        (when (org-capture-get :x-autolink)
-          (save-excursion
-            (org-back-to-heading)
-            (call-interactively #'org-store-link)))))
+(add-hook 'org-capture-before-finalize-hook
+          (lambda ()
+            (when (org-capture-get :x-autolink)
+              (save-excursion
+                (org-back-to-heading)
+                (call-interactively #'org-store-link)))))
 #+END_SRC
 *** refile
 :PROPERTIES:
