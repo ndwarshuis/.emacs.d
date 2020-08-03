@@ -31,6 +31,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#parenthesis-matching][parenthesis matching]]
   - [[#sudo-edit][sudo edit]]
   - [[#formats-and-languages][formats and languages]]
+  - [[#testing][testing]]
 - [[#org-mode][org-mode]]
   - [[#low-level-config-1][low-level config]]
   - [[#buffer-interface][buffer interface]]
@@ -1325,6 +1326,13 @@ No custom code here, but flycheck needs =sqlint= (on Arch available through the 
 :END:
 #+BEGIN_SRC emacs-lisp
 (use-package dockerfile-mode
+  :straight t)
+#+END_SRC
+** testing
+*** buttercup
+Include this so I can have the docs and indentation specs handy when writing test suites
+#+BEGIN_SRC emacs-lisp
+(use-package buttercup
   :straight t)
 #+END_SRC
 * org-mode
