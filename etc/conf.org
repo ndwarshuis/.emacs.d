@@ -1212,6 +1212,11 @@ Overlays hex color codes with matching colors in certain modes like css and html
 (use-package rainbow-mode
   :straight t)
 #+END_SRC
+*** Jinja2
+#+BEGIN_SRC emacs-lisp
+(use-package jinja2-mode
+  :straight t)
+#+END_SRC
 *** Javascript
 **** tabs
 :PROPERTIES:
