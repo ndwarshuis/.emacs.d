@@ -2596,6 +2596,9 @@ MARKER for use in the conflict agenda view."
       (setq buffer-read-only t))))
 #+END_SRC
 *** agenda
+:PROPERTIES:
+:ID:       73c154c8-e13e-4e90-8a1d-77c3be067502
+:END:
 **** targets
 :PROPERTIES:
 :ID:       5807d294-b7a6-47d7-a3a2-913a4bac4f3d
@@ -2932,6 +2935,7 @@ original org entry before executing BODY."
       ((org-agenda-skip-function
         '(org-x-skip-headings-with-tags
           '("NA" "%maybe" "REFILE")))
+       (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
        (org-agenda-include-diary t)
        (org-super-agenda-groups
         `((:name "Morning routine"
@@ -2942,9 +2946,10 @@ original org entry before executing BODY."
                  :pred ,(nd/org-x-mk-super-agenda-pred
                          (equal "evening" (org-entry-get nil "X-ROUTINE")))
                  :order 3)
-          (:name "Calendar"
-                 :time-grid t
-                 :order 1)))))))
+          (:name "Calendar" :order 1 :time-grid t)
+          (:name "Habits" :order 6 :habit t)
+          (:name "Deadlined" :order 4 :deadline t)
+          (:name "Scheduled" :order 5 :scheduled t)))))))
 
    ("t"
     "Task View"
