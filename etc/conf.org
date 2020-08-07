@@ -4574,3 +4574,8 @@ The function keys are nice because they are almost (not always) free in every mo
   ("L" #'shrink-window-horizontally)
   ("=" #'balance-windows :exit t))
 #+END_SRC
+*** other
+#+BEGIN_SRC emacs-lisp
+;; exchange point and marker (I never saw the use for this)
+(global-unset-key (kbd "C-x C-x"))
+#+END_SRC
