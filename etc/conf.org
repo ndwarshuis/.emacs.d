@@ -1215,7 +1215,9 @@ Overlays hex color codes with matching colors in certain modes like css and html
 *** Jinja2
 #+BEGIN_SRC emacs-lisp
 (use-package jinja2-mode
-  :straight t)
+  :straight t
+  :hook
+  ((jinja2-mode . fci-mode)))
 #+END_SRC
 *** Javascript
 **** tabs
