@@ -1325,7 +1325,8 @@ R-markdown is enabled via polymode, which allows multiple modes in one buffer (t
 :END:
 #+BEGIN_SRC emacs-lisp
 (use-package yaml-mode
-  :straight t)
+  :straight t
+  :hook ((yaml-mode . fci-mode)))
 #+END_SRC
 *** csv files
 :PROPERTIES:
