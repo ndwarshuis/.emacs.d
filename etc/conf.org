@@ -162,10 +162,16 @@ OS is one of those in `system-type'."
   `(when (not (eq system-type ,os)) (progn ,@body)
      (print "Skipping OS-restricted code")))
 
+(defvar nd/required-exes '()
+  "Running list of executables required to run various configuations.")
+
 (defmacro nd/when-bin (bin &rest body)
   "Execute BODY if the program BIN exists."
   (declare (indent 1))
-  `(if (executable-find ,bin) (progn ,@body)
+  `(if (executable-find ,bin)
+       (progn
+         (setq nd/required-exes (-union '(,bin) nd/required-exes))
+         ,@body)
      (print (format "Executable %s not found. Skipping." ,bin))))
 
 (defmacro nd/time-exec (&rest body)
@@ -262,6 +268,27 @@ If FRONT is t, do to the front of current values instead of the back."
   (--each
       (where-is-internal f keymap nil nil)
     (define-key keymap it nil)))
+
+(defun nd/detect-package-manager ()
+  "Return the package manager being used on this OS."
+  (cond
+   ;; for now only pacman...because arch is the best (TM)
+   ((file-exists-p "/usr/bin/pacman")
+    'pacman)))
+
+(defun nd/pacman-find-owner (file)
+  "Return the pacman packages that owns FILE.
+Assumes pacman is installed and FILE is an absolute path."
+  (-some->> (format "pacman -Fq %s" file)
+            (shell-command-to-string)
+            (s-trim)
+            (s-split "\n")
+            (--map (replace-regexp-in-string ".*/" "" it t))
+            (cons file)))
+
+(defun nd/detect-dependencies ()
+  "Return a list of required packages for this configuration."
+  (--map (nd/pacman-find-owner (format "/usr/bin/%s" it)) nd/required-exes))
 #+END_SRC
 ** interactive
 :PROPERTIES:
@@ -807,60 +834,64 @@ For me this means R but ess also supports S-plus, SAS, Stata, and other statisti
 Flycheck syntax checkers
 - r-lintr (install from CRAN)
 #+begin_src emacs-lisp
-(defun nd/init-ess-company ()
-  "Set the company backends for ess modes."
-  (setq-local company-backends '((company-R-objects company-R-args))))
+(nd/when-bin "R"
+  (defun nd/init-ess-company ()
+    "Set the company backends for ess modes."
+    (setq-local company-backends '((company-R-objects company-R-args))))
 
-(use-package ess
-  :straight t
-  :init
-  (require 'ess-r-mode)
-  :hook
-  ((ess-mode . flycheck-mode)
-   (ess-mode . company-mode)
-   (ess-mode . origami-mode)
-   (ess-mode . nd/init-ess-company)
-   (ess-mode . prettify-symbols-mode)
-   (ess-mode . fci-mode)
+  (use-package ess
+    :straight t
+    :init
+    (require 'ess-r-mode)
+    :hook
+    ((ess-mode . flycheck-mode)
+     (ess-mode . company-mode)
+     (ess-mode . origami-mode)
+     (ess-mode . nd/init-ess-company)
+     (ess-mode . prettify-symbols-mode)
+     (ess-mode . fci-mode)
 
-   (inferior-ess-mode . company-mode)
-   (inferior-ess-mode . nd/init-ess-company)
-   (inferior-ess-mode . prettify-symbols-mode))
-  :config
-  (setq inferior-R-program "R"
-        inferior-R-args "--quiet --no-save"
-        ess-history-file "session.Rhistory"
-        ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
+     (inferior-ess-mode . company-mode)
+     (inferior-ess-mode . nd/init-ess-company)
+     (inferior-ess-mode . prettify-symbols-mode))
+    :config
+    (setq inferior-R-program "R"
+          inferior-R-args "--quiet --no-save"
+          ess-history-file "session.Rhistory"
+          ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
 
-;; fast compile
-(defun nd/ess-r-add-env (orig-fun inf-buf proc-name start-args)
-  (let ((process-environment (cons "MAKEFLAGS=-j8" process-environment)))
-    (funcall orig-fun inf-buf proc-name start-args)))
+  ;; fast compile
+  (defun nd/ess-r-add-env (orig-fun inf-buf proc-name start-args)
+    (let ((process-environment (cons "MAKEFLAGS=-j8" process-environment)))
+      (funcall orig-fun inf-buf proc-name start-args)))
 
-(defun nd/ess-r-start-env (orig-fun &rest args)
-  (nd/with-advice
-      ((#'inferior-ess--start-process :around #'nd/ess-r-add-env))
-    (apply orig-fun args)))
+  (defun nd/ess-r-start-env (orig-fun &rest args)
+    (nd/with-advice
+        ((#'inferior-ess--start-process :around #'nd/ess-r-add-env))
+      (apply orig-fun args)))
 
-(defun nd/ess-r-setwd-maybe (orig-fun &rest args)
-  (nd/with-advice
-      ((#'ess-set-working-directory :override #'ignore))
-    (apply orig-fun args)))
+  (advice-add #'run-ess-r :around #'nd/ess-r-start-env)
 
-(advice-add #'run-ess-r :around #'nd/ess-r-start-env)
+  (nd/when-bin "docker"
+    (defun nd/ess-r-setwd-maybe (orig-fun &rest args)
+        (nd/with-advice
+            ((#'ess-set-working-directory :override #'ignore))
+        (apply orig-fun args)))
 
-(advice-add #'run-ess-r :around #'nd/ess-r-setwd-maybe)
+    (advice-add #'run-ess-r :around #'nd/ess-r-setwd-maybe)
 
-;; force flycheck to use the system-wide R install instead of whatever
-;; is in docker
-(defun nd/flycheck-find-exe-no-docker (orig-fun exe)
-  (if (or (equal exe "R") (s-starts-with? "R " exe))
-      "/bin/R" (funcall orig-fun exe)))
+    ;; force flycheck to use system R instead of whatever is in docker
+    (defun nd/flycheck-find-exe-no-docker (orig-fun exe)
+        (if (or (equal exe "R") (s-starts-with? "R " exe))
+            "/bin/R" (funcall orig-fun exe)))
 
-(advice-add #'flycheck-default-executable-find :around
-            #'nd/flycheck-find-exe-no-docker)
+    (advice-add #'flycheck-default-executable-find :around
+                #'nd/flycheck-find-exe-no-docker)))
 #+END_SRC
 *** C
+:PROPERTIES:
+:ID:       0ee09480-e722-4a06-af8f-52f7dbf3f906
+:END:
 #+BEGIN_SRC emacs-lisp
 (defun nd/init-c-company ()
   "Set the company backends for anaconda mode."
@@ -869,19 +900,21 @@ Flycheck syntax checkers
                                  company-irony)))
 
 ;; requires clang (duh)
-(use-package flycheck-clang-analyzer
-  :straight t
-  :after flycheck
-  :config
-  (flycheck-clang-analyzer-setup))
+(nd/when-bin "clang"
+  (use-package flycheck-clang-analyzer
+    :straight t
+    :after flycheck
+    :config
+    (flycheck-clang-analyzer-setup)))
 
 ;; requires cmake/llvm
-(use-package irony
-  :straight t
-  :hook ((irony-mode . irony-cdb-autosetup-compile-options)))
+(nd/when-bin "cmake"
+  (use-package irony
+    :straight t
+    :hook ((irony-mode . irony-cdb-autosetup-compile-options)))
 
-(use-package company-irony
-  :straight t)
+  (use-package company-irony
+    :straight t))
 
 (use-package company-c-headers
   :straight t)
@@ -948,8 +981,9 @@ Anaconda (not related to the Python/R distribution?) is much lighter and easier 
 :END:
 [[https://github.com/python/black][Black]] is a really nice syntax formatter. It must be externally installed to work.
 #+BEGIN_SRC emacs-lisp
-(use-package blacken
-  :straight t)
+(nd/when-bin "black"
+  (use-package blacken
+    :straight t))
 #+END_SRC
 **** pyenv
 :PROPERTIES:
@@ -959,16 +993,17 @@ For isolation I use [[https://github.com/pyenv/pyenv][pyenv]] and [[https://gith
 
 Note this also requires all external packages to be installed in each environement (eg ipython, black, flake8, and pylint).
 #+BEGIN_SRC emacs-lisp
-(use-package pyenv-mode
-  :straight t
-  :after python
-  :init (-some--> (getenv "PYENV_ROOT")
-                  (f-join it "versions")
-                  (add-to-list 'exec-path it)))
+(nd/when-bin "pyenv"
+  (use-package pyenv-mode
+    :straight t
+    :after python
+    :init (-some--> (getenv "PYENV_ROOT")
+                    (f-join it "versions")
+                    (add-to-list 'exec-path it)))
 
-;; resolve symlinks when setting the pyenv, otherwise we get some
-;; strange errors when activating a symlinked env
-(advice-add #'pyenv-mode-full-path :filter-return #'file-truename)
+  ;; resolve symlinks when setting the pyenv, otherwise we get some
+  ;; strange errors when activating a symlinked env
+  (advice-add #'pyenv-mode-full-path :filter-return #'file-truename))
 #+END_SRC
 *** Ruby
 :PROPERTIES:
@@ -1007,49 +1042,50 @@ Since most of these need GHCi to run properly, I added a hook to load haskell so
 
 I have also found this to be much simpler and conflicting with other packages such as =dante= and =intero= (and probably =haskell-ide-engine= and friends).
 #+BEGIN_SRC emacs-lisp
-(defun nd/init-haskell-company ()
-  "Set the company backends for haskell mode."
-  (setq-local company-backends
-              ;; capf is standard completion and dabbrev provides
-              ;; local completions in 'where' and 'let' clauses
-              '((company-capf company-dabbrev))))
+(nd/when-bin "stack"
+  (defun nd/init-haskell-company ()
+    "Set the company backends for haskell mode."
+    (setq-local company-backends
+                ;; capf is standard completion and dabbrev provides
+                ;; local completions in 'where' and 'let' clauses
+                '((company-capf company-dabbrev))))
 
-(defun nd/haskell-load-maybe ()
-  "Prompts user to load haskell source to GHCi."
-  (when (y-or-n-p "Load Haskell source into GHCi? ")
-    (haskell-process-load-or-reload)))
+  (defun nd/haskell-load-maybe ()
+    "Prompts user to load haskell source to GHCi."
+    (when (y-or-n-p "Load Haskell source into GHCi? ")
+      (haskell-process-load-or-reload)))
 
-(use-package haskell-mode
-  :straight t
-  :hook ((haskell-mode . origami-mode)
-         (haskell-mode . company-mode)
-         (haskell-mode . haskell-indentation-mode)
-         ;; this enables better integration with the running GHCi process
-         ;; NOTE this is NOT the same is haskell-interactive-mode which is used
-         ;; in the repl that is launched within projects when loading files
-         (haskell-mode . interactive-haskell-mode)
-         (haskell-mode . nd/init-haskell-company)
-         (haskell-mode . nd/haskell-load-maybe)
-         ;; camelcase is defacto for haskell
-         (haskell-mode . subword-mode))
-  :config
-  (setq haskell-interactive-popup-errors nil
-        ;; we use stack...which counterintuitively means we set the
-        ;; cabal build command to be stack
-        haskell-compile-cabal-build-command "stack build"
-        ;; use stylish (requires the stylish binary somewhere in $PATH)
-        haskell-stylish-on-save t
-        ;; use some handy suggestions
-        haskell-process-suggest-remove-import-lines t
-        haskell-process-auto-import-loaded-modules t
-        ;; use TAGS file (requires hasktags binary to be in $PATH)
-        haskell-tags-on-save t))
+  (use-package haskell-mode
+    :straight t
+    :hook ((haskell-mode . origami-mode)
+           (haskell-mode . company-mode)
+           (haskell-mode . haskell-indentation-mode)
+           ;; this enables better integration with the running GHCi process
+           ;; NOTE this is NOT the same is haskell-interactive-mode which is used
+           ;; in the repl that is launched within projects when loading files
+           (haskell-mode . interactive-haskell-mode)
+           (haskell-mode . nd/init-haskell-company)
+           (haskell-mode . nd/haskell-load-maybe)
+           ;; camelcase is defacto for haskell
+           (haskell-mode . subword-mode))
+    :config
+    (setq haskell-interactive-popup-errors nil
+          ;; we use stack...which counterintuitively means we set the
+          ;; cabal build command to be stack
+          haskell-compile-cabal-build-command "stack build"
+          ;; use stylish (requires the stylish binary somewhere in $PATH)
+          haskell-stylish-on-save t
+          ;; use some handy suggestions
+          haskell-process-suggest-remove-import-lines t
+          haskell-process-auto-import-loaded-modules t
+          ;; use TAGS file (requires hasktags binary to be in $PATH)
+          haskell-tags-on-save t))
 
-;; this minor mode name is long and unnecessary
-(delight 'interactive-haskell-mode nil "haskell")
+  ;; this minor mode name is long and unnecessary
+  (delight 'interactive-haskell-mode nil "haskell")
 
-;; unnecessary to see on the modeline
-(delight 'subword-mode nil "subword")
+  ;; unnecessary to see on the modeline
+  (delight 'subword-mode nil "subword"))
 #+END_SRC
 **** hlint
 :PROPERTIES:
@@ -1057,8 +1093,9 @@ I have also found this to be much simpler and conflicting with other packages su
 :END:
 This is an additional syntax checker and requires the =hlint= binary (install through stack).
 #+BEGIN_SRC emacs-lisp
-(with-eval-after-load 'haskell
-  (flycheck-add-next-checker 'haskell-stack-ghc '(t . haskell-hlint)))
+(nd/when-bin "hlint"
+  (with-eval-after-load 'haskell
+    (flycheck-add-next-checker 'haskell-stack-ghc '(t . haskell-hlint))))
 #+END_SRC
 **** helper functions
 :PROPERTIES:
@@ -1081,8 +1118,9 @@ Other helper functions that make haskell even more fun.
 :END:
 For flycheck, install =luacheck= (from AUR on Arch).
 #+BEGIN_SRC emacs-lisp
-(use-package lua-mode
-  :straight t)
+(nd/when-bin "luacheck"
+  (use-package lua-mode
+    :straight t))
 #+END_SRC
 *** TeX
 **** AUCTeX
@@ -1245,6 +1283,9 @@ Overlays hex color codes with matching colors in certain modes like css and html
   :straight t)
 #+END_SRC
 *** Jinja2
+:PROPERTIES:
+:ID:       a38b0792-46fe-43cc-b57a-d8e3a189fdc5
+:END:
 #+BEGIN_SRC emacs-lisp
 (use-package jinja2-mode
   :straight t
@@ -1365,11 +1406,15 @@ No custom code here, but flycheck needs =sqlint= (on Arch available through the 
 :ID:       ce24b075-ede6-4d6c-81db-4c6aa40e4fd0
 :END:
 #+BEGIN_SRC emacs-lisp
-(use-package dockerfile-mode
-  :straight t)
+(nd/when-bin "docker"
+  (use-package dockerfile-mode
+    :straight t))
 #+END_SRC
 ** testing
 *** buttercup
+:PROPERTIES:
+:ID:       9539395e-98aa-4e47-b2ff-4233b63d40b1
+:END:
 Include this so I can have the docs and indentation specs handy when writing test suites
 #+BEGIN_SRC emacs-lisp
 (use-package buttercup
@@ -3380,12 +3425,13 @@ For some reason there is no default way to get a "print prompt." Instead one nee
 :ID:       67e11402-a9e5-4aae-8644-0e2c4f9ad2bc
 :END:
 #+BEGIN_SRC emacs-lisp
-(use-package magit
-  :straight t
-  :config
-  :delight auto-revert-mode
-  (setq magit-push-always-verify nil
-        git-commit-summary-max-length 50))
+(nd/when-bin "git"
+  (use-package magit
+    :straight t
+    :config
+    :delight auto-revert-mode
+    (setq magit-push-always-verify nil
+          git-commit-summary-max-length 50)))
 #+END_SRC
 ** dired
 *** no confirm
@@ -4615,6 +4661,9 @@ The function keys are nice because they are almost (not always) free in every mo
   ("=" #'balance-windows :exit t))
 #+END_SRC
 *** other
+:PROPERTIES:
+:ID:       dff1f586-7231-4394-8f4c-2730dbe8a901
+:END:
 #+BEGIN_SRC emacs-lisp
 ;; exchange point and marker (I never saw the use for this)
 (global-unset-key (kbd "C-x C-x"))
