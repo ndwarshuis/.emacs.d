@@ -1628,27 +1628,14 @@ Org mode is great and all, but the windows never show up in the right place. The
 :END:
 I only need a teeny tiny window below my current window for todo selection
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-todo-position (buffer alist)
-  (let ((win (car (cl-delete-if-not
-                   (lambda (window)
-                     (with-current-buffer (window-buffer window)
-                       (memq major-mode
-                             '(org-mode org-agenda-mode))))
-                   (window-list)))))
-    (when win
-      (let ((new (split-window win -4 'below)))
-        (set-window-buffer new buffer)
-        new))))
-
-(defun nd/org-todo-window-advice (orig-fn)
+(defun nd/org-todo-window-advice (orig-fn &rest args)
   "Advice to fix window placement in `org-fast-todo-selection'."
   (let  ((override '("\\*Org todo\\*" nd/org-todo-position)))
-    (add-to-list 'display-buffer-alist override)
     (nd/with-advice
-        ((#'org-switch-to-buffer-other-window :override #'pop-to-buffer))
-      (unwind-protect (funcall orig-fn)
-        (setq display-buffer-alist
-              (delete override display-buffer-alist))))))
+        ((#'delete-other-windows :override #'ignore)
+         (#'split-window-vertically :filter-args (-partial (-const '(-4))))
+         (#'org-switch-to-buffer-other-window :override #'pop-to-buffer))
+      (unwind-protect (apply orig-fn args)))))
 
 (advice-add #'org-fast-todo-selection :around #'nd/org-todo-window-advice)
 #+END_SRC
