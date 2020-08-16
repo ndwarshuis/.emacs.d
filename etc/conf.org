@@ -402,12 +402,14 @@ Since I run emacs in [[https://www.gnu.org/software/emacs/manual/html_node/emacs
 (defvar nd/theme-window-loaded nil)
 (defvar nd/theme-terminal-loaded nil)
 
+(setq default-frame-alist '((font . "Dejavu Sans Mono-11")))
+
 ;; required for emacsclient/daemon setup
 (if (daemonp)
     (add-hook 'after-make-frame-functions
               (lambda (frame)
                 (select-frame frame)
-                (set-default-font "Dejavu Sans Mono-11")
+                ;;(set-default-font "Dejavu Sans Mono-11")
                 (if (window-system frame)
                     (unless nd/theme-window-loaded
                       (if nd/theme-terminal-loaded
