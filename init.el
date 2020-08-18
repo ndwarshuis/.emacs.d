@@ -41,9 +41,6 @@
 ;; configure all config paths before anything else is loaded
 (use-package no-littering :straight t)
 
-(defvar nd/conf-dir "~/.emacs.d/"
-  "The absolute path to the EMACS configuration directory.")
-
 (defvar nd/conf-main (no-littering-expand-etc-file-name "conf.org")
   "The absolute path the main EMACS configuration file.")
 
