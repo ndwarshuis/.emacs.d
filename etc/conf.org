@@ -4055,19 +4055,22 @@ Some of these commands just get in the way of being evil (which really means tha
   (evil-org-agenda-set-keys)
   ;; some of the defaults bug me...
   (evil-define-key 'motion org-agenda-mode-map
-    "C" 'org-x-agenda-helm-select-categories
-    "D" 'org-agenda-day-view
-    "W" 'org-agenda-week-view
-    "M" 'org-agenda-month-view
-    "Y" 'org-agenda-year-view
+    "C" #'org-x-agenda-helm-select-categories
+    "D" #'org-agenda-day-view
+    "W" #'org-agenda-week-view
+    "M" #'org-agenda-month-view
+    "Y" #'org-agenda-year-view
+    "Y" #'org-agenda-year-view
     "ct" nil
-    "sC" 'org-x-agenda-filter-non-context
-    "sE" 'org-x-agenda-filter-non-effort
-    "sD" 'org-x-agenda-filter-delegate
-    "sP" 'org-x-agenda-filter-non-peripheral
+    "g]" #'org-agenda-later
+    "g[" #'org-agenda-earlier
+    "sC" #'org-x-agenda-filter-non-context
+    "sE" #'org-x-agenda-filter-non-effort
+    "sD" #'org-x-agenda-filter-delegate
+    "sP" #'org-x-agenda-filter-non-peripheral
     "gk" #'org-x-agenda-previous-heading
     "gj" #'org-x-agenda-next-heading
-    "e" 'org-agenda-set-effort
+    "e" #'org-agenda-set-effort
     "ce" nil))
 #+END_SRC
 *** evil-magit
