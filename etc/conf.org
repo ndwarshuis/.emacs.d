@@ -839,7 +839,7 @@ Flycheck syntax checkers
 (nd/when-bin "R"
   (defun nd/init-ess-company ()
     "Set the company backends for ess modes."
-    (setq-local company-backends '((company-R-objects company-R-args))))
+    (setq-local company-backends '(company-R-objects company-R-args)))
 
   (use-package ess
     :straight t
