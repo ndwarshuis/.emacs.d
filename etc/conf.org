@@ -960,10 +960,12 @@ Anaconda (not related to the Python/R distribution?) is much lighter and easier 
          (inferior-python-mode . nd/init-anaconda-company))
   :config
   (progn
-    (setq indent-tabs-mode nil
-          python-shell-interpreter "ipython"
-          python-shell-interpreter-args "-i --simple-prompt --quiet --no-banner")
-    (flycheck-add-next-checker 'python-flake8 'python-pylint)))
+    (nd/when-bin "ipython"
+      (setq indent-tabs-mode nil
+            python-shell-interpreter "ipython"
+            python-shell-interpreter-args "-i --simple-prompt --quiet --no-banner"))
+    (nd/when-bin "flake8"
+      (flycheck-add-next-checker 'python-flake8 'python-pylint))))
 
 (use-package anaconda-mode
   :straight t
