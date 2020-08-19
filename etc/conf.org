@@ -1052,10 +1052,6 @@ I have also found this to be much simpler and conflicting with other packages su
                 ;; local completions in 'where' and 'let' clauses
                 '((company-capf company-dabbrev))))
 
-  (defun nd/haskell-load-maybe ()
-    "Prompts user to load haskell source to GHCi."
-    (when (y-or-n-p "Load Haskell source into GHCi? ")
-      (haskell-process-load-or-reload)))
 
   (use-package haskell-mode
     :straight t
@@ -1067,7 +1063,6 @@ I have also found this to be much simpler and conflicting with other packages su
            ;; in the repl that is launched within projects when loading files
            (haskell-mode . interactive-haskell-mode)
            (haskell-mode . nd/init-haskell-company)
-           (haskell-mode . nd/haskell-load-maybe)
            ;; camelcase is defacto for haskell
            (haskell-mode . subword-mode))
     :config
