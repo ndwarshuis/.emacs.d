@@ -1546,8 +1546,7 @@ Enable shortcuts for embedding code in org text bodies.
       org-babel-load-languages '((emacs-lisp . t)
                                  (org . t)))
 
-(add-to-list 'org-structure-template-alist
-             '("el" "#+BEGIN_SRC emacs-lisp\n?\n#+END_SRC"))
+(add-to-list 'org-structure-template-alist '("el" . "src emacs-lisp"))
 #+END_SRC
 *** todo insertion
 :PROPERTIES:
