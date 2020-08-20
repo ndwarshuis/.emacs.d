@@ -541,11 +541,11 @@ One of the best packages for emacs. Helm is basically a search and completion en
   (helm-mode 1)
   :config
   (setq helm-autoresize-max-height 40
-        helm-M-x-fuzzy-match t
-        helm-buffers-fuzzy-matching t
-        helm-recentf-fuzzy-match t
-        helm-semantic-fuzzy-match t
-        helm-imenu-fuzzy-match t
+        helm-M-x-fuzzy-match nil
+        helm-buffers-fuzzy-matching nil
+        helm-recentf-fuzzy-match nil
+        helm-semantic-fuzzy-match nil
+        helm-imenu-fuzzy-match nil
         helm-scroll-amount 8)
   (add-to-list 'display-buffer-alist
                `(,(rx bos "*helm" (* not-newline) "*" eos)
