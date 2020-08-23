@@ -4,6 +4,13 @@
 !README.org
 !init.el
 
+# track versions of installed packages
+!straight
+straight/*
+!straight/versions
+straight/versions/*
+!straight/versions/default.el
+
 !etc
 etc/*
 !etc/conf.org
