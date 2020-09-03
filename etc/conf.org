@@ -52,6 +52,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#shell][shell]]
   - [[#ediff][ediff]]
   - [[#mulitmedia-controls][mulitmedia controls]]
+  - [[#slack][slack]]
 - [[#keybindings][keybindings]]
   - [[#setup][setup]]
   - [[#whichkey][whichkey]]
@@ -3772,6 +3773,32 @@ This controls the music player daemon (MPD) which in my case is modidy with seve
   (setq mingus-mpd-host "localhost"
         mingus-mpd-port 6600))
 #+END_SRC
+** slack
+:PROPERTIES:
+:CREATED:  [2020-09-03 Thu 11:36]
+:END:
+#+begin_src emacs-lisp
+(use-package slack
+  :straight t
+  :init (setq slack-prefer-current-team t)
+  :commands (slack-start)
+  :config
+  (slack-register-team
+   :name "CMaT"
+   :token (auth-source-pick-first-password
+           :host "cmat"
+           :user "cmat"))
+  (slack-register-team
+   :name "Roylab"
+   :token (auth-source-pick-first-password
+           :host "roylab"
+           :user "roylab"))
+  (slack-register-team
+   :name "Fathom"
+   :token (auth-source-pick-first-password
+           :host "fathom"
+           :user "fathom")))
+#+end_src
 * keybindings
 For the sake of my sanity, all bindings go here. Note this means I don't use =:bind= in use-package forms.
 ** setup
