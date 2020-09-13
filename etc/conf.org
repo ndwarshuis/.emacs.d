@@ -3468,7 +3468,7 @@ Only supports tar.gz, tar.bz2, tar.xz, and .zip by default. Add support for more
 :END:
 make sizes human readable
 #+BEGIN_SRC emacs-lisp
-(setq dired-listing-switches "-Alh --group-directories-first")
+(setq dired-listing-switches "-vAlh --group-directories-first")
 #+END_SRC
 *** mu4e attachments
 :PROPERTIES:
