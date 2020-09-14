@@ -3790,6 +3790,11 @@ This controls the music player daemon (MPD) which in my case is modidy with seve
            :host "cmat"
            :user "cmat"))
   (slack-register-team
+   :name "LEADERS"
+   :token (auth-source-pick-first-password
+           :host "leaders"
+           :user "leaders"))
+  (slack-register-team
    :name "Roylab"
    :token (auth-source-pick-first-password
            :host "roylab"
