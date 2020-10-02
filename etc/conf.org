@@ -3309,7 +3309,8 @@ GTD is great but has many limitations...mostly due to the fact that it was origi
 :END:
 I prefer all logging to go in a seperate drawer (aptly named) which allows easier navigation and parsing for data analytics.
 #+BEGIN_SRC emacs-lisp
-(setq org-log-into-drawer "LOGBOOK")
+(setq org-log-into-drawer "LOGGING"
+      org-clock-into-drawer "CLOCKING")
 #+END_SRC
 **** events
 :PROPERTIES:
