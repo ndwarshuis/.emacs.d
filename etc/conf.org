@@ -838,10 +838,6 @@ Flycheck syntax checkers
 - r-lintr (install from CRAN)
 #+begin_src emacs-lisp
 (nd/when-bin "R"
-  (defun nd/init-ess-company ()
-    "Set the company backends for ess modes."
-    (setq-local company-backends '(company-R-objects company-R-args)))
-
   (use-package ess
     :straight t
     :init
@@ -850,12 +846,10 @@ Flycheck syntax checkers
     ((ess-mode . flycheck-mode)
      (ess-mode . company-mode)
      (ess-mode . origami-mode)
-     (ess-mode . nd/init-ess-company)
      (ess-mode . prettify-symbols-mode)
      (ess-mode . fci-mode)
 
      (inferior-ess-mode . company-mode)
-     (inferior-ess-mode . nd/init-ess-company)
      (inferior-ess-mode . prettify-symbols-mode))
     :config
     (setq inferior-R-program "R"
