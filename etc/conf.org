@@ -775,6 +775,8 @@ Company provides a dropdown of completion options. It has many backends which ar
 I find it weird that most programs do not have a tree-like tool to navigate undo information...because this is literally how most programs store this data.
 
 =undo-tree= package adds a nice undo tree buffer to visualize history and also displays diffs to easily show what changed.
+
+Undo tree is also used by evil mode (see below).
 #+BEGIN_SRC emacs-lisp
 (use-package undo-tree
   :straight t
@@ -3934,9 +3936,12 @@ I like being evil. All package and custom bindings go here.
 (use-package evil
   :straight t
   :init
+  :after undo-tree
   ;; this is required to make evil collection work
   (setq evil-want-integration t
-        evil-want-keybinding nil)
+        evil-want-keybinding nil
+        ;; evil now integrates with undo-tree
+        evil-undo-system 'undo-tree)
   :config
   (evil-mode 1))
 #+END_SRC
