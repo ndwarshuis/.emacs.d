@@ -4528,6 +4528,10 @@ This key collides with plenty of other stuff, notably scheduling in org mode
 #+BEGIN_SRC emacs-lisp
 (define-key pyenv-mode-map (kbd "C-c C-s") nil)
 #+END_SRC
+*** counsel
+#+begin_src emacs-lisp
+(define-key counsel-find-file-map (kbd "<tab>") #'ivy-alt-done)
+#+end_src
 ** global
 *** function
 :PROPERTIES:
