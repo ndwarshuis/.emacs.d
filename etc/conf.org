@@ -544,7 +544,7 @@ This is an elegant window selector. It displays a number in the corner when acti
 (use-package ivy
   :straight t
   :delight
-  :custom-face (ivy-current-match ((t (:inherit bold :extend t :background "#4c4573"))))
+  :custom-face (ivy-current-match ((t (:inherit bold :extend t :background "#534573"))))
   :config
   (setq ivy-use-virtual-buffers nil
         ivy-sort-max-size 30000
