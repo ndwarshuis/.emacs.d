@@ -535,9 +535,33 @@ This is an elegant window selector. It displays a number in the corner when acti
 :ID:       54e8e317-7696-4c67-a4bc-ebd920017e77
 :END:
 #+begin_src emacs-lisp
+(defun nd/ivy-swith-buffer-transformer-fn (b)
+  (with-current-buffer b
+    (-if-let (f (buffer-file-name))
+        (format "%-50s %s" b f)
+      b)))
+
 (use-package ivy
   :straight t
-  :delight)
+  :delight
+  :custom-face (ivy-current-match ((t (:inherit bold :extend t :background "#4c4573"))))
+  :config
+  (setq ivy-use-virtual-buffers nil
+        ivy-sort-max-size 30000
+        ivy-re-builders-alist
+        '((t . ivy--regex-ignore-order))
+        ivy-sort-matches-functions-alist
+        '((t . nil)
+          (ivy-switch-buffer . ivy-sort-function-buffer)
+          (counsel-describe-function . ivy--shorter-matches-first)
+          (counsel-describe-variable . ivy--shorter-matches-first)
+          (counsel-M-x . ivy--shorter-matches-first))
+        ;; the initial inputs are weird and get in the way
+        ivy-initial-inputs-alist nil)
+  (ivy--alist-set 'ivy-format-functions-alist t #'ivy-format-function-line)
+  (ivy-configure 'ivy-switch-buffer
+    :display-transformer-fn #'nd/ivy-swith-buffer-transformer-fn)
+  (ivy-mode))
 #+end_src
 *** avy
 :PROPERTIES:
@@ -4302,6 +4326,15 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
   "gj" #'lispy-down
   "gk" #'lispy-up)
 #+END_SRC
+**** ivy
+:PROPERTIES:
+:ID:       a546bc23-bb8d-4246-b56b-964c1d5799c1
+:END:
+#+begin_src emacs-lisp
+(evil-define-key 'normal ivy-minibuffer-map
+  "gg" #'ivy-beginning-of-buffer
+  "G" #'ivy-end-of-buffer)
+#+end_src
 ** local
 These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future).
 *** org-mode
@@ -4557,6 +4590,9 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "C-c e") 'nd/config-visit)
 (global-set-key (kbd "C-c r") 'nd/config-reload)
 (global-set-key (kbd "C-c s") 'sudo-edit)
+
+(global-set-key (kbd "C-h f") #'counsel-describe-function)
+(global-set-key (kbd "C-h v") #'counsel-describe-variable)
 
 (global-set-key (kbd "C-x 2") 'nd/split-and-follow-horizontally)
 (global-set-key (kbd "C-x 3") 'nd/split-and-follow-vertically)
