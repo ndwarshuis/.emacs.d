@@ -529,41 +529,16 @@ This is an elegant window selector. It displays a number in the corner when acti
                            :box nil))))))
 #+END_SRC
 ** navigation
-*** helm
+*** ivy
 :PROPERTIES:
-:ID:       919f08f5-dd1a-45c6-b791-2beb8d14747c
+:CREATED:  [2020-10-17 Sat 18:13]
+:ID:       54e8e317-7696-4c67-a4bc-ebd920017e77
 :END:
-One of the best packages for emacs. Helm is basically a search and completion engine (other exanples being =ido-mode= and =ivy-mode=) which is mainly used for finding files and selecting commands (which are obviously used often). It also integrates well with many other modes such as =evil-mode= and =org-mode=.
-#+BEGIN_SRC emacs-lisp
-(use-package helm
+#+begin_src emacs-lisp
+(use-package ivy
   :straight t
-  :delight
-  :init
-  (helm-mode 1)
-  :config
-  (setq helm-autoresize-max-height 40
-        helm-M-x-fuzzy-match nil
-        helm-buffers-fuzzy-matching nil
-        helm-recentf-fuzzy-match nil
-        helm-semantic-fuzzy-match nil
-        helm-imenu-fuzzy-match nil
-        helm-scroll-amount 8)
-  (add-to-list 'display-buffer-alist
-               `(,(rx bos "*helm" (* not-newline) "*" eos)
-                 (display-buffer-in-side-window)
-                 (inhibit-same-window . t)
-                 (window-height . 0.4)))
-  (helm-autoresize-mode 1)
-  (require 'helm-config))
-#+END_SRC
-*** helm-swoop
-:PROPERTIES:
-:ID:       e94756f2-8d24-426d-a77c-83ed76bedf42
-:END:
-#+BEGIN_SRC emacs-lisp
-(use-package helm-swoop
-  :straight t)
-#+END_SRC
+  :delight)
+#+end_src
 *** avy
 :PROPERTIES:
 :ID:       516f0610-4766-4711-a697-aaff0107a94b
@@ -699,15 +674,12 @@ Alot of languages at least semi-adhere to the 80-characters-per-line rule. =fci-
 :PROPERTIES:
 :ID:       d2ea7a4e-e955-4f55-9e73-e71c8a167592
 :END:
-I use the built-in =flyspell-mode= to handle spellchecking. Obviously I am going to use =helm= when I spellcheck something.
+Use the built-in =flyspell-mode= to handle spellchecking with favorite completion engine.
 #+BEGIN_SRC emacs-lisp
-;; (use-package flyspell-correct-helm
-;;   :straight flyspell-correct
-;;   :after (helm flyspell))
-
-(use-package helm-flyspell
+(use-package flyspell-correct-ivy
   :straight t
-  :after (helm flyspell))
+  :config
+  (setq flyspell-correct-interface #'flyspell-correct-ivy))
 #+END_SRC
 
 This will spell-check comments in programming languages.
@@ -719,11 +691,6 @@ This will spell-check comments in programming languages.
 Since flyspell mode is enabled in so many buffers, use a short modeline alias.
 #+BEGIN_SRC emacs-lisp
 (delight 'flyspell-mode "σ" "flyspell")
-#+END_SRC
-
-Additionally, I want to automatically highlight errors whenever =flyspell-mode= is enabled.
-#+BEGIN_SRC emacs-lisp
-;; (add-hook 'flyspell-mode-hook 'flyspell-buffer)
 #+END_SRC
 *** syntax checking
 :PROPERTIES:
@@ -1244,7 +1211,7 @@ I like having my lines short and readable (also easier to git). Turn on autofill
 :PROPERTIES:
 :ID:       13b5981b-4f22-4565-97a7-933570009797
 :END:
-Together, =org-ref= and =helm-bibtex= provide a nice pipeline to search a BibTex database and insert citations.
+Together, =org-ref= and =ivy-bibtex= (also includes =ivy-bibtex=) provide a nice pipeline to search a BibTex database and insert citations.
 #+BEGIN_SRC emacs-lisp
 (use-package org-ref
   :straight t
@@ -1254,9 +1221,9 @@ Together, =org-ref= and =helm-bibtex= provide a nice pipeline to search a BibTex
         org-ref-bibliography-notes (expand-file-name "~/BibTeX/notes.org")
         org-ref-default-bibliography (expand-file-name "~/BibTeX/master.bib")))
         
-(use-package helm-bibtex
+(use-package ivy-bibtex
   :straight t
-  :after helm
+  :after ivy
   :config
   (setq bibtex-completion-bibliography (expand-file-name "~/BibTeX/master.bib")
         bibtex-completion-library-path (expand-file-name "~/BibTeX/pdf")
@@ -1577,20 +1544,6 @@ Since I use org mode as my config file, makes sense to have a table of contents 
 
 (set-face-attribute 'org-column nil :background "#1e2023")
 ;; org-columns-summary-types
-#+END_SRC
-*** rifle
-:PROPERTIES:
-:ID:       97ff686e-05d8-4d32-9354-eaaf8691f940
-:END:
-#+BEGIN_SRC emacs-lisp
-(use-package helm-org-rifle
-  :straight t
-  :after (org helm))
-
-(defun nd/helm-org-rifle-brain ()
-  "Rifle files in `org-brain-path'."
-  (interactive)
-  (helm-org-rifle-directories (list org-brain-path)))
 #+END_SRC
 ** calfw
 :PROPERTIES:
@@ -2117,7 +2070,7 @@ In some capture templates I want to automatically store a link to the entry so I
 :PROPERTIES:
 :ID:       8316d4a9-1365-40a7-89ab-e4670c30303c
 :END:
-Refile (like capture) should be fast, and I search all org file simultaneously using helm (setting =org-outline-path-complete-in-steps= to =nil= makes search happen for entire trees at once and not just the current level). Refiling is easiest to do from a block agenda view (see below) where headings can be moved in bulk.
+Refile (like capture) should be fast, and I search all org file simultaneously using =ivy= (setting =org-outline-path-complete-in-steps= to =nil= makes search happen for entire trees at once and not just the current level). Refiling is easiest to do from a block agenda view (see below) where headings can be moved in bulk.
 #+BEGIN_SRC emacs-lisp
 (setq org-refile-targets '((nil :maxlevel . 9)
                            ("~/Org/reference/idea.org" :maxlevel . 9)
@@ -3401,11 +3354,21 @@ This really means "super awesome pomodoro implementation." =Tomato-mode= sounds 
 :END:
 For some reason there is no default way to get a "print prompt." Instead one needs to either install some third-party helper or make a function like this.
 #+BEGIN_SRC emacs-lisp
-(defun nd/helm-set-printer-name ()
-  "Set the printer name using helm-completion to select printer."
+(defun nd/find-printers ()
+  "Return a list of available printers on Unix systems."
+  (when (executable-find "lpstat")
+    (with-temp-buffer
+      (call-process "lpstat" nil t nil "-a")
+      (->> (buffer-string)
+           (s-split "\n")
+           (-remove-item "")
+           (--map (car (s-split " " it)))))))
+
+(defun nd/ivy-set-printer-name ()
+  "Set the printer name using ivy-completion to select printer."
   (interactive)
-  (let ((pl (or helm-ff-printer-list (helm-ff-find-printers))))
-    (if pl (setq printer-name (helm-comp-read "Printer: " pl)))))
+  (let ((pl (nd/find-printers)))
+    (when pl (setq printer-name (ivy-read "Printer: " pl)))))
 #+END_SRC
 ** magit
 :PROPERTIES:
@@ -3421,14 +3384,6 @@ For some reason there is no default way to get a "print prompt." Instead one nee
           git-commit-summary-max-length 50)))
 #+END_SRC
 ** dired
-*** no confirm
-:PROPERTIES:
-:ID:       4639e71a-4fca-4e5f-b973-b720ca24605b
-:END:
-Keeping confirmation enabled does weird stuff with helm. Not ideal at the moment but we shall see if I find something better.
-#+BEGIN_SRC emacs-lisp
-(setq dired-no-confirm '(move copy))
-#+END_SRC
 *** compression
 :PROPERTIES:
 :ID:       2b3bb88b-c161-4cc0-a6c9-2674ad067cdb
@@ -3935,8 +3890,8 @@ I like being evil. All package and custom bindings go here.
 #+BEGIN_SRC emacs-lisp
 (use-package evil
   :straight t
-  :init
   :after undo-tree
+  :init
   ;; this is required to make evil collection work
   (setq evil-want-integration t
         evil-want-keybinding nil
@@ -4088,7 +4043,7 @@ Some of these commands just get in the way of being evil (which really means tha
   (evil-org-agenda-set-keys)
   ;; some of the defaults bug me...
   (evil-define-key 'motion org-agenda-mode-map
-    "C" #'org-x-agenda-helm-select-categories
+    ;;"C" #'org-x-agenda-helm-select-categories
     "D" #'org-agenda-day-view
     "W" #'org-agenda-week-view
     "M" #'org-agenda-month-view
@@ -4168,7 +4123,7 @@ Most packages that don't have an evil version are in this one. Some don't behave
   :init
   (setq evil-collection-mode-list
         '(anaconda-mode arc-mode company comint custom debug edebug dired
-                        doc-view ebib ediff elfeed flycheck helm help
+                        doc-view ebib ediff elfeed flycheck ivy help
                         minibuffer mu4e profiler term which-key))
   (setq evil-collection-setup-minibuffer t)
   :config
@@ -4200,57 +4155,42 @@ Only regular files are considered."
        file-list))))
 
 (defun nd/dired-open-with ()
-  "Open marked non-text files in external app via open-with dialog
-according to mime types as listed in all available desktop files."
+  "Open marked files in external app.
+If multiple apps are available (according to mime type), present
+all options in a list to user."
   (interactive)
-  (let* ((mf (seq-filter #'file-regular-p (dired-get-marked-files)))
-         (qmf (mapcar #'shell-quote-argument mf))
-         (file-mime-list (mapcar (lambda (f) (list f (nd/get-mime-type f))) qmf)))
-
-    (if (= (length file-mime-list) 0)
-        (message "No files selected")
-      
-      (let* ((first-pair (car file-mime-list))
-             (last-pairs (cdr file-mime-list))
-             mime-alist file-list)
-        (setq file-list (nth 0 first-pair)
-              mime-alist (nd/get-apps-from-mime (nth 1 first-pair)))
-        ;; if multiple files selected, add to the selection list
-        (if last-pairs
-            (progn
-              (setq file-list (string-join (mapcar #'car file-mime-list) " "))
-              (dolist (mime (mapcar (lambda (f) (nth 1 f)) last-pairs))
-                (setq mime-alist (intersection mime-alist
-                                               (nd/get-apps-from-mime mime)
-                                               :test #'equal)))))
-        (if (= (length mime-alist) 0)
-            (let* ((ml (delete-dups (mapcan #'cdr file-mime-list)))
-                   (mls (string-join ml ", ")))
-              (if (= (length ml) 1)
-                  (message (concat "No apps found for mime type: "  mls))
-                (message (concat "No common apps found for mime types: " mls))))
-          (helm
-           :sources (helm-build-sync-source "Apps"
-                      :candidates mime-alist
-                      :action '(("Open" . (lambda (f) (nd/execute-desktop-command f file-list)))))
-           :buffer "*helm open with*"))))))
+  (let* ((file-list (-filter #'file-regular-p (dired-get-marked-files)))
+         (app-list (->> (-map #'nd/get-mime-type file-list)
+                        (-map #'nd/get-apps-from-mime)
+                        (-reduce #'-intersection))))
+    (cl-flet
+        ((exec
+          (cell)
+          (nd/execute-desktop-command (cdr cell) (s-join " " file-list))))
+      (cond
+       ((and (= 1 (length file-list)) (= 0 (length app-list)))
+        (message "No apps found for file"))
+       ((= 0 (length app-list))
+        (message "No common apps found for files"))
+       ((= 0 (length file-list))
+        (message "No files selected"))
+       (t
+        (ivy-read "Open with" app-list :action #'exec))))))
 
 (defun nd/dired-sort-by ()
-  "Sort current dired buffer by a list of choices presented in helm menu.
+  "Sort current dired buffer by list of choices.
 Note this assumes there are no sorting switches on `dired-ls'"
   (interactive)
-  (let ((sort-alist '(("Name" . "")
-                      ("Date" . "-t")
-                      ("Size" . "-S")
-                      ("Extension" . "-X")
-                      ("Dirs First" . "--group-directories-first"))))
-    (helm
-     :sources
-     (helm-build-sync-source "Switches"
-       :candidates sort-alist
-       :action
-       '(("Sort" . (lambda (s) (dired-sort-other (concat dired-listing-switches " " s))))))
-     :buffer "*helm sort buffer*")))
+  (cl-flet
+      ((apply-switch
+        (cell)
+        (dired-sort-other (concat dired-listing-switches " " (cdr cell)))))
+    (let ((sort-alist '(("Name" . "")
+                        ("Date" . "-t")
+                        ("Size" . "-S")
+                        ("Extension" . "-X")
+                        ("Dirs First" . "--group-directories-first"))))
+      (ivy-read "Switches" sort-alist :action #'apply-switch))))
 
 (put 'dired-find-alternate-file 'disabled nil)
 
@@ -4319,16 +4259,6 @@ Not to be confused with =interactive-haskell-mode= which is part of the editing 
 (evil-define-key 'normal haskell-interactive-mode-map
   (kbd "[[") #'haskell-interactive-mode-prompt-previous
   (kbd "]]") #'haskell-interactive-mode-prompt-next)
-#+END_SRC
-**** helm
-:PROPERTIES:
-:ID:       dea59175-276f-40ff-8e0a-0f6e2a60ce30
-:END:
-I like tab completion...regardless of what the helm zealots say.
-#+BEGIN_SRC emacs-lisp
-(evil-define-key '(normal insert) helm-map
-  (kbd "<tab>") 'helm-execute-persistent-action
-  (kbd "C-<tab>") 'helm-select-action)
 #+END_SRC
 **** pdf-view
 :PROPERTIES:
@@ -4451,25 +4381,6 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 :END:
 #+BEGIN_SRC emacs-lisp
 (define-key dired-mode-map (kbd "C-x g") 'magit)
-#+END_SRC
-*** helm-prefix
-:PROPERTIES:
-:ID:       fc0b586b-97cc-4fc0-8bcd-977c5de12545
-:END:
-Some of these are useful enough that I make give them a direct binding without requiring a prefix. For now this is fine.
-#+BEGIN_SRC emacs-lisp
-(define-key helm-command-prefix (kbd "b") #'helm-bibtex)
-(define-key helm-command-prefix (kbd "B") #'helm-bibtex-with-local-bibliography)
-(define-key helm-command-prefix (kbd "s") #'helm-swoop)
-(define-key helm-command-prefix (kbd "S") #'helm-surfraw)
-(define-key helm-command-prefix (kbd "o") #'helm-org-rifle)
-(define-key helm-command-prefix (kbd "<f8>") #'helm-resume)
-#+END_SRC
-
-Give =f= to =nd/helm-flyspell-correct= instead of =helm-multi-files= and give the latter =F= (used much less).
-#+BEGIN_SRC emacs-lisp
-(define-key helm-command-prefix (kbd "f") 'helm-flyspell-correct)
-(define-key helm-command-prefix (kbd "F") 'helm-multi-files)
 #+END_SRC
 *** outline-magic
 :PROPERTIES:
@@ -4600,7 +4511,9 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "<f4>") 'org-clock-goto)
 (global-set-key (kbd "C-<f4>") 'org-tomato-user-get-summary)
 (global-set-key (kbd "C-S-<f4>") 'org-tomato-user-pomodoro-goto)
-(global-set-key (kbd "<f8>") 'helm-command-prefix)
+(global-set-key (kbd "<f8> s") #'swiper-thing-at-point)
+(global-set-key (kbd "<f8> o") #'counsel-org-goto-all)
+(global-set-key (kbd "<f8> f") #'flyspell-correct-at-point)
 
 (defhydra hydra-multimedia (global-map "<f10>" :exit t)
   "convenient multimedia controls"
@@ -4649,10 +4562,10 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "C-x 3") 'nd/split-and-follow-vertically)
 (global-unset-key (kbd "C-x c"))
 (global-set-key (kbd "C-x k") 'nd/kill-current-buffer)
-(global-set-key (kbd "C-x C-d") 'helm-bookmarks)
+(global-set-key (kbd "C-x C-d") #'counsel-bookmarked-directory)
 (global-set-key (kbd "C-x C-c C-d") 'nd/find-devices)
-(global-set-key (kbd "C-x C-f") 'helm-find-files)
-(global-set-key (kbd "C-x C-b") 'helm-buffers-list)
+(global-set-key (kbd "C-x C-f") #'counsel-find-file)
+(global-set-key (kbd "C-x C-b") #'ivy-switch-buffer)
 
 (global-set-key (kbd "C-M-S-k") 'nd/close-all-buffers)
 (global-set-key (kbd "C-M-S-o") 'nd/org-close-all-buffers)
@@ -4662,13 +4575,7 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "M-b") 'nd/switch-to-previous-buffer)
 (global-set-key (kbd "M-I") 'imenu)
 (global-set-key (kbd "M-s") 'avy-goto-char)
-(global-set-key (kbd "M-x") 'helm-M-x)
-
-;; (defhydra hydra-buffer (global-map "M-b" :exit t)
-;;   "buffer functions"
-;;   ("M-b" nd/switch-to-previous-buffer)
-;;   ("k" nd/kill-current-buffer)
-;;   ("l" helm-buffers-list))
+(global-set-key (kbd "M-x") 'counsel-M-x)
 
 (defhydra hydra-window (global-map "M-o")
   "window"
