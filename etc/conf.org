@@ -562,6 +562,13 @@ This is an elegant window selector. It displays a number in the corner when acti
   (ivy-configure 'ivy-switch-buffer
     :display-transformer-fn #'nd/ivy-swith-buffer-transformer-fn)
   (ivy-mode))
+
+;; ensure counsel and swiper are loaded
+(use-package counsel
+  :straight t)
+
+(use-package swiper
+  :straight t)
 #+end_src
 *** avy
 :PROPERTIES:
