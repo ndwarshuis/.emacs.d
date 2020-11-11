@@ -3700,9 +3700,31 @@ The following will only run if the =mu= command is found (which it won't be if t
   (setq send-mail-function 'smtpmail-send-it
         smtpmail-debug-info nil
         message-send-mail-function 'smtpmail-send-it)
-  (setq auth-sources `(,(no-littering-expand-etc-file-name "authinfo_mu4e.gpg")))
+  (setq auth-sources
+        (list (no-littering-expand-etc-file-name "authinfo_mu4e.gpg")))
   ;; TODO get this to work
   ;; (setq auth-sources '("secret:Default Keyring"))
+
+  (defun nd/lookup-oauth-secret (type user)
+    (->> (format "secret-tool lookup user %s type %s" user type)
+         (shell-command-to-string)))
+
+  (defun nd/xoauth2-get-secrets (host user port)
+    (when (and (string= host "smtp.office365.com")
+               (string= user "ndwarshuis3@gatech.edu")
+               (string= port "587"))
+      (list :token-url (nd/lookup-oauth-secret "token_url" user)
+            :client-id (nd/lookup-oauth-secret "client_id" user)
+            :client-secret (nd/lookup-oauth-secret "client_secret" user)
+            :refresh-token (nd/lookup-oauth-secret "refresh_token" user))))
+
+  (use-package auth-source-xoauth2
+    :straight t
+    :after smtpmail
+    :config
+    (setq auth-source-xoauth2-creds #'nd/xoauth2-get-secrets)
+    (add-to-list 'smtpmail-auth-supported 'xoauth2)
+    (auth-source-xoauth2-enable))
 
   (use-package org-mu4e
     :after (org mu4e)
