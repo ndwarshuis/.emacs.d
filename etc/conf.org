@@ -24,6 +24,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#user-information][user information]]
   - [[#autosave][autosave]]
   - [[#async][async]]
+  - [[#file-io][file IO]]
 - [[#editing][editing]]
   - [[#standardization][standardization]]
   - [[#auto-completion][auto completion]]
@@ -674,6 +675,12 @@ Allows certain processes to run in multithreaded manner. For things like IO this
   :init
   (dired-async-mode 1))
 #+END_SRC
+** file IO
+Emacs will warn user when opening a file over a certain limit. Raise this to 1GB.
+#+begin_src emacs-lisp
+(setq large-file-warning-threshold 1000000000)
+#+end_src
+
 * editing
 For options that specifically affect programming or editing modes
 ** standardization
