@@ -2116,6 +2116,7 @@ Refile (like capture) should be fast, and I search all org file simultaneously u
 #+BEGIN_SRC emacs-lisp
 (setq org-refile-targets '((nil :maxlevel . 9)
                            ("~/Org/reference/idea.org" :maxlevel . 9)
+                           ("~/Org/reference/questions.org" :maxlevel . 9)
                            (org-agenda-files :maxlevel . 9))
       org-refile-use-outline-path t
       org-outline-path-complete-in-steps nil
