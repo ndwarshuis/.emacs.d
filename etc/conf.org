@@ -28,7 +28,6 @@ This is my personal emacs config. It is quite massive. Please use the table of c
 - [[#editing][editing]]
   - [[#standardization][standardization]]
   - [[#auto-completion][auto completion]]
-  - [[#undo][undo]]
   - [[#parenthesis-matching][parenthesis matching]]
   - [[#sudo-edit][sudo edit]]
   - [[#formats-and-languages][formats and languages]]
@@ -680,6 +679,9 @@ Allows certain processes to run in multithreaded manner. For things like IO this
   (dired-async-mode 1))
 #+END_SRC
 ** file IO
+:PROPERTIES:
+:ID:       c2ab0b32-dad0-4d57-9193-39aba91675a1
+:END:
 Emacs will warn user when opening a file over a certain limit. Raise this to 1GB.
 #+begin_src emacs-lisp
 (setq large-file-warning-threshold 1000000000)
@@ -776,23 +778,6 @@ Company provides a dropdown of completion options. It has many backends which ar
   :config
   (setq company-idle-delay 0
         company-minimum-prefix-length 3))
-#+END_SRC
-** undo
-:PROPERTIES:
-:ID:       4e1b46fe-6e34-4b5e-9ff3-e4331c939f39
-:END:
-I find it weird that most programs do not have a tree-like tool to navigate undo information...because this is literally how most programs store this data.
-
-=undo-tree= package adds a nice undo tree buffer to visualize history and also displays diffs to easily show what changed.
-
-Undo tree is also used by evil mode (see below).
-#+BEGIN_SRC emacs-lisp
-(use-package undo-tree
-  :straight t
-  :delight
-  :config
-  (setq undo-tree-visualizer-diff t)
-  (global-undo-tree-mode))
 #+END_SRC
 ** parenthesis matching
 :PROPERTIES:
@@ -3927,13 +3912,12 @@ I like being evil. All package and custom bindings go here.
 #+BEGIN_SRC emacs-lisp
 (use-package evil
   :straight t
-  :after undo-tree
   :init
   ;; this is required to make evil collection work
   (setq evil-want-integration t
         evil-want-keybinding nil
         ;; evil now integrates with undo-tree
-        evil-undo-system 'undo-tree)
+        evil-undo-system 'undo-redo)
   :config
   (evil-mode 1))
 #+END_SRC
