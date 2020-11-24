@@ -3910,14 +3910,17 @@ I like being evil. All package and custom bindings go here.
 :ID:       07d06b91-fa97-41f5-8d12-ac0d1e86c988
 :END:
 #+BEGIN_SRC emacs-lisp
+(use-package undo-fu
+  :straight t)
+
 (use-package evil
   :straight t
+  :after undo-fu
   :init
   ;; this is required to make evil collection work
   (setq evil-want-integration t
         evil-want-keybinding nil
-        ;; evil now integrates with undo-tree
-        evil-undo-system 'undo-redo)
+        evil-undo-system 'undo-fu)
   :config
   (evil-mode 1))
 #+END_SRC
