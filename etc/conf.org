@@ -548,6 +548,11 @@ This is an elegant window selector. It displays a number in the corner when acti
   :config
   (setq ivy-use-virtual-buffers nil
         ivy-sort-max-size 30000
+        ivy-display-functions-alist
+        '((counsel-irony . ivy-display-function-overlay)
+          ;; not a fan of ivy overlay since it only appears sometimes
+          ;; (ivy-completion-in-region . ivy-display-function-overlay)
+          (t))
         ivy-re-builders-alist
         '((t . ivy--regex-ignore-order))
         ivy-sort-matches-functions-alist
@@ -998,7 +1003,7 @@ Anaconda (not related to the Python/R distribution?) is much lighter and easier 
 :PROPERTIES:
 :ID:       77045cce-5b0c-4caa-aa24-24f6651e9dbb
 :END:
-For isolation I use [[https://github.com/pyenv/pyenv][pyenv]] and [[https://github.com/pyenv/pyenv-virtualenv][pyenv-virtualenv]]. The only external addition needed to make this work is to add =${PYENV_ROOT}/shims= to PATH as well as adding a =.pythong-version= file in the project root specifying the desired version/environment.
+For isolation I use [[https://github.com/pyenv/pyenv][pyenv]] and [[https://github.com/pyenv/pyenv-virtualenv][pyenv-virtualenv]]. The only external addition needed to make this work is to add =${PYENV_ROOT}/shims= to PATH as well as adding a =.python-version= file in the project root specifying the desired version/environment.
 
 Note this also requires all external packages to be installed in each environement (eg ipython, black, flake8, and pylint).
 #+BEGIN_SRC emacs-lisp
@@ -4536,6 +4541,9 @@ This key collides with plenty of other stuff, notably scheduling in org mode
 (define-key pyenv-mode-map (kbd "C-c C-s") nil)
 #+END_SRC
 *** counsel
+:PROPERTIES:
+:ID:       bd70f69a-95b3-4da1-9f71-090b63e0e6e7
+:END:
 #+begin_src emacs-lisp
 (define-key counsel-find-file-map (kbd "<tab>") #'ivy-alt-done)
 #+end_src
