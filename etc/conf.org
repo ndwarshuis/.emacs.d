@@ -42,7 +42,6 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#gtd-implementation][gtd implementation]]
   - [[#gtd-next-generation][gtd next generation]]
   - [[#tomato-mode][tomato mode]]
-  - [[#brain][brain]]
 - [[#tools][tools]]
   - [[#printing][printing]]
   - [[#magit][magit]]
@@ -3363,18 +3362,6 @@ This really means "super awesome pomodoro implementation." =Tomato-mode= sounds 
 (setq org-tomato-timer-sound (no-littering-expand-etc-file-name
                               "you_suffer.wav"))
 #+END_SRC
-** brain
-:PROPERTIES:
-:ID:       08853295-71db-438f-b78f-20277d73ff46
-:END:
-#+BEGIN_SRC emacs-lisp
-(use-package org-brain
-  :straight t
-  :init
-  (setq org-brain-path "~/Org/reference")
-  (with-eval-after-load 'evil
-    (evil-set-initial-state 'org-brain-visualize-mode 'emacs)))
-#+END_SRC
 * tools
 ** printing
 :PROPERTIES:
@@ -4369,15 +4356,11 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 
             ;; add clock in/out functions for tomato mode
             (local-set-key (kbd "C-x C-c C-x C-i") 'org-tomato-user-hl-clock-in)
-            (local-set-key (kbd "C-x C-c C-x C-o") 'org-tomato-user-hl-clock-out)
-
-            ;; add org-brain shortcuts
-            (local-set-key (kbd "C-c W") 'org-brain-refile)))
+            (local-set-key (kbd "C-x C-c C-x C-o") 'org-tomato-user-hl-clock-out)))
             
 (add-hook 'org-agenda-mode-hook
           (lambda ()
             (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)
-            (local-set-key (kbd "C-c W") 'org-brain-refile)
             (local-set-key (kbd "C-c C-x c") 'org-x-agenda-clone-subtree-with-time-shift)
             (local-set-key (kbd "C-c C-x C-b") 'org-x-agenda-toggle-checkbox)
             (local-set-key (kbd "C-c C-x C-r") 'org-x-agenda-clock-range)
@@ -4543,7 +4526,6 @@ This key collides with plenty of other stuff, notably scheduling in org mode
 The function keys are nice because they are almost (not always) free in every mode. Therefore I use these for functions that I need to access anywhere, but not necessary extremely often (because they are out of the way and harder to reach).
 #+BEGIN_SRC emacs-lisp
 (global-set-key (kbd "<f1>") 'org-agenda)
-(global-set-key (kbd "C-<f1>") 'org-brain-visualize)
 (global-set-key (kbd "<f2>") 'org-capture)
 (global-set-key (kbd "<f3>") 'cfw:open-org-calendar)
 (global-set-key (kbd "C-<f3>") 'nd/org-cluster-show-conflicts)
