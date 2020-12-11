@@ -233,7 +233,7 @@ desktop file exec directive."
 
 (defconst nd/device-mount-dirs
   (list
-   (f-join "/media" (user-login-name))
+   (f-join "/tmp/media" (user-login-name))
    (f-join "/run" "media" (user-login-name))))
 
 (defun nd/get-mounted-directories ()
@@ -3483,11 +3483,12 @@ I handle device mounting using rofi and a custom mounting script (elsewhere in m
 (defun nd/find-devices ()
   "Navigate to mounted devices."
   (interactive)
-  (let ((mounted (-annotate #'f-filename (nd/get-mounted-directories))))
-    (-when-let (dev (completing-read "Go to device: " mounted))
-      (-if-let (path (alist-get dev mounted nil nil #'equal))
-          (find-file path)
-        (message "Invalid device: %s" dev)))))
+  (-if-let (mounted (-annotate #'f-filename (nd/get-mounted-directories)))
+      (-when-let (dev (completing-read "Go to device: " mounted))
+        (-if-let (path (alist-get dev mounted nil nil #'equal))
+            (find-file path)
+          (message "Invalid device: %s" dev)))
+    (message "No devices to mount")))
 #+END_SRC
 *** filtering
 :PROPERTIES:
