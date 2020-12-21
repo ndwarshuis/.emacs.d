@@ -95,8 +95,7 @@ Some useful external libraries that I use all over the place
 #+BEGIN_SRC emacs-lisp
 (use-package dash
   :straight t
-  :config
-  (dash-enable-font-lock))
+  :config)
 #+END_SRC
 
 #+BEGIN_SRC emacs-lisp
@@ -816,6 +815,7 @@ Elisp can use vanilla company with no plugins
 #+BEGIN_SRC emacs-lisp
 (add-hook 'emacs-lisp-mode-hook 'company-mode)
 (add-hook 'emacs-lisp-mode-hook 'origami-mode)
+(add-hook 'emacs-lisp-mode-hook 'dash-fontify-mode)
 
 (use-package lispy
   :straight t)
