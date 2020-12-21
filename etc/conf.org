@@ -221,12 +221,14 @@ multiple files at once for given MIMETYPE."
 (defun nd/execute-desktop-command (cmd file)
   "Opens FILE using CMD in separate process where CMD is from a 
 desktop file exec directive."
-  (let* ((cmd-arg (replace-regexp-in-string "%[fuFU]" file cmd t t)))
-    (call-process-shell-command (concat cmd-arg " &"))))
+  (--> (format "'%s'" file)
+       (replace-regexp-in-string "%[fuFU]" it cmd t t)
+       (format "%s &" it)
+       (call-process-shell-command it)))
   
 (defun nd/get-mime-type (file)
   "Get the mime type of FILE."
-  (let* ((cmd (concat "file --mime-type -b " file))
+  (let* ((cmd (format "file --mime-type -b '%s'" file))
          (mt (shell-command-to-string cmd)))
     (replace-regexp-in-string "\n\\'" "" mt)))
 
