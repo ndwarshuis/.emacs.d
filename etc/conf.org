@@ -3324,31 +3324,21 @@ Org mode is great and all, but in many cases, text files just won't cut it. Hard
 :END:
 These are variables that I set for my use but will not go into the eventual package
 #+BEGIN_SRC emacs-lisp
-(setq org-sql-use-tag-inheritance t
-
-      org-sql-ignored-properties nil
-      org-sql-ignored-tags nil
-      org-sql-ignored-link-types 'all
-      
-      org-sql-included-headline-planning-types '(:closed :scheduled :deadline)
-      org-sql-included-contents-timestamp-types '(active)
-      
-      org-sql-store-planning-timestamps t
-      org-sql-store-logbook-other t
-      org-sql-store-logbook-planning-changes t
-      org-sql-store-logbook-state-changes t
-      org-sql-store-clock-notes t
-      org-sql-store-clocks t
+(setq org-sql-db-config '(postgres :hostname "portnoy4prez.yavin4.ch"
+                                   :port "35432"
+                                   :database "org_sql"
+                                   :password "org_sql"
+                                   :username "org_sql")
 
       org-sql-files '(
-                      "~/Org/.archive/" 
-                      "~/Org/general.org_archive" 
+                      ;; "~/Org/.archive/" 
+                      ;; "~/Org/general.org_archive" 
                       "~/Org/general.org" 
                       ;; "~/Org/test1.org_archive" 
                       ;; "~/Org/test2.org_archive" 
-                      "~/Org/incubator.org" 
-                      "~/Org/projects/"
-                      "~/Org/repeater.org_archive"
+                      ;; "~/Org/incubator.org" 
+                      ;; "~/Org/projects/"
+                      ;; "~/Org/repeater.org_archive"
                       ))
 #+END_SRC
 ** tomato mode
