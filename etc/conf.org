@@ -2047,7 +2047,7 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
 
           ;; for converting mu4e emails to tasks, defaults to next-day deadline
           ("e" "email" entry (file ,capfile)
-           "* TODO Respond to %:fromname; Re: %:subject  :#laptop:\nDEADLINE: %(nd/org-timestamp-future 1)\n%a\n")
+           "* TODO Respond to %:fromaddress; Re: %:subject  :#laptop:\nDEADLINE: %(nd/org-timestamp-future 1)\n%a\n")
 
           ;; for interruptions that produce useful reference material
           ("m" "meeting" entry (file ,capfile)
