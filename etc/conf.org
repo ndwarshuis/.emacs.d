@@ -1245,9 +1245,9 @@ Together, =org-ref= and =ivy-bibtex= (also includes =ivy-bibtex=) provide a nice
   :straight t
   :after org
   :config
-  (setq reftex-default-bibliography (expand-file-name "~/BibTeX/master.bib")
+  (setq reftex-default-bibliography (list (expand-file-name "~/BibTeX/master.bib"))
         org-ref-bibliography-notes (expand-file-name "~/BibTeX/notes.org")
-        org-ref-default-bibliography (expand-file-name "~/BibTeX/master.bib")))
+        org-ref-default-bibliography (list (expand-file-name "~/BibTeX/master.bib"))))
         
 (use-package ivy-bibtex
   :straight t
