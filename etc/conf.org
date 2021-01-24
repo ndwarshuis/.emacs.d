@@ -3190,14 +3190,11 @@ original org entry before executing BODY."
       ((org-agenda-overriding-header "Critical Errors")
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
-          (let ((keyword (org-x-is-todoitem-p)))
-            (cond
-             ((org-x-is-habit-heading-p)
-              (org-x-skip-heading))
-             ((org-x-is-iterator-heading-p)
-              (org-x-skip-subtree))
-             ((org-x-is-periodical-heading-p)
-              (org-x-skip-subtree))))))
+          (cond
+           ((org-x-is-habit-heading-p)
+            (org-x-skip-heading))
+           ((org-x-is-periodical-heading-p)
+            (org-x-skip-subtree)))))
        (org-super-agenda-groups
         `((:name "Discontinuous Projects" :pred
                  ,(nd/org-x-mk-super-agenda-pred
@@ -3224,6 +3221,10 @@ original org entry before executing BODY."
                      (and
                       (not (member kw org-done-keywords))
                       (not (org-x-is-created-heading-p))))))
+          (:name "Missing Archive Target (iterators)" :pred
+                 ,(nd/org-x-mk-super-agenda-pred
+                   (and (equal "iterator" (org-entry-get nil "PARENT_TYPE"))
+                        (not (org-entry-get nil "ARCHIVE")))))
           (:name "Future Creation Timestamp" :pred
                  ,(nd/org-x-mk-super-agenda-pred
                    ;; TODO extend this to non-todoitems
