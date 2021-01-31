@@ -4066,15 +4066,6 @@ Some of these commands just get in the way of being evil (which really means tha
     "e" #'org-agenda-set-effort
     "ce" nil))
 #+END_SRC
-*** evil-magit
-:PROPERTIES:
-:ID:       97e88553-f0ae-46ae-9409-f473886c7850
-:END:
-#+BEGIN_SRC emacs-lisp
-(use-package evil-magit
-  :straight t
-  :after (evil magit))
-#+END_SRC
 *** visual line mode
 :PROPERTIES:
 :ID:       17a6fa9c-ba87-49d1-bf3d-d9253d632831
@@ -4128,7 +4119,7 @@ Most packages that don't have an evil version are in this one. Some don't behave
   :init
   (setq evil-collection-mode-list
         '(anaconda-mode arc-mode company comint custom debug edebug dired
-                        doc-view ebib ediff elfeed flycheck ivy help
+                        doc-view ebib ediff elfeed flycheck ivy help magit
                         minibuffer mu4e profiler term which-key))
   (setq evil-collection-setup-minibuffer t)
   :config
