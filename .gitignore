@@ -13,3 +13,4 @@ straight/versions/*
 !etc
 etc/*
 !etc/conf.org
+!etc/dashlogo.png
