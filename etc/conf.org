@@ -3511,15 +3511,13 @@ Filtering is useful for obvious reasons
 :PROPERTIES:
 :ID:       c23cee1b-00bf-48bd-94f6-f280f01777ea
 :END:
-Initialize by running the following command in a shell to tell mu about my personal email addresses and where mail should be stored:
-#+BEGIN_SRC sh
-mu init --my-address=ndwar@yavin4.ch --my-address=natedwarshuis@gmail.com --my-address=ndwarshuis3@gatech.edu --my-address=ndwarsh@emory.edu --maildir=/mnt/data/Mail
-#+END_SRC
+The following will only be defined if the =mu= command is found (which it won't be if this is run on windows).
 
-The following will only run if the =mu= command is found (which it won't be if this is run on windows).
+Initialize by running =nd/mu-init=.
 #+BEGIN_SRC emacs-lisp
 (nd/when-bin "mu"
   (require 'mu4e)
+
   (defun nd/make-mu4e-context (name dir addr smtp-srv sent-behavior)
     (let* ((trash (format "/%s/trash" dir))
           (drafts (format "/%s/drafts" dir))
@@ -3682,6 +3680,16 @@ The following will only run if the =mu= command is found (which it won't be if t
         (list (no-littering-expand-etc-file-name "authinfo_mu4e.gpg")))
   ;; TODO get this to work
   ;; (setq auth-sources '("secret:Default Keyring"))
+
+  (defun nd/mu-init ()
+    "Initialize the mu database"
+    (->> mu4e-contexts
+         (--map (->> (mu4e-context-vars it)
+                     (alist-get 'user-mail-address)
+                     (format "--my-address=%s")))
+         (s-join " ")
+         (format "mu init %s")
+         (shell-command-to-string)))
 
   (defun nd/lookup-oauth-secret (type user)
     (->> (format "secret-tool lookup user %s type %s" user type)
