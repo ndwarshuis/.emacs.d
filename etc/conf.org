@@ -3518,6 +3518,9 @@ Initialize by running =nd/mu-init=.
 (nd/when-bin "mu"
   (require 'mu4e)
 
+  (use-package password-store
+    :straight t)
+
   (defun nd/make-mu4e-context (name dir addr smtp-srv sent-behavior)
     (let* ((trash (format "/%s/trash" dir))
           (drafts (format "/%s/drafts" dir))
@@ -3670,16 +3673,10 @@ Initialize by running =nd/mu-init=.
 
   (require 'smtpmail)
   ;; (require 'smtpmail-async)
-  ;; (require 'secrets)
-  ;; (setq secrets-enabled t)
-  ;; (add-to-list 'auth-sources "secrets:default")
   (setq send-mail-function 'smtpmail-send-it
         smtpmail-debug-info nil
         message-send-mail-function 'smtpmail-send-it)
-  (setq auth-sources
-        (list (no-littering-expand-etc-file-name "authinfo_mu4e.gpg")))
-  ;; TODO get this to work
-  ;; (setq auth-sources '("secret:Default Keyring"))
+  (setq auth-sources '(password-store))
 
   (defun nd/mu-init ()
     "Initialize the mu database"
@@ -3692,8 +3689,9 @@ Initialize by running =nd/mu-init=.
          (shell-command-to-string)))
 
   (defun nd/lookup-oauth-secret (type user)
-    (->> (format "secret-tool lookup user %s type %s" user type)
-         (shell-command-to-string)))
+    (->> (format "pass email/%s/%s" user type)
+         (shell-command-to-string)
+         (s-trim)))
 
   (defun nd/xoauth2-get-secrets (host user port)
     (when
