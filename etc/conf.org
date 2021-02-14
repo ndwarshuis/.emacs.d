@@ -3325,22 +3325,22 @@ Org mode is great and all, but in many cases, text files just won't cut it. Hard
 :END:
 These are variables that I set for my use but will not go into the eventual package
 #+BEGIN_SRC emacs-lisp
-(setq org-sql-db-config '(postgres :hostname "portnoy4prez.yavin4.ch"
-                                   :port "35432"
-                                   :database "org_sql"
+(setq org-sql-db-config '(postgres :database "org_sql"
+                                   :port 35432
+                                   :hostname "portnoy4prez.yavin4.ch"
                                    :password "org_sql"
                                    :username "org_sql")
 
-      org-sql-files '(
-                      ;; "~/Org/.archive/" 
-                      ;; "~/Org/general.org_archive" 
-                      "~/Org/general.org" 
-                      ;; "~/Org/test1.org_archive" 
-                      ;; "~/Org/test2.org_archive" 
-                      ;; "~/Org/incubator.org" 
-                      ;; "~/Org/projects/"
-                      ;; "~/Org/repeater.org_archive"
-                      ))
+      org-sql-debug nil
+
+      org-sql-files '("~/Org/.archive/"
+                      "~/Org/general.org_archive"
+                      "~/Org/general.org"
+                      "~/Org/test1.org_archive"
+                      "~/Org/test2.org_archive"
+                      "~/Org/incubator.org"
+                      "~/Org/projects/"
+                      "~/Org/repeater.org_archive"))
 #+END_SRC
 ** tomato mode
 :PROPERTIES:
@@ -3675,6 +3675,7 @@ Initialize by running =nd/mu-init=.
   ;; (require 'smtpmail-async)
   (setq send-mail-function 'smtpmail-send-it
         smtpmail-debug-info nil
+        auth-source-debug nil
         message-send-mail-function 'smtpmail-send-it)
   (setq auth-sources '(password-store))
 
