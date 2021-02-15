@@ -12,5 +12,6 @@ straight/versions/*
 
 !etc
 etc/*
+!etc/org-sql
 !etc/conf.org
 !etc/dashlogo.png

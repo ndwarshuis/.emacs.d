@@ -3330,9 +3330,11 @@ These are variables that I set for my use but will not go into the eventual pack
                                    :hostname "portnoy4prez.yavin4.ch"
                                    :password "org_sql"
                                    :username "org_sql")
-
-      org-sql-debug nil
-
+      ;; some SQL code to denormalize my org-file data for visualization
+      org-sql-post-init-hooks '((file+ (f-join no-littering-etc-directory
+                                               "org_sql" "viz_setup.sql")))
+      org-sql-post-push-hooks '((sql+ "CALL make_vis_tables();"))
+      org-sql-debug t
       org-sql-files '("~/Org/.archive/"
                       "~/Org/general.org_archive"
                       "~/Org/general.org"
