@@ -114,9 +114,11 @@ select distinct
 create temporary table _clock_sums as
 select
   c.headline_id,
+  c.time_start as clock_start,
+  c.time_end as clock_end,
   sum(c.time_end - c.time_start) / 60.0 as clock_sum
   from clocks c
-  group by c.headline_id;
+  group by c.headline_id, c.time_start, c.time_end;
 
 -- clock sums partitioned by DONE -> TODO state changes (this mostly useful for
 -- repeaters although all headlines are included in this calculation)
@@ -253,8 +255,8 @@ with
 	select
       g.headline_id,
 	  g.grp,
-      min(g.time_start) as partitioned_time_start,
-      max(g.time_end) as partitioned_time_end,
+      min(g.time_start) as partitioned_clock_start,
+      max(g.time_end) as partitioned_clock_end,
       sum(g.time_end - g.time_start) / 60.0 as partitioned_clock_sum
       from grouped g
     where
@@ -264,8 +266,8 @@ with
   select
     o.headline_id,
     o.state_change_id,
-    s.partitioned_time_start,
-    s.partitioned_time_end,
+    s.partitioned_clock_start,
+    s.partitioned_clock_end,
     s.partitioned_clock_sum
     from ids o
   left join sums s using (headline_id, grp);
@@ -273,6 +275,8 @@ with
 create temporary table _habit_headlines as
 select
   r.*,
+  cs.partitioned_clock_start,
+  cs.partitioned_clock_end,
   cs.partitioned_clock_sum,
   s.state_old,
   s.state_new,
@@ -292,6 +296,8 @@ select
 create temporary table _repeater_headlines as
 select
   r.*,
+  cs.partitioned_clock_start,
+  cs.partitioned_clock_end,
   cs.partitioned_clock_sum,
   s.state_old,
   s.state_new,
@@ -447,6 +453,8 @@ with
     select
       r.headline_id,
       r.state_new as keyword,
+      r.partitioned_clock_start as clock_start,
+      r.partitioned_clock_end as clock_end,
       r.partitioned_clock_sum as clock_sum,
       r.closed_timestamp,
       'repeater' as task_type
@@ -455,6 +463,8 @@ with
     select
       h.headline_id,
       h.state_new as keyword,
+      h.partitioned_clock_start as clock_start,
+      h.partitioned_clock_end as clock_end,
       h.partitioned_clock_sum as clock_sum,
       h.closed_timestamp,
       'habit' as task_type
@@ -464,6 +474,8 @@ with
     select
       a.headline_id,
       a.keyword,
+      cs.clock_start,
+      cs.clock_end,
       cs.clock_sum,
       to_timestamp(c.time_start) as closed_timestamp,
       'atomic' as task_type
@@ -474,6 +486,8 @@ with
     select
       p.headline_id,
       p.keyword,
+      cs.clock_start,
+      cs.clock_end,
       cs.clock_sum,
       to_timestamp(c.time_start) as closed_timestamp,
       'project' as task_type
@@ -484,6 +498,8 @@ with
     select
       i.headline_id,
       i.keyword,
+      cs.clock_start,
+      cs.clock_end,
       cs.clock_sum,
       to_timestamp(c.time_start) as closed_timestamp,
       'iterator' as task_type
