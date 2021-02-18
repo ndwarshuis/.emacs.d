@@ -192,25 +192,19 @@ OS is one of those in `system-type'."
 (defun nd/get-apps-from-mime (mimetype)
   "Return all applications that can open a given MIMETYPE.
 The list is comprised of alists where pairs are of the form (name . command)."
-  (let* ((case-fold-search nil)
-         (mime-regex (concat "^MimeType=.*" mimetype ";?.*$"))
-         (desktop-dirs '("/usr/share/applications"
-                         "/usr/local/share/applications"
-                         "~/.local/share/applications"))
-         (desktop-files (mapcan (lambda (d) (directory-files d t ".*\\.desktop" t)) desktop-dirs))
-         (app-list))
-    (dolist (file desktop-files app-list)
-      (with-temp-buffer
-        (insert-file-contents file)
-        (let* ((tb (buffer-string)))
-          (if (string-match mime-regex tb)
-              (let* ((exec (progn (string-match "^Exec=\\(.*\\)$" tb)
-                                  (match-string 1 tb)))
-                     (name (or
-                            (progn (string-match "^Name=\\(.*\\)$" tb)
-                                   (match-string 1 tb))
-                            exec)))
-                (setq app-list (cons `(,name . ,exec) app-list)))))))))
+  (let ((case-fold-search nil)
+        (mime-regex (format "^MimeType=.*%s;?.*$" mimetype)))
+    (->> (list "/usr/share/applications"
+               "/usr/local/share/applications"
+               "~/.local/share/applications")
+         (-filter #'f-exists-p)
+         (--mapcat (directory-files it t ".*\\.desktop" t))
+         (--map (let ((tb (f-read-text it 'utf-8)))
+                  (when (s-match mime-regex tb)
+                    (let ((exec (cadr (s-match "^Exec=\\(.*\\)$" tb))))
+                      (-> (or (cadr (s-match "^Name=\\(.*\\)$" tb)) exec)
+                          (cons exec))))))
+         (-non-nil))))
 
 (defun nd/get-apps-bulk-from-mime (mimetype)
   "Like `nd/get-apps-from-mime' but only includes apps that can open
