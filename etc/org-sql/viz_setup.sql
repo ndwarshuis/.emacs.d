@@ -368,30 +368,6 @@ select tc.parent_id, tc.child_id from maxdepth m
 --           t.file_path = h.file_path
 --           and t.headline_offset = h.headline_offset);
 
-drop table if exists viz.sleep_length;
-create table viz.sleep_length as
-with
-  tmp as (
-	select distinct 
-	to_timestamp(c.time_start)::time at time zone 'US/Eastern' as time_start_clock,
-	c.time_start,
-	c.time_end  
-	from _repeater_headlines hh
-  	join clocks c using (headline_id)
-      where
-        hh.headline_text = 'sleep')
-  select distinct
-    to_timestamp(time_start) as sleep_timestamp,
-    (time_end - time_start) / 3600.0 as sleep_hours,
-    time_start_clock as sleep_start_clock,
-    -- day of week that sleep starts; subtract 12 hours off timestamp to count
-    -- bedtime after midnight as starting on the previous day
-    extract(dow from to_timestamp(time_start - 43200) at time zone 'US/Eastern')
-      as sleep_start_day,
-    -- offset from target bedtime start (assume target bedtime is 23:45)
-    mod((extract(hour from time_start_clock) * 60
-		 + extract(minute from time_start_clock) + 15 + 720)::bigint,
-		1440) / 1440.0 * 24 - 12 as sleep_start_offset from tmp;
 
 create temporary table _atomic_tasks as
 select * from headlines h
@@ -538,6 +514,31 @@ select
   left join _incubated_headlines ih using (headline_id)
   left join _task_parent_mappings tm on tm.child_id = h.headline_id
   order by a.headline_id, a.closed_timestamp desc;
+
+drop table if exists viz.sleep_length;
+create table viz.sleep_length as
+with
+  tmp as (
+    select distinct
+    to_timestamp(clock_start)::time at time zone 'US/Eastern' as time_start_clock,
+    clock_sum,
+    clock_start,
+    clock_end  
+    from viz.all_tasks
+    where
+      headline_text = 'sleep')
+  select distinct
+    to_timestamp(clock_start) as sleep_timestamp,
+    clock_sum / 60.0 as sleep_hours,
+    time_start_clock as sleep_start_clock,
+    -- day of week that sleep starts; subtract 12 hours off timestamp to count
+    -- bedtime after midnight as starting on the previous day
+    extract(dow from to_timestamp(clock_start - 43200) at time zone 'US/Eastern')
+      as sleep_start_day,
+    -- offset from target bedtime start (assume target bedtime is 23:45)
+    mod((extract(hour from time_start_clock) * 60
+		 + extract(minute from time_start_clock) + 15 + 720)::bigint,
+		1440) / 1440.0 * 24 - 12 as sleep_start_offset from tmp;
 
 end
 
