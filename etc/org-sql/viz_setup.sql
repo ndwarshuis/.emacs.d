@@ -1,3 +1,9 @@
+create or replace function to_localtime(ts timestamp with time zone)
+returns time with time zone
+as $$
+  select ts::time at time zone 'US/Eastern';
+$$ language SQL;
+
 create or replace procedure make_vis_tables()
 language plpgsql
 as $$
@@ -114,8 +120,8 @@ select distinct
 create temporary table _clock_sums as
 select
   c.headline_id,
-  c.time_start as clock_start,
-  c.time_end as clock_end,
+  to_timestamp(c.time_start) as clock_start,
+  to_timestamp(c.time_end) as clock_end,
   sum(c.time_end - c.time_start) / 60.0 as clock_sum
   from clocks c
   group by c.headline_id, c.time_start, c.time_end;
@@ -255,8 +261,8 @@ with
 	select
       g.headline_id,
 	  g.grp,
-      min(g.time_start) as partitioned_clock_start,
-      max(g.time_end) as partitioned_clock_end,
+      to_timestamp(min(g.time_start)) as partitioned_clock_start,
+      to_timestamp(max(g.time_end)) as partitioned_clock_end,
       sum(g.time_end - g.time_start) / 60.0 as partitioned_clock_sum
       from grouped g
     where
@@ -515,12 +521,13 @@ select
   left join _task_parent_mappings tm on tm.child_id = h.headline_id
   order by a.headline_id, a.closed_timestamp desc;
 
+
 drop table if exists viz.sleep_length;
 create table viz.sleep_length as
 with
   tmp as (
     select distinct
-    to_timestamp(clock_start)::time at time zone 'US/Eastern' as time_start_clock,
+    to_localtime(clock_start) as time_start_clock,
     clock_sum,
     clock_start,
     clock_end  
@@ -528,17 +535,29 @@ with
     where
       headline_text = 'sleep')
   select distinct
-    to_timestamp(clock_start) as sleep_timestamp,
+    clock_start as sleep_timestamp,
     clock_sum / 60.0 as sleep_hours,
     time_start_clock as sleep_start_clock,
     -- day of week that sleep starts; subtract 12 hours off timestamp to count
     -- bedtime after midnight as starting on the previous day
-    extract(dow from to_timestamp(clock_start - 43200) at time zone 'US/Eastern')
+    extract(dow from (clock_start - (12||' hours')::interval) at time zone 'US/Eastern')
       as sleep_start_day,
     -- offset from target bedtime start (assume target bedtime is 23:45)
     mod((extract(hour from time_start_clock) * 60
 		 + extract(minute from time_start_clock) + 15 + 720)::bigint,
 		1440) / 1440.0 * 24 - 12 as sleep_start_offset from tmp;
+
+drop table if exists viz.check_email_2;
+create table viz.check_email_2 as
+-- ASSUME that the repeater has the correct time of day, but may be offset
+-- by a multiple of 7 days
+select
+  clock_start,
+  extract(epoch from clock_start::time - scheduled_timestamp::time)/60 as offset_minutes
+  from viz.all_tasks
+where
+  headline_text = 'check email 2'
+order by clock_start desc;
 
 end
 
