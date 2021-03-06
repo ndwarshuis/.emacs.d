@@ -819,6 +819,11 @@ Elisp can use vanilla company with no plugins
 (use-package emr
   :straight t)
 #+END_SRC
+*** Clojure
+#+begin_src emacs-lisp
+(use-package cider
+  :straight t)
+#+end_src
 *** ESS (Emacs Speaks Statistics)
 :PROPERTIES:
 :ID:       7e1017a8-8780-403e-9222-9cb097380c57
@@ -4121,7 +4126,7 @@ Most packages that don't have an evil version are in this one. Some don't behave
   :after evil
   :init
   (setq evil-collection-mode-list
-        '(anaconda-mode arc-mode company comint custom debug edebug dired
+        '(anaconda-mode arc-mode cider company comint custom debug edebug dired
                         doc-view ebib ediff elfeed flycheck ivy help magit
                         minibuffer mu4e profiler term which-key))
   (setq evil-collection-setup-minibuffer t)
@@ -4309,6 +4314,12 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
 (evil-define-key 'normal ivy-minibuffer-map
   "gg" #'ivy-beginning-of-buffer
   "G" #'ivy-end-of-buffer)
+#+end_src
+**** cider
+#+begin_src emacs-lisp
+(evil-define-key '(normal insert) cider-repl-mode-map
+  (kbd "C-k") 'cider-repl-previous-input
+  (kbd "C-j") 'cider-repl-next-input)
 #+end_src
 ** local
 These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future).
