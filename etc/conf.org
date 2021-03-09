@@ -822,7 +822,8 @@ Elisp can use vanilla company with no plugins
 *** Clojure
 #+begin_src emacs-lisp
 (use-package cider
-  :straight t)
+  :straight t
+  :hook ((cider-mode . company-mode)))
 #+end_src
 *** ESS (Emacs Speaks Statistics)
 :PROPERTIES:
@@ -3877,6 +3878,7 @@ command that corresponds to ':kw'.
 
 See `nd/hydra-standard-interactive-map' which keywords are valid along
 with their corresponding body/head hydra keys."
+  (declare (indent 1))
   `(nd/hydra-standard ,nd/hydra-standard-interactive-map "int"
                       ,keymap ,@cmds))
 
@@ -3889,6 +3891,7 @@ command that corresponds to ':kw'.
 
 See `nd/hydra-standard-navigation-map' which keywords are valid along
 with their corresponding body/head hydra keys."
+  (declare (indent 1))
   `(nd/hydra-standard ,nd/hydra-standard-navigation-map "nav"
                       ,keymap ,@cmds))
 #+END_SRC
@@ -4320,6 +4323,18 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
 (evil-define-key '(normal insert) cider-repl-mode-map
   (kbd "C-k") 'cider-repl-previous-input
   (kbd "C-j") 'cider-repl-next-input)
+
+(evil-define-key 'normal cider-repl-mode-map
+  "gh" #'lispy-left
+  "gl" #'lispy-flow
+  "gj" #'lispy-down
+  "gk" #'lispy-up)
+  
+(evil-define-key 'normal cider-mode-map
+  "gh" #'lispy-left
+  "gl" #'lispy-flow
+  "gj" #'lispy-down
+  "gk" #'lispy-up)
 #+end_src
 ** local
 These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future).
@@ -4447,6 +4462,28 @@ They removed the underscore-inserts-arrow feature. Bring it back.
 
 (define-key emacs-lisp-mode-map (kbd "M-RET") #'emr-show-refactor-menu)
 #+END_SRC
+*** clojure
+#+begin_src emacs-lisp
+(require 'cider-connection)
+
+(defun nd/cider-switch-to-repl-or-start (&optional set-ns)
+  "Switch to CIDER REPL or start a new one if none."
+  (interactive "P")
+  (if (cider-current-repl)
+      (cider-switch-to-repl-buffer set-ns)
+    (message "Starting New REPL")
+    (cider-jack-in nil)))
+
+(with-eval-after-load 'clojure-mode
+  (nd/hydra-standard-int clojure-mode-map
+    (:send-group . cider-eval-sexp-at-point)
+    (:send-buffer . cider-eval-buffer)
+    (:shell-start . nd/cider-switch-to-repl-or-start)
+    (:shell-kill . cider-quit))
+
+  (nd/hydra-standard-nav clojure-mode-map
+    (:doc-at . cider-doc)))
+#+end_src
 *** python
 :PROPERTIES:
 :ID:       fa4e5b43-256c-4028-b1e0-c7a535f0750c
