@@ -479,9 +479,13 @@ I like to keep the modeline clean and uncluttered. This package prevents certain
 :END:
 Emacs comes with some useless garbage by default. IMHO (in my haughty opinion), text editors should be boxes with text in them. No menu bars, scroll bars, or toolbars (and certainly no ribbons). 
 #+BEGIN_SRC emacs-lisp
-(tool-bar-mode -1)
-(menu-bar-mode -1)
-(scroll-bar-mode -1)
+(defmacro nd/disable-when-bound (fun)
+  `(when (fboundp (function ,fun))
+     (,fun -1)))
+
+(nd/disable-when-bound tool-bar-mode)
+(nd/disable-when-bound menu-bar-mode)
+(nd/disable-when-bound scroll-bar-mode)
 #+END_SRC
 ** startup screen
 :PROPERTIES:
