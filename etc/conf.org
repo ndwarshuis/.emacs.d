@@ -150,11 +150,6 @@ Some useful external libraries that I use all over the place
   :straight t
   :config)
 #+END_SRC
-
-#+BEGIN_SRC emacs-lisp
-(use-package dash-functional
-  :straight t)
-#+END_SRC
 *** file operations
 :PROPERTIES:
 :ID:       57f6bcfd-3bb3-4380-b408-c23844c7da9c
