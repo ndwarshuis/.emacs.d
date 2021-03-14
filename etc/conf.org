@@ -4349,21 +4349,23 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
 #+end_src
 **** cider
 #+begin_src emacs-lisp
-(evil-define-key '(normal insert) cider-repl-mode-map
-  (kbd "C-k") 'cider-repl-previous-input
-  (kbd "C-j") 'cider-repl-next-input)
+(nd/when-bin "lein"
+  :pacman "leiningen"
+  (evil-define-key '(normal insert) cider-repl-mode-map
+    (kbd "C-k") 'cider-repl-previous-input
+    (kbd "C-j") 'cider-repl-next-input)
 
-(evil-define-key 'normal cider-repl-mode-map
-  "gh" #'lispy-left
-  "gl" #'lispy-flow
-  "gj" #'lispy-down
-  "gk" #'lispy-up)
+  (evil-define-key 'normal cider-repl-mode-map
+    "gh" #'lispy-left
+    "gl" #'lispy-flow
+    "gj" #'lispy-down
+    "gk" #'lispy-up)
   
-(evil-define-key 'normal cider-mode-map
-  "gh" #'lispy-left
-  "gl" #'lispy-flow
-  "gj" #'lispy-down
-  "gk" #'lispy-up)
+  (evil-define-key 'normal cider-mode-map
+    "gh" #'lispy-left
+    "gl" #'lispy-flow
+    "gj" #'lispy-down
+    "gk" #'lispy-up))
 #+end_src
 ** local
 These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future).
@@ -4494,29 +4496,31 @@ They removed the underscore-inserts-arrow feature. Bring it back.
 #+END_SRC
 *** clojure
 #+begin_src emacs-lisp
-(require 'cider-connection)
+(nd/when-bin "lein"
+  :pacman "leiningen"
+  (require 'cider-connection)
 
-(defun nd/cider-switch-to-repl-or-start (&optional set-ns)
-  "Switch to CIDER REPL or start a new one if none."
-  (interactive "P")
-  (if (cider-current-repl)
-      (cider-switch-to-repl-buffer set-ns)
-    (message "Starting New REPL")
-    (cider-jack-in nil)))
+  (defun nd/cider-switch-to-repl-or-start (&optional set-ns)
+    "Switch to CIDER REPL or start a new one if none."
+    (interactive "P")
+    (if (cider-current-repl)
+        (cider-switch-to-repl-buffer set-ns)
+      (message "Starting New REPL")
+      (cider-jack-in nil)))
 
-(with-eval-after-load 'clojure-mode
-  (nd/hydra-standard-int clojure-mode-map
-    (:send-group . cider-eval-sexp-at-point)
-    (:send-buffer . cider-eval-buffer)
-    (:shell-start . nd/cider-switch-to-repl-or-start)
-    (:shell-kill . cider-quit))
+  (with-eval-after-load 'clojure-mode
+    (nd/hydra-standard-int clojure-mode-map
+      (:send-group . cider-eval-sexp-at-point)
+      (:send-buffer . cider-eval-buffer)
+      (:shell-start . nd/cider-switch-to-repl-or-start)
+      (:shell-kill . cider-quit))
 
-  (nd/hydra-standard-nav clojure-mode-map
-    (:doc-at . cider-doc)))
+    (nd/hydra-standard-nav clojure-mode-map
+      (:doc-at . cider-doc)))
 
-(with-eval-after-load 'cider-repl-mode
-  (nd/hydra-standard-int cider-repl-mode-map
-    (:shell-kill . cider-quit)))
+  (with-eval-after-load 'cider-repl-mode
+    (nd/hydra-standard-int cider-repl-mode-map
+      (:shell-kill . cider-quit))))
 #+end_src
 *** python
 :PROPERTIES:
