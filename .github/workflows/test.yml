@@ -27,7 +27,7 @@ jobs:
       run: |
         emacs -batch -l "~/.emacs.d/init.el"
 
-    - name: Verify packages
+    - name: Verify dependencies
       run: |
-        emacs -batch -l "~/.emacs.d/init.el" --eval '(assert (not (nd/verify-required-packages)))'
+        emacs -batch -l "~/.emacs.d/init.el" --eval '(assert (nd/verify-required-packages))'
 
