@@ -1,0 +1,28 @@
+name: CI
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        emacs_version:
+          - '27.1'
+          - 'snapshot'
+        include:
+          - emacs_version: 'snapshot'
+            allow_failure: true
+    steps:
+    - uses: actions/checkout@v2
+    - uses: purcell/setup-emacs@master
+      with:
+        version: ${{ matrix.emacs_version }}
+
+    - name: Run initialization
+      run: |
+        emacs -batch -l "init.el"
+
+    - name: Verify packages
+      run: |
+        emacs -batch -l "init.el" --eval '(assert (not (nd/verify-required-packages)))'
+
