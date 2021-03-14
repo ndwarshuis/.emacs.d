@@ -4583,7 +4583,8 @@ The only thing I like about elpy is the interactive shell
 :END:
 This key collides with plenty of other stuff, notably scheduling in org mode
 #+BEGIN_SRC emacs-lisp
-(define-key pyenv-mode-map (kbd "C-c C-s") nil)
+(nd/when-bin "pyenv"
+  (define-key pyenv-mode-map (kbd "C-c C-s") nil))
 #+END_SRC
 *** counsel
 :PROPERTIES:
