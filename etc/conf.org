@@ -171,8 +171,13 @@ Define a path to internal libraries (either things I am developing or external =
 #+BEGIN_SRC emacs-lisp
 (defvar nd/local-pkg-directory "local/share/")
 
+(defvar nd/lib-directory "local/lib/")
+
 (defun nd/expand-local-pkg-directory (path)
   (f-join user-emacs-directory nd/local-pkg-directory path))
+  
+(defun nd/expand-lib-directory (path)
+  (f-join user-emacs-directory nd/lib-directory path))
 #+END_SRC
 ** macros
 :PROPERTIES:
@@ -1421,8 +1426,8 @@ No custom code here, but flycheck needs =shellcheck= (a Haskell program). On Arc
 (nd/when-bin "shellcheck"
   :aur "shellcheck-bin")
 
-(add-to-list 'load-path (nd/expand-local-pkg-directory "essh"))
-(require 'essh)
+;;(add-to-list 'load-path (nd/expand-local-pkg-directory "essh"))
+;;(require 'essh)
 #+END_SRC
 *** SQL
 No custom code here, but flycheck needs =sqlint= (on Arch available through the AUR).
@@ -1494,10 +1499,11 @@ Save all org buffers 1 minute before the hour.
 :END:
 Org extras
 #+BEGIN_SRC emacs-lisp
-(add-to-list 'load-path (nd/expand-local-pkg-directory "org-x"))
-(add-to-list 'load-path (nd/expand-local-pkg-directory "org-ml"))
-(require 'org-ml)
+(add-to-list 'load-path (nd/expand-lib-directory "org-x"))
 (require 'org-x)
+
+(use-package org-ml
+  :straight t)
 #+END_SRC
 ** buffer interface
 *** line wrap
@@ -1738,8 +1744,8 @@ Taskjuggler is provided by an external package that provides the command line to
 ;; (require 'ox-taskjuggler)
 
 ;; from here: https://www.skamphausen.de/cgi-bin/ska/taskjuggler-mode.el
-(add-to-list 'load-path (nd/expand-local-pkg-directory "taskjuggler"))
-(require 'taskjuggler-mode)
+;;(add-to-list 'load-path (nd/expand-local-pkg-directory "taskjuggler"))
+;;(require 'taskjuggler-mode)
 
 ;; nice and short :)
 (setq org-tj-report-tag "τrep"
@@ -3341,39 +3347,29 @@ In these cases, it is nice to know what happened during each cycle, so force not
 (setq org-log-repeat 'note)
 #+END_SRC
 *** sqlite backend
-Org mode is great and all, but in many cases, text files just won't cut it. Hardcore data analysis is one of them, so make functions to shove org files (specifically archive files) into a sqlite database
-**** load path
-:PROPERTIES:
-:ID:       78bf6eb7-d3d7-43e9-8a03-ecedd7ca19e3
-:END:
+Org mode is great and all, but in many cases, text files just won't cut it. Hardcore data analysis is one of them, so make functions to shove org files (specifically archive files) into a sql database
 #+BEGIN_SRC emacs-lisp
-(add-to-list 'load-path (nd/expand-local-pkg-directory "org-sql"))
-(require 'org-sql)
-#+END_SRC
-**** customized variables
-:PROPERTIES:
-:ID:       9b5b3587-676a-45da-84c8-c88a5f0ac348
-:END:
-These are variables that I set for my use but will not go into the eventual package
-#+BEGIN_SRC emacs-lisp
-(setq org-sql-db-config '(postgres :database "org_sql"
-                                   :port 35432
-                                   :hostname "portnoy4prez.yavin4.ch"
-                                   :password "org_sql"
-                                   :username "org_sql")
-      ;; some SQL code to denormalize my org-file data for visualization
-      org-sql-post-init-hooks `((file+ ,(f-join no-littering-etc-directory
-                                                "org-sql" "viz_setup.sql")))
-      org-sql-post-push-hooks '((sql+ "CALL make_vis_tables();"))
-      org-sql-debug t
-      org-sql-files '("~/Org/.archive/"
-                      "~/Org/general.org_archive"
-                      "~/Org/general.org"
-                      "~/Org/test1.org_archive"
-                      "~/Org/test2.org_archive"
-                      "~/Org/incubator.org"
-                      "~/Org/projects/"
-                      "~/Org/repeater.org_archive"))
+(use-package org-sql
+  :straight t
+  :config
+  (setq org-sql-db-config '(postgres :database "org_sql"
+                                     :port 35432
+                                     :hostname "portnoy4prez.yavin4.ch"
+                                     :password "org_sql"
+                                     :username "org_sql")
+        ;; some SQL code to denormalize my org-file data for visualization
+        org-sql-post-init-hooks `((file+ ,(f-join no-littering-etc-directory
+                                                  "org-sql" "viz_setup.sql")))
+        org-sql-post-push-hooks '((sql+ "CALL make_vis_tables();"))
+        org-sql-debug t
+        org-sql-files '("~/Org/.archive/"
+                        "~/Org/general.org_archive"
+                        "~/Org/general.org"
+                        "~/Org/test1.org_archive"
+                        "~/Org/test2.org_archive"
+                        "~/Org/incubator.org"
+                        "~/Org/projects/"
+                        "~/Org/repeater.org_archive")))
 #+END_SRC
 ** tomato mode
 :PROPERTIES:
@@ -3381,12 +3377,12 @@ These are variables that I set for my use but will not go into the eventual pack
 :END:
 This really means "super awesome pomodoro implementation." =Tomato-mode= sounds cooler and more emacs like.
 #+BEGIN_SRC emacs-lisp
-(use-package sound-wav :straight t)
-(add-to-list 'load-path (nd/expand-local-pkg-directory "org-tomato"))
-(require 'org-tomato)
+;;(use-package sound-wav :straight t)
+;;(add-to-list 'load-path (nd/expand-local-pkg-directory "org-tomato"))
+;;(require 'org-tomato)
 
-(setq org-tomato-timer-sound (no-littering-expand-etc-file-name
-                              "you_suffer.wav"))
+;;(setq org-tomato-timer-sound (no-littering-expand-etc-file-name
+ ;;                             "you_suffer.wav"))
 #+END_SRC
 * tools
 ** printing
