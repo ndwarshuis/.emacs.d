@@ -6,6 +6,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#for-new-users][for new users]]
   - [[#config-structure][config structure]]
 - [[#library][library]]
+  - [[#system-dependencies][system dependencies]]
   - [[#external][external]]
   - [[#internal][internal]]
   - [[#macros][macros]]
@@ -78,6 +79,58 @@ Once loaded, the =init.el= pulls in another file called =conf.el= with the funct
 Using an org file like this offers several advantages. First, org files are foldable in emacs which makes navigation easy. Second, they allow code snippets (the bit that actually go into =conf.el=) which allows for explanatory prose to be written around them, making documentation easy and clear. Third, =org-mode= has an automatic table of contents through the =toc-org= package, which makes naviagation even easier. Fourth, github itself is awesome enough to recognize org files as valid markdown and will render all the text, code snippets, headers, and table of contents in the nice html that you are reading now if on github. The result is a nearly self-documenting, self-organizing configuration that is easy to maintain and also easy to view for other users. Using the =init.el= itself would just have plain eLisp, which gets cluttered quickly. Some people break the =init.el= down into multiple files to keep everything sane, but I personally think it is easier to use one giant file that itself can be folded and abstracted to reduce the clutter.
 * library
 This is code that is used generally throughout the emacs config
+** system dependencies
+#+begin_src emacs-lisp
+(defvar nd/required-exes '()
+  "Running list of executables required to run various configuations.
+The list is like (TYPE PACKAGE) where TYPE is a keyword and
+PACKAGE is string for the package name that should be
+installed. TYPE is one of :pacman, :aur, :stack, or :ignore")
+
+(defmacro nd/when-bin (bin &rest body)
+  "Execute BODY if the program BIN exists.
+Additionally, add BIN to a list of packages to `nd/required-exes'.
+If the first two members of BODY are a keyword and another form,
+add this to `nd/required-exes'. If these are not specified, BIN is
+added with TYPE :pacman."
+  (declare (indent 1))
+  (-let* (((first . (second . rest)) body)
+          ((install-key body*) (if (keywordp first) `((,first ,second) ,rest)
+                                 `((:pacman ,bin) ,body))))
+    `(progn
+       (setq nd/required-exes (-union '(,install-key) nd/required-exes))
+       (if (executable-find ,bin) (progn ,@body)
+         (print (format "Executable %s not found. Skipping." ,bin))))))
+
+(defun nd/verify-required-packages ()
+  "Verify `nd/required-exes'.
+All packages should be specified once."
+  (->> (-map #'cadr nd/required-exes)
+       (-uniq)
+       (length)
+       (equal (length nd/required-exes))))
+
+(defun nd/get-pacman-dependencies ()
+  "Return list of all pacman dependencies."
+  (->> nd/required-exes
+       (--filter (eq (car it) :pacman))
+       (-map #'cadr)))
+
+(defun nd/get-aur-dependencies (&optional include-pacman)
+  "Return list of all aur dependencies.
+If INCLUDE-PACMAN is t, include pacman packages as well."
+  (let ((keys (if include-pacman '(:aur :pacman) '(:aur))))
+    (->> nd/required-exes
+         (--filter (memq (car it) keys))
+         (-map #'cadr))))
+
+(defun nd/get-stack-dependencies ()
+  "Return list of all aur dependencies.
+If INCLUDE-PACMAN is t, include pacman packages as well."
+  (->> nd/required-exes
+       (--filter (eq (car it) :stack))
+       (-map #'cadr)))
+#+end_src
 ** external
 Some useful external libraries that I use all over the place
 *** string manipulation
@@ -159,18 +212,6 @@ OS is one of those in `system-type'."
   (declare (indent 1))
   `(when (not (eq system-type ,os)) (progn ,@body)
      (print "Skipping OS-restricted code")))
-
-(defvar nd/required-exes '()
-  "Running list of executables required to run various configuations.")
-
-(defmacro nd/when-bin (bin &rest body)
-  "Execute BODY if the program BIN exists."
-  (declare (indent 1))
-  `(if (executable-find ,bin)
-       (progn
-         (setq nd/required-exes (-union '(,bin) nd/required-exes))
-         ,@body)
-     (print (format "Executable %s not found. Skipping." ,bin))))
 
 (defmacro nd/time-exec (&rest body)
   "Measure time it takes to execute BODY."
@@ -262,27 +303,6 @@ If FRONT is t, do to the front of current values instead of the back."
   (--each
       (where-is-internal f keymap nil nil)
     (define-key keymap it nil)))
-
-(defun nd/detect-package-manager ()
-  "Return the package manager being used on this OS."
-  (cond
-   ;; for now only pacman...because arch is the best (TM)
-   ((file-exists-p "/usr/bin/pacman")
-    'pacman)))
-
-(defun nd/pacman-find-owner (file)
-  "Return the pacman packages that owns FILE.
-Assumes pacman is installed and FILE is an absolute path."
-  (-some->> (format "pacman -Fq %s" file)
-            (shell-command-to-string)
-            (s-trim)
-            (s-split "\n")
-            (--map (replace-regexp-in-string ".*/" "" it t))
-            (cons file)))
-
-(defun nd/detect-dependencies ()
-  "Return a list of required packages for this configuration."
-  (--map (nd/pacman-find-owner (format "/usr/bin/%s" it)) nd/required-exes))
 #+END_SRC
 ** interactive
 :PROPERTIES:
@@ -821,9 +841,11 @@ Elisp can use vanilla company with no plugins
 #+END_SRC
 *** Clojure
 #+begin_src emacs-lisp
-(use-package cider
-  :straight t
-  :hook ((cider-mode . company-mode)))
+(nd/when-bin "lein"
+  :pacman "leiningen"
+  (use-package cider
+    :straight t
+    :hook ((cider-mode . company-mode))))
 #+end_src
 *** ESS (Emacs Speaks Statistics)
 :PROPERTIES:
@@ -835,6 +857,7 @@ Flycheck syntax checkers
 - r-lintr (install from CRAN)
 #+begin_src emacs-lisp
 (nd/when-bin "R"
+  :pamcan "r"
   (use-package ess
     :straight t
     :init
@@ -867,6 +890,7 @@ Flycheck syntax checkers
   (advice-add #'run-ess-r :around #'nd/ess-r-start-env)
 
   (nd/when-bin "docker"
+    :aur "docker-rootless-extras-bin"
     (defun nd/ess-r-setwd-maybe (orig-fun &rest args)
         (nd/with-advice
             ((#'ess-set-working-directory :override #'ignore))
@@ -982,6 +1006,7 @@ Anaconda (not related to the Python/R distribution?) is much lighter and easier 
 [[https://github.com/python/black][Black]] is a really nice syntax formatter. It must be externally installed to work.
 #+BEGIN_SRC emacs-lisp
 (nd/when-bin "black"
+  :pacman "python-black"
   (use-package blacken
     :straight t))
 #+END_SRC
@@ -1043,6 +1068,7 @@ Since most of these need GHCi to run properly, I added a hook to load haskell so
 I have also found this to be much simpler and conflicting with other packages such as =dante= and =intero= (and probably =haskell-ide-engine= and friends).
 #+BEGIN_SRC emacs-lisp
 (nd/when-bin "stack"
+  :aur "stack-static"
   (defun nd/init-haskell-company ()
     "Set the company backends for haskell mode."
     (setq-local company-backends
@@ -1089,6 +1115,7 @@ I have also found this to be much simpler and conflicting with other packages su
 This is an additional syntax checker and requires the =hlint= binary (install through stack).
 #+BEGIN_SRC emacs-lisp
 (nd/when-bin "hlint"
+  :stack "hlint"
   (with-eval-after-load 'haskell
     (flycheck-add-next-checker 'haskell-stack-ghc '(t . haskell-hlint))))
 #+END_SRC
@@ -1391,6 +1418,9 @@ This adds support for csv files. Almost makes them editable like a spreadsheet. 
 :END:
 No custom code here, but flycheck needs =shellcheck= (a Haskell program). On Arch (or any other distro that loves dynamic binding) easiest way to install is via =stack install ShellCheck=
 #+BEGIN_SRC emacs-lisp
+(nd/when-bin "shellcheck"
+  :aur "shellcheck-bin")
+
 (add-to-list 'load-path (nd/expand-local-pkg-directory "essh"))
 (require 'essh)
 #+END_SRC
@@ -1402,6 +1432,7 @@ No custom code here, but flycheck needs =sqlint= (on Arch available through the 
 :END:
 #+BEGIN_SRC emacs-lisp
 (nd/when-bin "docker"
+  :aur "docker-rootless-extras-bin"
   (use-package dockerfile-mode
     :straight t))
 #+END_SRC
@@ -3439,6 +3470,7 @@ make sizes human readable
 By default the included gnus-dired package does not understan mu4e, so override the existing =gnus-dired-mail-buffers= function to fix. This allows going to a dired buffer, marking files, and attaching them interactively to mu4e draft buffers.
 #+BEGIN_SRC emacs-lisp
 (nd/when-bin "mu"
+  :aur "mu"
   ;; from here:
   ;; https://www.djcbsoftware.nl/code/mu/mu4e/Dired.html#Dired
   (require 'gnus-dired)
@@ -3518,6 +3550,7 @@ The following will only be defined if the =mu= command is found (which it won't 
 Initialize by running =nd/mu-init=.
 #+BEGIN_SRC emacs-lisp
 (nd/when-bin "mu"
+  :aur "mu"
   (require 'mu4e)
 
   (use-package password-store
@@ -4397,6 +4430,7 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 ;;     (mu4e-view-open-attachment-emacs msg attnum)))
 
 (nd/when-bin "mu"
+  :aur "mu"
   (defun nd/insert-mu4e-signature-at-point ()
     (interactive)
     (insert mu4e-compose-signature))
@@ -4483,6 +4517,10 @@ They removed the underscore-inserts-arrow feature. Bring it back.
 
   (nd/hydra-standard-nav clojure-mode-map
     (:doc-at . cider-doc)))
+
+(with-eval-after-load 'cider-repl-mode
+  (nd/hydra-standard-int cider-repl-mode-map
+    (:shell-kill . cider-quit)))
 #+end_src
 *** python
 :PROPERTIES:
