@@ -20,13 +20,13 @@ jobs:
 
     - name: Set up emacs config
       run: |
-        cp -a -r etc local straight init.el .emacs.d/
+        cp -a -r etc local straight init.el ~/.emacs.d/
 
     - name: Test initialization and build
       run: |
-        emacs -batch -l ".emacs.d/init.el"
+        emacs -batch -l "~/.emacs.d/init.el"
 
     - name: Verify packages
       run: |
-        emacs -batch -l ".emacs.d/init.el" --eval '(assert (not (nd/verify-required-packages)))'
+        emacs -batch -l "~/.emacs.d/init.el" --eval '(assert (not (nd/verify-required-packages)))'
 
