@@ -1970,11 +1970,11 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
         ("%flag" . ?f)
 
         ;; taskjuggler
-        (:startgroup)
-        (,org-tj-project-tag . ?x)
-        (,org-tj-resource-tag . ?y)
-        (,org-tj-report-tag . ?z)
-        (:endgroup)
+        ;; (:startgroup)
+        ;; (,org-tj-project-tag . ?x)
+        ;; (,org-tj-resource-tag . ?y)
+        ;; (,org-tj-report-tag . ?z)
+        ;; (:endgroup)
         
         ;; (_) life categories, used for gtd priorities
         (:startgroup)
