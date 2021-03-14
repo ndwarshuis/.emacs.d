@@ -1499,11 +1499,11 @@ Save all org buffers 1 minute before the hour.
 :END:
 Org extras
 #+BEGIN_SRC emacs-lisp
-(add-to-list 'load-path (nd/expand-lib-directory "org-x"))
-(require 'org-x)
-
 (use-package org-ml
   :straight t)
+  
+(add-to-list 'load-path (nd/expand-lib-directory "org-x"))
+(require 'org-x)
 #+END_SRC
 ** buffer interface
 *** line wrap
