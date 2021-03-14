@@ -18,11 +18,15 @@ jobs:
       with:
         version: ${{ matrix.emacs_version }}
 
-    - name: Run initialization
+    - name: Set up emacs config
       run: |
-        emacs -batch -l "init.el"
+        cp -a -r etc local straight init.el .emacs.d/
+
+    - name: Test initialization and build
+      run: |
+        emacs -batch -l ".emacs.d/init.el"
 
     - name: Verify packages
       run: |
-        emacs -batch -l "init.el" --eval '(assert (not (nd/verify-required-packages)))'
+        emacs -batch -l ".emacs.d/init.el" --eval '(assert (not (nd/verify-required-packages)))'
 
