@@ -15,3 +15,8 @@ etc/*
 !etc/org-sql
 !etc/conf.org
 !etc/dashlogo.png
+
+!local
+local/*
+!/local/lib
+
