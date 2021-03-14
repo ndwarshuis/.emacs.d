@@ -1748,20 +1748,20 @@ Taskjuggler is provided by an external package that provides the command line to
 ;;(require 'taskjuggler-mode)
 
 ;; nice and short :)
-(setq org-tj-report-tag "τrep"
-      org-tj-project-tag "τprj"
-      org-tj-resource-tag "τres")
+;;(setq org-tj-report-tag "τrep"
+;;      org-tj-project-tag "τprj"
+;;      org-tj-resource-tag "τres")
       
 ;; my own package
-(add-to-list 'load-path (nd/expand-local-pkg-directory "org-tj"))
-(require 'org-tj)
+;;(add-to-list 'load-path (nd/expand-local-pkg-directory "org-tj"))
+;;(require 'org-tj)
 
 ;; force org to listen to the ORDERED property
-(setq org-enforce-todo-dependencies nil)
-
-(setq org-tj-valid-report-attributes
-      '(headline columns definitions timeformat hideresource
-                 hidetask loadunit sorttasks formats period header center))
+;;(setq org-enforce-todo-dependencies nil)
+;;
+;;(setq org-tj-valid-report-attributes
+;;      '(headline columns definitions timeformat hideresource
+;;                 hidetask loadunit sorttasks formats period header center))
 #+END_SRC
 ** gtd implementation
 *** overview
