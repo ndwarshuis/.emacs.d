@@ -1637,7 +1637,7 @@ This is a nifty calendar...sometimes way faster than the agenda buffer for looki
   :after calfw
   :config
   (setq cfw:org-agenda-schedule-args
-        '(:deadline :scheduled :timestamp)))
+        '(:deadline* :scheduled* :timestamp)))
 #+END_SRC
 ** window splitting
 Org mode is great and all, but the windows never show up in the right place. The solutions here are simple, but have the downside that the window sizing must be changed when tags/capture templates/todo items are changed. This is because the buffer size is not known at window creation time and I didn't feel like making a function to predict it
