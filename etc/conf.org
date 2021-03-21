@@ -1044,12 +1044,20 @@ Note this also requires all external packages to be installed in each environeme
 :ID:       bd1723ec-daec-4c45-82c5-41430e9b02fc
 :END:
 #+BEGIN_SRC emacs-lisp
-(use-package inf-ruby
-  :straight t)
+(defun nd/init-robe-company ()
+  "Set the company backends for robe mode."
+  (setq-local company-backends '(company-robe)))
 
-(use-package robe
-  :straight t
-  :hook (ruby-mode . robe))
+(nd/when-bin "irb"
+  :pacman "ruby-irb"
+  (use-package inf-ruby
+    :straight t
+    :hook (ruby-mode . inf-ruby-minor-mode))
+
+  (use-package robe
+    :straight t
+    :hook ((ruby-mode . robe-mode)
+           (roby-mode . nd/init-robe-company))))
 
 (use-package ruby-test-mode
   :straight t)
