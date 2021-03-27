@@ -1453,6 +1453,242 @@ No custom code here, but flycheck needs =sqlint= (on Arch available through the 
   (use-package dockerfile-mode
     :straight t))
 #+END_SRC
+*** AMPL
+Code shamelessly ripped off from [[https://github.com/dpo/ampl-mode/blob/master/emacs/ampl-mode.el][here]]. It is not in MELPA and is short enough for me to just put in a block in my config.
+#+begin_src emacs-lisp
+(defvar ampl-mode-hook nil
+  "*List of functions to call when entering Ampl mode.")
+
+(defvar ampl-mode-map nil
+  "Keymap for Ampl major mode.")
+
+(if ampl-mode-map
+    nil
+  (setq ampl-mode-map (make-sparse-keymap))
+  (define-key ampl-mode-map "("     'ampl-insert-parens)
+  (define-key ampl-mode-map "["     'ampl-insert-sqbrackets)
+  (define-key ampl-mode-map "{"     'ampl-insert-curlies)
+  (define-key ampl-mode-map "\""    'ampl-insert-double-quotes)
+  (define-key ampl-mode-map "'"     'ampl-insert-single-quotes)
+  (define-key ampl-mode-map "\C-co" 'ampl-insert-comment))
+
+(setq auto-mode-alist
+      (append
+       '(("\\(.mod\\|.dat\\|.ampl\\)\\'" . ampl-mode))
+       auto-mode-alist))
+
+(autoload 'ampl-mode "Ampl" "Entering Ampl mode..." t)
+
+(defconst ampl-font-lock-model-data
+  (list '( "\\(data\\|model\\)\\(.*;\\)" . (1 font-lock-builtin-face keep t)))
+  "Reserved keywords highlighting.")
+
+(defconst ampl-font-lock-model-data-names
+  (append ampl-font-lock-model-data
+          (list '( "\\(data\\|model\\)\\(.*\\)\\(;\\)" . (2 font-lock-constant-face keep t))))
+  "Model and data filenames highlighting.")
+
+(defconst ampl-font-lock-keywords-reserved
+  (append ampl-font-lock-model-data-names
+          (list '("\\(^\\|[ \t]+\\|[({\[][ \t]*\\)\\(I\\(?:N\\(?:OUT\\)?\\|nfinity\\)\\|LOCAL\\|OUT\\|a\\(?:nd\\|r\\(?:c\\|ity\\)\\)\\|b\\(?:\\(?:inar\\)?y\\)\\|c\\(?:ard\\|heck\\|ircular\\|o\\(?:eff\\|mplements\\|ver\\)\\)\\|d\\(?:ata\\|efault\\|i\\(?:ff\\|men\\|splay\\)\\)\\|e\\(?:lse\\|xists\\)\\|f\\(?:irst\\|orall\\|rom\\)\\|i\\(?:n\\(?:clude\\|dexarity\\|te\\(?:ger\\|r\\(?:val\\)?\\)\\)\\|n\\)\\|l\\(?:ast\\|e\\(?:ss\\|t\\)\\)\\|m\\(?:aximize\\|ember\\|inimize\\)\\|n\\(?:extw?\\|o\\(?:de\\|t\\)\\)\\|o\\(?:bj\\|ption\\|r\\(?:d\\(?:0\\|ered\\)?\\)?\\)\\|p\\(?:aram\\|r\\(?:evw?\\|intf\\)\\)\\|re\\(?:peat\\|versed\\)\\|s\\(?:\\.t\\.\\|et\\(?:of\\)?\\|olve\\|u\\(?:bject to\\|ffix\\)\\|ymbolic\\)\\|t\\(?:able\\|hen\\|o\\)\\|un\\(?:ion\\|til\\)\\|var\\|w\\(?:hile\\|ithin\\)\\)\\({\\|[ \t]+\\|[:;]\\)" . (2 font-lock-builtin-face keep t))))
+  "Reserved keywords highlighting-1.")
+
+;; 'if' may take the forms if(i=1), if( i=1 ), if ( i=1 ), if i==1, etc.
+(defconst ampl-font-lock-keywords-reserved2
+  (append ampl-font-lock-keywords-reserved
+          (list '("\\(^\\|[ \t]+\\|[({\[][ \t]*\\)\\(if\\)\\([ \t]*(\\|[ \t]+\\)" . (2 font-lock-builtin-face keep t))))
+  "Reserved keywords highlighting-2.")
+
+;; 'Infinity' is another special case as it may appear as -Infinity...
+(defconst ampl-font-lock-keywords-reserved3
+  (append ampl-font-lock-keywords-reserved2
+          (list '("\\(^\\|[ \t]+\\|[({\[][ \t]*\\)\\(-[ \t]*\\)\\(Infinity\\)\\([ \t]*(\\|[ \t]+\\)" . (3 font-lock-builtin-face keep t))))
+  "Reserved keywords highlighting-3.")
+
+;; Built-in operators highlighting must be followed by an opening parenthesis
+(defconst ampl-font-lock-keywords-ops
+  (append ampl-font-lock-keywords-reserved3
+          (list '("\\(a\\(?:bs\\|cosh?\\|lias\\|sinh?\\|tan[2h]?\\)\\|c\\(?:eil\\|os\\|time\\)\\|exp\\|floor\\|log\\(?:10\\)?\\|m\\(?:ax\\|in\\)\\|precision\\|round\\|s\\(?:inh?\\|qrt\\)\\|t\\(?:anh?\\|ime\\|runc\\)\\)\\([ \t]*(\\)" . (1 font-lock-function-name-face t t))))
+  "Built-in operators highlighting.")
+
+;; Random number generation functions must be followed by an opening parenthesis
+(defconst ampl-font-lock-keywords-rand
+  (append ampl-font-lock-keywords-ops
+          (list '("\\(Beta\\|Cauchy\\|Exponential\\|Gamma\\|Irand224\\|Normal\\(?:01\\)?\\|Poisson\\|Uniform\\(?:01\\)?\\)\\([ \t]*(\\)" . (1 font-lock-function-name-face t t))))
+  "Random number generation functions.")
+
+;; Built-in operators with iterators must be followed by an opening curly brace
+(defconst ampl-font-lock-keywords-iterate
+  (append ampl-font-lock-keywords-rand
+          (list '("\\(prod\\|sum\\)\\([ \t]*{\\)" . (1 font-lock-function-name-face t t))))
+  "Built-in operators with iterators.")
+
+;; Constants, parameters and names follow the keywords param, let, set, var,
+;; minimize, maximize, option or 'subject to'
+(defconst ampl-font-lock-constants1
+  (append ampl-font-lock-keywords-iterate
+	  (list '("\\(^[ \t]*\\)\\(display\\|let\\|m\\(?:\\(?:ax\\|in\\)imize\\)\\|option\\|param\\|s\\(?:\\.t\\.\\|et\\|ubject to\\)\\|var\\)\\([ \t]*\\)\\([a-zA-Z0-9\-_]+\\)\\([ \t]*.*[;:]\\)" . (4 font-lock-constant-face t t))))
+  "Constants, parameters and names.")
+
+;; Constants may also be defined after a set specification. This does not
+;; involve 'option' e.g. let {i in 1..5} x[i] := 0;
+(defconst ampl-font-lock-constants2
+  (append ampl-font-lock-constants1
+	  (list '("\\(^[ \t]*\\)\\(display\\|let\\|m\\(?:\\(?:ax\\|in\\)imize\\)\\|param\\|s\\(?:\\.t\\.\\|et\\|ubject to\\)\\|var\\)\\([ \t]+\\)\\({.*}\\)\\([ \t]*\\)\\([a-zA-Z0-9\-_]+\\)\\([ \t]*.*[;:]\\)" . (6 font-lock-constant-face t t))))
+  "Constants, parameters and names.")
+
+;; Comments start with a hash, end with a newline
+(setq comment-start "#")
+(defconst ampl-font-lock-comments
+  (append ampl-font-lock-constants2
+	  (list '( "\\(#\\).*$" . (0 font-lock-comment-face t t))))
+  "Comments.")
+
+;; Define default highlighting level
+(defvar ampl-font-lock-keywords ampl-font-lock-comments
+  "Default syntax highlighting level in Ampl mode.")
+
+;; Indentation --- Fairly simple for now
+;;  1) If a line ends with a semicolon, the next line is flush left
+;;  2) If a line ends with a colon or an equal sign, the next line is indented.
+(defun ampl-indent-line ()
+  "Indent current line of Ampl code."
+  (interactive)
+  (let ((position 0)
+        (reason nil))
+    (save-excursion
+      (beginning-of-line)
+      (if (bobp)
+          (prog1
+              (setq position 0)
+            (setq reason "top of buffer"))
+        (progn
+          (forward-line -1)
+          (if (looking-at ".*[:=][ \t]*$")
+              (prog1
+                  (setq position tab-width)
+                (setq reason "previous line ends in : or ="))
+            (prog1
+                (setq position 0)
+              (setq reason "nothing special"))))))
+    (message "Indentation column will be %d (%s)" position reason)
+    (indent-line-to position)))
+
+(defvar ampl-auto-close-parenthesis t
+  "Automatically insert closing parenthesis if non-nil.")
+
+(defvar ampl-auto-close-brackets t
+  "Automatically insert closing square bracket if non-nil.")
+
+(defvar ampl-auto-close-curlies t
+  "Automatically insert closing curly brace if non-nil.")
+
+(defvar ampl-auto-close-double-quote t
+  "Automatically insert closing double quote if non-nil.")
+
+(defvar ampl-auto-close-single-quote t
+  "Automatically insert closing single quote if non-nil.")
+
+(defvar ampl-user-comment
+  "#####
+##  %
+#####
+"
+  "User-defined comment template." )
+
+(defvar ampl-mode-syntax-table nil
+  "Syntax table for Ampl mode.")
+
+(defun ampl-create-syntax-table ()
+  "Create AMPL-mode syntax table."
+  (unless ampl-mode-syntax-table
+    (setq ampl-mode-syntax-table (make-syntax-table))
+    (set-syntax-table ampl-mode-syntax-table)
+    (modify-syntax-entry ?_ "w" ampl-mode-syntax-table)
+    (modify-syntax-entry ?# "<" ampl-mode-syntax-table)
+    (modify-syntax-entry ?\n ">" ampl-mode-syntax-table)))
+
+(defun ampl-mode ()
+  "Major mode for editing Ampl models."
+  (interactive)
+  (kill-all-local-variables)
+
+  (ampl-create-syntax-table)
+
+  (make-local-variable 'font-lock-defaults)
+  (setq font-lock-defaults '(ampl-font-lock-keywords))
+
+  (make-local-variable 'indent-line-function)
+  (setq indent-line-function 'ampl-indent-line)
+
+  (defun ampl-insert-comment ()
+    "Insert a comment template defined by `ampl-user-comment'."
+    (interactive)
+    (let ((point-a (point))
+	  (use-comment ampl-user-comment)
+	  point-b point-c)
+      (insert ampl-user-comment)
+      (setq point-b (point))
+
+      (goto-char point-a)
+      (if (re-search-forward "%" point-b t)
+	  (progn
+	    (setq point-c (match-beginning 0))
+	    (replace-match ""))
+	(goto-char point-b))))
+
+  (defun ampl-insert-parens (arg)
+    "Insert parenthesis pair. See ampl-auto-close-parenthesis."
+    (interactive "p")
+    (if ampl-auto-close-parenthesis
+	(progn
+	  (insert "()")
+	  (backward-char 1))
+      (insert "(")))
+
+  (defun ampl-insert-sqbrackets (arg)
+    "Insert square brackets pair. See ampl-auto-close-brackets."
+    (interactive "p")
+    (if ampl-auto-close-brackets
+	(progn
+	  (insert "[]")
+	  (backward-char 1))
+      (insert "[")))
+
+  (defun ampl-insert-curlies (arg)
+    "Insert curly braces pair. See ampl-auto-close-curlies."
+    (interactive "p")
+    (if ampl-auto-close-curlies
+	(progn
+	  (insert "{}")
+	  (backward-char 1))
+      (insert "{")))
+
+  (defun ampl-insert-double-quotes (arg)
+    "Insert double quotes pair. See ampl-auto-close-double-quotes."
+    (interactive "p")
+    (if ampl-auto-close-double-quote
+	(progn
+	  (insert "\"\"")
+	  (backward-char 1))
+      (insert "\"")))
+
+  (defun ampl-insert-single-quotes (arg)
+    "Insert single quotes pair. See ampl-auto-close-single-quotes."
+    (interactive "p")
+    (if ampl-auto-close-single-quote
+	(progn
+	  (insert "''")
+	  (backward-char 1))
+      (insert "'")))
+
+  ;; End of user commands
+
+  (setq major-mode 'ampl-mode)
+  (setq mode-name "Ampl")
+  (use-local-map ampl-mode-map)
+  (run-mode-hooks 'ampl-mode-hook))
+#+end_src
 ** testing
 *** buttercup
 :PROPERTIES:
