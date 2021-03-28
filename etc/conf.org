@@ -1465,11 +1465,6 @@ Code shamelessly ripped off from [[https://github.com/dpo/ampl-mode/blob/master/
 (if ampl-mode-map
     nil
   (setq ampl-mode-map (make-sparse-keymap))
-  (define-key ampl-mode-map "("     'ampl-insert-parens)
-  (define-key ampl-mode-map "["     'ampl-insert-sqbrackets)
-  (define-key ampl-mode-map "{"     'ampl-insert-curlies)
-  (define-key ampl-mode-map "\""    'ampl-insert-double-quotes)
-  (define-key ampl-mode-map "'"     'ampl-insert-single-quotes)
   (define-key ampl-mode-map "\C-co" 'ampl-insert-comment))
 
 (setq auto-mode-alist
@@ -1625,64 +1620,17 @@ Code shamelessly ripped off from [[https://github.com/dpo/ampl-mode/blob/master/
     "Insert a comment template defined by `ampl-user-comment'."
     (interactive)
     (let ((point-a (point))
-	  (use-comment ampl-user-comment)
-	  point-b point-c)
+      (use-comment ampl-user-comment)
+      point-b point-c)
       (insert ampl-user-comment)
       (setq point-b (point))
 
       (goto-char point-a)
       (if (re-search-forward "%" point-b t)
-	  (progn
-	    (setq point-c (match-beginning 0))
-	    (replace-match ""))
-	(goto-char point-b))))
-
-  (defun ampl-insert-parens (arg)
-    "Insert parenthesis pair. See ampl-auto-close-parenthesis."
-    (interactive "p")
-    (if ampl-auto-close-parenthesis
-	(progn
-	  (insert "()")
-	  (backward-char 1))
-      (insert "(")))
-
-  (defun ampl-insert-sqbrackets (arg)
-    "Insert square brackets pair. See ampl-auto-close-brackets."
-    (interactive "p")
-    (if ampl-auto-close-brackets
-	(progn
-	  (insert "[]")
-	  (backward-char 1))
-      (insert "[")))
-
-  (defun ampl-insert-curlies (arg)
-    "Insert curly braces pair. See ampl-auto-close-curlies."
-    (interactive "p")
-    (if ampl-auto-close-curlies
-	(progn
-	  (insert "{}")
-	  (backward-char 1))
-      (insert "{")))
-
-  (defun ampl-insert-double-quotes (arg)
-    "Insert double quotes pair. See ampl-auto-close-double-quotes."
-    (interactive "p")
-    (if ampl-auto-close-double-quote
-	(progn
-	  (insert "\"\"")
-	  (backward-char 1))
-      (insert "\"")))
-
-  (defun ampl-insert-single-quotes (arg)
-    "Insert single quotes pair. See ampl-auto-close-single-quotes."
-    (interactive "p")
-    (if ampl-auto-close-single-quote
-	(progn
-	  (insert "''")
-	  (backward-char 1))
-      (insert "'")))
-
-  ;; End of user commands
+      (progn
+        (setq point-c (match-beginning 0))
+        (replace-match ""))
+    (goto-char point-b))))
 
   (setq major-mode 'ampl-mode)
   (setq mode-name "Ampl")
