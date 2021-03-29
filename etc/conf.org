@@ -1702,6 +1702,11 @@ Org extras
 (require 'org-x)
 #+END_SRC
 ** buffer interface
+*** startup folding
+Org 9.4 by default makes files open with the outline totally unfolded. I don't like this; it makes it seem like my laptop is screaming at me whenever I view an org file.
+#+begin_src emacs-lisp
+(setq org-startup-folded t)
+#+end_src
 *** line wrap
 :PROPERTIES:
 :ID:       02b52d3a-485c-4bb7-bea5-f2b9abbc633f
