@@ -1345,8 +1345,9 @@ An exception to the rule
 :ID:       af009285-2261-47b1-8bf1-01434b87dec0
 :END:
 #+BEGIN_SRC emacs-lisp
-(use-package js-comint
-  :straight t)
+(nd/when-bin "node"
+  (use-package js-comint
+    :straight t))
 #+END_SRC
 **** JSON
 :PROPERTIES:
