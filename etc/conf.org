@@ -1749,7 +1749,7 @@ These are just so much better to read
   ;; this might speed up bullet rendering at the expense of larger memory footprint
   (setq inhibit-compacting-font-caches t))
 #+END_SRC
-*** font height
+*** font
 :PROPERTIES:
 :ID:       b3f385ab-ae8c-4fc6-b303-a1efd2212cb6
 :END:
@@ -1764,6 +1764,11 @@ The fonts in org headings bug me; make them smaller and less invasive.
               (set-face-attribute 'org-level-4 nil :weight 'normal :height heading-height)
               (set-face-attribute 'org-level-5 nil :weight 'normal :height heading-height))))
 #+END_SRC
+
+Org 9.4 added an extra font to "DONE" headlines. I'm not a fan, so revert to old behavior
+#+begin_export emacs-lisp
+(setq org-fontify-done-headline nil)
+#+end_export
 *** src blocks
 :PROPERTIES:
 :ID:       2805a86e-065e-4680-b11f-f45a815ccac5
