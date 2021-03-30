@@ -1346,6 +1346,7 @@ An exception to the rule
 :END:
 #+BEGIN_SRC emacs-lisp
 (nd/when-bin "node"
+  ;; TODO nodejs-repl might be more complete if ESS/elpy behavior is desired
   (use-package js-comint
     :straight t))
 #+END_SRC
