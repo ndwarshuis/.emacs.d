@@ -5,7 +5,7 @@
 ;; Author: Nathan Dwarshuis <natedwarshuis@gmail.com>
 ;; Keywords: org-mode, outlines
 ;; Homepage: https://github.com/ndwarshuis/org-x
-;; Package-Requires: ((emacs "25") (dash "2.15"))
+;; Package-Requires: ((emacs "27.2") (dash "2.18"))
 ;; Version: 0.0.1
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -192,6 +192,24 @@ to REF-TIME. Returns nil if no timestamp is found."
    (lambda () (let ((ts (org-entry-get nil (or ts-prop "TIMESTAMP"))))
            (when (and ts (not (cl-find ?+ ts))) (org-2ft ts))))))
 
+(defun org-x-is-expired-date-headline-p ()
+  (org-x-heading-compare-timestamp
+   (lambda () (-some-> (org-entry-get nil "X-EXPIRE")
+           (org-2ft ts)))))
+
+(defun org-x-is-expired-dtl-headline-p ()
+  (org-x-heading-compare-timestamp
+   (lambda () (let ((dtl (org-entry-get nil "X-DAYS_TO_LIVE"))
+               (created (org-entry-get nil "CREATED")))
+           (when (and dtl (s-matches-p "[0-9]+" dtl) created)
+             (+ (org-2ft created)
+                (* (string-to-number dtl) 24 60 60)))))))
+
+(defun org-x-is-expired-headline-p ()
+  ;; NOTE: this will return the dtl ft even if the date ft is less
+  (or (org-x-is-expired-dtl-headline-p)
+      (org-x-is-expired-date-headline-p)))
+
 (defun org-x-is-fresh-heading-p ()
   "Return timestamp if current heading is fresh."
   (org-x-heading-compare-timestamp 'org-x-is-timestamped-heading-p nil t))
@@ -255,6 +273,8 @@ to REF-TIME. Returns nil if no timestamp is found."
     (cond 
      ((org-x-is-archivable-heading-p)
       :archivable)
+     ((and (not (member kw org-done-keywords)) (org-x-is-expired-headline-p))
+      :expired)
      ((org-x-is-inert-p)
       :inert)
      ((and (member kw org-done-keywords) (not (org-x-is-closed-heading-p)))
@@ -1210,9 +1230,18 @@ H is a string like +prop or -prop"
 
 ;; advice
 
-;; The =org-tags-view= can filter tags for only headings with TODO keywords (with type tags-todo), but this automatically excludes keywords in =org-done-keywords=. Therefore, if I want to include these in any custom agenda blocks, I need to use type tags instead and skip the unwanted TODO keywords with a skip function. This is far slower as it applies the skip function to EVERY heading.
-;; Fix that here by nullifying =org--matcher-tags-todo-only= which controls how the matcher is created for tags and tags-todo. Now I can select done keywords using a match string like "+tag/DONE|CANC" (also much clearer in my opinion).
-;; While this is usually more efficient, it may be counterproductive in cases where skip functions can be used to ignore huge sections of an org file (which is rarely for me; most only skip ahead to the next heading).
+;; The =org-tags-view= can filter tags for only headings with TODO keywords
+;; (with type tags-todo), but this automatically excludes keywords in
+;; =org-done-keywords=. Therefore, if I want to include these in any custom
+;; agenda blocks, I need to use type tags instead and skip the unwanted TODO
+;; keywords with a skip function. This is far slower as it applies the skip
+;; function to EVERY heading. Fix that here by nullifying
+;; =org--matcher-tags-todo-only= which controls how the matcher is created for
+;; tags and tags-todo. Now I can select done keywords using a match string like
+;; "+tag/DONE|CANC" (also much clearer in my opinion). While this is usually
+;; more efficient, it may be counterproductive in cases where skip functions can
+;; be used to ignore huge sections of an org file (which is rarely for me; most
+;; only skip ahead to the next heading).
 
 (defun org-x-tags-view-advice (orig-fn &optional todo-only match)
   "Advice to include done states in `org-tags-view' for tags-todo agenda types."
@@ -1235,6 +1264,31 @@ Applies only to todo entries unless ALWAYS is t."
                  (org-ml-build-node-property "CREATED"))))
     (org-ml-update-this-headline*
       (org-ml-headline-map-node-properties* (cons np it) it))))
+
+(defun org-x-set-expired-time (&optional arg)
+  "Set the expired time of the current headline.
+If ARG is non-nil use long timestamp format."
+  (interactive "P")
+  (-when-let (ut (-some->> (org-read-date nil t)
+                   (float-time)
+                   (round)))
+    (let ((np (->> (if arg (org-ml-unixtime-to-time-long ut)
+                     (org-ml-unixtime-to-time-short ut))
+                (org-ml-build-timestamp!)
+                (org-ml-to-string)
+                (org-ml-build-node-property "X-EXPIRE"))))
+      (org-ml-update-this-headline*
+        (org-ml-headline-map-node-properties* (cons np it) it)))))
+
+(defun org-x-set-dtl ()
+  "Set days-to-live of the current headline."
+  (interactive)
+  (let ((n (read-string "Days to live: ")))
+    (if (not (s-matches-p "[0-9]+" n))
+        (message "Enter a number")
+      (let ((np (org-ml-build-node-property "X-DAYS_TO_LIVE" n)))
+        (org-ml-update-this-headline*
+          (org-ml-headline-map-node-properties* (cons np it) it))))))
 
 (advice-add 'org-insert-heading :after #'org-x-set-creation-time)
 

@@ -2226,23 +2226,30 @@ The built-in =effort= is used as the fourth and final homonymous GTD context (th
 Also here are the properties for repeated tasks and a few others (see comments in code).
 #+BEGIN_SRC emacs-lisp
 (mapc (lambda (i) (add-to-list 'org-default-properties i))
-      ; defines a repeater group
-      '("PARENT_TYPE"
+      (list
+       ;; defines a repeater group
+       "PARENT_TYPE"
 
-        ;; defines the time shift for repeater groups
-        "TIME_SHIFT"
+       ;; defines the time shift for repeater groups
+       "TIME_SHIFT"
 
-        ;; defines an email thread
-        "THREAD"
+       ;; defines an email thread
+       "THREAD"
 
-        ;; defines a goal
-        "GOAL"
+       ;; defines a goal
+       "GOAL"
 
-        "X-ROUTINE"
-        ;; for sorting routines in the agenda
+       ;; for sorting routines in the agenda
+       "X-ROUTINE"
 
-        ;; date of header creation
-        "CREATED"))
+       ;; date of header creation
+       "CREATED"
+
+       ;; date of header expiration
+       "X-EXPIRE"
+
+       ;; days before a header expires
+       "X-DAYS_TO_LIVE"))
 
 (setq org-global-properties
       '(("PARENT_TYPE_ALL" . "periodical iterator")
@@ -3201,6 +3208,7 @@ original org entry before executing BODY."
 (defconst nd/org-x-task-status-priorities
   '((:archivable . -1)
     (:complete . -1)
+    (:expired . 0)
     (:done-unclosed . 0)
     (:undone-closed . 0)
     (:active . 1)
