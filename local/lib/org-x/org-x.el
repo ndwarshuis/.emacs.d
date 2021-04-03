@@ -195,7 +195,7 @@ to REF-TIME. Returns nil if no timestamp is found."
 (defun org-x-is-expired-date-headline-p ()
   (org-x-heading-compare-timestamp
    (lambda () (-some-> (org-entry-get nil "X-EXPIRE")
-           (org-2ft ts)))))
+           (org-2ft)))))
 
 (defun org-x-is-expired-dtl-headline-p ()
   (org-x-heading-compare-timestamp
@@ -305,13 +305,13 @@ to REF-TIME. Returns nil if no timestamp is found."
 
 (defun org-x-headline-has-context-p ()
   "Return t if heading has a context."
-  (let ((tags (org-get-tags-at)))
+  (let ((tags (org-get-tags)))
     (or (> (length (org-x-filter-list-prefix "#" tags)) 0)
         (> (length (org-x-filter-list-prefix "@" tags)) 0))))
 
 (defun org-x-headline-has-tag-p (tag)
   "Return t if heading has tag TAG."
-  (member tag (org-get-tags-at)))
+  (member tag (org-get-tags)))
 
 ;; relational testing
 
@@ -519,7 +519,7 @@ function will simply return the point of the next headline."
   "Skip headings that have tags in POS-TAGS-LIST and not in NEG-TAGS-LIST."
   (save-restriction
     (widen)
-    (let ((heading-tags (org-get-tags-at)))
+    (let ((heading-tags (org-get-tags)))
       (if (and (or (not pos-tags-list)
                    (cl-intersection pos-tags-list heading-tags :test 'equal))
                (not (cl-intersection neg-tags-list heading-tags :test 'equal)))
@@ -931,8 +931,8 @@ N is the number of clones to produce."
          (append it (org-x--headline-repeat-shifted n shift new))
          it)))
     (let ((post (org-ml-parse-this-subtree)))
-      (org-ml-match-do* '(section property-drawer) (org-ml-fold it) post)
-      (org-ml-match-do* '(headline) (org-ml-fold it) post))))
+      (org-ml-match-do '(section property-drawer) (lambda (it) (org-ml-fold it)) post)
+      (org-ml-match-do '(headline) (lambda (it) (org-ml-fold it)) post))))
 
 ;; (defun org-x-clone-subtree-with-time-shift-toplevel (n)
 ;;   "Go to the last item underneath an iterator and clone using
@@ -1159,7 +1159,7 @@ If BACK is t seek backward, else forward. Ignore blank lines."
 
 
 (defun org-x-agenda-filter-make-matcher-prop
-    (filter type &rest args)
+    (filter type &rest _args)
   "Return matching matcher form for FILTER and TYPE where TYPE is not
 in the regular `org-agenda-filter-make-matcher' function. This is
 intended to be uses as :before-until advice and will return nil if
@@ -1254,9 +1254,8 @@ H is a string like +prop or -prop"
 
 (advice-add #'org-tags-view :around #'org-x-tags-view-advice)
 
-(defun org-x-set-creation-time (&optional always &rest args)
-  "Set the creation time property of the current heading.
-Applies only to todo entries unless ALWAYS is t."
+(defun org-x-set-creation-time (&optional _always &rest _args)
+  "Set the creation time property of the current heading."
   (let ((np (->> (float-time)
                  (org-ml-unixtime-to-time-long)
                  (org-ml-build-timestamp!)
@@ -1316,7 +1315,7 @@ and slow."
     ;; be refactored/reused as a separate function
     (cl-flet
         ((archive
-          (atime afile apath acat atodo atags target headline)
+          (atime afile _apath acat atodo atags target headline)
           (let* ((level-shift (-some-> (org-ml-get-property :level headline)
                                 (1-)
                                 (-)))
