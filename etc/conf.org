@@ -3102,7 +3102,7 @@ earlier ones."
       ((max-ts
         (lambda ()
           (-some-->
-           (org-x-element-parse-headline)
+           (org-ml-parse-this-headline)
            (org-element-map it 'timestamp #'identity)
            (--filter
             (memq (org-element-property :type it) '(active active-range))

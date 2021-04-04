@@ -69,21 +69,8 @@ entire subtrees to save time and ignore tasks")
 
 ;; org-element
 
-(defun org-x-element-parse-headline (&optional granularity subtree)
-  "Like `org-element-parse-buffer' but on only one headline. Assumes 
-that point is currently on the starting line of the headline in
-question. if SUBTREE is t, return all the subheadings under this
-heading."
-   ;; (line-beginning-position)
-  (let ((start (point))
-        (end (if subtree
-                 (save-excursion (org-end-of-subtree))
-               (save-excursion (outline-next-heading) (point)))))
-    (-> (org-element--parse-elements
-         start end 'first-section nil granularity nil nil)
-        car)))
-
 (defun org-x-element-first-lb-entry (headline)
+  "Return epoch time of most recent logbook item or clock from HEADLINE."
   (let* ((config (list :log-into-drawer org-log-into-drawer
                        :clock-into-drawer org-clock-into-drawer
                        :clock-out-notes org-log-note-clock-out))
@@ -114,13 +101,16 @@ If it does not have a date, it will return nil."
   (let ((ts (org-entry-get nil timestamp-property)))
         (when ts (org-2ft ts))))
 
-(defun org-x-heading-compare-timestamp (timestamp-fun
-                                     &optional ref-time future)
-  "Returns the timestamp (from TIMESTAMP-FUN on the current heading) 
-if timestamp is futher back in time compared to a REF-TIME (default to 
-0 which is now, where negative is past and positive is future). If the 
-FUTURE flag is t, returns timestamp if it is in the future compared 
-to REF-TIME. Returns nil if no timestamp is found."
+;; TODO I don't like this function...it perplexes me
+(defun org-x-heading-compare-timestamp (timestamp-fun &optional ref-time future)
+  "Compare timestamp to some reference time.
+
+TIMESTAMP-FUN is a function that returns a timestamp when called
+on the headline in question. Return t if the returned timestamp
+is further back in time compared to REF-TIME (default to 0 which
+is now, where negative is past and positive is future). If the
+FUTURE flag is t, returns timestamp if it is in the future
+compared to REF-TIME. Returns nil if no timestamp is found."
   (let* ((timestamp (funcall timestamp-fun))
         (ref-time (or ref-time 0)))
     (if (and timestamp
@@ -156,11 +146,13 @@ to REF-TIME. Returns nil if no timestamp is found."
            (when (and ts (not (cl-find ?+ ts))) (org-2ft ts))))))
 
 (defun org-x-is-expired-date-headline-p ()
+  "Return timestamp if current headline is expired via \"X-EXPIRE\"."
   (org-x-heading-compare-timestamp
    (lambda () (-some-> (org-entry-get nil "X-EXPIRE")
            (org-2ft)))))
 
 (defun org-x-is-expired-dtl-headline-p ()
+  "Return timestamp if current headline is expired via \"X-DAYS_TO_LIVE\"."
   (org-x-heading-compare-timestamp
    (lambda () (let ((dtl (org-entry-get nil "X-DAYS_TO_LIVE"))
                (created (org-entry-get nil "CREATED")))
@@ -169,9 +161,11 @@ to REF-TIME. Returns nil if no timestamp is found."
                 (* (string-to-number dtl) 24 60 60)))))))
 
 (defun org-x-is-expired-headline-p ()
+  "Return t if current headline is expired."
   ;; NOTE: this will return the dtl ft even if the date ft is less
-  (or (org-x-is-expired-dtl-headline-p)
-      (org-x-is-expired-date-headline-p)))
+  (and (or (org-x-is-expired-dtl-headline-p)
+           (org-x-is-expired-date-headline-p))
+       t))
 
 (defun org-x-is-fresh-heading-p ()
   "Return timestamp if current heading is fresh."
@@ -233,7 +227,7 @@ to REF-TIME. Returns nil if no timestamp is found."
 (defun org-x-task-status ()
   "Return the status of the headline under point."
   (-when-let (kw (org-x-is-task-p))
-    (cond 
+    (cond
      ((org-x-is-archivable-heading-p)
       :archivable)
      ((and (not (member kw org-done-keywords)) (org-x-is-expired-headline-p))
@@ -324,23 +318,28 @@ to REF-TIME. Returns nil if no timestamp is found."
   "Compare position of statuscodes SC1 and SC2 in SC-LIST using operator OP."
   `(,op (cl-position ,sc1 ,sc-list) (cl-position ,sc2 ,sc-list)))
 
-(defun org-x-descend-into-project
-    (allowed-statuscodes trans-tbl get-task-status callback-fun)
+;; TODO there is likely a better way to handle this
+(defun org-x-descend-into-project (allowed-statuscodes trans-tbl
+                                                       get-task-status
+                                                       callback-fun)
   "Loop through (sub)project and return overall statuscode.
 
-The returned statuscode is chosen from list ALLOWED-STATUSCODES where 
-later entries in the list trump earlier ones. 
+The returned statuscode is chosen from list ALLOWED-STATUSCODES where
+later entries in the list trump earlier ones.
 
-When a subproject is encountered, this function will obtain the 
-statuscode of that project and use TRANS-TBL to translate the 
-subproject statuscode to one in ALLOWED-STATUSCODES (if not found an 
-error will be raised). TRANS-TBL is given as an alist of two-member 
+When a subproject is encountered, this function will obtain the
+statuscode of that project and use TRANS-TBL to translate the
+subproject statuscode to one in ALLOWED-STATUSCODES (if not found an
+error will be raised). TRANS-TBL is given as an alist of two-member
 cons cells where the first member is the subproject statuscode and the
- second is the index in ALLOWED-STATUSCODES to which the subproject 
+ second is the index in ALLOWED-STATUSCODES to which the subproject
 statuscode will be translated.
 
 When a task is encountered, function GET-TASK-STATUS will be applied to
-obtain a statuscode-equivalent of the status of the tasks."
+obtain a statuscode-equivalent of the status of the tasks.
+
+CALLBACK-FUN is a function to call once this is finished (which
+should be this function again)."
   ;; define "breaker-status" as the last of the allowed-statuscodes
   ;; when this is encountered the loop is broken because we are done
   ;; (the last entry trumps all others)
@@ -473,92 +472,17 @@ function will simply return the point of the next headline."
                (not (cl-intersection neg-tags-list heading-tags :test 'equal)))
           (org-x-skip-heading)))))
 
-;; sorting and filtering
-
-(defun org-x-agenda-filter-prop (a-line filter prop-fun
-                                           &optional prop-key)
-  "Filter for `org-agenda-before-sorting-filter-function' where
-A-LINE is a line from the agenda view, FILTER is an ordered list
-of property values to be filtered/sorted, and PROP-FUN is a function
-that determines a property value based on the org content of the
-original buffer. If PROP-KEY is supplied, assign the return value of
-PROP-FUN to PROP-KEY in A-LINE's text properties. Returns either nil
-if return value of PROP-FUN not in FILTER or A-LINE (modified or not)."
-  (let* ((m (get-text-property 1 'org-marker a-line))
-         (s (with-current-buffer (marker-buffer m)
-              (goto-char m)
-              (funcall prop-fun))))
-    (when (cl-find s filter)
-        (if (not prop-key) a-line
-          (org-add-props a-line nil prop-key s)))))
-               
-(defun org-x-agenda-regexp-replace-props (props)
-  (letrec
-      ((replace-prop
-        (lambda (p)
-          (let ((prop-val (->> (thing-at-point 'line)
-                               (get-text-property 1 (cdr p))
-                               symbol-name))
-                (re (format "$%s$" (car p))))
-            (when prop-val
-              (save-excursion
-                (when (search-forward re (line-end-position) t 1)
-                  (replace-match prop-val))))))))
-   (save-excursion
-     (goto-char (point-min))
-     (while (< (point) (point-max))
-       (--each props (funcall replace-prop it))
-       (forward-line)))))
-
-(defun org-x-agenda-sort-prop (prop order a b)
-  "Sort a block agenda view by text property PROP given a list ORDER
-of said text properties in the desired order and lines A and B as 
-inputs. To be used with `org-agenda-cmp-user-defined'."
-  (let* ((ta (get-text-property 1 prop a))
-         (tb (get-text-property 1 prop b))
-         (pa (cl-position ta order :test (if (stringp ta) #'equal)))
-         (pb (cl-position tb order :test (if (stringp tb) #'equal))))
-    (cond ((or (null pa) (null pb)) nil)
-          ((< pa pb) +1)
-          ((> pa pb) -1))))
-
-(defun org-x-agenda-sort-multi (a b &rest funs)
-  "Sort lines A and B from block agenda view given functions FUNS.
-Functions in FUNS must take either A or B as their arguments and
-should return a positive integer indicating their rank. The FUNS
-list is traversed in order, where the front is the outermost sorting
-order."
-  (let* ((fun (car funs))
-         (pa (funcall fun a))
-         (pb (funcall fun b)))
-    (cond
-     ((< pa pb) +1)
-     ((> pa pb) -1)
-     (t (-some->> funs cdr (apply #'org-x-agenda-sort-multi a b))))))
-
-(defun org-x-agenda-sort-task-todo (line)
-  (or
-   (-some-> (get-text-property 1 'todo-state line)
-            (cl-position org-x-agenda-todo-sort-order :test #'equal))
-   (length org-x-agenda-todo-sort-order)))
-  
-(defun org-x-agenda-sort-status (line order)
-  (or
-   (-some-> (get-text-property 1 'statuscode line) (cl-position order))
-   (length order)))
-
-(defun org-x-agenda-sort-task-atomic (line)
-  (if (eq '-!- (get-text-property 1 'atomic line)) 1 0))
-
 ;; interactive functions
 
 (defun org-x-mark-subtree-keyword (new-keyword &optional exclude no-log)
-  "Mark all tasks in a subtree with NEW-KEYWORD unless original
-keyword is in the optional argument EXCLUDE."
+  "Change the todo keyword of all tasks in a subtree to NEW-KEYWORD.
+If EXCLUDE is given, it should be a list of todo keywords; any headline
+matching a keyword in this list will not be changed. If NO-LOG is t,
+don't log changes in the logbook."
   (let ((subtree-end (save-excursion (org-end-of-subtree t)))
         (org-todo-log-states (unless no-log org-todo-log-states)))
     (if (not (listp exclude))
-        (error "exlude must be a list if provided"))
+        (error "Exclude must be a list if provided"))
     (save-excursion
       (while (< (point) subtree-end)
         (let ((keyword (org-x-is-todoitem-p)))
@@ -572,6 +496,9 @@ keyword is in the optional argument EXCLUDE."
   (org-x-mark-subtree-keyword "DONE" '("CANC")))
 
 (defun org-x--reset-headline (headline)
+  "Reset HEADLINE node to incomplete state.
+This includes unchecking all checkboxes, marking keywords as
+\"TODO\", clearing any unique IDs, etc."
   (cl-flet*
       ((reset
         (config created-ts headline)
@@ -602,6 +529,9 @@ keyword is in the optional argument EXCLUDE."
              (reset config created-ts it))))))
 
 (defun org-x--headline-repeat-shifted (n shift headline)
+  "Return HEADLINE repeated and shifted N times.
+SHIFT is a string specifier denoting the amount to shift, eg
+\"+2d\"."
   (cl-flet
       ((convert-shift
         (shift)
@@ -653,11 +583,6 @@ N is the number of clones to produce."
                    (s-join "")))
          (end (org-ml-get-property :end st)))
     (org-ml-insert end ins)))
-    ;; (save-excursion
-    ;;   (when (org-up-heading-safe)
-    ;;     (-> (org-ml-parse-this-subtree)
-    ;;         (org-ml-headline-get-subheadlines)
-    ;;         (-each #'org-ml-fold))))))
 
 (defun org-x-clone-subtree-with-time-shift-toplevel (n)
   "Like `org-clone-subtree-with-time-shift' except reset items and todos.
@@ -666,7 +591,7 @@ N is the number of clones to produce."
   (cl-flet
       ((get-shift
         (subtree)
-        (or 
+        (or
          (org-ml-headline-get-node-property "TIME_SHIFT" subtree)
          (read-from-minibuffer
           "Shift per clone (e.g. +1w, empty to copy unchanged): "))))
@@ -705,8 +630,8 @@ N is the number of clones to produce."
 
 (defun org-x-clock-range (&optional arg)
   "Add a completed clock entry to the current heading.
-Does not touch the running clock. When called with one C-u prefix
-argument, ask for a range in minutes in place of the second date."
+Does not touch the running clock. When called with one prefix
+ARG, ask for a range in minutes in place of the second date."
   (interactive "P")
   (let* ((t1 (-> (org-read-date t t) (float-time)))
          (t2 (if (equal arg '(4))
@@ -731,28 +656,30 @@ argument, ask for a range in minutes in place of the second date."
                (insert))))))))
 
 (defmacro org-x-agenda-cmd-wrapper (get-head &rest body)
-  "Wraps commands in BODY in necessary code to allow commands to be
-called from the agenda buffer. Particularly, this wrapper will
-navigate to the original header, execute BODY, then update the agenda
-buffer."
-  '(org-agenda-check-no-diary)
-  `(let* ((hdmarker (or (org-get-at-bol 'org-hd-marker)
-			           (org-agenda-error)))
-	     (buffer (marker-buffer hdmarker))
-	     (pos (marker-position hdmarker))
-	     (inhibit-read-only t)
-	     newhead)
-    (org-with-remote-undo buffer
-	  (with-current-buffer buffer
-	    (widen)
-	    (goto-char pos)
-	    (org-show-context 'agenda)
-        ,@body
-	    (when ,get-head (setq newhead (org-get-heading))))
-	  (if ,get-head
-          (org-agenda-change-all-lines newhead hdmarker)
-        (org-agenda-redo))
-	  (beginning-of-line 1))))
+  "Execute BODY in context of agenda buffer.
+Specifically, navigate to the original header, execute BODY, then
+update the agenda buffer. If GET-HEAD is true, get the headline
+string and use it to update the agenda (this is only needed when
+the headline changes obviously)."
+  `(progn
+     (org-agenda-check-no-diary)
+     (let* ((hdmarker (or (org-get-at-bol 'org-hd-marker)
+                          (org-agenda-error)))
+            (buffer (marker-buffer hdmarker))
+            (pos (marker-position hdmarker))
+            (inhibit-read-only t)
+            newhead)
+       (org-with-remote-undo buffer
+         (with-current-buffer buffer
+           (widen)
+           (goto-char pos)
+           (org-show-context 'agenda)
+           ,@body
+           (when ,get-head (setq newhead (org-get-heading))))
+         (if ,get-head
+             (org-agenda-change-all-lines newhead hdmarker)
+           (org-agenda-redo))
+	     (beginning-of-line 1)))))
   
 (defun org-x-agenda-toggle-checkbox ()
   "Toggle checkboxes in org agenda view using `org-toggle-checkbox'."
@@ -777,7 +704,7 @@ It will clone the last entry in the selected subtree."
    (call-interactively #'org-x-delete-subtree)))
 
 (defun org-x-agenda-clock-range ()
-  "Apply `org-x-clock-range' to an agenda entry"
+  "Apply `org-x-clock-range' to an agenda entry."
   (interactive)
   (org-x-agenda-cmd-wrapper
    nil
@@ -860,7 +787,7 @@ If BACK is t seek backward, else forward. Ignore blank lines."
              (s-match "\\`[ \t]*\\([\\+\\-]?[0-9]+\\)\\([MHdwmy]\\)[ \t]*\\'" it)
              (if (not it) (error "Invalid shift: %s" it) it)))
            (mag (string-to-number (nth 1 shift)))
-           (unit 
+           (unit
             (pcase (nth 2 shift)
               ("M" 'minute)
               ("H" (setq mag (* mag 60)) 'minute)
@@ -890,12 +817,13 @@ If BACK is t seek backward, else forward. Ignore blank lines."
 ;; to different filter types). Note this does not give a shiny indicator at the
 ;; bottom of spaceline like the built-in filter does...oh well.
 
-(defun org-x-agenda-filter-make-matcher-prop
-    (filter type &rest _args)
-  "Return matching matcher form for FILTER and TYPE where TYPE is not
-in the regular `org-agenda-filter-make-matcher' function. This is
-intended to be uses as :before-until advice and will return nil if
-the type is not valid (which is currently 'prop')"
+(defun org-x-agenda-filter-make-matcher-prop (filter type &rest _args)
+  "Override the standard match filter.
+This will return matching matcher form for FILTER and TYPE
+where TYPE is not in the regular `org-agenda-filter-make-matcher'
+function. This is intended to be uses as :before-until advice and
+will return nil if the type is not valid (which is currently
+'prop')"
   (let (f)
     ;; has property
     (cond
@@ -905,7 +833,7 @@ the type is not valid (which is currently 'prop')"
     (if f (cons 'and (nreverse f)))))
 
 (defun org-x-agenda-filter-make-matcher-hasprop-exp (h)
- "Returns form to test the presence or absence of properties H.
+ "Return form to test the presence or absence of properties H.
 H is a string like +prop or -prop"
  (let* ((op (string-to-char h))
         (h (substring h 1))
@@ -917,7 +845,8 @@ H is a string like +prop or -prop"
                   (org-entry-get nil ,h))))))
    (if (eq op ?-) (list 'not f) f)))
 
-(defun org-x-agenda-filter-show-all-hasprop nil
+(defun org-x-agenda-filter-show-all-hasprop ()
+  "Remove the 'hasprop filter."
   (org-agenda-remove-filter 'hasprop))
 
 (advice-add #'org-agenda-filter-make-matcher :before-until
@@ -942,14 +871,16 @@ H is a string like +prop or -prop"
 ;; be used to ignore huge sections of an org file (which is rarely for me; most
 ;; only skip ahead to the next heading).
 
-(defun org-x-tags-view-advice (orig-fn &optional todo-only match)
-  "Advice to include done states in `org-tags-view' for tags-todo agenda types."
+(defun org-x-tags-view-advice (orig-fn &rest args)
+  "Include done states in `org-tags-view' for tags-todo agenda types.
+This is meant to be used as :around advice, where ORIG-FN is the
+original function being advised and ARGS are the arguments."
   (nd/with-advice
       ((#'org-make-tags-matcher
         :around (lambda (f m)
                   (let ((org--matcher-tags-todo-only nil))
                     (funcall f m)))))
-    (funcall orig-fn todo-only match)))
+    (apply orig-fn args)))
 
 (advice-add #'org-tags-view :around #'org-x-tags-view-advice)
 
