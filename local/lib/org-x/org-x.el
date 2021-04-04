@@ -56,9 +56,6 @@ entire subtrees to save time and ignore tasks")
 
 ;; internal vars
 
-;; (defvar org-x-agenda-limit-project-toplevel t
-;;   "If true, filter projects by all levels or top level only.")
-
 (defvar org-x-agenda-hide-incubator-tags t
   "If true, don't show incubator headings.")
 
@@ -108,40 +105,6 @@ heading."
       first-item-ut)
      (first-item-ut first-item-ut)
      (first-clock-ut first-clock-ut))))
-
-;; (defun org-x-element-first-lb-entry (headline)
-;;   "Get the first logbook entry of the headline under point."
-;;   (letrec
-;;       ((get-ts
-;;         (lambda (obj)
-;;           (if (eq 'clock (org-element-type obj))
-;;               (--> obj
-;;                    (org-element-property :value it)
-;;                    ;; assume this will return the latest even if
-;;                    ;; not a range
-;;                    (org-timestamp-split-range it t))
-;;             (->>
-;;              obj
-;;              org-element-contents
-;;              car
-;;              org-element-contents
-;;              car
-;;              ;; this assumes that the log timestamps are always
-;;              ;; at the end of the first line
-;;              (--take-while (not (eq 'line-break (org-element-type it))))
-;;              (--last (eq 'timestamp (org-element-type it))))))))
-;;   (-some-->
-;;    headline
-;;    (org-element-contents it)
-;;    (car it)
-;;    (org-element-contents it)
-;;    (--first
-;;     (equal org-log-into-drawer (org-element-property :drawer-name it))
-;;     it)
-;;    (org-element-contents it)
-;;    (car it)
-;;    (funcall get-ts it)
-;;    (org-element-property :raw-value it))))
 
 ;; timestamp processing
 
@@ -500,21 +463,6 @@ function will simply return the point of the next headline."
         (org-x-skip-subtree)
       (org-x-skip-heading))))
 
-;; (defmacro org-x-skip-heading-without (heading-fun test-fun)
-;;   "Skip headings accoring to certain characteristics. 
-
-;; HEADING-FUN is a function that tests the heading and returns the 
-;; todoitem keyword on success. TEST-FUN is a function that further tests 
-;; the identity of the heading and may or may not use the keyword output 
-;; supplied by the HEADING-FUN. This function will not skip if 
-;; HEADING-FUN and TEST-FUN return true"
-;;   `(save-restriction
-;;      (widen)
-;;      (let ((keyword (,heading-fun)))
-;;        ;; (message keyword)
-;;        (if (not (and keyword ,test-fun))
-;;            (org-x-skip-heading)))))
-
 (defun org-x-skip-headings-with-tags (pos-tags-list &optional neg-tags-list)
   "Skip headings that have tags in POS-TAGS-LIST and not in NEG-TAGS-LIST."
   (save-restriction
@@ -524,116 +472,6 @@ function will simply return the point of the next headline."
                    (cl-intersection pos-tags-list heading-tags :test 'equal))
                (not (cl-intersection neg-tags-list heading-tags :test 'equal)))
           (org-x-skip-heading)))))
-
-;; (defun org-x-skip-non-stale-headings ()
-;;   "Skip headings that do not have stale timestamps and are not part of projects."
-;;   (save-restriction
-;;     (widen)
-;;     (let ((keyword (org-x-is-todoitem-p)))
-;;       (if (not
-;;            (and (org-x-is-stale-heading-p)
-;;                 (not (member keyword org-done-keywords))
-;;                 (not (org-x-headline-has-children 'org-x-is-todoitem-p))
-;;                 (not (org-x-headline-has-parent 'org-x-is-todoitem-p))))
-;;           (org-x-skip-heading)))))
-
-;; (defun org-x-skip-non-tasks ()
-;;   "Skip headlines that are not tasks."
-;;   (save-restriction
-;;     (widen)
-;;     (let ((keyword (org-x-is-todoitem-p)))
-;;       (if keyword
-;;           (when (org-x-headline-has-children 'org-x-is-todoitem-p)
-;;               (if (member keyword org-x-project-skip-todostates)
-;;                   (org-x-skip-subtree)
-;;                 (org-x-skip-heading)))
-;;         (org-x-skip-heading)))))
-
-;; (defun org-x-skip-non-uncancelled-tasks ()
-;;   "Skip headlines that are not nonarchivable tasks."
-;;   (save-restriction
-;;     (widen)
-;;     (let ((keyword (org-x-is-todoitem-p)))
-;;       (if (org-x-headline-has-children 'org-x-is-todoitem-p)
-;;           (if (member keyword org-x-project-skip-todostates)
-;;               (org-x-skip-subtree)
-;;             (org-x-skip-heading))
-;;         (when (equal keyword "CANC") (org-x-skip-heading))))))
-        
-
-;; (defun org-x-skip-non-created-tasks ()
-;;   "Skip tasks that do not have CREATED timestamp properties."
-;;   (save-excursion
-;;     (widen)
-;;     (if (not (and (org-x-is-task-p)
-;;                   (not (org-x-is-created-heading-p))))
-;;         (org-x-skip-heading))))
-
-;; (defun org-x-skip-non-atomic-tasks ()
-;;   "Skip headings that are not atomic tasks."
-;;   (save-excursion
-;;     (widen)
-;;     (if (not (org-x-is-atomic-task-p))
-;;         (org-x-skip-heading))))
-
-;; (defun org-x-skip-non-closed-atomic-tasks ()
-;;   "Skip headings that are not complete (but not archivable) atomic tasks."
-;;   (org-x-skip-heading-without
-;;    org-x-is-atomic-task-p
-;;    (and (member keyword org-done-keywords)
-;;         (not (org-x-is-archivable-heading-p)))))
-
-;; (defun org-x-skip-non-archivable-atomic-tasks ()
-;;   "Skip headings that are not archivable atomic tasks."
-;;   (org-x-skip-heading-without
-;;    org-x-is-atomic-task-p
-;;    (org-x-is-archivable-heading-p)))
-
-;; (defun org-x-skip-non-project-tasks ()
-;;   "Skip headings that are not project tasks."
-;;   (save-restriction
-;;     (widen)
-;;     (let ((keyword (org-x-is-todoitem-p)))
-;;       (if keyword
-;;           (if (org-x-headline-has-children 'org-x-is-todoitem-p)
-;;               (if (member keyword org-x-project-skip-todostates)
-;;                   (org-x-skip-subtree)
-;;                 (org-x-skip-heading))
-;;             (if (not (org-x-headline-has-parent 'org-x-is-todoitem-p))
-;;                 (org-x-skip-heading)))
-;;         (org-x-skip-heading)))))
-
-;; (defun org-x-skip-non-discontinuous-project-tasks ()
-;;   "Skip headings that are not discontinuous within projects."
-;;   (org-x-skip-heading-without
-;;    org-x-is-todoitem-p
-;;    (org-x-has-discontinuous-parent)))
-
-;; (defun org-x-skip-non-done-unclosed-todoitems ()
-;;   "Skip headings that are not completed without a closed timestamp."
-;;   (org-x-skip-heading-without
-;;    org-x-is-todoitem-p
-;;    (and (member keyword org-done-keywords)
-;;         (not (org-x-is-closed-heading-p)))))
-
-;; (defun org-x-skip-non-undone-closed-todoitems ()
-;;   "Skip headings that are not incomplete with a closed timestamp."
-;;   (org-x-skip-heading-without
-;;    org-x-is-todoitem-p
-;;    (and (not (member keyword org-done-keywords))
-;;         (org-x-is-closed-heading-p))))
-
-;; (defun org-x-skip-non-projects (&optional ignore-toplevel)
-;;   "Skip headings that are not projects (toplevel-only if IGNORE-TOPLEVEL is t)."
-;;   (save-restriction
-;;     (widen)
-;;     (let ((keyword (org-x-is-project-p)))
-;;       (if keyword
-;;           (if (and org-x-agenda-limit-project-toplevel
-;;                    (not ignore-toplevel)
-;;                    (org-x-headline-has-parent 'org-x-is-todoitem-p))
-;;               (org-x-skip-subtree))
-;;         (org-x-skip-heading)))))
 
 ;; sorting and filtering
 
@@ -671,12 +509,6 @@ if return value of PROP-FUN not in FILTER or A-LINE (modified or not)."
      (while (< (point) (point-max))
        (--each props (funcall replace-prop it))
        (forward-line)))))
-       
-;; (add-hook
-;;  'org-agenda-finalize-hook
-;;  (lambda ()
-;;    (org-x-agenda-regexp-replace-props '(("y" . atomic)
-;;                                          ("xxxx" . statuscode)))))
 
 (defun org-x-agenda-sort-prop (prop order a b)
   "Sort a block agenda view by text property PROP given a list ORDER
@@ -718,91 +550,7 @@ order."
 (defun org-x-agenda-sort-task-atomic (line)
   (if (eq '-!- (get-text-property 1 'atomic line)) 1 0))
 
-;; block agenda macros
-
-;; (defun org-x-agenda-base-heading-cmd (match header skip-fun)
-;;   "Make a tags agenda view that matches tags in string MATCH with
-;; header given as string HEADER and with skip function SKIP-FUN."
-;;   `(tags
-;;     ,match
-;;     ((org-agenda-overriding-header ,header)
-;;      (org-agenda-skip-function ,skip-fun)
-;;      (org-agenda-sorting-strategy '(category-keep)))))
-
-;; (defun org-x-agenda-base-task-cmd (match header skip-fun &optional sort)
-;;   "Make a tags-todo agenda view that matches tags in string MATCH with
-;; header given as string HEADER and with skip function SKIP-FUN. Also
-;; takes a sorting structure SORT which is passed to 
-;; `org-agenda-sorting-strategy'"
-;;   (or sort (setq sort ''(category-keep)))
-;;   `(tags-todo
-;;     ,match
-;;     ((org-agenda-overriding-header ,header)
-;;      (org-agenda-skip-function ,skip-fun)
-;;      (org-agenda-todo-ignore-with-date t)
-;;      (org-agenda-sorting-strategy ,sort))))
-
-;; (defun org-x-agenda-base-task-cmd* (match header skip-fun kw-list status-fun
-;;                                          &optional status-px)
-;;   (let ((prefix (if status-px
-;;                     ''((tags . "  %-12:c $xxxx$: $y$ %-5:e "))
-;;                   ''((tags . "  %-12:c         %-5:e")))))
-;;     `(tags-todo
-;;       ,match
-;;       ((org-agenda-overriding-header ,header)
-;;        (org-agenda-skip-function ,skip-fun)
-;;        (org-agenda-todo-ignore-with-date t)
-;;        (org-agenda-before-sorting-filter-function
-;;         (lambda (l)
-;;           (-some->
-;;            l
-;;            (org-x-agenda-filter-prop ,kw-list ,status-fun 'statuscode)
-;;            (org-x-agenda-filter-prop
-;;             '(-*- -!-) (lambda () (if (org-x-is-atomic-task-p) '-!- '-*-)) 'atomic))))
-;;        (org-agenda-cmp-user-defined
-;;         (lambda (a b)
-;;           (org-x-agenda-sort-multi
-;;            a b
-;;            (lambda (l) (org-x-agenda-sort-status l ,kw-list))
-;;            #'org-x-agenda-sort-task-atomic
-;;            #'org-x-agenda-sort-task-todo)))
-;;        (org-agenda-prefix-format ,prefix)
-;;        (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
-
-;; (defun org-x-agenda-base-project-cmd (match header skip-fun kw-list status-fun
-;;                                          &optional todo status-px)
-;;   "Make a tags-todo agenda view that matches tags in string MATCH with
-;; header given as string HEADER and with skip function SKIP-FUN. KW-LIST
-;; is a list of keywords to be used in filtering and sorting (the order
-;; in the list defines the sort order). STATUS-FUN is a function used to
-;; get the statuscode of the current line in the agenda. Optional arg
-;; TODO determines if this is a tags-todo (t) or tags (nil) block, and
-;; STATUS-PX as t enables the statuscode to be formatted into the prefix
-;; string."
-;;   (let ((prefix (if status-px
-;;                     ''((tags . "  %-12:c $xxxx$: "))
-;;                   ''((tags . "  %-12:c        ")))))
-;;     `(,(if 'tags-todo 'tags)
-;;       ,match
-;;       ((org-agenda-overriding-header ,header)
-;;        (org-agenda-skip-function ,skip-fun)
-;;        (org-agenda-before-sorting-filter-function
-;;         (lambda (l) (org-x-agenda-filter-prop l ,kw-list ,status-fun 'statuscode)))
-;;        (org-agenda-cmp-user-defined
-;;         (lambda (a b) (org-x-agenda-sort-prop 'statuscode ,kw-list a b)))
-;;        (org-agenda-prefix-format ,prefix)
-;;        (org-agenda-sorting-strategy '(user-defined-down category-keep))))))
-
 ;; interactive functions
-
-;; (defun org-x-toggle-project-toplevel-display ()
-;;   "Toggle all project headings and toplevel only headings in project blocks."
-;;   (interactive)
-;;   (setq org-x-agenda-limit-project-toplevel (not org-x-agenda-limit-project-toplevel))
-;;   (when (equal major-mode 'org-agenda-mode)
-;;     (org-agenda-redo))
-;;   (message "Showing %s project view in agenda"
-;;            (if org-x-agenda-limit-project-toplevel "toplevel" "complete")))
 
 (defun org-x-mark-subtree-keyword (new-keyword &optional exclude no-log)
   "Mark all tasks in a subtree with NEW-KEYWORD unless original
@@ -933,27 +681,6 @@ N is the number of clones to produce."
     (let ((post (org-ml-parse-this-subtree)))
       (org-ml-match-do '(section property-drawer) (lambda (it) (org-ml-fold it)) post)
       (org-ml-match-do '(headline) (lambda (it) (org-ml-fold it)) post))))
-
-;; (defun org-x-clone-subtree-with-time-shift-toplevel (n)
-;;   "Go to the last item underneath an iterator and clone using
-;; `org-x-agenda-clone-subtree-with-time-shift'. Assumes point starts on
-;; the top level headline and only looks at the second level of
-;; headlines to clone."
-;;   (interactive "nNumber of clones to produce: ")
-;;   ;; do nothing if there is nothing to clone
-;;   (unless (eq :uninit
-;;               (or (and (org-x-is-iterator-heading-p)
-;;                        (org-clone-get-iterator-status))
-;;                   (and (org-x-is-periodical-heading-p)
-;;                        (org-clone-get-periodical-status))))
-;;     ;; goto last item in the second level
-;;     (save-excursion
-;;       (let ((current-point (point)))
-;;         (outline-next-heading)
-;;         (while (< current-point (point))
-;;           (setq current-point (point))
-;;           (org-forward-heading-same-level 1 t)))
-;;       (org-x-clone-subtree-with-time-shift n))))
 
 (defun org-x-log-delete ()
   "Delete logbook drawer of subtree."
@@ -1153,10 +880,15 @@ If BACK is t seek backward, else forward. Ignore blank lines."
         (funcall shift-ts-maybe 'deadline)
         (outline-next-heading)))))
 
-;; In order to implement the =hasprop= filter, the functions =org-agenda-filter-make-matcher= and =org-agenda-filter-remove-all= need to be advised in order to add the functionality for the =hasprop= filter type. 
+;; In order to implement the =hasprop= filter, the functions
+;; =org-agenda-filter-make-matcher= and =org-agenda-filter-remove-all= need to
+;; be advised in order to add the functionality for the =hasprop= filter type.
 
-;; As it is, this allows any filter using =hasprop= to be applied and removed using the standard =org-agenda-filter-apply= function with the =org-x-agenda-hasprop-filter= variable (obviously these can all be extended to different filter types). Note this does not give a shiny indicator at the bottom of spaceline like the built-in filter does...oh well.
-
+;; As it is, this allows any filter using =hasprop= to be applied and removed
+;; using the standard =org-agenda-filter-apply= function with the
+;; =org-x-agenda-hasprop-filter= variable (obviously these can all be extended
+;; to different filter types). Note this does not give a shiny indicator at the
+;; bottom of spaceline like the built-in filter does...oh well.
 
 (defun org-x-agenda-filter-make-matcher-prop
     (filter type &rest _args)
@@ -1194,39 +926,6 @@ H is a string like +prop or -prop"
 (advice-add #'org-agenda-filter-remove-all :before
             (lambda () (when org-x-agenda-hasprop-filter
                     (org-x-agenda-filter-show-all-hasprop))))
-
-;; (defun org-x-agenda-helm-select-categories ()
-;;   "Filter by category using helm interface."
-;;   (interactive)
-;;   (when (eq major-mode 'org-agenda-mode)
-;;     (-when-let
-;;         (cats
-;;          (-->
-;;           (buffer-string)
-;;           (split-string it "\n")
-;;           (--remove (get-text-property 0 'invisible it) it)
-;;           (--map (get-text-property 0 'org-category it) it)
-;;           (-non-nil it)
-;;           (-uniq it)
-;;           (sort it #'string<)))
-;;       (let ((exclude
-;;              (lambda (c)
-;;                (org-agenda-filter-apply
-;;                 (push (concat "-" c) org-agenda-category-filter)
-;;                 'category)))
-;;             (include
-;;              (lambda (c)
-;;                (org-agenda-filter-apply
-;;                 (setq org-agenda-category-filter
-;;                       (list (concat "+" c)))
-;;                 'category))))
-;;         (helm :sources
-;;               (helm-build-sync-source "Categories"
-;;                 :candidates cats
-;;                 :action `(("Include" . ,(-partial include))
-;;                           ("Exclude" . ,(-partial exclude))))
-;;               :buffer "*helm-category-select*"
-;;               :prompt "Category: ")))))
 
 ;; advice
 
