@@ -23,14 +23,134 @@
 (require 'dash)
 (require 'org-x)
 
-(def-example-group "String Conversion"
-  "Convert nodes to strings."
+(defun org-ts-to-unixtime (timestamp-string)
+  "Convert TIMESTAMP-STRING to unixtime."
+  (let ((decoded (org-parse-time-string timestamp-string)))
+    (->> (-snoc decoded (current-time-zone))
+         (apply #'encode-time)
+         (float-time)
+         (round))))
 
-  (defexamples-content org-x-is-timestamped-heading-p
-    nil
-    (:buffer "* headline")
-    (org-x-is-timestamped-heading-p)
-    => nil))
+(defun org-x-gen-ts (offset)
+  "Generate an org timestamp string.
+OFFSET is the length of time from now in seconds (positive is in
+the future)."
+  (->> (float-time)
+    (+ offset)
+    (org-ml-unixtime-to-time-long)
+    (org-ml-build-timestamp!)
+    (org-ml-to-string)))
+
+(defun org-x-test-parse-forms (s)
+  "Evaluate forms in string S.
+Forms are denoted like %(FORM)%."
+  (--reduce-from (-let (((rep sform) it))
+                   (s-replace rep (format "%s" (eval (read sform))) acc))
+                 s
+                 (s-match-strings-all "%\\((.*?)\\)%" s)))
+
+(defmacro org-ml--with-org-buffer (string &rest body)
+  "Call `org-ml--with-org-env' with BODY and STRING as the buffer."
+  (let ((s (->> (if (listp string) (s-join "\n" string) string)
+             (org-x-test-parse-forms))))
+    `(org-ml--with-org-env (insert ,s) ,@body)))
+
+(defmacro org-x--test-buffer-strings (name test &rest specs)
+  "Run TEST form for SPECS called by toplevel NAME."
+  (declare (indent 2))
+  (let ((forms (->> (-partition 4 specs)
+                 ;; the _op argument is just for looks to make the decl clearer
+                 (--map (-let (((title buffer _op result) it))
+                          `(it ,title
+                             (expect (org-ml--with-org-buffer ,buffer ,test)
+                                     :to-equal
+                                     ,result)))))))
+    `(describe ,name ,@forms)))
+
+(org-x--test-buffer-strings "Task status"
+    (org-x-task-status)
+
+  "no status"
+  "* headline"
+  => nil
+
+  "active"
+  "* TODO headline"
+  => :active
+
+  "active (not yet expired date)"
+  ("* TODO headline"
+   ":PROPERTIES:"
+   ":CREATED: %(org-x-gen-ts (- (* 2 24 60 60)))%"
+   ":X-EXPIRE: %(org-x-gen-ts (* 1 24 60 60))%"
+   ":END:")
+  => :active
+
+  "active (not yet expired dtl)"
+  ("* TODO headline"
+   ":PROPERTIES:"
+   ":CREATED: %(org-x-gen-ts (- (* 2 24 60 60)))%"
+   ":X-DAYS_TO_LIVE: 3"
+   ":END:")
+  => :active
+
+  "done unclosed"
+  "* DONE headline"
+  => :done-unclosed
+
+  "undone closed"
+  ("* TODO headline"
+   "CLOSED: %(org-x-gen-ts 0)%")
+  => :undone-closed
+
+  "complete"
+  ("* DONE headline"
+   "CLOSED: %(org-x-gen-ts 0)%")
+  => :complete
+
+  "archivable"
+  ("* DONE headline"
+   "CLOSED: %(org-x-gen-ts (- (* (1+ org-x-archive-delay) 24 60 60)))%")
+  => :archivable
+
+  "expired (date)"
+  ("* TODO headline"
+   ":PROPERTIES:"
+   ":CREATED: %(org-x-gen-ts (- (* 2 24 60 60)))%"
+   ":X-EXPIRE: %(org-x-gen-ts (- (* 1 24 60 60)))%"
+   ":END:")
+  => :expired
+
+  "expired (dtl)"
+  ("* TODO headline"
+   ":PROPERTIES:"
+   ":CREATED: %(org-x-gen-ts (- (* 2 24 60 60)))%"
+   ":X-DAYS_TO_LIVE: 1"
+   ":END:")
+  => :expired
+
+  "inert (created timestamp)"
+  ("* TODO headline"
+   ":PROPERTIES:"
+   ":CREATED: %(org-x-gen-ts (- (* (1+ org-x-inert-delay-days) 24 60 60)))%"
+   ":END:")
+  => :inert
+
+  "not inert (future deadline)"
+  ("* TODO headline"
+   "DEADLINE: %(org-x-gen-ts (* 1 24 60 60))%"
+   ":PROPERTIES:"
+   ":CREATED: %(org-x-gen-ts (- (* (1+ org-x-inert-delay-days) 24 60 60)))%"
+   ":END:")
+  => :active
+
+  "not inert (future schedule)"
+  ("* TODO headline"
+   "SCHEDULED: %(org-x-gen-ts (* 1 24 60 60))%"
+   ":PROPERTIES:"
+   ":CREATED: %(org-x-gen-ts (- (* (1+ org-x-inert-delay-days) 24 60 60)))%"
+   ":END:")
+  => :active)
 
 (provide 'org-x-test-buffer-state)
 ;;; org-x-test-buffer-state.el ends here

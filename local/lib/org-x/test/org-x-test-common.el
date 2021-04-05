@@ -37,67 +37,67 @@
        (org-mode)
        ,@body)))
 
-(defun example-to-should (actual sym expected)
-  (let ((expected
-         (if (eq (and (listp expected) (car expected)) :result)
-             (s-join "\n" (cdr expected))
-           expected)))
-    (cond ((eq sym '=>)
-           `(expect ,actual :to-equal ,expected))
-          ;; this will only work with defexamples-content
-          ((eq sym '$>)
-           `(expect (progn ,actual (s-trim (buffer-string))) :to-equal ,expected))
-          ;; TODO I never use this?
-          ((eq sym '~>)
-           `(should (approx-equal ,actual ,expected)))
-          ((eq sym '!!>)
-           `(should-error (eval ',actual) :type ',expected))
-          (t
-           (error "Invalid test case: %S" `(,actual ,sym ,expected))))))
+;; (defun example-to-should (actual sym expected)
+;;   (let ((expected
+;;          (if (eq (and (listp expected) (car expected)) :result)
+;;              (s-join "\n" (cdr expected))
+;;            expected)))
+;;     (cond ((eq sym '=>)
+;;            `(expect ,actual :to-equal ,expected))
+;;           ;; this will only work with defexamples-content
+;;           ((eq sym '$>)
+;;            `(expect (progn ,actual (s-trim (buffer-string))) :to-equal ,expected))
+;;           ;; TODO I never use this?
+;;           ((eq sym '~>)
+;;            `(should (approx-equal ,actual ,expected)))
+;;           ((eq sym '!!>)
+;;            `(should-error (eval ',actual) :type ',expected))
+;;           (t
+;;            (error "Invalid test case: %S" `(,actual ,sym ,expected))))))
 
-(defmacro defexamples (cmd &rest examples)
-  (let ((tests (->> examples
-                    (remove :begin-hidden)
-                    (remove :end-hidden)
-                    (-partition 3)
-                    (--map (apply #'example-to-should it)))))
-    (when tests
-      `(it ,(format "%S" cmd) (org-ml--with-org-env ,@tests)))))
+;; (defmacro defexamples (cmd &rest examples)
+;;   (let ((tests (->> examples
+;;                     (remove :begin-hidden)
+;;                     (remove :end-hidden)
+;;                     (-partition 3)
+;;                     (--map (apply #'example-to-should it)))))
+;;     (when tests
+;;       `(it ,(format "%S" cmd) (org-ml--with-org-env ,@tests)))))
 
-(defmacro defexamples-content (cmd _docstring &rest args)
-  (cl-flet*
-      ((make-test-form
-        (test contents)
-        `(org-ml--with-org-env
-          (when ,contents (insert ,contents))
-          (goto-char (point-min))
-          ,test))
-       (make-tests
-        (list)
-        (let ((contents (->> (car list) (-drop 1) (s-join "\n")))
-              (tests
-               (->> (-drop 1 list)
-                    (--remove (eq (and (listp it) (car it)) :comment))
-                    (-partition 3)
-                    (--map (apply #'example-to-should it)))))
-          (--map (make-test-form it contents) tests))))
-    (let ((body
-           (->> args
-                (remove :begin-hidden)
-                (remove :end-hidden)
-                (-partition-before-pred
-                 (lambda (it) (eq (and (listp it) (car it)) :buffer)))
-                (-mapcat #'make-tests))))
-      (when body
-        `(it ,(format "%S" cmd) ,@body)))))
+;; (defmacro defexamples-content (cmd _docstring &rest args)
+;;   (cl-flet*
+;;       ((make-test-form
+;;         (test contents)
+;;         `(org-ml--with-org-env
+;;           (when ,contents (insert ,contents))
+;;           (goto-char (point-min))
+;;           ,test))
+;;        (make-tests
+;;         (list)
+;;         (let ((contents (->> (car list) (-drop 1) (s-join "\n")))
+;;               (tests
+;;                (->> (-drop 1 list)
+;;                     (--remove (eq (and (listp it) (car it)) :comment))
+;;                     (-partition 3)
+;;                     (--map (apply #'example-to-should it)))))
+;;           (--map (make-test-form it contents) tests))))
+;;     (let ((body
+;;            (->> args
+;;                 (remove :begin-hidden)
+;;                 (remove :end-hidden)
+;;                 (-partition-before-pred
+;;                  (lambda (it) (eq (and (listp it) (car it)) :buffer)))
+;;                 (-mapcat #'make-tests))))
+;;       (when body
+;;         `(it ,(format "%S" cmd) ,@body)))))
 
-(defmacro def-example-subgroup (title _subtitle &rest specs)
-  (when specs
-    `(describe ,title ,@specs)))
+;; (defmacro def-example-subgroup (title _subtitle &rest specs)
+;;   (when specs
+;;     `(describe ,title ,@specs)))
 
-(defmacro def-example-group (title _subtitle &rest specs)
-  (when specs
-    `(describe ,title ,@specs)))
+;; (defmacro def-example-group (title _subtitle &rest specs)
+;;   (when specs
+;;     `(describe ,title ,@specs)))
 
 (provide 'org-ml-test-common)
 ;;; org-ml-test-common.el ends here
