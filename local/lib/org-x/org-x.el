@@ -204,9 +204,7 @@ compared to REF-TIME. Returns nil if no timestamp is found."
 
 (defun org-x-is-todoitem-p ()
   "Return todo keyword if heading has one."
-  (let ((keyword (nth 2 (org-heading-components))))
-    (if (member keyword org-todo-keywords-1)
-        keyword)))
+  (-some-> (org-get-todo-state) (substring-no-properties)))
 
 (defun org-x-is-project-p ()
   "Return todo keyword if heading has todoitem children."
