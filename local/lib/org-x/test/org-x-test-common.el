@@ -27,7 +27,10 @@
 (defmacro org-ml--with-org-env (&rest body)
   "Execute BODY in a standardized Org-mode buffer."
   `(let ((org-tags-column 20)
-         (org-todo-keywords '((sequence "TODO" "DONE")))
+         (org-todo-keywords
+          ;; shamelessly copies from me
+          '((sequence "TODO(t/!)" "NEXT(n/!)" "|" "DONE(d/!)")
+            (sequence "WAIT(w@/!)" "HOLD(h@/!)" "|" "CANC(c@/!)")))
          (org-archive-tag "ARCHIVE")
          (org-lowest-priority ?C)
          (org-highest-priority ?A)
