@@ -98,8 +98,7 @@ entire subtrees to save time and ignore tasks")
 (defun org-x-get-date-property (timestamp-property)
   "Get TIMESTAMP-PROPERTY on current heading and convert to a number.
 If it does not have a date, it will return nil."
-  (let ((ts (org-entry-get nil timestamp-property)))
-        (when ts (org-2ft ts))))
+  (-some-> (org-entry-get nil timestamp-property) (org-2ft)))
 
 ;; TODO I don't like this function...it perplexes me
 (defun org-x-heading-compare-timestamp (timestamp-fun &optional ref-time future)
@@ -270,19 +269,38 @@ compared to REF-TIME. Returns nil if no timestamp is found."
 
 ;; relational testing
 
-(defun org-x-headline-has-children (heading-test)
-  "Return t if heading has a child for whom HEADING-TEST is t."
-  (let ((subtree-end (save-excursion (org-end-of-subtree t)))
-        has-children previous-point)
+;; ;; TODO this function seems slow
+;; (defun org-x-headline-has-children (heading-test)
+;;   "Return t if heading has a child for whom HEADING-TEST is t."
+;;   (let ((subtree-end (save-excursion (org-end-of-subtree t)))
+;;         has-children previous-point)
+;;     (save-excursion
+;;       (setq previous-point (point))
+;;       (outline-next-heading)
+;;       (while (and (not has-children)
+;;                   (< previous-point (point) subtree-end))
+;;         (when (funcall heading-test)
+;;           (setq has-children t))
+;;         (setq previous-point (point))
+;;         (org-forward-heading-same-level 1 t)))
+;;     has-children))
+
+(defun org-x-headline-has-children (test-fun)
+  "Return t if heading has a child for whom TEST-FUN is t."
+  ;; assume that point is at the beginning of a headline
+  (let* ((level (1+ (org-current-level)))
+         (has-children nil)
+         (cur-level level))
+    ;; skip over the current headline
+    (re-search-forward org-outline-regexp-bol nil t)
     (save-excursion
-      (setq previous-point (point))
-      (outline-next-heading)
-      (while (and (not has-children)
-                  (< previous-point (point) subtree-end))
-        (when (funcall heading-test)
-          (setq has-children t))
-        (setq previous-point (point))
-        (org-forward-heading-same-level 1 t)))
+      (while (and (<= level cur-level)
+                  (re-search-forward org-outline-regexp-bol nil t))
+        ;; it's actually more efficient to scan every headline and check its
+        ;; level rather than using a regexp to match the target depth
+        (setq cur-level (- (match-end 0) (match-beginning 0) 1))
+        (when (and (= cur-level level) (funcall test-fun))
+          (setq has-children t))))
     has-children))
 
 (defun org-x-headline-has-parent (heading-test)
@@ -317,9 +335,7 @@ compared to REF-TIME. Returns nil if no timestamp is found."
   `(,op (cl-position ,sc1 ,sc-list) (cl-position ,sc2 ,sc-list)))
 
 ;; TODO there is likely a better way to handle this
-(defun org-x-descend-into-project (allowed-statuscodes trans-tbl
-                                                       get-task-status
-                                                       callback-fun)
+(defmacro org-x-descend-into-project (statuscode-tree get-task-status callback-fun)
   "Loop through (sub)project and return overall statuscode.
 
 The returned statuscode is chosen from list ALLOWED-STATUSCODES where
@@ -341,105 +357,99 @@ should be this function again)."
   ;; define "breaker-status" as the last of the allowed-statuscodes
   ;; when this is encountered the loop is broken because we are done
   ;; (the last entry trumps all others)
-  (let ((project-status (cl-first allowed-statuscodes))
-        (breaker-status (-last-item allowed-statuscodes))
-        (previous-point))
-    (save-excursion
-      (setq previous-point (point))
-      (outline-next-heading)
-      ;; loop through subproject tasks until breaker-status found
-      (while (and (not (eq project-status breaker-status))
-                  (> (point) previous-point))
-        (let ((keyword (org-x-is-todoitem-p)))
-          (if keyword
-              (let ((new-status
-                     ;; if project then descend recursively
-                     (if (org-x-headline-has-children 'org-x-is-todoitem-p)
-                         (let ((n (funcall callback-fun)))
-                           ;; if project returns an allowed status
-                           ;; then use that
-                           (or (and (member n allowed-statuscodes) n)
-                               ;; otherwise look up the value in the
-                               ;; translation table and return error
-                               ;; if not found
-                               (nth (or (alist-get n trans-tbl)
-                                        (error (concat "status not found: " n)))
-                                    allowed-statuscodes)))
-                       ;; if tasks then use get-task-status to obtain status
-                       (nth (funcall get-task-status keyword)
-                            allowed-statuscodes))))
-                (if (org-x-compare-statuscodes > new-status project-status allowed-statuscodes)
-                    (setq project-status new-status)))))
-        (setq previous-point (point))
-        (org-forward-heading-same-level 1 t)))
-    project-status))
+  (let* ((allowed-statuscodes (-map #'car statuscode-tree))
+         (trans-tbl (->> statuscode-tree
+                      (--map (-let (((a . bs) it)) (--map (cons it a) bs)))
+                      (-flatten-n 1)))
+         (breaker-status (-last-item allowed-statuscodes))
+         (initial-status (car allowed-statuscodes)))
+    `(let ((project-status ,initial-status)
+           (previous-point nil)
+           (new-status nil)
+           (it-kw nil))
+       (save-excursion
+         (setq previous-point (point))
+         (outline-next-heading)
+         ;; loop through subproject tasks until breaker-status found
+         (while (and (not (eq project-status ,breaker-status))
+                     (> (point) previous-point))
+           (setq it-kw (org-get-todo-state))
+           (when it-kw
+             (if (org-x-headline-has-children #'org-x-is-todoitem-p)
+                 (progn
+                   ;; If project returns an allowed status then use that.
+                   ;; Otherwise look up the value in the translation table and
+                   ;; return error if not found.
+                   (setq new-status (,callback-fun))
+                   (unless (member new-status ',allowed-statuscodes)
+                     (setq new-status (alist-get new-status ',trans-tbl))))
+               ;; if tasks then use get-task-status to obtain status
+               (setq new-status (nth ,get-task-status ',allowed-statuscodes)))
+             (when (org-x-compare-statuscodes > new-status project-status ',allowed-statuscodes)
+               (setq project-status new-status)))
+           (setq previous-point (point))
+           (org-forward-heading-same-level 1 t)))
+       project-status)))
 
 (defun org-x-get-project-status ()
   "Return project heading statuscode (assumes it is indeed a project)."
-  (let ((keyword (org-x-is-todoitem-p)))
-    ;;
-    ;; these first three are easy because they only require
-    ;; testing the project headline and nothing underneath
-    ;;
-    (cond
-     ;; it does not make sense for projects to be scheduled
-     ((org-x-is-scheduled-heading-p) :scheduled-project)
+  ;;
+  ;; these first three are easy because they only require
+  ;; testing the project headline and nothing underneath
+  ;;
+  ;; it does not make sense for projects to be scheduled
+  (if (org-x-is-scheduled-heading-p) :scheduled-project
+    (-when-let (keyword (org-get-todo-state))
+      (cond
+       ;; held projects do not care what is underneath them
+       ;; only need to test if they are inert
+       ((equal keyword "HOLD") (if (org-x-is-inert-p) :inert :held))
 
-     ;; held projects do not care what is underneath them
-     ;; only need to test if they are inert
-     ((equal keyword "HOLD") (if (org-x-is-inert-p) :inert :held))
+       ;; projects with invalid todostates are nonsense
+       ((member keyword org-x-project-invalid-todostates)
+        :invalid-todostate)
 
-     ;; projects with invalid todostates are nonsense
-     ((member keyword org-x-project-invalid-todostates)
-      :invalid-todostate)
+       ;; canceled projects can either be archivable or complete
+       ;; any errors or undone tasks are irrelevant
+       ((equal keyword "CANC") (if (org-x-is-archivable-heading-p) :archivable
+                                 :complete))
+       
+       ;;
+       ;; these require descending into the project subtasks
+       ;;
 
-     ;; canceled projects can either be archivable or complete
-     ;; any errors or undone tasks are irrelevant
-     ((equal keyword "CANC") (if (org-x-is-archivable-heading-p) :archivable
-                               :complete))
-     
-     ;;
-     ;; these require descending into the project subtasks
-     ;;
-
-     ;; done projects are like canceled projects but can also be incomplete
-     ((equal keyword "DONE")
-      (org-x-descend-into-project
-       '(:archivable :complete :done-incomplete)
-       '((:stuck . 2)
-         (:inert . 2)
-         (:held . 2)
-         (:wait . 2)
-         (:active . 2)
-         (:scheduled-project . 2)
-         (:invalid-todostate . 2)
-         (:undone-complete . 2))
-       (lambda (k)
-         (if (member k org-done-keywords)
+       ;; done projects are like canceled projects but can also be incomplete
+       ((equal keyword "DONE")
+        (org-x-descend-into-project
+         ((:archivable)
+          (:complete)
+          (:done-incomplete :stuck :inert :held :wait :active
+                            :scheduled-project :invalid-todostate
+                            :undone-complete))
+         (if (member it-kw org-done-keywords)
              (if (org-x-is-archivable-heading-p) 0 1)
-           2))
-       #'org-x-get-project-status))
-     
-     ;; project with TODO states could be basically any status
-     ((equal keyword "TODO")
-      (org-x-descend-into-project
-       '(:undone-complete :stuck :held :wait :inert :active)
-       '((:complete . 0)
-         (:archivable . 0)
-         (:scheduled-project . 1)
-         (:invalid-todostate . 1)
-         (:done-incomplete . 1))
-       (lambda (k)
-         (cond ((and (not (member k org-done-keywords))
-                     (org-x-is-inert-p)) 4)
-               ((equal k "TODO") (if (org-x-is-scheduled-heading-p) 5 1))
-               ((equal k "HOLD") 2)
-               ((equal k "WAIT") 3)
-               ((equal k "NEXT") 5)
-               (t 0)))
-       #'org-x-get-project-status))
-     
-     (t (error (concat "invalid keyword detected: " keyword))))))
+           2)
+         org-x-get-project-status))
+       
+       ;; project with TODO states could be basically any status
+       ((equal keyword "TODO")
+        (org-x-descend-into-project
+         ((:undone-complete :complete :archivable)
+          (:stuck :scheduled-project :invalid-todostate :done-incomplete)
+          (:held)
+          (:wait)
+          (:inert)
+          (:active))
+         (cond
+          ((and (not (member it-kw org-done-keywords)) (org-x-is-inert-p)) 4)
+          ((equal it-kw "TODO") (if (org-x-is-scheduled-heading-p) 5 1))
+          ((equal it-kw "HOLD") 2)
+          ((equal it-kw "WAIT") 3)
+          ((equal it-kw "NEXT") 5)
+          (t 0))
+         org-x-get-project-status))
+       
+       (t (error (concat "invalid keyword detected: " keyword)))))))
 
 ;; skip functions
 
