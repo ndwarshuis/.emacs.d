@@ -334,6 +334,62 @@ Forms are denoted like %(FORM)%."
    "** TODO task 1"
    "*** TODO task 2")
   => :stuck)
+
+(org-x--test-buffer-strings "Iterator status"
+    (org-x-get-iterator-status)
+
+    "uninitialized"
+    ("* TODO iterator"
+     ":PROPERTIES:"
+     ":PARENT_TYPE: iterator"
+     ":END:")
+    => :uninit
+
+    "unscheduled"
+    ("* TODO iterator"
+     ":PROPERTIES:"
+     ":PARENT_TYPE: iterator"
+     ":END:"
+     "** TODO sub")
+    => :unscheduled
+
+    "unscheduled (with DONE)"
+    ("* TODO iterator"
+     ":PROPERTIES:"
+     ":PARENT_TYPE: iterator"
+     ":END:"
+     "** DONE sub"
+     "CLOSED: %(org-x-gen-ts 0)%"
+     "** TODO sub")
+    => :unscheduled
+
+    "empty"
+    ("* TODO iterator"
+     ":PROPERTIES:"
+     ":PARENT_TYPE: iterator"
+     ":END:"
+     "** DONE sub"
+     "CLOSED: %(org-x-gen-ts 0)%")
+    => :empt
+
+    "active"
+    ("* TODO iterator"
+     ":PROPERTIES:"
+     ":PARENT_TYPE: iterator"
+     ":END:"
+     "** TODO sub"
+     "SCHEDULED: %(org-x-gen-ts (+ (* 60 60 24) org-clone-iter-future-time))%")
+    => :actv
+
+    "project error"
+    ("* TODO iterator"
+     ":PROPERTIES:"
+     ":PARENT_TYPE: iterator"
+     ":END:"
+     "** NEXT sub"
+     "*** TODO subsub"
+     "SCHEDULED: %(org-x-gen-ts (1+ org-clone-iter-future-time))%")
+    => :project-error)
     
 (provide 'org-x-test-buffer-state)
 ;;; org-x-test-buffer-state.el ends here
