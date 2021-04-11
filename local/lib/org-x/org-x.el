@@ -269,39 +269,39 @@ compared to REF-TIME. Returns nil if no timestamp is found."
 
 ;; relational testing
 
-;; ;; TODO this function seems slow
-;; (defun org-x-headline-has-children (heading-test)
-;;   "Return t if heading has a child for whom HEADING-TEST is t."
-;;   (let ((subtree-end (save-excursion (org-end-of-subtree t)))
-;;         has-children previous-point)
-;;     (save-excursion
-;;       (setq previous-point (point))
-;;       (outline-next-heading)
-;;       (while (and (not has-children)
-;;                   (< previous-point (point) subtree-end))
-;;         (when (funcall heading-test)
-;;           (setq has-children t))
-;;         (setq previous-point (point))
-;;         (org-forward-heading-same-level 1 t)))
-;;     has-children))
-
-(defun org-x-headline-has-children (test-fun)
-  "Return t if heading has a child for whom TEST-FUN is t."
-  ;; assume that point is at the beginning of a headline
-  (let* ((level (1+ (org-current-level)))
-         (has-children nil)
-         (cur-level level))
-    ;; skip over the current headline
-    (re-search-forward org-outline-regexp-bol nil t)
+;; TODO this function seems slow
+(defun org-x-headline-has-children (heading-test)
+  "Return t if heading has a child for whom HEADING-TEST is t."
+  (let ((subtree-end (save-excursion (org-end-of-subtree t)))
+        has-children previous-point)
     (save-excursion
-      (while (and (<= level cur-level)
-                  (re-search-forward org-outline-regexp-bol nil t))
-        ;; it's actually more efficient to scan every headline and check its
-        ;; level rather than using a regexp to match the target depth
-        (setq cur-level (- (match-end 0) (match-beginning 0) 1))
-        (when (and (= cur-level level) (funcall test-fun))
-          (setq has-children t))))
+      (setq previous-point (point))
+      (outline-next-heading)
+      (while (and (not has-children)
+                  (< previous-point (point) subtree-end))
+        (when (funcall heading-test)
+          (setq has-children t))
+        (setq previous-point (point))
+        (org-forward-heading-same-level 1 t)))
     has-children))
+
+;; (defun org-x-headline-has-children (test-fun)
+;;   "Return t if heading has a child for whom TEST-FUN is t."
+;;   ;; assume that point is at the beginning of a headline
+;;   (let* ((level (1+ (org-current-level)))
+;;          (has-children nil)
+;;          (cur-level level))
+;;     ;; skip over the current headline
+;;     (re-search-forward org-outline-regexp-bol nil t)
+;;     (save-excursion
+;;       (while (and (<= level cur-level)
+;;                   (re-search-forward org-outline-regexp-bol nil t))
+;;         ;; it's actually more efficient to scan every headline and check its
+;;         ;; level rather than using a regexp to match the target depth
+;;         (setq cur-level (- (match-end 0) (match-beginning 0) 1))
+;;         (when (and (= cur-level level) (funcall test-fun))
+;;           (setq has-children t))))
+;;     has-children))
 
 (defun org-x-headline-has-parent (heading-test)
   "Return t if heading has parent for whom HEADING-TEST is t."
@@ -450,6 +450,122 @@ should be this function again)."
          org-x-get-project-status))
        
        (t (error (concat "invalid keyword detected: " keyword)))))))
+
+(defun org-x--clone-get-iterator-project-status (kw)
+  (cond
+   ((or (org-x-is-scheduled-heading-p)
+        (member kw org-x-project-invalid-todostates)) :project-error)
+
+   ;; canceled tasks add nothing
+   ((equal kw "CANC") :empt)
+   
+   ;;
+   ;; these require descending into the project subtasks
+   ;;
+
+   ;; done projects either add nothing (empty) or are not actually
+   ;; done (project error)
+   ((equal kw "DONE")
+    (org-x-descend-into-project
+     ((:empt)
+      (:project-error :unscheduled :actv))
+     (if (member it-kw org-done-keywords) 0 1)
+     #'org-x--clone-get-iterator-project-status))
+   
+   ;; project with TODO states could be basically any status
+   ((equal kw "TODO")
+    (org-x-descend-into-project
+     ((:unscheduled :project-error)
+      (:empt)
+      (:actv))
+     (let ((ts (org-x-is-scheduled-heading-p)))
+       (cond
+        ((not ts) 0)
+        ((> org-clone-iter-future-time (- ts (float-time))) 1)
+        (t 2)))
+     org-x--clone-get-iterator-project-status))
+   
+   (t (error (concat "invalid keyword detected: " kw)))))
+
+(defun org-x-get-iterator-status ()
+  "Get the status of an iterator.
+Allowed statuscodes are in list `nd/get-iter-statuscodes.' where
+ latter codes in the list trump earlier ones."
+  (let ((cur-status (first org-clone-iter-statuscodes))
+        (breaker-status (-last-item org-clone-iter-statuscodes))
+        (subtree-end (save-excursion (org-end-of-subtree t)))
+        (prev-point (point)))
+    (save-excursion
+      (outline-next-heading)
+      (while (and (not (eq cur-status breaker-status))
+                  (< prev-point (point) subtree-end))
+        (let ((kw (org-x-is-todoitem-p))
+              (new-status))
+          (when kw
+            ;; test if project of atomic task
+            ;; assume that there are no todoitems above this headline
+            ;; to make checking easier
+            (setq
+             new-status
+             (if (org-x-headline-has-children 'org-x-is-todoitem-p)
+                 (org-x--clone-get-iterator-project-status kw)
+               (let ((ts (or (org-x-is-scheduled-heading-p)
+                             (org-x-is-deadlined-heading-p))))
+                 (cond
+                  ((member kw org-done-keywords) :empt)
+                  ((not ts) :unscheduled)
+                  ((< org-clone-iter-future-time (- ts (float-time))) :actv)
+                  (t :empt)))))
+            (when (org-x-compare-statuscodes > new-status cur-status org-clone-iter-statuscodes)
+              (setq cur-status new-status))))
+        (setq prev-point (point))
+        (org-forward-heading-same-level 1 t)))
+    cur-status))
+    
+(defun org-x-get-periodical-status ()
+  "Get the status of a periodical.
+Allowed statuscodes are in list `nd/get-peri-statuscodes.' where
+latter codes in the list trump earlier ones."
+  (letrec
+      ((max-ts
+        (lambda ()
+          (-some-->
+           (org-ml-parse-this-headline)
+           (org-element-map it 'timestamp #'identity)
+           (--filter
+            (memq (org-element-property :type it) '(active active-range))
+            it)
+           (--map
+            (--> it
+                 (org-timestamp-split-range it t)
+                 (org-element-property :raw-value it)
+                 (org-2ft it))
+            it)
+           (-max it))))
+       (compare
+        (lambda (s1 s2)
+          (if (org-x-compare-statuscodes > s1 s2 org-clone-peri-statuscodes) s1 s2)))
+       (new-status
+        (lambda (ts)
+          (-->
+           ts
+           (cond
+            ((not it) :unscheduled)
+            ((< org-clone-peri-future-time (- it (float-time))) :actv)
+            (t :empt))
+           (funcall compare it cur-status))))
+       (cur-status (first org-clone-peri-statuscodes))
+       (breaker-status (-last-item org-clone-peri-statuscodes))
+       (subtree-end (save-excursion (org-end-of-subtree t)))
+       (prev-point (point)))
+    (save-excursion
+      (outline-next-heading)
+      (while (and (not (eq cur-status breaker-status))
+                  (< prev-point (point) subtree-end))
+        (setq cur-status (->> (funcall max-ts) (funcall new-status)))
+        (setq prev-point (point))
+        (org-forward-heading-same-level 1 t)))
+    cur-status))
 
 ;; skip functions
 

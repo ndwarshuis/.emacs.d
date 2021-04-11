@@ -3013,132 +3013,6 @@ These are functions and variables exclusively for agenda block manipulation with
 
 (defconst org-clone-peri-statuscodes '(:uninit :empt :actv :unscheduled))
 #+END_SRC
-***** task helper functions
-These are the building blocks for skip functions.
-****** repeater testing
-:PROPERTIES:
-:ID:       44657755-b47e-4b2a-85c4-5f82d830618a
-:END:
-Iterators and periodicals are tested similarly to projects in that they have statuscodes.
-#+BEGIN_SRC emacs-lisp
-(defun org-clone-get-iterator-project-status (kw)
-  (cond
-   ((or (org-x-is-scheduled-heading-p)
-        (member kw org-x-project-invalid-todostates)) :project-error)
-
-   ;; canceled tasks add nothing
-   ((equal kw "CANC") :empt)
-   
-   ;;
-   ;; these require descending into the project subtasks
-   ;;
-
-   ;; done projects either add nothing (empty) or are not actually
-   ;; done (project error)
-   ((equal kw "DONE")
-    (org-x-descend-into-project
-     '(:empt :project-error)
-     '((:unscheduled . 1)
-       (:actv . 1))
-     (lambda (k)
-       (if (member k org-done-keywords) 0 1))
-     #'org-clone-get-iterator-project-status))
-   
-   ;; project with TODO states could be basically any status
-   ((equal kw "TODO")
-    (org-x-descend-into-project
-     '(:unscheduled :empt :actv)
-     '(:project-error . 0)
-     (lambda (k)
-       (let ((ts (org-x-is-scheduled-heading-p)))
-         (cond
-          ((not ts) 0)
-          ((> org-clone-iter-future-time (- ts (float-time))) 1)
-          (t 2))))
-     #'org-clone-get-iterator-project-status))
-   
-   (t (error (concat "invalid keyword detected: " kw)))))
-
-(defun org-clone-get-iterator-status ()
-  "Get the status of an iterator where allowed statuscodes are in list
- `nd/get-iter-statuscodes.' where latter codes in the list trump 
-earlier ones."
-  (let ((cur-status (first org-clone-iter-statuscodes))
-        (breaker-status (-last-item org-clone-iter-statuscodes))
-        (subtree-end (save-excursion (org-end-of-subtree t)))
-        (prev-point (point)))
-    (save-excursion
-      (outline-next-heading)
-      (while (and (not (eq cur-status breaker-status))
-                  (< prev-point (point) subtree-end))
-        (let ((kw (org-x-is-todoitem-p))
-              (new-status))
-          (when kw
-            ;; test if project of atomic task
-            ;; assume that there are no todoitems above this headline
-            ;; to make checking easier
-            (setq
-             new-status
-             (if (org-x-headline-has-children 'org-x-is-todoitem-p)
-                 (org-clone-get-iterator-project-status kw)
-               (let ((ts (or (org-x-is-scheduled-heading-p)
-                             (org-x-is-deadlined-heading-p))))
-                 (cond
-                  ((member kw org-done-keywords) :empt)
-                  ((not ts) :unscheduled)
-                  ((< org-clone-iter-future-time (- ts (float-time))) :actv)
-                  (t :empt)))))
-            (when (org-x-compare-statuscodes > new-status cur-status org-clone-iter-statuscodes)
-              (setq cur-status new-status))))
-        (setq prev-point (point))
-        (org-forward-heading-same-level 1 t)))
-    cur-status))
-    
-(defun org-clone-get-periodical-status ()
-  "Get the status of a periodical where allowed statuscodes are in list
- `nd/get-peri-statuscodes.' where latter codes in the list trump 
-earlier ones."
-  (letrec
-      ((max-ts
-        (lambda ()
-          (-some-->
-           (org-ml-parse-this-headline)
-           (org-element-map it 'timestamp #'identity)
-           (--filter
-            (memq (org-element-property :type it) '(active active-range))
-            it)
-           (--map
-            (--> it
-                 (org-timestamp-split-range it t)
-                 (org-element-property :raw-value it)
-                 (org-2ft it))
-            it)
-           (-max it))))
-       (compare
-        (lambda (s1 s2)
-          (if (org-x-compare-statuscodes > s1 s2 org-clone-peri-statuscodes) s1 s2)))
-       (new-status
-        (lambda (ts)
-          (-->
-           ts
-           (cond
-            ((not it) :unscheduled)
-            ((< org-clone-peri-future-time (- it (float-time))) :actv)
-            (t :empt))
-           (funcall compare it cur-status))))
-       (cur-status (first org-clone-peri-statuscodes))
-       (breaker-status (-last-item org-clone-peri-statuscodes))
-       (subtree-end (save-excursion (org-end-of-subtree t)))
-       (prev-point (point)))
-    (save-excursion
-      (outline-next-heading)
-      (while (and (not (eq cur-status breaker-status))
-                  (< prev-point (point) subtree-end))
-        (setq cur-status (->> (funcall max-ts) (funcall new-status)))
-        (setq prev-point (point))
-        (org-forward-heading-same-level 1 t)))
-    cur-status))
-#+END_SRC
 **** super agenda
 :PROPERTIES:
 :ID:       6bd2a7c9-2104-4b18-9f56-c1581ed86d82
@@ -3398,7 +3272,7 @@ original org entry before executing BODY."
        (org-super-agenda-groups
         `((:auto-map
            ,(nd/org-x-mk-super-agenda-pred
-             (cl-case (org-clone-get-periodical-status)
+             (cl-case (org-x-get-periodical-status)
                (:uninit "0. Uninitialized")
                (:unscheduled "0. Unscheduled")
                (:empt "1. Empty")
@@ -3421,7 +3295,7 @@ original org entry before executing BODY."
        (org-super-agenda-groups
         `((:auto-map
            ,(nd/org-x-mk-super-agenda-pred
-             (cl-case (org-clone-get-iterator-status)
+             (cl-case (org-x-get-iterator-status)
                (:uninit "0. Uninitialized")
                (:project-error "0. Project Error")
                (:unscheduled "0. Unscheduled")
