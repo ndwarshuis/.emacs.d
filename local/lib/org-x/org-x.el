@@ -34,6 +34,18 @@
 
 ;; constants
 
+(defconst org-x-iter-future-time (* 7 24 60 60)
+  "Iterators must have at least one task greater into the future to be active.")
+  
+;; TODO ;unscheduled should trump all
+(defconst org-x-iter-statuscodes '(:uninit :empt :actv :project-error :unscheduled)
+  "Iterators can have these statuscodes.")
+ 
+(defconst org-x-peri-future-time org-x-iter-future-time
+  "Periodicals must have at least one heading greater into the future to be fresh.")
+
+(defconst org-x-peri-statuscodes '(:uninit :empt :actv :unscheduled))
+
 (defconst org-x-archive-delay 30
   "The number of days to wait before tasks are considered archivable.")
 
@@ -481,7 +493,7 @@ should be this function again)."
      (let ((ts (org-x-is-scheduled-heading-p)))
        (cond
         ((not ts) 0)
-        ((> org-clone-iter-future-time (- ts (float-time))) 1)
+        ((> org-x-iter-future-time (- ts (float-time))) 1)
         (t 2)))
      org-x--clone-get-iterator-project-status))
    
@@ -491,8 +503,8 @@ should be this function again)."
   "Get the status of an iterator.
 Allowed statuscodes are in list `nd/get-iter-statuscodes.' where
  latter codes in the list trump earlier ones."
-  (let ((cur-status (first org-clone-iter-statuscodes))
-        (breaker-status (-last-item org-clone-iter-statuscodes))
+  (let ((cur-status (first org-x-iter-statuscodes))
+        (breaker-status (-last-item org-x-iter-statuscodes))
         (subtree-end (save-excursion (org-end-of-subtree t)))
         (prev-point (point))
         (kw nil)
@@ -517,9 +529,9 @@ Allowed statuscodes are in list `nd/get-iter-statuscodes.' where
              (cond
               ((member kw org-done-keywords) :empt)
               ((not ts) :unscheduled)
-              ((< org-clone-iter-future-time (- ts (float-time))) :actv)
+              ((< org-x-iter-future-time (- ts (float-time))) :actv)
               (t :empt))))
-          (when (org-x-compare-statuscodes > new-status cur-status org-clone-iter-statuscodes)
+          (when (org-x-compare-statuscodes > new-status cur-status org-x-iter-statuscodes)
             (setq cur-status new-status)))
         (setq prev-point (point))
         (org-forward-heading-same-level 1 t)))
@@ -545,13 +557,13 @@ latter codes in the list trump earlier ones."
         (cur-status ts)
         (let ((new (cond
                     ((not ts) :unscheduled)
-                    ((< org-clone-peri-future-time (- ts (float-time))) :actv)
+                    ((< org-x-peri-future-time (- ts (float-time))) :actv)
                     (t :empt))))
-          (if (org-x-compare-statuscodes > new cur-status org-clone-peri-statuscodes)
+          (if (org-x-compare-statuscodes > new cur-status org-x-peri-statuscodes)
               new
             cur-status))))
-    (let ((cur-status (first org-clone-peri-statuscodes))
-          (breaker-status (-last-item org-clone-peri-statuscodes))
+    (let ((cur-status (first org-x-peri-statuscodes))
+          (breaker-status (-last-item org-x-peri-statuscodes))
           (subtree-end (save-excursion (org-end-of-subtree t)))
           (prev-point (point)))
       (save-excursion
