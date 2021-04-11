@@ -470,7 +470,7 @@ should be this function again)."
      ((:empt)
       (:project-error :unscheduled :actv))
      (if (member it-kw org-done-keywords) 0 1)
-     #'org-x--clone-get-iterator-project-status))
+     org-x--clone-get-iterator-project-status))
    
    ;; project with TODO states could be basically any status
    ((equal kw "TODO")
@@ -494,30 +494,33 @@ Allowed statuscodes are in list `nd/get-iter-statuscodes.' where
   (let ((cur-status (first org-clone-iter-statuscodes))
         (breaker-status (-last-item org-clone-iter-statuscodes))
         (subtree-end (save-excursion (org-end-of-subtree t)))
-        (prev-point (point)))
+        (prev-point (point))
+        (kw nil)
+        (new-status nil)
+        (ts nil))
     (save-excursion
       (outline-next-heading)
       (while (and (not (eq cur-status breaker-status))
                   (< prev-point (point) subtree-end))
-        (let ((kw (org-x-is-todoitem-p))
-              (new-status))
-          (when kw
-            ;; test if project of atomic task
-            ;; assume that there are no todoitems above this headline
-            ;; to make checking easier
-            (setq
-             new-status
-             (if (org-x-headline-has-children 'org-x-is-todoitem-p)
-                 (org-x--clone-get-iterator-project-status kw)
-               (let ((ts (or (org-x-is-scheduled-heading-p)
-                             (org-x-is-deadlined-heading-p))))
-                 (cond
-                  ((member kw org-done-keywords) :empt)
-                  ((not ts) :unscheduled)
-                  ((< org-clone-iter-future-time (- ts (float-time))) :actv)
-                  (t :empt)))))
-            (when (org-x-compare-statuscodes > new-status cur-status org-clone-iter-statuscodes)
-              (setq cur-status new-status))))
+        (setq kw (org-x-is-todoitem-p)
+              new-status nil)
+        (when kw
+          ;; test if project of atomic task
+          ;; assume that there are no todoitems above this headline
+          ;; to make checking easier
+          (setq
+           new-status
+           (if (org-x-headline-has-children 'org-x-is-todoitem-p)
+               (org-x--clone-get-iterator-project-status kw)
+             (setq ts (or (org-x-is-scheduled-heading-p)
+                          (org-x-is-deadlined-heading-p)))
+             (cond
+              ((member kw org-done-keywords) :empt)
+              ((not ts) :unscheduled)
+              ((< org-clone-iter-future-time (- ts (float-time))) :actv)
+              (t :empt))))
+          (when (org-x-compare-statuscodes > new-status cur-status org-clone-iter-statuscodes)
+            (setq cur-status new-status)))
         (setq prev-point (point))
         (org-forward-heading-same-level 1 t)))
     cur-status))
@@ -526,46 +529,39 @@ Allowed statuscodes are in list `nd/get-iter-statuscodes.' where
   "Get the status of a periodical.
 Allowed statuscodes are in list `nd/get-peri-statuscodes.' where
 latter codes in the list trump earlier ones."
-  (letrec
-      ((max-ts
-        (lambda ()
-          (-some-->
-           (org-ml-parse-this-headline)
-           (org-element-map it 'timestamp #'identity)
-           (--filter
-            (memq (org-element-property :type it) '(active active-range))
-            it)
-           (--map
-            (--> it
-                 (org-timestamp-split-range it t)
-                 (org-element-property :raw-value it)
-                 (org-2ft it))
-            it)
-           (-max it))))
-       (compare
-        (lambda (s1 s2)
-          (if (org-x-compare-statuscodes > s1 s2 org-clone-peri-statuscodes) s1 s2)))
+  (cl-flet
+      ((get-ts
+        ()
+        (-some->> (org-ml-parse-this-headline)
+          (org-ml-headline-get-contents (list :log-into-drawer org-log-into-drawer
+                                              :clock-into-drawer org-clock-into-drawer))
+          (org-ml-match '(:first :any * (:and timestamp
+                                              (:or (:type 'active)
+                                                   (:type 'active-range)))))
+          (car)
+          (org-ml-timestamp-get-start-time)
+          (org-ml-time-to-unixtime)))
        (new-status
-        (lambda (ts)
-          (-->
-           ts
-           (cond
-            ((not it) :unscheduled)
-            ((< org-clone-peri-future-time (- it (float-time))) :actv)
-            (t :empt))
-           (funcall compare it cur-status))))
-       (cur-status (first org-clone-peri-statuscodes))
-       (breaker-status (-last-item org-clone-peri-statuscodes))
-       (subtree-end (save-excursion (org-end-of-subtree t)))
-       (prev-point (point)))
-    (save-excursion
-      (outline-next-heading)
-      (while (and (not (eq cur-status breaker-status))
-                  (< prev-point (point) subtree-end))
-        (setq cur-status (->> (funcall max-ts) (funcall new-status)))
-        (setq prev-point (point))
-        (org-forward-heading-same-level 1 t)))
-    cur-status))
+        (cur-status ts)
+        (let ((new (cond
+                    ((not ts) :unscheduled)
+                    ((< org-clone-peri-future-time (- ts (float-time))) :actv)
+                    (t :empt))))
+          (if (org-x-compare-statuscodes > new cur-status org-clone-peri-statuscodes)
+              new
+            cur-status))))
+    (let ((cur-status (first org-clone-peri-statuscodes))
+          (breaker-status (-last-item org-clone-peri-statuscodes))
+          (subtree-end (save-excursion (org-end-of-subtree t)))
+          (prev-point (point)))
+      (save-excursion
+        (outline-next-heading)
+        (while (and (not (eq cur-status breaker-status))
+                    (< prev-point (point) subtree-end))
+          (setq cur-status (->> (get-ts) (new-status cur-status)))
+          (setq prev-point (point))
+          (org-forward-heading-same-level 1 t)))
+      cur-status)))
 
 ;; skip functions
 
