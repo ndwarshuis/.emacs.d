@@ -31,14 +31,14 @@
          (float-time)
          (round))))
 
-(defun org-x-gen-ts (offset)
+(defun org-x-gen-ts (offset &optional active)
   "Generate an org timestamp string.
 OFFSET is the length of time from now in seconds (positive is in
-the future)."
-  (->> (float-time)
+the future). Make an active timestamp if ACTIVE is t."
+  (-> (float-time)
     (+ offset)
     (org-ml-unixtime-to-time-long)
-    (org-ml-build-timestamp!)
+    (org-ml-build-timestamp! :active active)
     (org-ml-to-string)))
 
 (defun org-x-test-parse-forms (s)
@@ -390,6 +390,42 @@ Forms are denoted like %(FORM)%."
      "*** TODO subsub"
      "SCHEDULED: %(org-x-gen-ts (1+ org-clone-iter-future-time))%")
     => :project-error)
-    
+
+(org-x--test-buffer-strings "Periodical status"
+    (org-x-get-periodical-status)
+
+    "uninitialized"
+    ("* periodical"
+     ":PROPERTIES:"
+     ":PARENT_TYPE: periodical"
+     ":END:")
+    => :uninit
+
+    "empty"
+    ("* periodical"
+     ":PROPERTIES:"
+     ":PARENT_TYPE: periodical"
+     ":END:"
+     "** sub"
+     "%(org-x-gen-ts 0 t)%")
+    => :empt
+
+    "active"
+    ("* periodical"
+     ":PROPERTIES:"
+     ":PARENT_TYPE: periodical"
+     ":END:"
+     "** sub"
+     "%(org-x-gen-ts (+ (* 60 60 24) org-clone-peri-future-time) t)%")
+    => :actv
+
+    "unscheduled"
+    ("* periodical"
+     ":PROPERTIES:"
+     ":PARENT_TYPE: periodical"
+     ":END:"
+     "** sub")
+    => :unscheduled)
+
 (provide 'org-x-test-buffer-state)
 ;;; org-x-test-buffer-state.el ends here
