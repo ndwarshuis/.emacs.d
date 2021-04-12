@@ -1161,94 +1161,67 @@ The fields are as follows:
   "Return non-nil if the timestamp TS has hours/minutes."
   (org-element-property :hour-start ts))
   
-(defun org-x-cluster-parse-ts (ts hl fp)
+(defun org-x-cluster-parse-ts (hl fp ts)
   "Parse a timestamp TS belonging to headline HL and filepath FP.
 TS is an object as described in the org-element API. Only active
 or active-range types are considered. Returns a new timestamp-plist
 for TS."
   (when ts
-    (let* ((offset (org-element-property :begin hl))
-           (hardness (org-x-cluster-ts-hard-p ts))
-           (split
-            (lambda (ts &optional end)
-              (--> ts
-                   (org-timestamp-split-range it end)
-                   (org-element-property :raw-value it)
-                   (org-2ft it))))
-           (start (funcall split ts)))
-      (if (eq (org-element-property :type ts) 'active-range)
-          (let ((range (--> ts (funcall split it t) (- it start))))
-            (org-x-cluster-make-tsp start range offset fp hardness))
-        (org-x-cluster-make-tsp start 0 offset fp hardness)))))
+    (let ((offset (org-element-property :begin hl))
+          (hardness (org-x-cluster-ts-hard-p ts))
+          (start (->> (org-ml-timestamp-get-start-time ts)
+                   (org-ml-time-to-unixtime)))
+          (range (org-ml-timestamp-get-range ts)))
+      (org-x-cluster-make-tsp start 0 offset fp hardness))))
         
 (defun org-x-cluster-effort-seconds (effort-str)
   "Convert EFFORT-STR into an integer in seconds from HH:MM format."
   (-some->> effort-str (org-duration-to-minutes) (* 60)))
-  ;; (let ((effort-str (string-trim effort-str)))
-  ;;   (save-match-data
-  ;;     (cond
-  ;;      ((string-match "^\\([0-9]+\\):\\([0-6][0-9]\\)$" effort-str)
-  ;;       (let ((hours (->> effort-str
-  ;;                         (match-string 1)
-  ;;                         string-to-number
-  ;;                         (* 60))))
-  ;;         (->> effort-str
-  ;;              (match-string 2)
-  ;;              string-to-number
-  ;;              (+ hours)
-  ;;              (* 60))))
-  ;;      (t (error (format "Unknown effort: %s'" effort-str)))))))
 
-(defun org-x-cluster-extract (acc fun objs &rest args)
-  "Run FUN on each of OBJS and put results into accumulator ACC.
-FUN is a function that takes the accumulator as its first argument,
-one member of OBJS as the second, and ARGS as the rest if supplied."
-  (while objs
-    (setq acc (apply fun acc (car objs) args)
-          objs (cdr objs)))
-  acc)
+;; (defun org-x-cluster-extract (acc fun objs &rest args)
+;;   "Run FUN on each of OBJS and put results into accumulator ACC.
+;; FUN is a function that takes the accumulator as its first argument,
+;; one member of OBJS as the second, and ARGS as the rest if supplied."
+;;   (while objs
+;;     (setq acc (apply fun acc (car objs) args)
+;;           objs (cdr objs)))
+;;   acc)
 
-(defun org-x-cluster-extract-hl-sched (acc hl fp)
+(defun org-x-cluster-extract-hl-sched (hl fp)
   "Extract scheduled timestamp from headline HL in filepath FP.
 Create a new timestamp-plist and add to accumulator ACC."
-  (let* ((ts (org-element-property :scheduled hl))
-         (unixtime (->> ts (org-element-property :raw-value) org-2ft))
-         (range (-some->> hl
-                          (org-element-property :EFFORT)
-                          org-x-cluster-effort-seconds))
-         (hardness (org-x-cluster-ts-hard-p ts))
-         (offset (org-element-property :begin hl)))
-    (if (= 0 unixtime) acc
-      (-> unixtime
-          (org-x-cluster-make-tsp range offset fp hardness 'scheduled)
-          (cons acc)))))
+  (-when-let (ts (-some->> (org-ml-headline-get-planning hl)
+                   (org-ml-get-property :scheduled)))
+    (let* ((effort-raw (org-ml-headline-get-node-property "Effort" hl))
+           (effort (if effort-raw (org-x-cluster-effort-seconds effort-raw) 0))
+           (offset (org-ml-get-property :begin hl))
+           (start-time (org-ml-timestamp-get-start-time ts))
+           (start-epoch (org-ml-time-to-unixtime start-time))
+           (is-long (org-ml-time-is-long start-time)))
+      (org-x-cluster-make-tsp start-epoch effort offset fp is-long))))
 
-(defun org-x-cluster-extract-hl-ts (acc hl fp)
+(defun org-x-cluster-extract-hl-ts (hl fp)
   "Extract timestamps from headline HL in filepath FP.
 All active timestamps that are not in drawers or the planning header 
 are considered. Each timestamp is converted into a new timestamp-plist
 and added to accumulator ACC."
-  (--> hl
-       (assoc 'section it)
-       (org-element-contents it)
-       (--remove
-        (or (eq 'planning (org-element-type it))
-            (eq 'property-drawer (org-element-type it))
-            (eq 'drawer (org-element-type it)))
-        it)
-       (org-element-map it 'timestamp #'identity)
-       (--filter
-        (or (eq 'active (org-element-property :type it))
-            (eq 'active-range (org-element-property :type it)))
-        it)
-       (--map (org-x-cluster-parse-ts it hl fp) it)
-       (append acc it)))
+  (-some->> hl
+    (org-ml-headline-get-contents
+     (list :log-into-drawer org-log-into-drawer
+           :clock-into-drawer org-clock-into-drawer
+           :clock-out-notes org-log-note-clock-out))
+    (apply #'org-ml-build-section)
+    (org-ml-match '(:first :any * (:and timestamp
+                                        (:or (:type 'active)
+                                             (:type 'active-range)))))
+    (car)
+    (org-x-cluster-parse-ts hl fp)))
 
-(defun org-x-cluster-extract-hl (acc hl fp)
+(defun org-x-cluster-extract-hl (hl fp)
   "Extract timestamps from headline HL in filepath FP and store in ACC."
-  (-> acc
+  (if (org-ml-get-property :todo-keyword hl)
       (org-x-cluster-extract-hl-sched hl fp)
-      (org-x-cluster-extract-hl-ts hl fp)))
+    (org-x-cluster-extract-hl-ts hl fp)))
 
 (defun org-x-cluster-filter-todo (hls)
   "Filter certain TODO keywords from headline list HLS."
@@ -1276,25 +1249,28 @@ and added to accumulator ACC."
   (if (not org-x-cluster-filter-habit) hls
     (--remove (org-element-property :STYLE it) hls)))
 
-(defun org-x-cluster-extract-file (acc fp)
+(defun org-x-cluster-extract-buffer (fp)
+  "Extract headlines from the current buffer for clustering analysis."
+  (->> (org-ml-parse-headlines 'all)
+    (org-x-cluster-filter-todo)
+    (org-x-cluster-filter-habit)
+    (--reduce-from (let ((new (org-x-cluster-extract-hl it fp)))
+                     (if new (cons new acc) acc))
+                   nil)))
+
+(defun org-x-cluster-extract-file (fp)
   "Extract timestamps from filepath FP and add to accumulator ACC."
-  (-->
-   fp
-   (find-file-noselect it t)
-   (with-current-buffer it (org-element-parse-buffer))
-   (org-element-map it 'headline #'identity)
-   (org-x-cluster-filter-todo it)
-   (org-x-cluster-filter-habit it)
-   (org-x-cluster-extract acc #'org-x-cluster-extract-hl it fp)))
+  (with-current-buffer (find-file-noselect fp t)
+    (org-x-cluster-extract-buffer fp)))
   
 (defun org-x-cluster-get-unprocessed ()
   "Return a list of timestamp-plists with desired filter settings."
-  (->>
-   ;; (list "~/Org/reference/testconflict.org")
-   (org-agenda-files)
-   org-x-cluster-filter-files
-   (org-x-cluster-extract nil #'org-x-cluster-extract-file)   
-   org-x-cluster-filter-past))
+  (->> (org-agenda-files)
+    (org-x-cluster-filter-files)
+    (--reduce-from (let ((new (org-x-cluster-extract-file it)))
+                     (if new (append new acc) acc))
+                   nil)
+    (org-x-cluster-filter-past)))
 
 ;; get conflict headlines
 ;;
@@ -1357,6 +1333,25 @@ Each member in the cons cell is a timestamp-plist."
 ;; 3. sort from earliest to latest starting time
 ;; 4. sum the range of timestamps in each day, keeping those that exceed 24 hours
 
+;; (defun org-x-cluster-split-tsp-maybe (tsp)
+;;   "Split TIMESTAMP if it spans multiple days."
+;;   (-let (((&plist :start-time :range) tsp))
+;;     (if (= range 0) (list tsp)
+;;       ;; assume long time (for now)
+;;       (let* (((y m d H M) start-time)
+;;              (et* (encode-time `(0 ,M ,M ,d ,m ,y nil nil nil)))
+;;              ((M* H* d* m* y*) (-take 5 (cdr (decode-time et*)))))
+;;         (if (or (< d d*) (< m m*) (< y y*))
+;;             (let ((range* (- (float-time et*)
+;;                              (float-time (encode-time `(0 0 0 ,d* ,m* ,y* nil nil nil))))))
+;;               (
+                                  
+        ;;      (start-offset-sec (if (and H M) (* 60 (+ M (* 60 H))) 0))
+        ;;      (spanned-days (1- (/ (+ start-offset-sec range) (* 24 60 60)))))
+        ;; (if (= 0 spanned-days) (list (list :start-time start-time :range range))
+        ;;   (let ((first-range (- (* 24 60 60) start-offset-sec))
+        ;;         (last-range (% (+ start-offset-sec range) (* 24 60 60))))
+
 (defun org-x-cluster-split-day-bounds (tsps)
   "Split timestamp-plists in TSPS via daily boundaries.
 Returns a new timestamp-plist with equal or greater length depending
@@ -1376,7 +1371,12 @@ on how many members needed splitting."
         (lambda (start end tsp)
           (let* ((tzs-a (-> start current-time-zone car))
                  (tzs-b (-> end current-time-zone car))
-                 (start* (-> end (+ tzs-b) (ceiling 86400) 1- (* 86400) (- tzs-b))))
+                 (start* (-> end
+                           (+ tzs-b)
+                           (ceiling 86400)
+                           (1-)
+                           (* 86400)
+                           (- tzs-b))))
             (if (> start* (-> start (+ tzs-a) (floor 86400) (* 86400) (- tzs-a)))
                 (cons (funcall new start* end tsp)
                       (funcall split start start* tsp))
@@ -1416,13 +1416,12 @@ day."
 Anything present represents all the tasks in a single day if that day
 is overloaded. If a day is not overloaded there will be nothing for it
 in the returned list."
-  (->>
-   (org-x-cluster-get-unprocessed)
-   (--filter (< 0 (plist-get it :range)))
-   org-x-cluster-split-day-bounds
-   (--sort (< (plist-get it :unixtime) (plist-get other :unixtime)))
-   org-x-cluster-daily-split
-   (--filter (org-x-cluster-overloaded-p it))))
+  (->> (org-x-cluster-get-unprocessed)
+    (--filter (< 0 (plist-get it :range)))
+    (org-x-cluster-split-day-bounds)
+    (--sort (< (plist-get it :unixtime) (plist-get other :unixtime)))
+    (org-x-cluster-daily-split)
+    (--filter (org-x-cluster-overloaded-p it))))
 
 ;; conflict/overload frontend
 

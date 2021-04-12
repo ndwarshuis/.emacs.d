@@ -1698,7 +1698,9 @@ Save all org buffers 1 minute before the hour.
 Org extras
 #+BEGIN_SRC emacs-lisp
 (use-package org-ml
-  :straight t)
+  :straight t
+  :config
+  (setq org-ml-memoize-match-patterns t))
   
 (add-to-list 'load-path (nd/expand-lib-directory "org-x"))
 (require 'org-x)
