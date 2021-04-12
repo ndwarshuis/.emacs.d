@@ -66,6 +66,30 @@
 Currently used to tell skip functions when they can hop over
 entire subtrees to save time and ignore tasks")
 
+(defvar org-x-cluster-filter-files t
+  "Set to t if files should be filtered in org-cluster.
+This option does nothing unless `org-x-cluster-filtered-files' is
+also non-nil.")
+
+(defvar org-x-cluster-filtered-files nil
+  "Files that should be excluded from org-cluster analysis.
+These are pattern-matched so they do not need to be exact names
+or paths.")
+
+(defvar org-x-cluster-filter-todo t
+  "Set to t if todo keywords should be filtered in org-cluster.
+This option does nothing unless `org-x-cluster-filtered-todo' is
+also non-nil.")
+
+(defvar org-x-cluster-filtered-todo nil
+  "TODO keywords that should be filtered from org-cluster analysis.")
+
+(defvar org-x-cluster-filter-past t
+  "Set to t to exclude files from before now in org-cluster analysis.")
+
+(defvar org-x-cluster-filter-habit nil
+  "Set to t to exclude habits from org-cluster analysis.")
+
 ;; internal vars
 
 (defvar org-x-agenda-hide-incubator-tags t
@@ -1107,6 +1131,461 @@ and slow."
           (org-ml-headline-map-supercontents* config
             (org-ml-supercontents-set-logbook nil it)
             it))))))
+
+;; clustering
+;;
+;; Conflicts and overloads begin with the same list to process, which is created
+;; using `org-element-parse-buffer' and a variety of filtering functions to
+;; extract relevent timestamps.
+
+(defun org-x-cluster-make-tsp (unixtime range offset fp hardness &optional type)
+  "Construct a timestamp plist to be used in further processing.
+
+The fields are as follows:
+- UNIXTIME is the unixtime of the timestamp as an integer
+- RANGE is the duration of the timestamp (could be 0)
+- OFFSET is the character offset of the timestamp in its file
+- HARDNESS is a boolean denoting if the timestamp is 'hard' (has minutes and
+  hours) or 'soft' (only a date).
+- TYPE can be optionally supplied to denote kinds of timestamps
+  (only 'scheduled' for now).
+- FP the path to the file in which the timestamp resides"
+  (list :unixtime (round unixtime)
+        :range (or range 0)
+        :offset offset
+        :type type
+        :hardness hardness
+        :filepath fp))
+        
+(defun org-x-cluster-ts-hard-p (ts)
+  "Return non-nil if the timestamp TS has hours/minutes."
+  (org-element-property :hour-start ts))
+  
+(defun org-x-cluster-parse-ts (ts hl fp)
+  "Parse a timestamp TS belonging to headline HL and filepath FP.
+TS is an object as described in the org-element API. Only active
+or active-range types are considered. Returns a new timestamp-plist
+for TS."
+  (when ts
+    (let* ((offset (org-element-property :begin hl))
+           (hardness (org-x-cluster-ts-hard-p ts))
+           (split
+            (lambda (ts &optional end)
+              (--> ts
+                   (org-timestamp-split-range it end)
+                   (org-element-property :raw-value it)
+                   (org-2ft it))))
+           (start (funcall split ts)))
+      (if (eq (org-element-property :type ts) 'active-range)
+          (let ((range (--> ts (funcall split it t) (- it start))))
+            (org-x-cluster-make-tsp start range offset fp hardness))
+        (org-x-cluster-make-tsp start 0 offset fp hardness)))))
+        
+(defun org-x-cluster-effort-seconds (effort-str)
+  "Convert EFFORT-STR into an integer in seconds from HH:MM format."
+  (-some->> effort-str (org-duration-to-minutes) (* 60)))
+  ;; (let ((effort-str (string-trim effort-str)))
+  ;;   (save-match-data
+  ;;     (cond
+  ;;      ((string-match "^\\([0-9]+\\):\\([0-6][0-9]\\)$" effort-str)
+  ;;       (let ((hours (->> effort-str
+  ;;                         (match-string 1)
+  ;;                         string-to-number
+  ;;                         (* 60))))
+  ;;         (->> effort-str
+  ;;              (match-string 2)
+  ;;              string-to-number
+  ;;              (+ hours)
+  ;;              (* 60))))
+  ;;      (t (error (format "Unknown effort: %s'" effort-str)))))))
+
+(defun org-x-cluster-extract (acc fun objs &rest args)
+  "Run FUN on each of OBJS and put results into accumulator ACC.
+FUN is a function that takes the accumulator as its first argument,
+one member of OBJS as the second, and ARGS as the rest if supplied."
+  (while objs
+    (setq acc (apply fun acc (car objs) args)
+          objs (cdr objs)))
+  acc)
+
+(defun org-x-cluster-extract-hl-sched (acc hl fp)
+  "Extract scheduled timestamp from headline HL in filepath FP.
+Create a new timestamp-plist and add to accumulator ACC."
+  (let* ((ts (org-element-property :scheduled hl))
+         (unixtime (->> ts (org-element-property :raw-value) org-2ft))
+         (range (-some->> hl
+                          (org-element-property :EFFORT)
+                          org-x-cluster-effort-seconds))
+         (hardness (org-x-cluster-ts-hard-p ts))
+         (offset (org-element-property :begin hl)))
+    (if (= 0 unixtime) acc
+      (-> unixtime
+          (org-x-cluster-make-tsp range offset fp hardness 'scheduled)
+          (cons acc)))))
+
+(defun org-x-cluster-extract-hl-ts (acc hl fp)
+  "Extract timestamps from headline HL in filepath FP.
+All active timestamps that are not in drawers or the planning header 
+are considered. Each timestamp is converted into a new timestamp-plist
+and added to accumulator ACC."
+  (--> hl
+       (assoc 'section it)
+       (org-element-contents it)
+       (--remove
+        (or (eq 'planning (org-element-type it))
+            (eq 'property-drawer (org-element-type it))
+            (eq 'drawer (org-element-type it)))
+        it)
+       (org-element-map it 'timestamp #'identity)
+       (--filter
+        (or (eq 'active (org-element-property :type it))
+            (eq 'active-range (org-element-property :type it)))
+        it)
+       (--map (org-x-cluster-parse-ts it hl fp) it)
+       (append acc it)))
+
+(defun org-x-cluster-extract-hl (acc hl fp)
+  "Extract timestamps from headline HL in filepath FP and store in ACC."
+  (-> acc
+      (org-x-cluster-extract-hl-sched hl fp)
+      (org-x-cluster-extract-hl-ts hl fp)))
+
+(defun org-x-cluster-filter-todo (hls)
+  "Filter certain TODO keywords from headline list HLS."
+  (if (not org-x-cluster-filter-todo) hls
+    (--remove
+     (member (org-element-property :todo-keyword it)
+                      org-x-cluster-filtered-todo)
+     hls)))
+
+(defun org-x-cluster-filter-files (fps)
+  "Filter certain file names from files list FPS."
+  (if (not org-x-cluster-filter-files) fps
+    (--remove
+     (-find (lambda (s) (string-match-p s it)) org-x-cluster-filtered-files)
+     fps)))
+
+(defun org-x-cluster-filter-past (tsps)
+  "Filter out timestamp-plists in list TSPS if they start in the past."
+  (if (not org-x-cluster-filter-past) tsps
+    (let ((ft (float-time)))
+      (--remove (< (plist-get it :unixtime) ft) tsps))))
+
+(defun org-x-cluster-filter-habit (hls)
+  "Filter headlines from headline list HLS that are habits."
+  (if (not org-x-cluster-filter-habit) hls
+    (--remove (org-element-property :STYLE it) hls)))
+
+(defun org-x-cluster-extract-file (acc fp)
+  "Extract timestamps from filepath FP and add to accumulator ACC."
+  (-->
+   fp
+   (find-file-noselect it t)
+   (with-current-buffer it (org-element-parse-buffer))
+   (org-element-map it 'headline #'identity)
+   (org-x-cluster-filter-todo it)
+   (org-x-cluster-filter-habit it)
+   (org-x-cluster-extract acc #'org-x-cluster-extract-hl it fp)))
+  
+(defun org-x-cluster-get-unprocessed ()
+  "Return a list of timestamp-plists with desired filter settings."
+  (->>
+   ;; (list "~/Org/reference/testconflict.org")
+   (org-agenda-files)
+   org-x-cluster-filter-files
+   (org-x-cluster-extract nil #'org-x-cluster-extract-file)   
+   org-x-cluster-filter-past))
+
+;; get conflict headlines
+;;
+;; This algorithm builds a list of pairs, with each pair being a two tasks that
+;; conflict and should be O(n) (best case/no conflicts) to O(n^2) (worst
+;; case/everything conflicts).
+;;
+;; Steps for this:
+;; 1. make a list of all entries containing timestamps (active and scheduled)
+;; 2. sort timestamp list
+;; 3. Walk through list and compare entries immediately after (sorting ensures
+;;    that entries can be skipped once one non-conflict is found). If conflicts
+;;    are found push the pair to new list.
+
+(defun org-x-cluster-conflicting-p (tsp-a tsp-b)
+  "Return t if timestamps TS-A and TS-B conflict."
+  ;; assume that ts-a starts before ts-b
+  (let* ((start-a (plist-get tsp-a :unixtime))
+         (start-b (plist-get tsp-b :unixtime))
+         (end-a (-> tsp-a (plist-get :range) (+ start-a))))
+    (or (= start-a start-b) (< start-b end-a))))
+
+(defun org-x-cluster-find-conflict (tsp tsps conlist)
+  "Test if timestamp-plist TSP conflicts with any in TSPS.
+If found, anything in TSPS is cons'd with TSP and added to CONLIST
+as a pair. New CONLIST is returned."
+  (->> tsps
+       (--take-while (org-x-cluster-conflicting-p tsp it))
+       (--map (cons tsp it))
+       (append conlist)))
+  
+(defun org-x-cluster-build-conlist (tsps)
+  "Build a list of conflict pairs from timestamp-plist TSPS."
+  (let ((conlist))
+    (while (< 1 (length tsps))
+      (setq conlist (org-x-cluster-find-conflict (car tsps)
+                                                  (cdr tsps)
+                                                  conlist)
+            tsps (cdr tsps)))
+    conlist))
+
+(defun org-x-cluster-get-conflicts ()
+  "Return a list of cons cells representing conflict pairs.
+Each member in the cons cell is a timestamp-plist."
+  (->>
+   (org-x-cluster-get-unprocessed)
+   (--filter (plist-get it :hardness))
+   (--sort (< (plist-get it :unixtime) (plist-get other :unixtime)))
+   org-x-cluster-build-conlist))
+
+;; get overloaded days
+;;
+;; Overloads are defined as days that have more than 24 hours worth of scheduled
+;; material. The algorithm is O(n) as it is basically just a bunch of filtering
+;; functions that walk through the list.
+;;
+;; Steps for the algorithm:
+;; 1. filter only ranged entries (unranged entries have zero time)
+;; 2. maybe split timestamps if they span multiple days
+;; 3. sort from earliest to latest starting time
+;; 4. sum the range of timestamps in each day, keeping those that exceed 24 hours
+
+(defun org-x-cluster-split-day-bounds (tsps)
+  "Split timestamp-plists in TSPS via daily boundaries.
+Returns a new timestamp-plist with equal or greater length depending
+on how many members needed splitting."
+  (letrec
+      ((new
+        (lambda (start end tsp)
+          (org-x-cluster-make-tsp start
+                                      (- end start)
+                                      (plist-get tsp :offset)
+                                      (plist-get tsp :filepath)
+                                      (plist-get tsp :hardness)
+                                      (plist-get tsp :type))))
+       ;; need to temporarily offset the epoch time so day
+       ;; boundaries line up in local time
+       (split
+        (lambda (start end tsp)
+          (let* ((tzs-a (-> start current-time-zone car))
+                 (tzs-b (-> end current-time-zone car))
+                 (start* (-> end (+ tzs-b) (ceiling 86400) 1- (* 86400) (- tzs-b))))
+            (if (> start* (-> start (+ tzs-a) (floor 86400) (* 86400) (- tzs-a)))
+                (cons (funcall new start* end tsp)
+                      (funcall split start start* tsp))
+              (list (funcall new start end tsp))))))
+       (split-maybe
+        (lambda (tsp)
+          (let* ((start (plist-get tsp :unixtime))
+                 (end (+ start (plist-get tsp :range)))
+                 (tzs (-> start current-time-zone car)))
+            (if (< (-> start (+ tzs) (ceiling 86400)) end)
+                (funcall split start end tsp)
+              tsp)))))
+    (--mapcat (funcall split-maybe it) tsps)))
+
+(defun org-x-cluster-daily-split (tsps)
+  "Group timestamp-plist TSPS into sublists for each day."
+  (letrec ((tz-shift (lambda (tsp) (-> tsp current-time-zone car (+ tsp)))))
+    (->>
+     tsps
+     (--partition-by (--> it
+                          (plist-get it :unixtime)
+                          (funcall tz-shift it)
+                          (floor it 86400))))))
+                          
+(defun org-x-cluster-overloaded-p (tsps)
+  "Return t if total time of timestamp-plists in TSPS exceeds 24 hours.
+It is assumed the TSPS represents tasks and appointments within one
+day."
+  (letrec ((ts2diff
+            (lambda (tsp)
+              (let ((start (plist-get tsp :unixtime)))
+                (- (-> tsp (plist-get :range) (+ start)) start)))))
+    (->> tsps (--map (funcall ts2diff it)) -sum (<= 86400))))
+                          
+(defun org-x-cluster-get-overloads ()
+  "Return list of lists of timestamp-plists grouped by day.
+Anything present represents all the tasks in a single day if that day
+is overloaded. If a day is not overloaded there will be nothing for it
+in the returned list."
+  (->>
+   (org-x-cluster-get-unprocessed)
+   (--filter (< 0 (plist-get it :range)))
+   org-x-cluster-split-day-bounds
+   (--sort (< (plist-get it :unixtime) (plist-get other :unixtime)))
+   org-x-cluster-daily-split
+   (--filter (org-x-cluster-overloaded-p it))))
+
+;; conflict/overload frontend
+
+;; I could just fetch the org headings and throw them into a new buffer. But
+;; that's boring, and quite limiting. I basically want all the perks of an
+;; agenda buffer...tab-follow, the nice parent display at the bottom, time
+;; adjust hotkeys, etc. So the obvious and hacky solution is to throw together a
+;; quick-n-dirty agenda buffer.
+
+(defun org-x-cluster-headline-text (ts-entry)
+  "Return string with text properties representing the org header for
+MARKER for use in the conflict agenda view."
+  (let* ((offset (plist-get ts-entry :offset))
+         (ts-marker (--> ts-entry
+                         (plist-get it :filepath)
+                         (find-file-noselect it)
+                         (with-current-buffer it
+                           (copy-marker offset))))
+         (props (list
+                 'face nil
+		         'done-face 'org-agenda-done
+		         'org-not-done-regexp org-not-done-regexp
+		         'org-todo-regexp org-todo-regexp
+		         'org-complex-heading-regexp org-complex-heading-regexp
+		         'mouse-face 'highlight))
+	     marker priority category level tags todo-state
+	     ts-date ts-date-type ts-date-pair
+	     txt beg end inherited-tags todo-state-end-pos)
+
+    (with-current-buffer (marker-buffer ts-marker) 
+      (save-excursion
+	    (goto-char ts-marker)
+
+	    (setq marker (org-agenda-new-marker (point))
+	          category (org-get-category)
+	          ts-date-pair (org-agenda-entry-get-agenda-timestamp (point))
+	          ts-date (car ts-date-pair)
+	          ts-date-type (cdr ts-date-pair)
+	          txt (org-get-heading t)
+	          inherited-tags
+	          (or (eq org-agenda-show-inherited-tags 'always)
+		          (and (listp org-agenda-show-inherited-tags)
+		               (memq 'todo org-agenda-show-inherited-tags))
+		          (and (eq org-agenda-show-inherited-tags t)
+		               (or (eq org-agenda-use-tag-inheritance t)
+			               (memq 'todo org-agenda-use-tag-inheritance))))
+	          tags (org-get-tags-at nil (not inherited-tags))
+	          level (make-string (org-reduced-level (org-outline-level)) ? )
+	          txt (org-agenda-format-item "" txt level category tags t)
+	          priority (1+ (org-get-priority txt)))
+        
+	    (org-add-props txt props
+	      'org-marker marker 'org-hd-marker marker
+	      'priority priority
+	      'level level
+	      'ts-date ts-date
+	      'type "timestamp")))))
+
+(defun org-x-cluster-ts-fmt (ts)
+  (let ((fmt "[%Y-%m-%d]"))
+    (--> ts (plist-get it :unixtime) (format-time-string fmt it))))
+
+;; TODO...waaaaay too wet (not DRY)
+(defun org-x-cluster-show-conflicts (&optional arg)
+  (interactive "P")
+
+  (if org-agenda-overriding-arguments
+      (setq arg org-agenda-overriding-arguments))
+
+  (if (and (stringp arg) (not (string-match "\\S-" arg))) (setq arg nil))
+
+  (let* ((today (org-today))
+	     (date (calendar-gregorian-from-absolute today))
+	     (completion-ignore-case t)
+         (org-agenda-prefix-format '((agenda . "  %-12:c %-5:e ")))
+	     rtn rtnall files file pos)
+
+    (catch 'exit
+      (when org-agenda-sticky (setq org-agenda-buffer-name "*Org Conflicts*"))
+
+      (org-agenda-prepare)
+      ;; (org-compile-prefix-format 'todo)
+      (org-compile-prefix-format 'agenda)
+      ;; (org-set-sorting-strategy 'todo)
+
+      (setq org-agenda-redo-command '(org-x-cluster-show-conflicts))
+
+	  (insert "Conflicting Headings: \n")
+	  (add-text-properties (point-min) (1- (point))
+			               (list 'face 'org-agenda-structure
+				                 'short-heading "Conflicts"))
+	  (org-agenda-mark-header-line (point-min))
+
+      (-some->
+       (org-x-cluster-get-conflicts)
+       (--each
+           (insert (concat
+                    "At " (org-x-cluster-ts-fmt (car it)) "\n"
+                    (org-x-cluster-headline-text (car it)) "\n"
+                    (org-x-cluster-headline-text (cdr it)) "\n"
+                    "\n"))))
+
+      ;; clean up and finalize
+      (goto-char (point-min))
+      (or org-agenda-multi (org-agenda-fit-window-to-buffer))
+      (add-text-properties
+       (point-min) (point-max)
+	   `(org-agenda-type agenda
+					     org-last-args ,arg
+					     org-redo-cmd ,org-agenda-redo-command
+					     org-series-cmd ,org-cmd))
+      (org-agenda-finalize)
+      (setq buffer-read-only t))))
+
+(defun org-x-cluster-show-overloads (&optional arg)
+  (interactive "P")
+
+  (if org-agenda-overriding-arguments
+      (setq arg org-agenda-overriding-arguments))
+
+  (if (and (stringp arg) (not (string-match "\\S-" arg))) (setq arg nil))
+
+  (let* ((today (org-today))
+	     (date (calendar-gregorian-from-absolute today))
+	     (completion-ignore-case t)
+         (org-agenda-prefix-format '((agenda . "  %-12:c %-5:e ")))
+	     rtn rtnall files file pos)
+
+    (catch 'exit
+      (when org-agenda-sticky (setq org-agenda-buffer-name "*Org Overloads*"))
+
+      (org-agenda-prepare)
+      ;; (org-compile-prefix-format 'todo)
+      (org-compile-prefix-format 'agenda)
+      ;; (org-set-sorting-strategy 'todo)
+
+      (setq org-agenda-redo-command '(org-x-cluster-show-overloads))
+
+	  (insert "Overloaded Days: \n")
+	  (add-text-properties (point-min) (1- (point))
+			               (list 'face 'org-agenda-structure
+				                 'short-heading "Overloads"))
+	  (org-agenda-mark-header-line (point-min))
+
+      (-some->
+       (org-x-cluster-get-overloads)
+       (--each
+           (insert (concat
+                    "On " (org-x-cluster-ts-fmt (car it)) "\n"
+                    (mapconcat #'org-x-cluster-headline-text it "\n")
+                    "\n"))))
+
+      ;; clean up and finalize
+      (goto-char (point-min))
+      (or org-agenda-multi (org-agenda-fit-window-to-buffer))
+      (add-text-properties
+       (point-min) (point-max)
+	   `(org-agenda-type agenda
+					     org-last-args ,arg
+					     org-redo-cmd ,org-agenda-redo-command
+					     org-series-cmd ,org-cmd))
+      (org-agenda-finalize)
+      (setq buffer-read-only t))))
 
 (provide 'org-x)
 ;;; org-x.el ends here
