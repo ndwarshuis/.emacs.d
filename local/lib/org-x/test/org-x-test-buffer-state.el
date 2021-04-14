@@ -430,64 +430,68 @@ Forms are denoted like %(FORM)%."
 (defmacro org-x--test-time-splitter-specs (&rest specs)
   (declare (indent 0))
   ;; 3 args for clarity, currently does nothing functional
-  (let ((forms (->> (-partition 4 specs)
-                 (--map (-let (((title input _useless-sugar output) it))
-                          `(it ,title
-                             (expect (org-x-cluster-split-tsp-maybe ,input)
-                                     :to-equal
-                                     ,output)))))))
+  (let ((forms
+         (->> (-partition 4 specs)
+           (--map (-let* (((title input _useless-sugar output) it)
+                          (extra '(:offset 0 :filepath "bass4urface"))
+                          (input* (append input extra))
+                          (output* (--map (append it extra) output)))
+                    `(it ,title
+                       (expect (org-x-cluster-split-tsp-maybe ',input*)
+                               :to-equal
+                               ',output*)))))))
     `(describe "Time splitter"
        ,@forms)))
 
 (org-x--test-time-splitter-specs
   "zero range"
-  '(:start-time (2021 1 1 0 0) :range 0 :fp "")
-  => '((:start-time (2021 1 1 0 0) :range 0 :fp ""))
+  (:start-time (2021 1 1 0 0) :range 0)
+  => ((:start-time (2021 1 1 0 0) :range 0))
 
   "1-hour range"
-  '(:start-time (2021 1 1 0 0) :range 3600 :fp "")
-  => '((:start-time (2021 1 1 0 0) :range 3600 :fp ""))
+  (:start-time (2021 1 1 0 0) :range 3600)
+  => ((:start-time (2021 1 1 0 0) :range 3600))
 
   "12-hour range (noon start)"
-  '(:start-time (2021 1 1 12 0) :range 43200 :fp "")
-  => '((:start-time (2021 1 1 12 0) :range 43200 :fp ""))
+  (:start-time (2021 1 1 12 0) :range 43200)
+  => ((:start-time (2021 1 1 12 0) :range 43200))
 
   "24-hour range (day boundary)"
-  '(:start-time (2021 1 1 0 0) :range 86400 :fp "")
-  => '((:start-time (2021 1 1 0 0) :range 86400 :fp ""))
+  (:start-time (2021 1 1 0 0) :range 86400)
+  => ((:start-time (2021 1 1 0 0) :range 86400))
 
   "24-hour range (noon start)"
-  '(:start-time (2021 1 1 12 0) :range 86400 :fp "")
-  => '((:start-time (2021 1 1 12 0) :range 43200 :fp "")
-       (:start-time (2021 1 2 0 0) :range 43200 :fp ""))
+  (:start-time (2021 1 1 12 0) :range 86400)
+  => ((:start-time (2021 1 1 12 0) :range 43200)
+       (:start-time (2021 1 2 0 0) :range 43200))
 
   "48-hour range (day boundary)"
-  '(:start-time (2021 1 1 0 0) :range 172800 :fp "")
-  => '((:start-time (2021 1 1 0 0) :range 86400 :fp "")
-       (:start-time (2021 1 2 0 0) :range 86400 :fp ""))
+  (:start-time (2021 1 1 0 0) :range 172800)
+  => ((:start-time (2021 1 1 0 0) :range 86400)
+       (:start-time (2021 1 2 0 0) :range 86400))
 
   "48-hour range (noon start)"
-  '(:start-time (2021 1 1 12 0) :range 172800 :fp "")
-  => '((:start-time (2021 1 1 12 0) :range 43200 :fp "")
-       (:start-time (2021 1 2 0 0) :range 86400 :fp "")
-       (:start-time (2021 1 3 0 0) :range 43200 :fp ""))
+  (:start-time (2021 1 1 12 0) :range 172800)
+  => ((:start-time (2021 1 1 12 0) :range 43200)
+       (:start-time (2021 1 2 0 0) :range 86400)
+       (:start-time (2021 1 3 0 0) :range 43200))
 
   "zero range (short)"
-  '(:start-time (2021 1 1) :range 0 :fp "")
-  => '((:start-time (2021 1 1) :range 0 :fp ""))
+  (:start-time (2021 1 1) :range 0)
+  => ((:start-time (2021 1 1) :range 0))
 
   "1-hour range (short)"
-  '(:start-time (2021 1 1) :range 3600 :fp "")
-  => '((:start-time (2021 1 1 0 0) :range 3600 :fp ""))
+  (:start-time (2021 1 1) :range 3600)
+  => ((:start-time (2021 1 1 0 0) :range 3600))
 
   "24-hour range (short)"
-  '(:start-time (2021 1 1) :range 86400 :fp "")
-  => '((:start-time (2021 1 1 0 0) :range 86400 :fp ""))
+  (:start-time (2021 1 1) :range 86400)
+  => ((:start-time (2021 1 1 0 0) :range 86400))
 
   "48-hour range (short)"
-  '(:start-time (2021 1 1) :range 172800 :fp "")
-  => '((:start-time (2021 1 1 0 0) :range 86400 :fp "")
-       (:start-time (2021 1 2 0 0) :range 86400 :fp "")))
+  (:start-time (2021 1 1) :range 172800)
+  => ((:start-time (2021 1 1 0 0) :range 86400)
+       (:start-time (2021 1 2 0 0) :range 86400)))
 
 (provide 'org-x-test-buffer-state)
 ;;; org-x-test-buffer-state.el ends here

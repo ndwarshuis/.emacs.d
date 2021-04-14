@@ -1138,23 +1138,37 @@ and slow."
 ;; using `org-element-parse-buffer' and a variety of filtering functions to
 ;; extract relevent timestamps.
 
-(defun org-x-cluster-make-tsp (unixtime range offset fp hardness &optional type)
+;; (defun org-x-cluster-make-tsp (unixtime range offset fp hardness &optional type)
+;;   "Construct a timestamp plist to be used in further processing.
+
+;; The fields are as follows:
+;; - UNIXTIME is the unixtime of the timestamp as an integer
+;; - RANGE is the duration of the timestamp (could be 0)
+;; - OFFSET is the character offset of the timestamp in its file
+;; - HARDNESS is a boolean denoting if the timestamp is 'hard' (has minutes and
+;;   hours) or 'soft' (only a date).
+;; - TYPE can be optionally supplied to denote kinds of timestamps
+;;   (only 'scheduled' for now).
+;; - FP the path to the file in which the timestamp resides"
+;;   (list :unixtime (round unixtime)
+;;         :range (or range 0)
+;;         :offset offset
+;;         :type type
+;;         :hardness hardness
+;;         :filepath fp))
+
+(defun org-x-cluster-make-tsp (start-time range offset fp)
   "Construct a timestamp plist to be used in further processing.
 
 The fields are as follows:
-- UNIXTIME is the unixtime of the timestamp as an integer
+
+- START-TIME is a list from `org-ml-timestamp-get-start-time'
 - RANGE is the duration of the timestamp (could be 0)
 - OFFSET is the character offset of the timestamp in its file
-- HARDNESS is a boolean denoting if the timestamp is 'hard' (has minutes and
-  hours) or 'soft' (only a date).
-- TYPE can be optionally supplied to denote kinds of timestamps
-  (only 'scheduled' for now).
 - FP the path to the file in which the timestamp resides"
-  (list :unixtime (round unixtime)
-        :range (or range 0)
+  (list :start-time start-time
+        :range range
         :offset offset
-        :type type
-        :hardness hardness
         :filepath fp))
         
 (defun org-x-cluster-ts-hard-p (ts)
@@ -1168,24 +1182,14 @@ or active-range types are considered. Returns a new timestamp-plist
 for TS."
   (when ts
     (let ((offset (org-element-property :begin hl))
-          (hardness (org-x-cluster-ts-hard-p ts))
-          (start (->> (org-ml-timestamp-get-start-time ts)
-                   (org-ml-time-to-unixtime)))
+          (start-time (org-ml-timestamp-get-start-time ts))
           (range (org-ml-timestamp-get-range ts)))
-      (org-x-cluster-make-tsp start 0 offset fp hardness))))
+      (org-x-cluster-make-tsp start-time range offset fp))))
         
 (defun org-x-cluster-effort-seconds (effort-str)
   "Convert EFFORT-STR into an integer in seconds from HH:MM format."
   (-some->> effort-str (org-duration-to-minutes) (* 60)))
 
-;; (defun org-x-cluster-extract (acc fun objs &rest args)
-;;   "Run FUN on each of OBJS and put results into accumulator ACC.
-;; FUN is a function that takes the accumulator as its first argument,
-;; one member of OBJS as the second, and ARGS as the rest if supplied."
-;;   (while objs
-;;     (setq acc (apply fun acc (car objs) args)
-;;           objs (cdr objs)))
-;;   acc)
 
 (defun org-x-cluster-extract-hl-sched (hl fp)
   "Extract scheduled timestamp from headline HL in filepath FP.
@@ -1195,10 +1199,8 @@ Create a new timestamp-plist and add to accumulator ACC."
     (let* ((effort-raw (org-ml-headline-get-node-property "Effort" hl))
            (effort (if effort-raw (org-x-cluster-effort-seconds effort-raw) 0))
            (offset (org-ml-get-property :begin hl))
-           (start-time (org-ml-timestamp-get-start-time ts))
-           (start-epoch (org-ml-time-to-unixtime start-time))
-           (is-long (org-ml-time-is-long start-time)))
-      (org-x-cluster-make-tsp start-epoch effort offset fp is-long))))
+           (start-time (org-ml-timestamp-get-start-time ts)))
+      (org-x-cluster-make-tsp start-time effort offset fp))))
 
 (defun org-x-cluster-extract-hl-ts (hl fp)
   "Extract timestamps from headline HL in filepath FP.
@@ -1254,23 +1256,22 @@ and added to accumulator ACC."
   (->> (org-ml-parse-headlines 'all)
     (org-x-cluster-filter-todo)
     (org-x-cluster-filter-habit)
-    (--reduce-from (let ((new (org-x-cluster-extract-hl it fp)))
-                     (if new (cons new acc) acc))
-                   nil)))
+    (--map (org-x-cluster-extract-hl it fp))
+    (-non-nil)))
 
 (defun org-x-cluster-extract-file (fp)
   "Extract timestamps from filepath FP and add to accumulator ACC."
   (with-current-buffer (find-file-noselect fp t)
     (org-x-cluster-extract-buffer fp)))
+
+(defun org-x-cluster-append-unixtime (tsps)
+  (--map (append (list :unixtime (org-ml-time-to-unixtime (plist-get it :start-time))) it) tsps))
   
 (defun org-x-cluster-get-unprocessed ()
   "Return a list of timestamp-plists with desired filter settings."
   (->> (org-agenda-files)
     (org-x-cluster-filter-files)
-    (--reduce-from (let ((new (org-x-cluster-extract-file it)))
-                     (if new (append new acc) acc))
-                   nil)
-    (org-x-cluster-filter-past)))
+    (-mapcat #'org-x-cluster-extract-file)))
 
 ;; get conflict headlines
 ;;
@@ -1317,9 +1318,11 @@ as a pair. New CONLIST is returned."
 Each member in the cons cell is a timestamp-plist."
   (->>
    (org-x-cluster-get-unprocessed)
-   (--filter (plist-get it :hardness))
+   (--filter (org-ml-time-is-long (plist-get it :start-time)))
+   (org-x-cluster-append-unixtime)
+   (org-x-cluster-filter-past)
    (--sort (< (plist-get it :unixtime) (plist-get other :unixtime)))
-   org-x-cluster-build-conlist))
+   (org-x-cluster-build-conlist)))
 
 ;; get overloaded days
 ;;
@@ -1335,100 +1338,57 @@ Each member in the cons cell is a timestamp-plist."
 
 (defun org-x-cluster-split-tsp-maybe (tsp)
   "Split TSP if it spans multiple days."
-  ;; NOTE, `encode-time' seems pretty slow but this is necessary since some
+  ;; NOTE: `encode-time' seems pretty slow but this is necessary since some
   ;; barbarians in power insist on keep daylight savings time, which means I
   ;; can't just do straight modular arithmetic to find where each day boundary
   ;; lies.
-  (-let (((&plist :start-time :range :fp) tsp))
-    (if (= range 0) (list tsp)
-      (-let* (((y m d H M) start-time)
-              (start-time* (if (and H M) start-time `(,@start-time 0 0)))
-              (start-epoch (->> `(0 ,(or M 0) ,(or H 0) ,d ,m ,y nil nil nil)
-                             (encode-time)
-                             (float-time)
-                             (round)))
-              (end-epoch (+ start-epoch range))
-              (next t)
-              (split-epoch nil)
-              ((M* H* d* m* y*) '(nil nil nil nil nil))
-              (acc nil))
-        (while next
-          ;; get the projected ending time
-          (-setq (M* H* d* m* y*) (-take 5 (cdr (decode-time end-epoch))))
-          ;; Get the epoch time on which to split. If not on a day boundary,
-          ;; calculate the epoch time of the most recent day boundary. If on a
-          ;; day boundary, split on the boundary one full day earlier by
-          ;; decrementing day by one
-          (when (and (= 0 M*) (= 0 H*))
-            (setq d* (1- d*)))
-          (setq split-epoch (->> `(0 0 0 ,d* ,m* ,y* nil nil nil)
-                              (encode-time)
-                              (float-time)
-                              (round)))
-          ;; If the split-epoch is less than or equal to the start, loop is
-          ;; done. Else add a new entry and reset the projected ending time to
-          ;; the current split time; rinse and repeat.
-          (if (< start-epoch split-epoch)
-              (setq acc (cons (list :start-time `(,y* ,m* ,d* 0 0)
-                                    :range (- end-epoch split-epoch)
-                                    :fp fp)
-                              acc)
-                    end-epoch split-epoch)
-            (setq next nil
-                  acc (cons (list :start-time start-time*
-                                  :range (- end-epoch start-epoch)
-                                  :fp fp)
-                            acc))))
-        acc))))
+  (cl-flet
+      ((encode-float-time
+        (time)
+        (round (float-time (encode-time time)))))
+    (-let (((&plist :start-time :range :offset :filepath) tsp))
+      (if (= range 0) (list tsp)
+        ;; `encode-time' and `decode-time' might not use the right time zone
+        ;; unless specified manually
+        (-let* ((tz (current-time-zone))
+                (start-time* (if (org-ml-time-is-long start-time) start-time
+                               `(,@start-time 0 0)))
+                ((y m d H M) start-time*)
+                (start-epoch (encode-float-time `(0 ,M ,H ,d ,m ,y nil nil ,tz)))
+                (end-epoch (+ start-epoch range))
+                (next t)
+                (split-epoch nil)
+                ((M* H* d* m* y*) '(nil nil nil nil nil))
+                (acc nil))
+          (while next
+            ;; get the projected ending time
+            (-setq (M* H* d* m* y*) (-take 5 (cdr (decode-time end-epoch tz))))
+            ;; Get the epoch time on which to split. If not on a day boundary,
+            ;; calculate the epoch time of the most recent day boundary. If on a
+            ;; day boundary, split on the boundary one full day earlier by
+            ;; decrementing day by one
+            (when (and (= 0 M*) (= 0 H*))
+              (setq d* (1- d*)))
+            (setq split-epoch (encode-float-time `(0 0 0 ,d* ,m* ,y* nil nil ,tz)))
+            ;; If the split-epoch is less than or equal to the start, loop is
+            ;; done. Else add a new entry and reset the projected ending time to
+            ;; the current split time; rinse and repeat.
+            (if (< start-epoch split-epoch)
+                (setq acc (cons (org-x-cluster-make-tsp
+                                 `(,y* ,m* ,d* 0 0) (- end-epoch split-epoch)
+                                 offset filepath)
+                                acc)
+                      end-epoch split-epoch)
+              (setq next nil
+                    acc (cons (org-x-cluster-make-tsp
+                               start-time* (- end-epoch start-epoch) offset filepath)
+                              acc))))
+          acc)))))
 
-(defun org-x-cluster-split-day-bounds (tsps)
-  "Split timestamp-plists in TSPS via daily boundaries.
-Returns a new timestamp-plist with equal or greater length depending
-on how many members needed splitting."
-  (letrec
-      ((new
-        (lambda (start end tsp)
-          (org-x-cluster-make-tsp start
-                                      (- end start)
-                                      (plist-get tsp :offset)
-                                      (plist-get tsp :filepath)
-                                      (plist-get tsp :hardness)
-                                      (plist-get tsp :type))))
-       ;; need to temporarily offset the epoch time so day
-       ;; boundaries line up in local time
-       (split
-        (lambda (start end tsp)
-          (let* ((tzs-a (-> start current-time-zone car))
-                 (tzs-b (-> end current-time-zone car))
-                 (start* (-> end
-                           (+ tzs-b)
-                           (ceiling 86400)
-                           (1-)
-                           (* 86400)
-                           (- tzs-b))))
-            (if (> start* (-> start (+ tzs-a) (floor 86400) (* 86400) (- tzs-a)))
-                (cons (funcall new start* end tsp)
-                      (funcall split start start* tsp))
-              (list (funcall new start end tsp))))))
-       (split-maybe
-        (lambda (tsp)
-          (let* ((start (plist-get tsp :unixtime))
-                 (end (+ start (plist-get tsp :range)))
-                 (tzs (-> start current-time-zone car)))
-            (if (< (-> start (+ tzs) (ceiling 86400)) end)
-                (funcall split start end tsp)
-              tsp)))))
-    (--mapcat (funcall split-maybe it) tsps)))
 
 (defun org-x-cluster-daily-split (tsps)
   "Group timestamp-plist TSPS into sublists for each day."
-  (letrec ((tz-shift (lambda (tsp) (-> tsp current-time-zone car (+ tsp)))))
-    (->>
-     tsps
-     (--partition-by (--> it
-                          (plist-get it :unixtime)
-                          (funcall tz-shift it)
-                          (floor it 86400))))))
+  (--partition-by (-take 3 (plist-get it :start-time)) tsps))
                           
 (defun org-x-cluster-overloaded-p (tsps)
   "Return t if total time of timestamp-plists in TSPS exceeds 24 hours.
@@ -1447,7 +1407,9 @@ is overloaded. If a day is not overloaded there will be nothing for it
 in the returned list."
   (->> (org-x-cluster-get-unprocessed)
     (--filter (< 0 (plist-get it :range)))
-    (org-x-cluster-split-day-bounds)
+    (-mapcat #'org-x-cluster-split-tsp-maybe)
+    (org-x-cluster-append-unixtime)
+    (org-x-cluster-filter-past)
     (--sort (< (plist-get it :unixtime) (plist-get other :unixtime)))
     (org-x-cluster-daily-split)
     (--filter (org-x-cluster-overloaded-p it))))
