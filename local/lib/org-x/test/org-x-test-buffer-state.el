@@ -378,7 +378,7 @@ Forms are denoted like %(FORM)%."
      ":PARENT_TYPE: iterator"
      ":END:"
      "** TODO sub"
-     "SCHEDULED: %(org-x-gen-ts (+ (* 60 60 24) org-clone-iter-future-time))%")
+     "SCHEDULED: %(org-x-gen-ts (+ (* 60 60 24) org-x-iter-future-time))%")
     => :actv
 
     "project error"
@@ -388,7 +388,7 @@ Forms are denoted like %(FORM)%."
      ":END:"
      "** NEXT sub"
      "*** TODO subsub"
-     "SCHEDULED: %(org-x-gen-ts (1+ org-clone-iter-future-time))%")
+     "SCHEDULED: %(org-x-gen-ts (1+ org-x-iter-future-time))%")
     => :project-error)
 
 (org-x--test-buffer-strings "Periodical status"
@@ -416,7 +416,7 @@ Forms are denoted like %(FORM)%."
      ":PARENT_TYPE: periodical"
      ":END:"
      "** sub"
-     "%(org-x-gen-ts (+ (* 60 60 24) org-clone-peri-future-time) t)%")
+     "%(org-x-gen-ts (+ (* 60 60 24) org-x-peri-future-time) t)%")
     => :actv
 
     "unscheduled"
@@ -426,6 +426,68 @@ Forms are denoted like %(FORM)%."
      ":END:"
      "** sub")
     => :unscheduled)
+
+(defmacro org-x--test-time-splitter-specs (&rest specs)
+  (declare (indent 0))
+  ;; 3 args for clarity, currently does nothing functional
+  (let ((forms (->> (-partition 4 specs)
+                 (--map (-let (((title input _useless-sugar output) it))
+                          `(it ,title
+                             (expect (org-x-cluster-split-tsp-maybe ,input)
+                                     :to-equal
+                                     ,output)))))))
+    `(describe "Time splitter"
+       ,@forms)))
+
+(org-x--test-time-splitter-specs
+  "zero range"
+  '(:start-time (2021 1 1 0 0) :range 0 :fp "")
+  => '((:start-time (2021 1 1 0 0) :range 0 :fp ""))
+
+  "1-hour range"
+  '(:start-time (2021 1 1 0 0) :range 3600 :fp "")
+  => '((:start-time (2021 1 1 0 0) :range 3600 :fp ""))
+
+  "12-hour range (noon start)"
+  '(:start-time (2021 1 1 12 0) :range 43200 :fp "")
+  => '((:start-time (2021 1 1 12 0) :range 43200 :fp ""))
+
+  "24-hour range (day boundary)"
+  '(:start-time (2021 1 1 0 0) :range 86400 :fp "")
+  => '((:start-time (2021 1 1 0 0) :range 86400 :fp ""))
+
+  "24-hour range (noon start)"
+  '(:start-time (2021 1 1 12 0) :range 86400 :fp "")
+  => '((:start-time (2021 1 1 12 0) :range 43200 :fp "")
+       (:start-time (2021 1 2 0 0) :range 43200 :fp ""))
+
+  "48-hour range (day boundary)"
+  '(:start-time (2021 1 1 0 0) :range 172800 :fp "")
+  => '((:start-time (2021 1 1 0 0) :range 86400 :fp "")
+       (:start-time (2021 1 2 0 0) :range 86400 :fp ""))
+
+  "48-hour range (noon start)"
+  '(:start-time (2021 1 1 12 0) :range 172800 :fp "")
+  => '((:start-time (2021 1 1 12 0) :range 43200 :fp "")
+       (:start-time (2021 1 2 0 0) :range 86400 :fp "")
+       (:start-time (2021 1 3 0 0) :range 43200 :fp ""))
+
+  "zero range (short)"
+  '(:start-time (2021 1 1) :range 0 :fp "")
+  => '((:start-time (2021 1 1) :range 0 :fp ""))
+
+  "1-hour range (short)"
+  '(:start-time (2021 1 1) :range 3600 :fp "")
+  => '((:start-time (2021 1 1 0 0) :range 3600 :fp ""))
+
+  "24-hour range (short)"
+  '(:start-time (2021 1 1) :range 86400 :fp "")
+  => '((:start-time (2021 1 1 0 0) :range 86400 :fp ""))
+
+  "48-hour range (short)"
+  '(:start-time (2021 1 1) :range 172800 :fp "")
+  => '((:start-time (2021 1 1 0 0) :range 86400 :fp "")
+       (:start-time (2021 1 2 0 0) :range 86400 :fp "")))
 
 (provide 'org-x-test-buffer-state)
 ;;; org-x-test-buffer-state.el ends here

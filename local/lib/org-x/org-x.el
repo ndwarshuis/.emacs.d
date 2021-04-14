@@ -1333,24 +1333,53 @@ Each member in the cons cell is a timestamp-plist."
 ;; 3. sort from earliest to latest starting time
 ;; 4. sum the range of timestamps in each day, keeping those that exceed 24 hours
 
-;; (defun org-x-cluster-split-tsp-maybe (tsp)
-;;   "Split TIMESTAMP if it spans multiple days."
-;;   (-let (((&plist :start-time :range) tsp))
-;;     (if (= range 0) (list tsp)
-;;       ;; assume long time (for now)
-;;       (let* (((y m d H M) start-time)
-;;              (et* (encode-time `(0 ,M ,M ,d ,m ,y nil nil nil)))
-;;              ((M* H* d* m* y*) (-take 5 (cdr (decode-time et*)))))
-;;         (if (or (< d d*) (< m m*) (< y y*))
-;;             (let ((range* (- (float-time et*)
-;;                              (float-time (encode-time `(0 0 0 ,d* ,m* ,y* nil nil nil))))))
-;;               (
-                                  
-        ;;      (start-offset-sec (if (and H M) (* 60 (+ M (* 60 H))) 0))
-        ;;      (spanned-days (1- (/ (+ start-offset-sec range) (* 24 60 60)))))
-        ;; (if (= 0 spanned-days) (list (list :start-time start-time :range range))
-        ;;   (let ((first-range (- (* 24 60 60) start-offset-sec))
-        ;;         (last-range (% (+ start-offset-sec range) (* 24 60 60))))
+(defun org-x-cluster-split-tsp-maybe (tsp)
+  "Split TSP if it spans multiple days."
+  ;; NOTE, `encode-time' seems pretty slow but this is necessary since some
+  ;; barbarians in power insist on keep daylight savings time, which means I
+  ;; can't just do straight modular arithmetic to find where each day boundary
+  ;; lies.
+  (-let (((&plist :start-time :range :fp) tsp))
+    (if (= range 0) (list tsp)
+      (-let* (((y m d H M) start-time)
+              (start-time* (if (and H M) start-time `(,@start-time 0 0)))
+              (start-epoch (->> `(0 ,(or M 0) ,(or H 0) ,d ,m ,y nil nil nil)
+                             (encode-time)
+                             (float-time)
+                             (round)))
+              (end-epoch (+ start-epoch range))
+              (next t)
+              (split-epoch nil)
+              ((M* H* d* m* y*) '(nil nil nil nil nil))
+              (acc nil))
+        (while next
+          ;; get the projected ending time
+          (-setq (M* H* d* m* y*) (-take 5 (cdr (decode-time end-epoch))))
+          ;; Get the epoch time on which to split. If not on a day boundary,
+          ;; calculate the epoch time of the most recent day boundary. If on a
+          ;; day boundary, split on the boundary one full day earlier by
+          ;; decrementing day by one
+          (when (and (= 0 M*) (= 0 H*))
+            (setq d* (1- d*)))
+          (setq split-epoch (->> `(0 0 0 ,d* ,m* ,y* nil nil nil)
+                              (encode-time)
+                              (float-time)
+                              (round)))
+          ;; If the split-epoch is less than or equal to the start, loop is
+          ;; done. Else add a new entry and reset the projected ending time to
+          ;; the current split time; rinse and repeat.
+          (if (< start-epoch split-epoch)
+              (setq acc (cons (list :start-time `(,y* ,m* ,d* 0 0)
+                                    :range (- end-epoch split-epoch)
+                                    :fp fp)
+                              acc)
+                    end-epoch split-epoch)
+            (setq next nil
+                  acc (cons (list :start-time start-time*
+                                  :range (- end-epoch start-epoch)
+                                  :fp fp)
+                            acc))))
+        acc))))
 
 (defun org-x-cluster-split-day-bounds (tsps)
   "Split timestamp-plists in TSPS via daily boundaries.
