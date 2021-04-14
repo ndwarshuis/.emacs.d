@@ -4149,6 +4149,14 @@ The only thing I like about elpy is the interactive shell
   (:pop-marker-stack . xref-pop-marker-stack)
   (:doc-at . anaconda-mode-show-doc))
 #+END_SRC
+*** javascript
+#+begin_src emacs-lisp
+(nd/hydra-standard-int js-mode-map
+ (:send-line . js-comint-send-last-sexp)
+ (:send-region . js-comint-send-region)
+ (:send-buffer . js-comint-send-buffer)
+ (:shell-start . js-comint-start-or-switch-to-repl))
+#+end_src
 *** haskell
 :PROPERTIES:
 :ID:       13ba50e8-b72d-498f-b7d8-d9f24cbb138d
