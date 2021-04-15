@@ -427,6 +427,95 @@ Forms are denoted like %(FORM)%."
      "** sub")
     => :unscheduled)
 
+
+(org-x--test-buffer-strings "Conflicts"
+    (->> (org-x-cluster-extract-buffer "fp")
+      (org-x-cluster-get-conflicts*)
+      ;; drop the :unixtime key from the front to make testing easier
+      (--map (--map (-drop 2 it) it)))
+
+    "no timestamps"
+    ("* TODO one"
+     "* TODO two")
+    => nil
+
+    "two scheduled timestamps"
+    ("* TODO one"
+     "SCHEDULED: [2022-01-01 Tue 12:00]"
+     "* TODO two"
+     "SCHEDULED: [2022-01-01 Tue 12:00]")
+    => '(((:start-time (2022 1 1 12 0) :range 0 :offset 1 :filepath "fp")
+          (:start-time (2022 1 1 12 0) :range 0 :offset 46 :filepath "fp")))
+
+    "scheduled timestamps + active timestamp"
+    ("* TODO one"
+     "SCHEDULED: [2022-01-01 Tue 12:00]"
+     "* two"
+     "<2022-01-01 Tue 12:00>")
+    => '(((:start-time (2022 1 1 12 0) :range 0 :offset 1 :filepath "fp")
+          (:start-time (2022 1 1 12 0) :range 0 :offset 46 :filepath "fp")))
+
+    "two scheduled timestamps (staggered)"
+    ("* TODO one"
+     "SCHEDULED: [2022-01-01 Tue 12:00]"
+     ":PROPERTIES:"
+     ":Effort: 0:30"
+     ":END:"
+     "* TODO two"
+     "SCHEDULED: [2022-01-01 Tue 12:15]"
+     ":PROPERTIES:"
+     ":Effort: 0:30"
+     ":END:")
+    => '(((:start-time (2022 1 1 12 0) :range 1800 :offset 1 :filepath "fp")
+          (:start-time (2022 1 1 12 15) :range 1800 :offset 79 :filepath "fp")))
+
+    "scheduled + active (staggered)"
+    ("* TODO one"
+     "SCHEDULED: [2022-01-01 Tue 12:00]"
+     ":PROPERTIES:"
+     ":Effort: 0:30"
+     ":END:"
+     "* two"
+     "<2022-01-01 Tue 12:15-12:45>")
+    => '(((:start-time (2022 1 1 12 0) :range 1800 :offset 1 :filepath "fp")
+          (:start-time (2022 1 1 12 15) :range 1800 :offset 79 :filepath "fp")))
+
+    "two scheduled timestamps (non-overlapping)"
+    ("* TODO one"
+     "SCHEDULED: [2022-01-01 Tue 12:00]"
+     ":PROPERTIES:"
+     ":Effort: 0:05"
+     ":END:"
+     "* TODO two"
+     "SCHEDULED: [2022-01-01 Tue 12:15]"
+     ":PROPERTIES:"
+     ":Effort: 0:05"
+     ":END:")
+    => nil
+
+    "three scheduled timestamps (overlapping)"
+    ("* TODO one"
+     "SCHEDULED: [2022-01-01 Tue 12:00]"
+     ":PROPERTIES:"
+     ":Effort: 0:15"
+     ":END:"
+     "* TODO two"
+     "SCHEDULED: [2022-01-01 Tue 12:05]"
+     ":PROPERTIES:"
+     ":Effort: 0:15"
+     ":END:"
+     "* TODO three"
+     "SCHEDULED: [2022-01-01 Tue 12:10]"
+     ":PROPERTIES:"
+     ":Effort: 0:15"
+     ":END:")
+    => '(((:start-time (2022 1 1 12 0) :range 900 :offset 1 :filepath "fp")
+          (:start-time (2022 1 1 12 5) :range 900 :offset 79 :filepath "fp"))
+         ((:start-time (2022 1 1 12 0) :range 900 :offset 1 :filepath "fp")
+          (:start-time (2022 1 1 12 10) :range 900 :offset 157 :filepath "fp"))
+         ((:start-time (2022 1 1 12 5) :range 900 :offset 79 :filepath "fp")
+          (:start-time (2022 1 1 12 10) :range 900 :offset 157 :filepath "fp"))))
+
 (defmacro org-x--test-time-splitter-specs (&rest specs)
   (declare (indent 0))
   ;; 3 args for clarity, currently does nothing functional
@@ -442,6 +531,7 @@ Forms are denoted like %(FORM)%."
                                ',output*)))))))
     `(describe "Time splitter"
        ,@forms)))
+
 
 (org-x--test-time-splitter-specs
   "zero range"

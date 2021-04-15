@@ -1188,8 +1188,7 @@ for TS."
         
 (defun org-x-cluster-effort-seconds (effort-str)
   "Convert EFFORT-STR into an integer in seconds from HH:MM format."
-  (-some->> effort-str (org-duration-to-minutes) (* 60)))
-
+  (-some->> effort-str (org-duration-to-minutes) (round) (* 60)))
 
 (defun org-x-cluster-extract-hl-sched (hl fp)
   "Extract scheduled timestamp from headline HL in filepath FP.
@@ -1289,10 +1288,9 @@ and added to accumulator ACC."
 (defun org-x-cluster-conflicting-p (tsp-a tsp-b)
   "Return t if timestamps TS-A and TS-B conflict."
   ;; assume that ts-a starts before ts-b
-  (let* ((start-a (plist-get tsp-a :unixtime))
-         (start-b (plist-get tsp-b :unixtime))
-         (end-a (-> tsp-a (plist-get :range) (+ start-a))))
-    (or (= start-a start-b) (< start-b end-a))))
+  (let ((start-a (plist-get tsp-a :unixtime))
+        (start-b (plist-get tsp-b :unixtime)))
+    (or (= start-a start-b) (< start-b (+ start-a (plist-get tsp-a :range))))))
 
 (defun org-x-cluster-find-conflict (tsp tsps conlist)
   "Test if timestamp-plist TSP conflicts with any in TSPS.
@@ -1300,29 +1298,29 @@ If found, anything in TSPS is cons'd with TSP and added to CONLIST
 as a pair. New CONLIST is returned."
   (->> tsps
        (--take-while (org-x-cluster-conflicting-p tsp it))
-       (--map (cons tsp it))
+       (--map (list tsp it))
        (append conlist)))
   
 (defun org-x-cluster-build-conlist (tsps)
   "Build a list of conflict pairs from timestamp-plist TSPS."
   (let ((conlist))
     (while (< 1 (length tsps))
-      (setq conlist (org-x-cluster-find-conflict (car tsps)
-                                                  (cdr tsps)
-                                                  conlist)
+      (setq conlist (org-x-cluster-find-conflict (car tsps) (cdr tsps) conlist)
             tsps (cdr tsps)))
     conlist))
+
+(defun org-x-cluster-get-conflicts* (tsps)
+  (->> (--filter (org-ml-time-is-long (plist-get it :start-time)) tsps)
+    (org-x-cluster-append-unixtime)
+    (org-x-cluster-filter-past)
+    (--sort (< (plist-get it :unixtime) (plist-get other :unixtime)))
+    (org-x-cluster-build-conlist)))
 
 (defun org-x-cluster-get-conflicts ()
   "Return a list of cons cells representing conflict pairs.
 Each member in the cons cell is a timestamp-plist."
-  (->>
-   (org-x-cluster-get-unprocessed)
-   (--filter (org-ml-time-is-long (plist-get it :start-time)))
-   (org-x-cluster-append-unixtime)
-   (org-x-cluster-filter-past)
-   (--sort (< (plist-get it :unixtime) (plist-get other :unixtime)))
-   (org-x-cluster-build-conlist)))
+  (->> (org-x-cluster-get-unprocessed)
+    (org-x-cluster-get-conflicts*)))
 
 ;; get overloaded days
 ;;
@@ -1385,7 +1383,6 @@ Each member in the cons cell is a timestamp-plist."
                               acc))))
           acc)))))
 
-
 (defun org-x-cluster-daily-split (tsps)
   "Group timestamp-plist TSPS into sublists for each day."
   (--partition-by (-take 3 (plist-get it :start-time)) tsps))
@@ -1394,12 +1391,8 @@ Each member in the cons cell is a timestamp-plist."
   "Return t if total time of timestamp-plists in TSPS exceeds 24 hours.
 It is assumed the TSPS represents tasks and appointments within one
 day."
-  (letrec ((ts2diff
-            (lambda (tsp)
-              (let ((start (plist-get tsp :unixtime)))
-                (- (-> tsp (plist-get :range) (+ start)) start)))))
-    (->> tsps (--map (funcall ts2diff it)) -sum (<= 86400))))
-                          
+  (<= 86400 (-sum (--map (plist-get tsp :range) tsps))))
+
 (defun org-x-cluster-get-overloads ()
   "Return list of lists of timestamp-plists grouped by day.
 Anything present represents all the tasks in a single day if that day
@@ -1512,7 +1505,7 @@ MARKER for use in the conflict agenda view."
            (insert (concat
                     "At " (org-x-cluster-ts-fmt (car it)) "\n"
                     (org-x-cluster-headline-text (car it)) "\n"
-                    (org-x-cluster-headline-text (cdr it)) "\n"
+                    (org-x-cluster-headline-text (cadr it)) "\n"
                     "\n"))))
 
       ;; clean up and finalize
