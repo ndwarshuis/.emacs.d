@@ -1350,7 +1350,7 @@ Each member in the cons cell is a timestamp-plist."
         ;; unless specified manually
         (-let* ((tz (current-time-zone))
                 (start-time* (if (org-ml-time-is-long start-time) start-time
-                               `(,@start-time 0 0)))
+                               `(,@(-take 3 start-time) 0 0)))
                 ((y m d H M) start-time*)
                 (start-epoch (encode-float-time `(0 ,M ,H ,d ,m ,y nil nil ,tz)))
                 (end-epoch (+ start-epoch range))
@@ -1391,14 +1391,14 @@ Each member in the cons cell is a timestamp-plist."
   "Return t if total time of timestamp-plists in TSPS exceeds 24 hours.
 It is assumed the TSPS represents tasks and appointments within one
 day."
-  (<= 86400 (-sum (--map (plist-get tsp :range) tsps))))
+  (<= 86400 (-sum (--map (plist-get it :range) tsps))))
 
-(defun org-x-cluster-get-overloads ()
+(defun org-x-cluster-get-overloads* (tsps)
   "Return list of lists of timestamp-plists grouped by day.
 Anything present represents all the tasks in a single day if that day
 is overloaded. If a day is not overloaded there will be nothing for it
 in the returned list."
-  (->> (org-x-cluster-get-unprocessed)
+  (->> tsps
     (--filter (< 0 (plist-get it :range)))
     (-mapcat #'org-x-cluster-split-tsp-maybe)
     (org-x-cluster-append-unixtime)
@@ -1406,6 +1406,14 @@ in the returned list."
     (--sort (< (plist-get it :unixtime) (plist-get other :unixtime)))
     (org-x-cluster-daily-split)
     (--filter (org-x-cluster-overloaded-p it))))
+
+(defun org-x-cluster-get-overloads ()
+  "Return list of lists of timestamp-plists grouped by day.
+Anything present represents all the tasks in a single day if that day
+is overloaded. If a day is not overloaded there will be nothing for it
+in the returned list."
+  (->> (org-x-cluster-get-unprocessed)
+    (org-x-cluster-get-overloads*)))
 
 ;; conflict/overload frontend
 

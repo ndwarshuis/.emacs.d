@@ -516,6 +516,88 @@ Forms are denoted like %(FORM)%."
          ((:start-time (2022 1 1 12 5) :range 900 :offset 79 :filepath "fp")
           (:start-time (2022 1 1 12 10) :range 900 :offset 157 :filepath "fp"))))
 
+(org-x--test-buffer-strings "Overloads"
+    (->> (org-x-cluster-extract-buffer "fp")
+      (org-x-cluster-get-overloads*)
+      ;; drop the :unixtime key from the front to make testing easier
+      (--map (--map (-drop 2 it) it)))
+
+  ;; this assumes the TODO vs active ts parsing works as expected
+  "no timestamps"
+  ("* TODO one"
+   "* TODO two")
+  => nil
+
+  "not overloaded"
+  ("* TODO one"
+   "SCHEDULED: [2022-01-01 Tue 00:00]"
+   ":PROPERTIES:"
+   ":Effort: 0:15"
+   ":END:"
+   "* TODO two"
+   "SCHEDULED: [2022-01-01 Tue 00:00]"
+   ":PROPERTIES:"
+   ":Effort: 0:15"
+   ":END:")
+  => nil
+
+  "overloaded (exactly 24 hours)"
+  ("* TODO one"
+   "SCHEDULED: [2022-01-01 Tue 00:00]"
+   ":PROPERTIES:"
+   ":Effort: 12h"
+   ":END:"
+   "* TODO two"
+   "SCHEDULED: [2022-01-01 Tue 00:00]"
+   ":PROPERTIES:"
+   ":Effort: 12h"
+   ":END:")
+  => '(((:start-time (2022 1 1 0 0) :range 43200 :offset 1 :filepath "fp")
+        (:start-time (2022 1 1 0 0) :range 43200 :offset 78 :filepath "fp")))
+
+  "overloaded (over 24 hours)"
+  ("* TODO one"
+   "SCHEDULED: [2022-01-01 Tue 00:00]"
+   ":PROPERTIES:"
+   ":Effort: 12h"
+   ":END:"
+   "* TODO two"
+   "SCHEDULED: [2022-01-01 Tue 00:00]"
+   ":PROPERTIES:"
+   ":Effort: 13h"
+   ":END:")
+  => '(((:start-time (2022 1 1 0 0) :range 43200 :offset 1 :filepath "fp")
+        (:start-time (2022 1 1 0 0) :range 46800 :offset 78 :filepath "fp")))
+
+  "overloaded (over 24 hours and split)"
+  ("* TODO one"
+   "SCHEDULED: [2022-01-01 Tue 00:00]"
+   ":PROPERTIES:"
+   ":Effort: 12h"
+   ":END:"
+   "* TODO two"
+   "SCHEDULED: [2022-01-01 Tue 00:00]"
+   ":PROPERTIES:"
+   ":Effort: 25h"
+   ":END:")
+  => '(((:start-time (2022 1 1 0 0) :range 43200 :offset 1 :filepath "fp")
+        (:start-time (2022 1 1 0 0) :range 86400 :offset 78 :filepath "fp")))
+
+  "overloaded (over 48 hours)"
+  ("* TODO one"
+   "SCHEDULED: [2022-01-01 Tue 00:00]"
+   ":PROPERTIES:"
+   ":Effort: 12h"
+   ":END:"
+   "* TODO two"
+   "SCHEDULED: [2022-01-01 Tue 12:00]"
+   ":PROPERTIES:"
+   ":Effort: 36h"
+   ":END:")
+  => '(((:start-time (2022 1 1 0 0) :range 43200 :offset 1 :filepath "fp")
+        (:start-time (2022 1 1 12 0) :range 43200 :offset 78 :filepath "fp"))
+       ((:start-time (2022 1 2 0 0) :range 86400 :offset 78 :filepath "fp"))))
+
 (defmacro org-x--test-time-splitter-specs (&rest specs)
   (declare (indent 0))
   ;; 3 args for clarity, currently does nothing functional
