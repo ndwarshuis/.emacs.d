@@ -430,7 +430,7 @@ Forms are denoted like %(FORM)%."
 
 (org-x--test-buffer-strings "Conflicts"
     (->> (org-x-cluster-extract-buffer "fp")
-      (org-x-cluster-get-conflicts*)
+      (org-x-cluster-group-conflicts)
       ;; drop the :unixtime key from the front to make testing easier
       (--map (--map (-drop 2 it) it)))
 
@@ -518,7 +518,7 @@ Forms are denoted like %(FORM)%."
 
 (org-x--test-buffer-strings "Overloads"
     (->> (org-x-cluster-extract-buffer "fp")
-      (org-x-cluster-get-overloads*)
+      (org-x-cluster-group-overloads)
       ;; drop the :unixtime key from the front to make testing easier
       (--map (--map (-drop 2 it) it)))
 
