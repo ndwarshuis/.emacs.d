@@ -429,8 +429,8 @@ Forms are denoted like %(FORM)%."
 
 
 (org-x--test-buffer-strings "Conflicts"
-    (->> (org-x-cluster-extract-buffer "fp")
-      (org-x-cluster-group-conflicts)
+    (->> (org-x-agg--get-timespans-from-buffer "fp")
+      (org-x-agg--timespans-group-conflicts)
       ;; drop the :unixtime key from the front to make testing easier
       (--map (--map (-drop 2 it) it)))
 
@@ -517,8 +517,8 @@ Forms are denoted like %(FORM)%."
           (:start-time (2022 1 1 12 10) :range 900 :offset 157 :filepath "fp"))))
 
 (org-x--test-buffer-strings "Overloads"
-    (->> (org-x-cluster-extract-buffer "fp")
-      (org-x-cluster-group-overloads)
+    (->> (org-x-agg--get-timespans-from-buffer "fp")
+      (org-x-agg--timespans-group-overloads)
       ;; drop the :unixtime key from the front to make testing easier
       (--map (--map (-drop 2 it) it)))
 
@@ -608,7 +608,7 @@ Forms are denoted like %(FORM)%."
                           (input* (append input extra))
                           (output* (--map (append it extra) output)))
                     `(it ,title
-                       (expect (org-x-cluster-split-tsp-maybe ',input*)
+                       (expect (org-x-agg--split-timespan-by-day ',input*)
                                :to-equal
                                ',output*)))))))
     `(describe "Time splitter"

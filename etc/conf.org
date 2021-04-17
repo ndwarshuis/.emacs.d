@@ -2419,8 +2419,8 @@ Org mode has no way of detecting if conflicts exist. It also has no way of alert
 
 The main code is defined in =org-x= so the following is only to set some domain-specific options.
 #+begin_src emacs-lisp
-(setq org-x-cluster-filtered-files '("incubator" "peripheral")
-      org-x-cluster-filtered-todo '("CANC" "DONE"))
+(setq org-x-agg-filtered-files '("incubator" "peripheral")
+      org-x-agg-filtered-keywords '("CANC" "DONE"))
 #+end_src
 *** agenda
 :PROPERTIES:
@@ -4209,8 +4209,8 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "<f1>") 'org-agenda)
 (global-set-key (kbd "<f2>") 'org-capture)
 (global-set-key (kbd "<f3>") 'cfw:open-org-calendar)
-(global-set-key (kbd "C-<f3>") 'org-x-cluster-show-conflicts)
-(global-set-key (kbd "C-S-<f3>") 'org-x-cluster-show-overloads)
+(global-set-key (kbd "C-<f3>") 'org-x-agg-show-conflicts)
+(global-set-key (kbd "C-S-<f3>") 'org-x-agg-show-overloads)
 (global-set-key (kbd "<f4>") 'org-clock-goto)
 (global-set-key (kbd "C-<f4>") 'org-tomato-user-get-summary)
 (global-set-key (kbd "C-S-<f4>") 'org-tomato-user-pomodoro-goto)
