@@ -36,6 +36,104 @@
 (require 'org)
 (require 'org-x-agg)
 
+
+;;; TAGS
+
+(defconst org-x-tag-location-context-prefix ?@
+  "Prefix character denoting location context tag.")
+
+(defconst org-x-tag-resource-context-prefix ?#
+  "Prefix character denoting resource context tag.")
+
+(defconst org-x-tag-misc-prefix ?%
+  "Prefix character denoting misc tag.")
+
+(defconst org-x-tag-category-prefix ?_
+  "Prefix character denoting life category tag.")
+
+(defun org-x-prefix-string (char string)
+  (concat (char-to-string char) string))
+
+(defconst org-x-tag-errand
+  (org-x-prefix-string org-x-tag-location-context-prefix "errand")
+  "Tag denoting an errand location.")
+
+(defconst org-x-tag-home
+  (org-x-prefix-string org-x-tag-location-context-prefix "home")
+  "Tag denoting a home location.")
+
+(defconst org-x-tag-work
+  (org-x-prefix-string org-x-tag-location-context-prefix "work")
+  "Tag denoting a work location.")
+
+(defconst org-x-tag-travel
+  (org-x-prefix-string org-x-tag-location-context-prefix "travel")
+  "Tag denoting a travel location.")
+
+(defconst org-x-tag-laptop
+  (org-x-prefix-string org-x-tag-resource-context-prefix "laptop")
+  "Tag denoting a laptop resource.")
+
+(defconst org-x-tag-tcult
+  (org-x-prefix-string org-x-tag-resource-context-prefix "tcult")
+  "Tag denoting a tissue-culture resource.")
+
+(defconst org-x-tag-phone
+  (org-x-prefix-string org-x-tag-resource-context-prefix "phone")
+  "Tag denoting a phone resource.")
+
+(defconst org-x-tag-note
+  (org-x-prefix-string org-x-tag-misc-prefix "note")
+  "Tag denoting a note.")
+
+(defconst org-x-tag-incubated
+  (org-x-prefix-string org-x-tag-misc-prefix "inc")
+  "Tag denoting an incubated task.")
+
+(defconst org-x-tag-maybe
+  (org-x-prefix-string org-x-tag-misc-prefix "maybe")
+  "Tag denoting a maybe task.")
+
+(defconst org-x-tag-subdivision
+  (org-x-prefix-string org-x-tag-misc-prefix "subdiv")
+  "Tag denoting a task awaiting subdivision.")
+
+(defconst org-x-tag-flagged
+  (org-x-prefix-string org-x-tag-misc-prefix "flag")
+  "Tag denoting a flagged task.")
+
+(defconst org-x-tag-environmental
+  (org-x-prefix-string org-x-tag-category-prefix "env")
+  "Tag denoting an environmental life category.")
+
+(defconst org-x-tag-financial
+  (org-x-prefix-string org-x-tag-category-prefix "fin")
+  "Tag denoting a financial life category.")
+
+(defconst org-x-tag-intellectual
+  (org-x-prefix-string org-x-tag-category-prefix "int")
+  "Tag denoting an intellectual life category.")
+
+(defconst org-x-tag-metaphysical
+  (org-x-prefix-string org-x-tag-category-prefix "met")
+  "Tag denoting an metaphysical life category.")
+
+(defconst org-x-tag-physical
+  (org-x-prefix-string org-x-tag-category-prefix "phy")
+  "Tag denoting an physical life category.")
+
+(defconst org-x-tag-professional
+  (org-x-prefix-string org-x-tag-category-prefix "pro")
+  "Tag denoting a professional life category.")
+
+(defconst org-x-tag-recreational
+  (org-x-prefix-string org-x-tag-category-prefix "rec")
+  "Tag denoting a recreational life category.")
+
+(defconst org-x-tag-social
+  (org-x-prefix-string org-x-tag-category-prefix "soc")
+  "Tag denoting a social life category.")
+
 ;;; PROPERTIES
 
 (eval-and-compile
@@ -78,7 +176,6 @@
   "Property denoting after how many days a headline will expire.")
 
 ;;; CONSTANTS
-
 
 (defconst org-x-iter-future-time (* 7 24 60 60)
   "Iterators must have at least one task greater into the future to be active.")

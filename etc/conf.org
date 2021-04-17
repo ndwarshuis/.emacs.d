@@ -2149,52 +2149,46 @@ IDs and links are useful for meetings where I either reference tasks to discuss 
 I use tags for agenda filtering (primarily for GTD contexts, see below). Each tag here starts with a symbol to define its group (note, only the special chars "_", "@", "#", and "%" seem to be allowed; anything else will do weird things in the hotkey prompt). Some groups are mutually exclusive. By convention, any tag not part of these groups is ALLCAPS (not very common) and set at the file level. 
 #+BEGIN_SRC emacs-lisp
 (setq org-tag-alist
-      ;; (@) gtd location context
+      ;; gtd location context
       `((:startgroup)
-        ("@errand" . ?e)
-        ("@home" . ?h)
-        ("@work" . ?w)
-        ("@travel" . ?r)
+        (,org-x-tag-errand . ?e)
+        (,org-x-tag-home . ?h)
+        (,org-x-tag-work . ?w)
+        (,org-x-tag-travel . ?r)
         (:endgroup)
         
-        ;; (#) gtd resource context 
-        ("#laptop" . ?l)
-        ("#tcult" . ?t)
-        ("#phone" . ?p)
+        ;; gtd resource context 
+        (,org-x-tag-laptop . ?l)
+        (,org-x-tag-tcult . ?t)
+        (,org-x-tag-phone . ?p)
         
-        ;; (%) misc tags 
+        ;; misc tags 
         ;; denotes reference information
-        ("%note" . ?n)
+        (,org-x-tag-note . ?n)
         
         ;; incubator (the someday/maybe list)
-        ("%inc" . ?i)
+        (,org-x-tag-incubated . ?i)
 
-        ;; maybe (for things I might want to do, to be used with %inc)
-        ("%maybe" . ?m)
+        ;; maybe (for things I might want to do, to be used with
+        ;; `org-x-tag-incubated')
+        (,org-x-tag-maybe . ?m)
         
         ;; denotes tasks that need further subdivision to turn into true project
-        ("%subdiv" . ?s)
+        (,org-x-tag-subdivision . ?s)
 
         ;; catchall to mark important headings, usually for meetings
-        ("%flag" . ?f)
-
-        ;; taskjuggler
-        ;; (:startgroup)
-        ;; (,org-tj-project-tag . ?x)
-        ;; (,org-tj-resource-tag . ?y)
-        ;; (,org-tj-report-tag . ?z)
-        ;; (:endgroup)
+        (,org-x-tag-flagged . ?f)
         
-        ;; (_) life categories, used for gtd priorities
+        ;; life categories, used for gtd priorities
         (:startgroup)
-        ("_env" . ?E) ;; environmental
-        ("_fin" . ?F) ;; financial
-        ("_int" . ?I) ;; intellectual
-        ("_met" . ?M) ;; metaphysical
-        ("_phy" . ?H) ;; physical
-        ("_pro" . ?P) ;; professional
-        ("_rec" . ?R) ;; recreational
-        ("_soc" . ?S) ;; social
+        (,org-x-tag-environmental . ?E)
+        (,org-x-tag-financial . ?F)
+        (,org-x-tag-intellectual . ?I)
+        (,org-x-tag-metaphysical . ?M)
+        (,org-x-tag-physical . ?H)
+        (,org-x-tag-professional . ?P)
+        (,org-x-tag-recreational . ?R)
+        (,org-x-tag-social . ?S)
         (:endgroup)))
 #+END_SRC
 **** colors
@@ -2398,7 +2392,7 @@ The modeline is a nice place to indicate if something is clocked in or out. Unfo
 
 (setq spaceline-highlight-face-func 'nd/spaceline-highlight-face-clocked)
 #+END_SRC
-*** clustering
+*** aggregation
 Org mode has no way of detecting if conflicts exist. It also has no way of alerting someone if they have overbooked their schedule.
 
 The main code is defined in =org-x= so the following is only to set some domain-specific options.
