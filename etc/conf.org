@@ -2267,11 +2267,13 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
 
           ;; for non-actionable events that happen at a certain time
           ("a" "appointment" entry (file ,capfile)
-           "* %?\n%^t\n")
+           ,(concat "* %?\n"
+                    "%^t\n"))
 
           ;; like appointment but multiple days
           ("s" "appointment-span" entry (file ,capfile)
-           "* %?\n%^t--%^t\n")
+           ,(concat "* %?\n"
+                    "%^t--%^t\n"))
 
           ;; task with a deadline
           ("d" "deadline" ,@deadline-options)
@@ -2279,30 +2281,26 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
 
           ;; for converting mu4e emails to tasks, defaults to next-day deadline
           ("e" "email" entry (file ,capfile)
-           "* TODO Respond to %:fromaddress; Re: %:subject  :#laptop:\nDEADLINE: %(nd/org-timestamp-future 1)\n%a\n")
+           ,(concat "* TODO Respond to %:fromaddress; Re: %:subject\t:%(eval org-x-tag-laptop):\n"
+                    "DEADLINE: %(nd/org-timestamp-future 1)\n"
+                    "%a\n"))
 
           ;; for interruptions that produce useful reference material
           ("m" "meeting" entry (file ,capfile)
-           "* meeting with%?  :\\%note:\n")
-
-          ;; TODO add entries here for asynchronously performed tasks
-          ;; that can be tracked
-          ;; target these to a specific headline in general.org
-          ;; ("A" "Asynchronous")
-          ;; eating food
-          ;; prepping food
-          ;; showering
-          ;; driving
-          ;; blablabla
+           "* meeting with%?\t:%(eval org-x-tag-note):\n")
 
           ;; for capturing web pages with web browser
           ("p" "org-protocol" entry (file ,capfile)
-           "* %^{Title} :\\%note:\n#+BEGIN_QUOTE\n%i\n#+END_QUOTE"
+           ,(concat "* %^{Title}\t:%(eval org-x-tag-note):\n"
+                    "#+BEGIN_QUOTE\n"
+                    "%i\n"
+                    "#+END_QUOTE")
            :immediate-finish t)
 
           ;; or capturing links with web browser
           ("L" "org-protocol link" entry (file ,capfile)
-           "* %^{Title} :\\%note:\n[[%:link][%:description]]"
+           ,(concat "* %^{Title} :%(eval org-x-tag-note):\n"
+                    "[[%:link][%:description]]")
            :immediate-finish t))))
 #+END_SRC
 **** insert mode
