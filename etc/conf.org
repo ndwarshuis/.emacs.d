@@ -2197,20 +2197,20 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
 :END:
 Each group also has its own color, defined by its prefix symbol.
 #+BEGIN_SRC emacs-lisp
-(defun nd/add-tag-face (fg-name prefix)
-  "Adds list of cons cells to org-tag-faces with foreground set to fg-name.
-  Start and end specify the positions in org-tag-alist which define the tags
-  to which the faces are applied"
-  (dolist (tag (org-x-filter-list-prefix prefix (mapcar #'car org-tag-alist)))
-    (push `(,tag . (:foreground ,fg-name)) org-tag-faces)))
-
-(setq org-tag-faces '())
-
-(nd/add-tag-face "PaleGreen" "@")
-(nd/add-tag-face "SkyBlue" "#")
-(nd/add-tag-face "PaleGoldenrod" "%")
-(nd/add-tag-face "violet" "_")
-(nd/add-tag-face "OrangeRed1" "τ")
+(let ((grouped-tags (->> (--filter (stringp (car it)) org-tag-alist)
+                      (-map #'car)
+                      (--group-by (elt it 0)))))
+  (cl-flet
+      ((add-foreground
+        (prefix color)
+        (->> (alist-get prefix grouped-tags)
+          (--map (list it :foreground color)))))
+    (setq org-tag-faces
+          (append
+           (add-foreground org-x-tag-location-context-prefix "PaleGreen")
+           (add-foreground org-x-tag-resource-context-prefix "SkyBlue")
+           (add-foreground org-x-tag-misc-prefix "PaleGoldenrod")
+           (add-foreground org-x-tag-category-prefix "violet")))))
 #+END_SRC
 *** properties
 :PROPERTIES:
