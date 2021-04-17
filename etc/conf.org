@@ -2563,6 +2563,15 @@ original org entry before executing BODY."
          (goto-char marker)
          ,@body))))
 
+(defmacro nd/org-x-mk-match-string (&rest body)
+  (->> body
+    (--map (cond
+            ((stringp it) it)
+            ((boundp it) (eval it))
+            ((symbolp it) (symbol-name it))
+            (t it)))
+    (s-join "")))
+
 (defconst nd/org-x-task-status-priorities
   '((:archivable . -1)
     (:complete . -1)
@@ -2593,7 +2602,7 @@ original org entry before executing BODY."
       ""
       ((org-agenda-skip-function
         '(org-x-skip-headings-with-tags
-          '("NA" "%maybe" "REFILE")))
+          (list org-x-tag-na org-x-tag-maybe org-x-tag-refile)))
        (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
        (org-agenda-include-diary t)
        (org-super-agenda-groups
@@ -2613,7 +2622,15 @@ original org entry before executing BODY."
    ("t"
     "Task View"
     ((tags-todo
-      "-NA-REFILE-%inc/TODO|NEXT|WAIT|HOLD|CANC"
+      ,(nd/org-x-mk-match-string
+        - org-x-tag-no-agenda
+        - org-x-tag-refile
+        - org-x-tag-incubated
+        / "TODO"
+        | "NEXT"
+        | "WAIT"
+        | "HOLD"
+        | "CANC")
       ((org-agenda-overriding-header "Tasks")
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
@@ -2662,7 +2679,10 @@ original org entry before executing BODY."
    ("p"
     "Project View"
     ((tags-todo
-      "-NA-REFILE-%inc"
+      ,(nd/org-x-mk-match-string
+        - org-x-tag-no-agenda
+        - org-x-tag-refile
+        - org-x-tag-incubated)
       ((org-agenda-overriding-header "Projects")
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
@@ -2697,7 +2717,10 @@ original org entry before executing BODY."
    ("i"
     "Incubator View"
     ((tags
-      "-NA-REFILE+%inc"
+      ,(nd/org-x-mk-match-string
+        - org-x-tag-no-agenda
+        - org-x-tag-refile
+        + org-x-tag-incubated)
       ((org-agenda-overriding-header "Incubator")
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
@@ -2743,7 +2766,7 @@ original org entry before executing BODY."
    ("P"
     "Periodical View"
     ((tags
-      "-NA-REFILE"
+      ,(nd/org-x-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
       ((org-agenda-overriding-header "Iterator Status")
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
@@ -2766,7 +2789,7 @@ original org entry before executing BODY."
    ("I"
     "Iterator View"
     ((tags
-      "-NA-REFILE"
+      ,(nd/org-x-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
       ((org-agenda-overriding-header "Iterator Status")
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
@@ -2788,16 +2811,19 @@ original org entry before executing BODY."
                (t "3. Other"))))))))))
 
    ("r" "Refile"
-    ((tags "REFILE" ((org-agenda-overriding-header "Tasks to Refile"))
+    ((tags ,org-x-tag-refile ((org-agenda-overriding-header "Tasks to Refile"))
            (org-tags-match-list-sublevels nil))))
    
    ("f" "Flagged"
-    ((tags "%flag" ((org-agenda-overriding-header "Flagged Tasks")))))
+    ((tags ,org-x-tag-flagged ((org-agenda-overriding-header "Flagged Tasks")))))
    
    ("e"
     "Critical Errors"
     ((tags
-      "-NA-REFILE-%inc"
+      ,(nd/org-x-mk-match-string
+        - org-x-tag-no-agenda
+        - org-x-tag-refile
+        - org-x-tag-incubated)
       ((org-agenda-overriding-header "Critical Errors")
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
@@ -2834,7 +2860,7 @@ original org entry before executing BODY."
                       (not (org-x-is-created-heading-p))))))
           (:name "Missing Archive Target (iterators)" :pred
                  ,(nd/org-x-mk-super-agenda-pred
-                   (and (equal "iterator" (org-entry-get nil "PARENT_TYPE"))
+                   (and (equal "iterator" (org-entry-get nil org-x-prop-parent-type))
                         (not (org-entry-get nil "ARCHIVE")))))
           (:name "Future Creation Timestamp" :pred
                  ,(nd/org-x-mk-super-agenda-pred
@@ -2849,7 +2875,7 @@ original org entry before executing BODY."
    ("A"
     "Archivable Tasks and Projects"
     ((tags
-      "-NA-REFILE"
+      ,(nd/org-x-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
       ((org-agenda-overriding-header "Archive")
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
@@ -2861,7 +2887,7 @@ original org entry before executing BODY."
                    (not (eq :archivable (org-x-get-project-status))))
               (org-x-skip-subtree))
              ;; skip all incubator tasks
-             ((org-x-headline-has-tag-p "%inc")
+             ((org-x-headline-has-tag-p org-x-tag-incubated)
               (org-x-skip-heading))
              ;; skip all project tasks
              ((and keyword (org-x-is-project-task-p))
