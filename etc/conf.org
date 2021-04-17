@@ -2227,39 +2227,24 @@ The built-in =effort= is used as the fourth and final homonymous GTD context (th
 
 Also here are the properties for repeated tasks and a few others (see comments in code).
 #+BEGIN_SRC emacs-lisp
-(mapc (lambda (i) (add-to-list 'org-default-properties i))
-      (list
-       ;; defines a repeater group
-       "PARENT_TYPE"
+(setq org-default-properties (->>  (list org-x-prop-parent-type
+                                         org-x-prop-time-shift
+                                         org-x-prop-thread
+                                         org-x-prop-routine
+                                         org-x-prop-created
+                                         org-x-prop-expire
+                                         org-x-prop-days-to-live)
+        (-union org-default-properties))
 
-       ;; defines the time shift for repeater groups
-       "TIME_SHIFT"
+      org-use-property-inheritance (list org-x-prop-parent-type
+                                         org-x-prop-time-shift))
 
-       ;; defines an email thread
-       "THREAD"
-
-       ;; defines a goal
-       "GOAL"
-
-       ;; for sorting routines in the agenda
-       "X-ROUTINE"
-
-       ;; date of header creation
-       "CREATED"
-
-       ;; date of header expiration
-       "X-EXPIRE"
-
-       ;; days before a header expires
-       "X-DAYS_TO_LIVE"))
-
-(setq org-global-properties
-      '(("PARENT_TYPE_ALL" . "periodical iterator")
-        ("Effort_ALL" . "0:05 0:15 0:30 1:00 1:30 2:00 3:00 4:00 5:00 6:00 :ETC")
-        ("X-ROUTINE" . "morning evening"))
-
-      org-use-property-inheritance
-      '("PARENT_TYPE" "TIME_SHIFT"))
+(let ((effort-choices (list "0:05" "0:15" "0:30" "1:00" "1:30" "2:00" "3:00"
+                            "4:00" "5:00" "6:00")))
+  (setq org-global-properties
+        (list org-x-prop-parent-type-choices
+              (org-x-define-prop-choices org-effort-property effort-choices t)
+              org-x-prop-routine-choices)))
 #+END_SRC
 *** capture
 **** templates

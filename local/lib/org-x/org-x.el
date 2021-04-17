@@ -23,7 +23,10 @@
 
 ;;; Commentary:
 
-;; XXX
+;; Extra org-mode glue code I use to run my life. These are generally bits and
+;; pieces that I deem useful enough to put in their own file separate from my
+;; 'main' config to a) keep me sane b) test things and c) fork off into a
+;; separate package if I think it is worthy (mostly (a)).
 
 ;;; Code:
 
@@ -33,7 +36,49 @@
 (require 'org)
 (require 'org-x-agg)
 
-;; constants
+;;; PROPERTIES
+
+(eval-and-compile
+  (defun org-x-define-prop-choices (prop options &optional allow-other)
+    (let ((options* (if allow-other (-snoc options ":ETC") options)))
+      (cons (format "%s_ALL" prop) (s-join " " options*)))))
+
+(eval-and-compile
+  (defconst org-x-prop-parent-type "PARENT_TYPE"
+    "Property denoting iterator/periodical headline."))
+
+(eval-and-compile
+  (defconst org-x-prop-parent-type-choices
+    (org-x-define-prop-choices org-x-prop-parent-type '("periodical" "iterator"))
+    "Choices for `org-x-prop-parent-type'."))
+
+(defconst org-x-prop-time-shift "TIME_SHIFT"
+  "Property denoting time shift when cloning iterator/periodical headlines.")
+
+;; TODO this is a WIP
+(defconst org-x-prop-thread "THREAD"
+  "Property denoting an email thread to track.")
+
+(eval-and-compile
+  (defconst org-x-prop-routine "X-ROUTINE"
+    "Property denoting a routine group."))
+
+(eval-and-compile
+  (defconst org-x-prop-routine-choices
+    (org-x-define-prop-choices org-x-prop-routine '("morning" "evening"))
+    "Choices for `org-x-prop-routine'."))
+
+(defconst org-x-prop-created "CREATED"
+  "Property denoting when a headline was created.")
+
+(defconst org-x-prop-expire "X-EXPIRE"
+  "Property denoting when a headline will expire.")
+
+(defconst org-x-prop-days-to-live "X-DAYS_TO_LIVE"
+  "Property denoting after how many days a headline will expire.")
+
+;;; CONSTANTS
+
 
 (defconst org-x-iter-future-time (* 7 24 60 60)
   "Iterators must have at least one task greater into the future to be active.")
@@ -142,7 +187,7 @@ compared to REF-TIME. Returns nil if no timestamp is found."
 
 (defun org-x-is-created-heading-p ()
   "Get scheduled timestamp of current heading."
-  (org-x-get-date-property "CREATED"))
+  (org-x-get-date-property org-x-prop-created))
 
 (defun org-x-is-closed-heading-p ()
   "Get closed timestamp of current heading."
@@ -155,16 +200,16 @@ compared to REF-TIME. Returns nil if no timestamp is found."
            (when (and ts (not (cl-find ?+ ts))) (org-2ft ts))))))
 
 (defun org-x-is-expired-date-headline-p ()
-  "Return timestamp if current headline is expired via \"X-EXPIRE\"."
+  "Return timestamp if current headline is expired via `org-x-prop-expire'."
   (org-x-heading-compare-timestamp
-   (lambda () (-some-> (org-entry-get nil "X-EXPIRE")
+   (lambda () (-some-> (org-entry-get nil org-x-prop-expire)
            (org-2ft)))))
 
 (defun org-x-is-expired-dtl-headline-p ()
-  "Return timestamp if current headline is expired via \"X-DAYS_TO_LIVE\"."
+  "Return timestamp if current headline is expired via `org-x-prop-days-to-live'."
   (org-x-heading-compare-timestamp
-   (lambda () (let ((dtl (org-entry-get nil "X-DAYS_TO_LIVE"))
-               (created (org-entry-get nil "CREATED")))
+   (lambda () (let ((dtl (org-entry-get nil org-x-prop-days-to-live))
+               (created (org-entry-get nil org-x-prop-created)))
            (when (and dtl (s-matches-p "[0-9]+" dtl) created)
              (+ (org-2ft created)
                 (* (string-to-number dtl) 24 60 60)))))))
@@ -200,7 +245,7 @@ compared to REF-TIME. Returns nil if no timestamp is found."
                         (org-ml-get-property :deadline)
                         (org-ml-timestamp-get-start-time)
                         (org-ml-time-to-unixtime)))
-         (created-ut (-some->> (org-ml-headline-get-node-property "CREATED" hl)
+         (created-ut (-some->> (org-ml-headline-get-node-property org-x-prop-created hl)
                        (org-2ft))))
     ;; not inert if headline is scheduled or deadlined in the future
     (unless (or (-some->> scheduled-ut (- now) (> 0))
@@ -253,11 +298,11 @@ compared to REF-TIME. Returns nil if no timestamp is found."
 
 (defun org-x-is-periodical-heading-p ()
   "Return t if heading is a periodical."
-  (equal "periodical" (org-entry-get nil "PARENT_TYPE" t)))
+  (equal "periodical" (org-entry-get nil org-x-prop-parent-type t)))
 
 (defun org-x-is-iterator-heading-p ()
   "Return t if heading is an iterator."
-  (equal "iterator" (org-entry-get nil "PARENT_TYPE" t)))
+  (equal "iterator" (org-entry-get nil org-x-prop-parent-type t)))
 
 (defun org-x-is-habit-heading-p ()
   "Return t if heading is an iterator."
@@ -265,7 +310,7 @@ compared to REF-TIME. Returns nil if no timestamp is found."
 
 (defun org-x-headline-has-effort-p ()
   "Return t if heading has an effort."
-  (org-entry-get nil "Effort"))
+  (org-entry-get nil org-effort-property))
 
 (defun org-x-headline-has-context-p ()
   "Return t if heading has a context."
@@ -622,7 +667,7 @@ This includes unchecking all checkboxes, marking keywords as
                headline)
              (org-ml-headline-map-supercontents* config
                (org-ml-supercontents-set-logbook nil it))
-             (org-ml-headline-set-node-property "CREATED" created-ts)
+             (org-ml-headline-set-node-property org-x-prop-created created-ts)
              (org-ml-headline-map-planning*
                (if (not it) it
                  (org-ml-planning-set-timestamp! :closed nil it)))
@@ -688,7 +733,7 @@ N is the number of clones to produce."
   (interactive "nNumber of clones to produce: ")
   (let* ((st (org-ml-parse-this-subtree))
          (shift
-          (or (org-entry-get nil "TIME_SHIFT" 'selective)
+          (or (org-entry-get nil org-x-prop-time-shift 'selective)
               (read-from-minibuffer
                "Date shift per clone (e.g. +1w, empty to copy unchanged): ")))
          (ins (->> (org-x--reset-headline st)
@@ -706,7 +751,7 @@ N is the number of clones to produce."
       ((get-shift
         (subtree)
         (or
-         (org-ml-headline-get-node-property "TIME_SHIFT" subtree)
+         (org-ml-headline-get-node-property org-x-prop-time-shift subtree)
          (read-from-minibuffer
           "Shift per clone (e.g. +1w, empty to copy unchanged): "))))
     (org-ml-update-this-subtree*
@@ -1092,7 +1137,7 @@ original function being advised and ARGS are the arguments."
                  (org-ml-unixtime-to-time-long)
                  (org-ml-build-timestamp!)
                  (org-ml-to-string)
-                 (org-ml-build-node-property "CREATED"))))
+                 (org-ml-build-node-property org-x-prop-created))))
     (org-ml-update-this-headline*
       (org-ml-headline-map-node-properties* (cons np it) it))))
 
@@ -1107,7 +1152,7 @@ If ARG is non-nil use long timestamp format."
                      (org-ml-unixtime-to-time-short ut))
                 (org-ml-build-timestamp!)
                 (org-ml-to-string)
-                (org-ml-build-node-property "X-EXPIRE"))))
+                (org-ml-build-node-property org-x-prop-expire))))
       (org-ml-update-this-headline*
         (org-ml-headline-map-node-properties* (cons np it) it)))))
 
@@ -1117,7 +1162,7 @@ If ARG is non-nil use long timestamp format."
   (let ((n (read-string "Days to live: ")))
     (if (not (s-matches-p "[0-9]+" n))
         (message "Enter a number")
-      (let ((np (org-ml-build-node-property "X-DAYS_TO_LIVE" n)))
+      (let ((np (org-ml-build-node-property org-x-prop-days-to-live n)))
         (org-ml-update-this-headline*
           (org-ml-headline-map-node-properties* (cons np it) it))))))
 
