@@ -553,7 +553,6 @@ This is an elegant window selector. It displays a number in the corner when acti
 ** navigation
 *** ivy
 :PROPERTIES:
-:CREATED:  [2020-10-17 Sat 18:13]
 :ID:       54e8e317-7696-4c67-a4bc-ebd920017e77
 :END:
 #+begin_src emacs-lisp
@@ -2608,11 +2607,11 @@ original org entry before executing BODY."
        (org-super-agenda-groups
         `((:name "Morning routine"
                  :pred ,(nd/org-x-mk-super-agenda-pred
-                         (equal "morning" (org-entry-get nil "X-ROUTINE")))
+                         (equal "morning" (org-entry-get nil org-x-prop-routine)))
                  :order 0)
           (:name "Evening routine"
                  :pred ,(nd/org-x-mk-super-agenda-pred
-                         (equal "evening" (org-entry-get nil "X-ROUTINE")))
+                         (equal "evening" (org-entry-get nil org-x-prop-routine)))
                  :order 3)
           (:name "Calendar" :order 1 :time-grid t)
           (:name "Habits" :order 6 :habit t)
