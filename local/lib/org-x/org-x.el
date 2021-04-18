@@ -452,39 +452,40 @@ compared to REF-TIME. Returns nil if no timestamp is found."
 
 ;; relational testing
 
-;; TODO this function seems slow
-(defun org-x-headline-has-children (heading-test)
-  "Return t if heading has a child for whom HEADING-TEST is t."
-  (let ((subtree-end (save-excursion (org-end-of-subtree t)))
-        has-children previous-point)
-    (save-excursion
-      (setq previous-point (point))
-      (outline-next-heading)
+(defun org-x-headline-has-children (test-fun)
+  "Return t if heading has a child for whom TEST-FUN is t.
+Assume that point is at the beginning of a headline."
+  ;; Rather than using regular expressions, it is much faster and simpler to
+  ;; walk down each line and count the number of stars to get the level.
+  ;;
+  ;; Algorithm steps:
+  ;; 1. Count stars on the current headline (move point forward until first
+  ;;    non-star, and use the column number to get level) and add 1 to get
+  ;;    the "target-level" (that is the child level of the current headline)
+  ;; 2. Move forward one line until a) `test-fun' returns t b) the current
+  ;;    level of the org-tree is less than the target-level or c) the end of
+  ;;    the buffer is reached.
+  ;;    2.1. If point not on a star, continue looping.
+  ;;    2.2. Otherwise, get the current level similar to (1) using the column
+  ;;         number. If the current level is equal to the target level, eval
+  ;;         `test-fun', otherwise do nothing since point is too deep in the
+  ;;         tree
+  (save-excursion
+    (forward-char 1)
+    (while (= ?* (following-char)) (forward-char 1))
+    (let* ((target-level (1+ (current-column)))
+           (cur-level (1+ target-level))
+           (has-children nil))
       (while (and (not has-children)
-                  (< previous-point (point) subtree-end))
-        (when (funcall heading-test)
-          (setq has-children t))
-        (setq previous-point (point))
-        (org-forward-heading-same-level 1 t)))
-    has-children))
-
-;; (defun org-x-headline-has-children (test-fun)
-;;   "Return t if heading has a child for whom TEST-FUN is t."
-;;   ;; assume that point is at the beginning of a headline
-;;   (let* ((level (1+ (org-current-level)))
-;;          (has-children nil)
-;;          (cur-level level))
-;;     ;; skip over the current headline
-;;     (re-search-forward org-outline-regexp-bol nil t)
-;;     (save-excursion
-;;       (while (and (<= level cur-level)
-;;                   (re-search-forward org-outline-regexp-bol nil t))
-;;         ;; it's actually more efficient to scan every headline and check its
-;;         ;; level rather than using a regexp to match the target depth
-;;         (setq cur-level (- (match-end 0) (match-beginning 0) 1))
-;;         (when (and (= cur-level level) (funcall test-fun))
-;;           (setq has-children t))))
-;;     has-children))
+                  (<= target-level cur-level)
+                  (= 0 (forward-line 1)))
+        (when (= ?* (following-char))
+          (forward-char 1)
+          (while (= ?* (following-char)) (forward-char 1))
+          (setq cur-level (current-column))
+          (when (and (= cur-level target-level) (funcall test-fun))
+            (setq has-children t))))
+      has-children)))
 
 (defun org-x-headline-has-parent (heading-test)
   "Return t if heading has parent for whom HEADING-TEST is t."
