@@ -2086,25 +2086,25 @@ These keywords are used universally for all org files (see below on quick explan
 In terms of logging, I like to record the time of each change upon leaving any state, and I like recording information in notes when waiting, holding, or canceling (as these usually have some external trigger or barrier that should be specified).
 #+BEGIN_SRC emacs-lisp
 (setq org-todo-keywords
-      '((sequence
+      `((sequence
          ;; default undone state
-         "TODO(t/!)"
+         ,(format "%s(t/!)" org-x-kw-todo)
 
          ;; undone but available to do now (projects only)
-         "NEXT(n/!)" "|"
+         ,(format "%s(n/!)" org-x-kw-next) "|"
 
          ;; done and complete
-         "DONE(d/!)")
+         ,(format "%s(d/!)" org-x-kw-done))
 
         (sequence
          ;; undone and waiting on some external dependency
-         "WAIT(w@/!)"
+         ,(format "%s(w@/!)" org-x-kw-wait)
          
          ;; undone but signifies tasks on which I don't wish to focus at the moment
-         "HOLD(h@/!)" "|"
+         ,(format "%s(h@/!)" org-x-kw-hold) "|"
 
          ;; done but not complete
-         "CANC(c@/!)")))
+         ,(format "%s(c@/!)" org-x-kw-canc))))
 #+END_SRC
 **** colors
 :PROPERTIES:
@@ -2112,13 +2112,13 @@ In terms of logging, I like to record the time of each change upon leaving any s
 :END:
 Aesthetically, I like all my keywords to have bold colors.
 #+BEGIN_SRC emacs-lisp
-(setq   org-todo-keyword-faces
-      '(("TODO" :foreground "light coral" :weight bold)
-        ("NEXT" :foreground "khaki" :weight bold)
-        ("DONE" :foreground "light green" :weight bold)
-        ("WAIT" :foreground "orange" :weight bold)
-        ("HOLD" :foreground "violet" :weight bold)
-        ("CANC" :foreground "deep sky blue" :weight bold)))
+(setq org-todo-keyword-faces
+      `((,org-x-kw-todo :foreground "light coral" :weight bold)
+        (,org-x-kw-next :foreground "khaki" :weight bold)
+        (,org-x-kw-done :foreground "light green" :weight bold)
+        (,org-x-kw-wait :foreground "orange" :weight bold)
+        (,org-x-kw-hold :foreground "violet" :weight bold)
+        (,org-x-kw-canc :foreground "deep sky blue" :weight bold)))
 #+END_SRC
 **** habits
 :PROPERTIES:
@@ -2128,7 +2128,7 @@ Habits consider any "done" todo keyword as "complete." I have =CANC= as a done k
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-habit-parse-todo-advice (orig-fn &rest args)
   "Advice to make the habit tracker only mark DONE habits as complete."
-  (let ((org-done-keywords '("DONE")))
+  (let ((org-done-keywords `(,org-x-kw-done)))
     (unwind-protect (apply orig-fn args))))
 
 (advice-add #'org-habit-parse-todo :around #'nd/org-habit-parse-todo-advice)
@@ -2254,8 +2254,10 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
                       (time-add (current-time) (days-to-time 1))))
 
 (let* ((capfile "~/Org/capture.org")
-       (todo-options `(entry (file ,capfile) "* TODO %?\n"))
-       (deadline-options `(entry (file ,capfile) "* TODO %?\nDEADLINE: %^t\n")))
+       (todo-options `(entry (file ,capfile) "* %(eval org-x-kw-todo) %?\n"))
+       (deadline-options `(entry (file ,capfile)
+                                 ,(concat "* %(eval org-x-kw-todo) %?\n"
+                                          "DEADLINE: %^t\n"))))
   (setq org-capture-templates
         ;; regular TODO task
         `(("t" "todo" ,@todo-options)
@@ -2281,7 +2283,7 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
 
           ;; for converting mu4e emails to tasks, defaults to next-day deadline
           ("e" "email" entry (file ,capfile)
-           ,(concat "* TODO Respond to %:fromaddress; Re: %:subject\t:%(eval org-x-tag-laptop):\n"
+           ,(concat "* %(eval org-x-kw-todo) Respond to %:fromaddress; Re: %:subject\t:%(eval org-x-tag-laptop):\n"
                     "DEADLINE: %(nd/org-timestamp-future 1)\n"
                     "%a\n"))
 
@@ -2396,7 +2398,7 @@ Org mode has no way of detecting if conflicts exist. It also has no way of alert
 The main code is defined in =org-x= so the following is only to set some domain-specific options.
 #+begin_src emacs-lisp
 (setq org-x-agg-filtered-files '("incubator" "peripheral")
-      org-x-agg-filtered-keywords '("CANC" "DONE"))
+      org-x-agg-filtered-keywords (list org-x-kw-canc org-x-kw-done))
 #+end_src
 *** agenda
 :PROPERTIES:
@@ -2626,11 +2628,11 @@ original org entry before executing BODY."
         - org-x-tag-no-agenda
         - org-x-tag-refile
         - org-x-tag-incubated
-        / "TODO"
-        | "NEXT"
-        | "WAIT"
-        | "HOLD"
-        | "CANC")
+        / org-x-kw-todo
+        | org-x-kw-next
+        | org-x-kw-wait
+        | org-x-kw-hold
+        | org-x-kw-canc)
       ((org-agenda-overriding-header "Tasks")
        (org-agenda-skip-function
         ,(nd/org-x-mk-skip-function
@@ -2648,7 +2650,7 @@ original org entry before executing BODY."
              ((org-x-is-project-p)
               (org-x-skip-heading))
              ;; skip canceled tasks
-             ((and (equal keyword "CANC")
+             ((and (equal keyword org-x-kw-canc)
                    (org-x-is-task-p))
               (org-x-skip-heading))
              ;; skip habits
@@ -2701,8 +2703,8 @@ original org entry before executing BODY."
                     (is-subproject (org-x-headline-has-parent 'org-x-is-todoitem-p))
                     ;; skip anything that is in a CANC or HOLD project
                     (is-masked (when is-subproject
-                                 (or (org-x-is-todo-child "CANC")
-                                     (org-x-is-todo-child "HOLD")))))
+                                 (or (org-x-is-todo-child org-x-kw-canc)
+                                     (org-x-is-todo-child org-x-kw-hold)))))
                (unless (or is-masked (< priority 0))
                  (--> status
                       (symbol-name it)
