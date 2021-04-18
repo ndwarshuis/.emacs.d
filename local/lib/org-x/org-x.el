@@ -247,17 +247,20 @@ entire subtrees to save time and ignore tasks")
 
 ;; org-element
 
-;; TODO factor out the logbook config into a separate function
+;; TODO this should be in org-ml
+(defun org-x-logbook-config ()
+  "Return the logbook config for `org-ml-headline-get-supercontents' et al."
+  (list :log-into-drawer org-log-into-drawer
+        :clock-into-drawer org-clock-into-drawer
+        :clock-out-notes org-log-note-clock-out))
+
 (defun org-x-element-first-lb-entry (headline)
   "Return epoch time of most recent logbook item or clock from HEADLINE."
-  (let* ((config (list :log-into-drawer org-log-into-drawer
-                       :clock-into-drawer org-clock-into-drawer
-                       :clock-out-notes org-log-note-clock-out))
+  (let* ((config (org-x-logbook-config))
          (logbook (->> (org-ml-headline-get-supercontents config headline)
                        (org-ml-supercontents-get-logbook)))
          (first-item-ut (-some->> (org-ml-logbook-get-items logbook)
                           (car)
-                          ;; TODO this function should be public
                           (org-ml-logbook-item-get-timestamp)))
          (first-clock-ut (-some->> (org-ml-logbook-get-clocks logbook)
                            (car)
@@ -606,6 +609,7 @@ should be this function again)."
           (:done-incomplete :stuck :inert :held :wait :active
                             :scheduled-project :invalid-todostate
                             :undone-complete))
+         ;; TODO don't use org-done-keywords
          (if (member it-kw org-done-keywords)
              (if (org-x-is-archivable-heading-p) 0 1)
            2)
@@ -717,8 +721,7 @@ latter codes in the list trump earlier ones."
       ((get-ts
         ()
         (-some->> (org-ml-parse-this-headline)
-          (org-ml-headline-get-contents (list :log-into-drawer org-log-into-drawer
-                                              :clock-into-drawer org-clock-into-drawer))
+          (org-ml-headline-get-contents (org-x-logbook-config))
           (org-ml-match '(:first :any * (:and timestamp
                                               (:or (:type 'active)
                                                    (:type 'active-range)))))
@@ -800,14 +803,11 @@ This includes unchecking all checkboxes, marking keywords as
              ;; this obviously will be wrong if I ever want to use TODO
              ;; statistics but at least they will be reset to zero
              (org-ml-headline-update-item-statistics))))
-    (let ((config (list :log-into-drawer org-log-into-drawer
-                        :clock-into-drawer org-clock-into-drawer
-                        :clock-out-notes org-log-note-clock-out))
-          (created-ts (-> (float-time)
+    (let ((created-ts (-> (float-time)
                           (org-ml-unixtime-to-time-long)
                           (org-ml-build-timestamp!)
                           (org-ml-to-string))))
-      (->> (reset config created-ts headline)
+      (->> (reset (org-x-logbook-config) created-ts headline)
            (org-ml-match-map* '(:any * item)
              (org-ml-set-property :checkbox 'off it))
            (org-ml-match-map* '(:any * headline)
@@ -920,6 +920,7 @@ don't log changes in the logbook."
   "Delete logbook drawer of subtree."
   (interactive)
   (save-excursion
+    ;; TODO redefine in terms of org-ml
     (goto-char (org-log-beginning))
     (when (save-excursion
             (save-match-data
@@ -975,8 +976,7 @@ and slow."
         (atags (->> (org-get-tags)
                     (--filter (get-text-property 0 'inherited it))
                     (s-join " ")))
-        (config (list :log-into-drawer org-log-into-drawer
-                      :clock-into-drawer org-clock-into-drawer)))
+        (config (org-x-logbook-config)))
     ;; TODO this is basically a function version of org-archive and could
     ;; be refactored/reused as a separate function
     (cl-flet
