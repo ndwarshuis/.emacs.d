@@ -54,12 +54,12 @@
   "Headline todo keyword for completed task or project.")
 
 (defconst org-x-kw-canc "CANC"
-  "Headline todo keyword for cancelled task or project.")
+  "Headline todo keyword for canceled task or project.")
 
 ;;; TAGS
 
 (defun org-x-prepend-char (char string)
-  "Return STRING with CHAR prepended."
+  "Return STRING with CHAR appended to the front."
   (concat (char-to-string char) string))
 
 (defconst org-x-tag-location-prefix ?@
