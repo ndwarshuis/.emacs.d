@@ -452,9 +452,19 @@ compared to REF-TIME. Returns nil if no timestamp is found."
 
 ;; relational testing
 
-(defun org-x-headline-has-children (test-fun)
-  "Return t if heading has a child for whom TEST-FUN is t.
-Assume that point is at the beginning of a headline."
+(defun org-x-headline-get-level ()
+  "Return level of the current headline.
+Assumes point is at the start of a headline."
+  (save-excursion
+    (forward-char 1)
+    (while (= ?* (following-char)) (forward-char 1))
+    (current-column)))
+
+(defmacro org-x-while-child-headlines (while-form &rest body)
+  "Run BODY for each child headline in the subtree under point.
+Assume point is at the start of a headline. Loop through children
+until WHILE-FORM evals to nil. Note that this only applies BODY
+to the children one level down from the current headline."
   ;; Rather than using regular expressions, it is much faster and simpler to
   ;; walk down each line and count the number of stars to get the level.
   ;;
@@ -462,34 +472,58 @@ Assume that point is at the beginning of a headline."
   ;; 1. Count stars on the current headline (move point forward until first
   ;;    non-star, and use the column number to get level) and add 1 to get
   ;;    the "target-level" (that is the child level of the current headline)
-  ;; 2. Move forward one line until a) `test-fun' returns t b) the current
+  ;; 2. Move forward one line until a) `while-form' returns nil b) the current
   ;;    level of the org-tree is less than the target-level or c) the end of
   ;;    the buffer is reached.
   ;;    2.1. If point not on a star, continue looping.
   ;;    2.2. Otherwise, get the current level similar to (1) using the column
   ;;         number. If the current level is equal to the target level, eval
-  ;;         `test-fun', otherwise do nothing since point is too deep in the
-  ;;         tree
-  (save-excursion
-    (forward-char 1)
-    (while (= ?* (following-char)) (forward-char 1))
-    (let* ((target-level (1+ (current-column)))
-           (cur-level (1+ target-level))
-           (has-children nil))
-      (while (and (not has-children)
-                  (<= target-level cur-level)
-                  (= 0 (forward-line 1)))
-        (when (= ?* (following-char))
-          (forward-char 1)
-          (while (= ?* (following-char)) (forward-char 1))
-          (setq cur-level (current-column))
-          (when (and (= cur-level target-level) (funcall test-fun))
-            (setq has-children t))))
-      has-children)))
+  ;;         `body', otherwise do nothing since point is too deep in the tree.
+  (declare (indent 1))
+  `(save-excursion
+     (let* ((target-level (1+ (org-x-headline-get-level)))
+            (cur-level target-level))
+       (while (and ,while-form
+                   (<= target-level cur-level)
+                   (= 0 (forward-line 1)))
+         (when (= ?* (following-char))
+           (setq cur-level (org-x-headline-get-level))
+           (when (= cur-level target-level)
+             ,@body))))))
+
+(defun org-x-headline-has-children (test-fun)
+  "Return t if heading has a child for whom TEST-FUN is t.
+Assume that point is at the beginning of a headline."
+  (let ((has-children nil))
+    (org-x-while-child-headlines (not has-children)
+      (when (funcall test-fun)
+        (setq has-children t)))
+    has-children))
 
 (defun org-x-headline-has-parent (heading-test)
   "Return t if heading has parent for whom HEADING-TEST is t."
   (save-excursion (and (org-up-heading-safe) (funcall heading-test))))
+
+(defun org-x-up-headline ()
+  "Move point up to the next parent headline or `point-min' if none.
+Return point on success and nil on failure. Assume point is
+current at the start of a headline."
+  (let ((cur-level (org-x-headline-get-level)))
+    (if (= 1 cur-level)
+        (beginning-of-buffer)
+      (let ((target-level (1- cur-level))
+            (stop nil))
+        (while (and (not stop) (= 0 (forward-line -1)))
+          (when (= ?* (following-char))
+            (when (= (org-x-headline-get-level) target-level)
+              (setq stop t)
+              (beginning-of-line)
+              (point))))))))
+
+;; (defun org-x-headline-has-parent (heading-test)
+;;   "Return t if heading has parent for whom HEADING-TEST is t."
+;;   (save-excursion
+;;     (and (org-x-up-headline) (funcall heading-test))))
 
 (defun org-x-has-discontinuous-parent ()
   "Return t if heading has a non-todoitem parent which in turn has a todoitem parent."
@@ -547,33 +581,27 @@ should be this function again)."
                       (-flatten-n 1)))
          (breaker-status (-last-item allowed-statuscodes))
          (initial-status (car allowed-statuscodes)))
-    `(let ((project-status ,initial-status)
-           (previous-point nil)
-           (new-status nil)
-           (it-kw nil))
-       (save-excursion
-         (setq previous-point (point))
-         (outline-next-heading)
-         ;; loop through subproject tasks until breaker-status found
-         (while (and (not (eq project-status ,breaker-status))
-                     (> (point) previous-point))
-           (setq it-kw (org-get-todo-state))
-           (when it-kw
-             (if (org-x-headline-has-children #'org-x-is-todoitem-p)
-                 (progn
-                   ;; If project returns an allowed status then use that.
-                   ;; Otherwise look up the value in the translation table and
-                   ;; return error if not found.
-                   (setq new-status (,callback-fun))
-                   (unless (member new-status ',allowed-statuscodes)
-                     (setq new-status (alist-get new-status ',trans-tbl))))
-               ;; if tasks then use get-task-status to obtain status
-               (setq new-status (nth ,get-task-status ',allowed-statuscodes)))
-             (when (org-x-compare-statuscodes > new-status project-status ',allowed-statuscodes)
-               (setq project-status new-status)))
-           (setq previous-point (point))
-           (org-forward-heading-same-level 1 t)))
-       project-status)))
+    `(save-excursion
+      (let ((project-status ,initial-status)
+            (new-status nil)
+            (it-kw nil))
+        ;; loop through tasks one level down until breaker-status found
+        (org-x-while-child-headlines (not (eq project-status ,breaker-status))
+          (setq it-kw (org-get-todo-state))
+          (when it-kw
+            (if (org-x-headline-has-children #'org-x-is-todoitem-p)
+                (progn
+                  ;; If project returns an allowed status then use that.
+                  ;; Otherwise look up the value in the translation table and
+                  ;; return error if not found.
+                  (setq new-status (,callback-fun))
+                  (unless (member new-status ',allowed-statuscodes)
+                    (setq new-status (alist-get new-status ',trans-tbl))))
+              ;; if tasks then use get-task-status to obtain status
+              (setq new-status (nth ,get-task-status ',allowed-statuscodes)))
+            (when (org-x-compare-statuscodes > new-status project-status ',allowed-statuscodes)
+              (setq project-status new-status))))
+         project-status))))
 
 (defun org-x-get-project-status ()
   "Return project heading statuscode (assumes it is indeed a project)."
