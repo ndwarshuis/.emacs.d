@@ -827,83 +827,51 @@ This includes unchecking all checkboxes, marking keywords as
            (org-ml-match-map* '(:any * headline)
              (reset config created-ts it))))))
 
-(defun org-x--headline-repeat-shifted (n shift headline)
-  "Return HEADLINE repeated and shifted N times.
-SHIFT is a string specifier denoting the amount to shift, eg
-\"+2d\"."
+(defun org-x--headline-repeat-shifted (n offset unit headline)
+  "Return HEADLINE repeated and shifted by OFFSET UNITs N times."
   (cl-flet
-      ((convert-shift
-        (shift)
-        (-let* (((n unit)
-                 (or (-some->>
-                         shift
-                       (s-match "\\(\\([-+]?[0-9]+\\)\\([ymwd]\\)\\)")
-                       (cddr))
-                     (error "Invalid shift specified: %s" shift)))
-                ((unit mult)
-                 (cl-case (intern unit)
-                   (y '(year 1))
-                   (m '(month 1))
-                   (w '(day 7))
-                   (d '(day 1))
-                   (t (error "This shouldn't happen: %s" unit))))
-                (n (* mult (string-to-number n))))
-          (list n unit)))
-       (shift-timestamps
-        (T unit mult headline)
-        (let ((T* (* T mult)))
+      ((shift-timestamps
+        (offset unit mult headline)
+        (let ((offset* (* offset mult)))
           (->> headline
                (org-ml-match-map* '(:any * timestamp)
-                 (org-ml-timestamp-shift T* unit it))
+                 (org-ml-timestamp-shift offset* unit it))
                (org-ml-match-map* '(:any * planning)
                  (->> it
                       (org-ml-map-property* :scheduled
-                        (when it (org-ml-timestamp-shift T* unit it)))
+                        (when it (org-ml-timestamp-shift offset* unit it)))
                       (org-ml-map-property* :deadline
-                        (when it (org-ml-timestamp-shift T* unit it)))))))))
+                        (when it (org-ml-timestamp-shift offset* unit it)))))))))
     (let ((headlines (org-ml-clone-node-n n headline)))
-      (if (equal "" shift) headlines
-        (-let (((T unit) (convert-shift shift)))
-          (--map-indexed (shift-timestamps T unit (1+ it-index) it) headlines))))))
+      (--map-indexed (shift-timestamps offset unit (1+ it-index) it) headlines))))
 
 (defun org-x-clone-subtree-with-time-shift (n)
   "Like `org-clone-subtree-with-time-shift' except reset items and todos.
 N is the number of clones to produce."
   (interactive "nNumber of clones to produce: ")
-  (let* ((st (org-ml-parse-this-subtree))
-         (shift
-          (or (org-entry-get nil org-x-prop-time-shift 'selective)
-              (read-from-minibuffer
-               "Date shift per clone (e.g. +1w, empty to copy unchanged): ")))
-         (ins (->> (org-x--reset-headline st)
-                   (org-x--headline-repeat-shifted n shift)
-                   (-map #'org-ml-to-string)
-                   (s-join "")))
-         (end (org-ml-get-property :end st)))
+  (-let* ((st (org-ml-parse-this-subtree))
+          ((offset unit) (-> (org-entry-get nil org-x-prop-time-shift 'selective)
+                           (org-x-read-shift-from-minibuffer)))
+          (ins (->> (org-x--reset-headline st)
+                 (org-x--headline-repeat-shifted n offset unit)
+                 (-map #'org-ml-to-string)
+                 (s-join "")))
+          (end (org-ml-get-property :end st)))
     (org-ml-insert end ins)))
 
 (defun org-x-clone-subtree-with-time-shift-toplevel (n)
   "Like `org-clone-subtree-with-time-shift' except reset items and todos.
 N is the number of clones to produce."
   (interactive "nNumber of clones to produce: ")
-  (cl-flet
-      ((get-shift
-        (subtree)
-        (or
-         (org-ml-headline-get-node-property org-x-prop-time-shift subtree)
-         (read-from-minibuffer
-          "Shift per clone (e.g. +1w, empty to copy unchanged): "))))
+  (-let (((offset unit) (-> (org-entry-get nil org-x-prop-time-shift 'selective)
+                          (org-x-read-shift-from-minibuffer))))
     (org-ml-update-this-subtree*
-      (let ((shift (get-shift it))
-            (new (->> (org-ml-headline-get-subheadlines it)
-                      (-last-item)
-                      (org-x--reset-headline))))
+      (let ((new (->> (org-ml-headline-get-subheadlines it)
+                   (-last-item)
+                   (org-x--reset-headline))))
         (org-ml-map-children*
-         (append it (org-x--headline-repeat-shifted n shift new))
-         it)))
-    (let ((post (org-ml-parse-this-subtree)))
-      (org-ml-match-do '(section property-drawer) (lambda (it) (org-ml-fold it)) post)
-      (org-ml-match-do '(headline) (lambda (it) (org-ml-fold it)) post))))
+          (append it (org-x--headline-repeat-shifted n offset unit new))
+          it)))))
 
 ;; marking subtrees
 
@@ -1127,34 +1095,35 @@ If BACK is t seek backward, else forward. Ignore blank lines."
 
 ;; timestamp shifter
 
+(defun org-x-read-shift-from-minibuffer (&optional default)
+  (let* ((out (or default (read-from-minibuffer "Date shift (e.g. +1w): ")))
+         (match (s-match "\\`[ \t]*\\([\\+\\-]?[0-9]+\\)\\([MHdwmy]\\)[ \t]*\\'" out)))
+    (if (not match) (error "Invalid shift: %s" out)
+      (-let* (((_ mag unit) match)
+              ((mult unit*) (pcase unit
+                              ("M" '(1 minute))
+                              ("H" '(1 hour))
+                              ("d" '(1 day))
+                              ("w" '(7 day))
+                              ("m" '(1 month))
+                              ("y" '(1 year))
+                              (_ (error "Unsupported time unit")))))
+        (list (* mult (string-to-number mag)) unit*)))))
+
 ;; TODO refactor in terms of org-ml to make cleaner/safer
 (defun org-x-time-shift ()
   "Shift all scheduled and deadlined timestamps in the current subtree."
   (interactive)
   (save-excursion
     (org-back-to-heading) ;; trigger error here if not at heading
-    (let* ((end (save-excursion (org-end-of-subtree)))
-           (shift
-            (-->
-             (read-from-minibuffer "Date shift (e.g. +1w): ")
-             (s-match "\\`[ \t]*\\([\\+\\-]?[0-9]+\\)\\([MHdwmy]\\)[ \t]*\\'" it)
-             (if (not it) (error "Invalid shift: %s" it) it)))
-           (mag (string-to-number (nth 1 shift)))
-           (unit
-            (pcase (nth 2 shift)
-              ("M" 'minute)
-              ("H" (setq mag (* mag 60)) 'minute)
-              ("d" 'day)
-              ("w" (setq mag (* mag 7)) 'day)
-              ("m" 'month)
-              ("y" 'year)
-              (_ (error "Unsupported time unit"))))
-           (shift-ts-maybe
-            (lambda (type)
-              (let ((bound (save-excursion (outline-next-heading))))
-                (save-excursion
-                  (when (re-search-forward (org-re-timestamp type) bound t)
-                    (org-timestamp-change mag unit)))))))
+    (-let* ((end (save-excursion (org-end-of-subtree)))
+            ((mag unit) (org-x-read-shift-from-minibuffer))
+            (shift-ts-maybe
+             (lambda (type)
+               (let ((bound (save-excursion (outline-next-heading))))
+                 (save-excursion
+                   (when (re-search-forward (org-re-timestamp type) bound t)
+                     (org-timestamp-change mag unit)))))))
       (while (< (point) end)
         (funcall shift-ts-maybe 'scheduled)
         (funcall shift-ts-maybe 'deadline)
