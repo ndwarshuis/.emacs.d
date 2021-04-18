@@ -2602,7 +2602,7 @@ original org entry before executing BODY."
       ""
       ((org-agenda-skip-function
         '(org-x-skip-headings-with-tags
-          (list org-x-tag-na org-x-tag-maybe org-x-tag-refile)))
+          (list org-x-tag-no-agenda org-x-tag-maybe org-x-tag-refile)))
        (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
        (org-agenda-include-diary t)
        (org-super-agenda-groups
