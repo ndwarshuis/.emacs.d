@@ -36,6 +36,25 @@
 (require 'org)
 (require 'org-x-agg)
 
+;;; TODO KEYWORDS
+
+(defconst org-x-kw-todo "TODO"
+  "Headline todo keyword for open task or project.")
+
+(defconst org-x-kw-next "NEXT"
+  "Headline todo keyword for next task.")
+
+(defconst org-x-kw-wait "WAIT"
+  "Headline todo keyword for task that is waiting on something.")
+
+(defconst org-x-kw-hold "HOLD"
+  "Headline todo keyword for task or project that is held.")
+
+(defconst org-x-kw-done "DONE"
+  "Headline todo keyword for completed task or project.")
+
+(defconst org-x-kw-canc "CANC"
+  "Headline todo keyword for cancelled task or project.")
 
 ;;; TAGS
 
@@ -203,15 +222,15 @@
   "The number of days to wait before tasks are considered inert.")
 
 (defconst org-x-project-invalid-todostates
-  '("WAIT" "NEXT")
+  (list org-x-kw-wait org-x-kw-next)
   "Projects cannot have these todostates.")
   
 (defconst org-x-agenda-todo-sort-order
-  '("NEXT" "WAIT" "HOLD" "TODO")
+  (list org-x-kw-next org-x-kw-wait org-x-kw-hold org-x-kw-todo)
   "Defines the order in which todo keywords should be sorted.")
   
 (defconst org-x-project-skip-todostates
-  '("HOLD" "CANC")
+  '(org-x-kw-hold org-x-kw-canc)
   "These keywords override all contents within their subtrees.
 Currently used to tell skip functions when they can hop over
 entire subtrees to save time and ignore tasks")
@@ -564,7 +583,7 @@ should be this function again)."
       (cond
        ;; held projects do not care what is underneath them
        ;; only need to test if they are inert
-       ((equal keyword "HOLD") (if (org-x-is-inert-p) :inert :held))
+       ((equal keyword org-x-kw-hold) (if (org-x-is-inert-p) :inert :held))
 
        ;; projects with invalid todostates are nonsense
        ((member keyword org-x-project-invalid-todostates)
@@ -572,7 +591,7 @@ should be this function again)."
 
        ;; canceled projects can either be archivable or complete
        ;; any errors or undone tasks are irrelevant
-       ((equal keyword "CANC") (if (org-x-is-archivable-heading-p) :archivable
+       ((equal keyword org-x-kw-canc) (if (org-x-is-archivable-heading-p) :archivable
                                  :complete))
        
        ;;
@@ -580,7 +599,7 @@ should be this function again)."
        ;;
 
        ;; done projects are like canceled projects but can also be incomplete
-       ((equal keyword "DONE")
+       ((equal keyword org-x-kw-done)
         (org-x-descend-into-project
          ((:archivable)
           (:complete)
@@ -593,7 +612,7 @@ should be this function again)."
          org-x-get-project-status))
        
        ;; project with TODO states could be basically any status
-       ((equal keyword "TODO")
+       ((equal keyword org-x-kw-todo)
         (org-x-descend-into-project
          ((:undone-complete :complete :archivable)
           (:stuck :scheduled-project :invalid-todostate :done-incomplete)
@@ -603,10 +622,10 @@ should be this function again)."
           (:active))
          (cond
           ((and (not (member it-kw org-done-keywords)) (org-x-is-inert-p)) 4)
-          ((equal it-kw "TODO") (if (org-x-is-scheduled-heading-p) 5 1))
-          ((equal it-kw "HOLD") 2)
-          ((equal it-kw "WAIT") 3)
-          ((equal it-kw "NEXT") 5)
+          ((equal it-kw org-x-kw-todo) (if (org-x-is-scheduled-heading-p) 5 1))
+          ((equal it-kw org-x-kw-hold) 2)
+          ((equal it-kw org-x-kw-wait) 3)
+          ((equal it-kw org-x-kw-next) 5)
           (t 0))
          org-x-get-project-status))
        
@@ -620,7 +639,7 @@ should be this function again)."
         (member kw org-x-project-invalid-todostates)) :project-error)
 
    ;; canceled tasks add nothing
-   ((equal kw "CANC") :empt)
+   ((equal kw org-x-kw-canc) :empt)
    
    ;;
    ;; these require descending into the project subtasks
@@ -628,7 +647,7 @@ should be this function again)."
 
    ;; done projects either add nothing (empty) or are not actually
    ;; done (project error)
-   ((equal kw "DONE")
+   ((equal kw org-x-kw-done)
     (org-x-descend-into-project
      ((:empt)
       (:project-error :unscheduled :actv))
@@ -636,7 +655,7 @@ should be this function again)."
      org-x--clone-get-iterator-project-status))
    
    ;; project with TODO states could be basically any status
-   ((equal kw "TODO")
+   ((equal kw org-x-kw-todo)
     (org-x-descend-into-project
      ((:unscheduled :project-error)
       (:empt)
@@ -769,7 +788,7 @@ This includes unchecking all checkboxes, marking keywords as
       ((reset
         (config created-ts headline)
         (->> (if (org-ml-headline-is-done headline)
-                 (org-ml-set-property :todo-keyword "TODO" headline)
+                 (org-ml-set-property :todo-keyword org-x-kw-todo headline)
                headline)
              (org-ml-headline-map-supercontents* config
                (org-ml-supercontents-set-logbook nil it))
@@ -893,7 +912,7 @@ don't log changes in the logbook."
 (defun org-x-mark-subtree-done ()
   "Mark all tasks in subtree as DONE unless they are already CANC."
   (interactive)
-  (org-x-mark-subtree-keyword "DONE" '("CANC")))
+  (org-x-mark-subtree-keyword org-x-kw-done `(,org-x-kw-canc)))
 
 ;; logbook
 
@@ -968,7 +987,7 @@ and slow."
                                 (-)))
                  (headline*
                   (->> (org-ml-clone-node headline)
-                       (org-ml-set-property :todo-keyword "DONE")
+                       (org-ml-set-property :todo-keyword org-x-kw-done)
                        (org-ml-headline-map-planning*
                          (let ((time (->> (float-time)
                                           (org-ml-unixtime-to-time-long))))
