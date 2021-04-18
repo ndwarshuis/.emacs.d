@@ -708,36 +708,28 @@ Allowed statuscodes are in list `nd/get-iter-statuscodes.' where
  latter codes in the list trump earlier ones."
   (let ((cur-status (first org-x-iter-statuscodes))
         (breaker-status (-last-item org-x-iter-statuscodes))
-        (subtree-end (save-excursion (org-end-of-subtree t)))
-        (prev-point (point))
         (kw nil)
         (new-status nil)
         (ts nil))
-    (save-excursion
-      (outline-next-heading)
-      (while (and (not (eq cur-status breaker-status))
-                  (< prev-point (point) subtree-end))
-        (setq kw (org-x-is-todoitem-p)
-              new-status nil)
-        (when kw
-          ;; test if project of atomic task
-          ;; assume that there are no todoitems above this headline
-          ;; to make checking easier
-          (setq
-           new-status
-           (if (org-x-headline-has-children 'org-x-is-todoitem-p)
-               (org-x--clone-get-iterator-project-status kw)
-             (setq ts (or (org-x-is-scheduled-heading-p)
-                          (org-x-is-deadlined-heading-p)))
-             (cond
-              ((member kw org-done-keywords) :empt)
-              ((not ts) :unscheduled)
-              ((< org-x-iter-future-time (- ts (float-time))) :actv)
-              (t :empt))))
-          (when (org-x-compare-statuscodes > new-status cur-status org-x-iter-statuscodes)
-            (setq cur-status new-status)))
-        (setq prev-point (point))
-        (org-forward-heading-same-level 1 t)))
+    (org-x-while-child-headlines (not (eq cur-status breaker-status))
+      (setq kw (org-x-is-todoitem-p))
+      (when kw
+        ;; test if project or atomic task
+        ;; assume that there are no todoitems above this headline
+        ;; to make checking easier
+        (setq
+         new-status
+         (if (org-x-headline-has-children 'org-x-is-todoitem-p)
+             (org-x--clone-get-iterator-project-status kw)
+           (setq ts (or (org-x-is-scheduled-heading-p)
+                        (org-x-is-deadlined-heading-p)))
+           (cond
+            ((member kw org-done-keywords) :empt)
+            ((not ts) :unscheduled)
+            ((< org-x-iter-future-time (- ts (float-time))) :actv)
+            (t :empt))))
+        (when (org-x-compare-statuscodes > new-status cur-status org-x-iter-statuscodes)
+          (setq cur-status new-status))))
     cur-status))
 
 ;; periodicals
@@ -767,16 +759,9 @@ latter codes in the list trump earlier ones."
               new
             cur-status))))
     (let ((cur-status (first org-x-peri-statuscodes))
-          (breaker-status (-last-item org-x-peri-statuscodes))
-          (subtree-end (save-excursion (org-end-of-subtree t)))
-          (prev-point (point)))
-      (save-excursion
-        (outline-next-heading)
-        (while (and (not (eq cur-status breaker-status))
-                    (< prev-point (point) subtree-end))
-          (setq cur-status (->> (get-ts) (new-status cur-status)))
-          (setq prev-point (point))
-          (org-forward-heading-same-level 1 t)))
+          (breaker-status (-last-item org-x-peri-statuscodes)))
+      (org-x-while-child-headlines (not (eq cur-status breaker-status))
+        (setq cur-status (->> (get-ts) (new-status cur-status))))
       cur-status)))
 
 ;; skip functions
@@ -922,6 +907,7 @@ N is the number of clones to produce."
 
 ;; marking subtrees
 
+;; put this in terms of org-ml
 (defun org-x-mark-subtree-keyword (new-keyword &optional exclude no-log)
   "Change the todo keyword of all tasks in a subtree to NEW-KEYWORD.
 If EXCLUDE is given, it should be a list of todo keywords; any headline
