@@ -2197,8 +2197,8 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
 :END:
 Each group also has its own color, defined by its prefix symbol.
 #+BEGIN_SRC emacs-lisp
-(let ((grouped-tags (->> (--filter (stringp (car it)) org-tag-alist)
-                      (-map #'car)
+(let ((grouped-tags (->> (-map #'car org-tag-alist)
+                      (-filter #'stringp)
                       (--group-by (elt it 0)))))
   (cl-flet
       ((add-foreground
@@ -2207,8 +2207,8 @@ Each group also has its own color, defined by its prefix symbol.
           (--map (list it :foreground color)))))
     (setq org-tag-faces
           (append
-           (add-foreground org-x-tag-location-context-prefix "PaleGreen")
-           (add-foreground org-x-tag-resource-context-prefix "SkyBlue")
+           (add-foreground org-x-tag-location-prefix "PaleGreen")
+           (add-foreground org-x-tag-resource-prefix "SkyBlue")
            (add-foreground org-x-tag-misc-prefix "PaleGoldenrod")
            (add-foreground org-x-tag-category-prefix "violet")))))
 #+END_SRC

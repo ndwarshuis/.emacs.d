@@ -39,10 +39,14 @@
 
 ;;; TAGS
 
-(defconst org-x-tag-location-context-prefix ?@
+(defun org-x-prepend-char (char string)
+  "Return STRING with CHAR prepended."
+  (concat (char-to-string char) string))
+
+(defconst org-x-tag-location-prefix ?@
   "Prefix character denoting location context tag.")
 
-(defconst org-x-tag-resource-context-prefix ?#
+(defconst org-x-tag-resource-prefix ?#
   "Prefix character denoting resource context tag.")
 
 (defconst org-x-tag-misc-prefix ?%
@@ -51,88 +55,91 @@
 (defconst org-x-tag-category-prefix ?_
   "Prefix character denoting life category tag.")
 
-(defun org-x-prefix-string (char string)
-  (concat (char-to-string char) string))
-
 (defconst org-x-tag-errand
-  (org-x-prefix-string org-x-tag-location-context-prefix "errand")
+  (org-x-prepend-char org-x-tag-location-prefix "errand")
   "Tag denoting an errand location.")
 
 (defconst org-x-tag-home
-  (org-x-prefix-string org-x-tag-location-context-prefix "home")
+  (org-x-prepend-char org-x-tag-location-prefix "home")
   "Tag denoting a home location.")
 
 (defconst org-x-tag-work
-  (org-x-prefix-string org-x-tag-location-context-prefix "work")
+  (org-x-prepend-char org-x-tag-location-prefix "work")
   "Tag denoting a work location.")
 
 (defconst org-x-tag-travel
-  (org-x-prefix-string org-x-tag-location-context-prefix "travel")
+  (org-x-prepend-char org-x-tag-location-prefix "travel")
   "Tag denoting a travel location.")
 
 (defconst org-x-tag-laptop
-  (org-x-prefix-string org-x-tag-resource-context-prefix "laptop")
+  (org-x-prepend-char org-x-tag-resource-prefix "laptop")
   "Tag denoting a laptop resource.")
 
 (defconst org-x-tag-tcult
-  (org-x-prefix-string org-x-tag-resource-context-prefix "tcult")
+  (org-x-prepend-char org-x-tag-resource-prefix "tcult")
   "Tag denoting a tissue-culture resource.")
 
 (defconst org-x-tag-phone
-  (org-x-prefix-string org-x-tag-resource-context-prefix "phone")
+  (org-x-prepend-char org-x-tag-resource-prefix "phone")
   "Tag denoting a phone resource.")
 
 (defconst org-x-tag-note
-  (org-x-prefix-string org-x-tag-misc-prefix "note")
+  (org-x-prepend-char org-x-tag-misc-prefix "note")
   "Tag denoting a note.")
 
 (defconst org-x-tag-incubated
-  (org-x-prefix-string org-x-tag-misc-prefix "inc")
+  (org-x-prepend-char org-x-tag-misc-prefix "inc")
   "Tag denoting an incubated task.")
 
 (defconst org-x-tag-maybe
-  (org-x-prefix-string org-x-tag-misc-prefix "maybe")
+  (org-x-prepend-char org-x-tag-misc-prefix "maybe")
   "Tag denoting a maybe task.")
 
 (defconst org-x-tag-subdivision
-  (org-x-prefix-string org-x-tag-misc-prefix "subdiv")
+  (org-x-prepend-char org-x-tag-misc-prefix "subdiv")
   "Tag denoting a task awaiting subdivision.")
 
 (defconst org-x-tag-flagged
-  (org-x-prefix-string org-x-tag-misc-prefix "flag")
+  (org-x-prepend-char org-x-tag-misc-prefix "flag")
   "Tag denoting a flagged task.")
 
 (defconst org-x-tag-environmental
-  (org-x-prefix-string org-x-tag-category-prefix "env")
+  (org-x-prepend-char org-x-tag-category-prefix "env")
   "Tag denoting an environmental life category.")
 
 (defconst org-x-tag-financial
-  (org-x-prefix-string org-x-tag-category-prefix "fin")
+  (org-x-prepend-char org-x-tag-category-prefix "fin")
   "Tag denoting a financial life category.")
 
 (defconst org-x-tag-intellectual
-  (org-x-prefix-string org-x-tag-category-prefix "int")
+  (org-x-prepend-char org-x-tag-category-prefix "int")
   "Tag denoting an intellectual life category.")
 
 (defconst org-x-tag-metaphysical
-  (org-x-prefix-string org-x-tag-category-prefix "met")
+  (org-x-prepend-char org-x-tag-category-prefix "met")
   "Tag denoting an metaphysical life category.")
 
 (defconst org-x-tag-physical
-  (org-x-prefix-string org-x-tag-category-prefix "phy")
+  (org-x-prepend-char org-x-tag-category-prefix "phy")
   "Tag denoting an physical life category.")
 
 (defconst org-x-tag-professional
-  (org-x-prefix-string org-x-tag-category-prefix "pro")
+  (org-x-prepend-char org-x-tag-category-prefix "pro")
   "Tag denoting a professional life category.")
 
 (defconst org-x-tag-recreational
-  (org-x-prefix-string org-x-tag-category-prefix "rec")
+  (org-x-prepend-char org-x-tag-category-prefix "rec")
   "Tag denoting a recreational life category.")
 
 (defconst org-x-tag-social
-  (org-x-prefix-string org-x-tag-category-prefix "soc")
+  (org-x-prepend-char org-x-tag-category-prefix "soc")
   "Tag denoting a social life category.")
+
+(defconst org-x-tag-no-agenda "NA"
+  "Tag denoting a headlines that shouldn't go in the agenda.")
+
+(defconst org-x-tag-refile "REFILE"
+  "Tag denoting a headlines that are to be refiled.")
 
 ;;; PROPERTIES
 
@@ -221,6 +228,7 @@ entire subtrees to save time and ignore tasks")
 
 ;; org-element
 
+;; TODO factor out the logbook config into a separate function
 (defun org-x-element-first-lb-entry (headline)
   "Return epoch time of most recent logbook item or clock from HEADLINE."
   (let* ((config (list :log-into-drawer org-log-into-drawer
@@ -410,10 +418,11 @@ compared to REF-TIME. Returns nil if no timestamp is found."
   (org-entry-get nil org-effort-property))
 
 (defun org-x-headline-has-context-p ()
-  "Return t if heading has a context."
+  "Return non-nil if heading has a context tag."
   (let ((tags (org-get-tags)))
-    (or (> (length (org-x-filter-list-prefix "#" tags)) 0)
-        (> (length (org-x-filter-list-prefix "@" tags)) 0))))
+    (--any (memq (elt it 0) (list org-x-tag-resource-prefix
+                                  org-x-tag-location-prefix))
+           tags)))
 
 (defun org-x-headline-has-tag-p (tag)
   "Return t if heading has tag TAG."
@@ -903,7 +912,6 @@ don't log changes in the logbook."
       (delete-region (region-beginning) (region-end))
       (org-remove-empty-drawer-at (point)))))
 
-
 (defun org-x-clock-range (&optional arg)
   "Add a completed clock entry to the current heading.
 Does not touch the running clock. When called with one prefix
@@ -1133,12 +1141,12 @@ If BACK is t seek backward, else forward. Ignore blank lines."
 (defun org-x-agenda-filter-non-context ()
   "Filter all tasks with context tags."
   (interactive)
-  (let* ((tags-list (mapcar #'car org-tag-alist))
-         (context-tags (append
-                        (org-x-filter-list-prefix "@" tags-list)
-                        (org-x-filter-list-prefix "#" tags-list))))
-    (setq org-agenda-tag-filter
-          (mapcar (lambda (tag) (concat "-" tag)) context-tags))
+  (let ((context-tags
+         (->> (-map #'car org-tag-alist)
+           (-filter #'stringp)
+           (--filter (memq (elt it 0) (list org-x-tag-resource-prefix
+                                            org-x-tag-location-prefix))))))
+    (setq org-agenda-tag-filter (--map (concat "-" it) context-tags))
     (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
 
 (defun org-x-agenda-filter-non-peripheral ()
