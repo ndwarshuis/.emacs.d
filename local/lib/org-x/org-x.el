@@ -966,18 +966,10 @@ don't log changes in the logbook."
 (defun org-x-log-delete ()
   "Delete logbook drawer of subtree."
   (interactive)
-  (save-excursion
-    ;; TODO redefine in terms of org-ml
-    (goto-char (org-log-beginning))
-    (when (save-excursion
-            (save-match-data
-              (beginning-of-line 0)
-              (search-forward-regexp org-drawer-regexp)
-              (goto-char (match-beginning 1))
-              (looking-at "LOGBOOK")))
-      (org-mark-element)
-      (delete-region (region-beginning) (region-end))
-      (org-remove-empty-drawer-at (point)))))
+  (let ((config (org-x-logbook-config)))
+    (org-ml-update-this-headline*
+      (->> (org-ml-headline-set-logbook-clocks config nil it)
+        (org-ml-headline-set-logbook-items config nil)))))
 
 (defun org-x-clock-range (&optional arg)
   "Add a completed clock entry to the current heading.
