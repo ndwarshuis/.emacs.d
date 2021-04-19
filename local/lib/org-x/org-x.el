@@ -444,10 +444,9 @@ compared to REF-TIME. Returns nil if no timestamp is found."
 
 (defun org-x-headline-has-context-p ()
   "Return non-nil if heading has a context tag."
-  (let ((tags (org-get-tags)))
-    (--any (memq (elt it 0) (list org-x-tag-resource-prefix
-                                  org-x-tag-location-prefix))
-           tags)))
+  (--any
+   (memq (elt it 0) `(,org-x-tag-resource-prefix ,org-x-tag-location-prefix))
+   (org-get-tags)))
 
 (defun org-x-headline-has-tag-p (tag)
   "Return t if heading has tag TAG."
