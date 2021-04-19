@@ -797,66 +797,70 @@ function will simply return the point of the next headline."
 
 ;; cloning
 
-(defun org-x--reset-headline (headline)
+(defun org-x--reset-subtree (headline)
   "Reset HEADLINE node to incomplete state.
 This includes unchecking all checkboxes, marking keywords as
 \"TODO\", clearing any unique IDs, etc."
-  (cl-flet*
+  (cl-labels
       ((reset
         (config created-ts headline)
+        ;; set keyword to TODO
         (->> (if (org-ml-headline-is-done headline)
                  (org-ml-set-property :todo-keyword org-x-kw-todo headline)
                headline)
-             (org-ml-headline-map-supercontents* config
-               (org-ml-supercontents-set-logbook nil it))
-             (org-ml-headline-set-node-property org-x-prop-created created-ts)
-             (org-ml-headline-map-planning*
-               (if (not it) it
-                 (org-ml-planning-set-timestamp! :closed nil it)))
-             (org-ml-headline-set-node-property "ID" nil)
-             ;; this obviously will be wrong if I ever want to use TODO
-             ;; statistics but at least they will be reset to zero
-             (org-ml-headline-update-item-statistics))))
+          ;; remove logbook items and clocks
+          (org-ml-headline-map-supercontents* config
+            (-some->> it (org-ml-supercontents-set-logbook nil)))
+          (org-ml-headline-set-node-property org-x-prop-created created-ts)
+          ;; remove CLOSED planning entry
+          (org-ml-headline-map-planning*
+            (-some->> it (org-ml-planning-set-timestamp! :closed nil)))
+          ;; remove ID property
+          (org-ml-headline-set-node-property "ID" nil)
+          ;; clear item checkboxes
+          (org-ml-match-map* '(section :any * item)
+            (org-ml-set-property :checkbox 'off it))
+          ;; update stats cookie; this obviously will be wrong if I ever want to
+          ;; use TODO statistics but at least they will be reset to zero
+          (org-ml-headline-update-item-statistics)
+          ;; rinse and repeat for subheadlines
+          (org-ml-headline-map-subheadlines*
+            (--map (reset config created-ts it) it)))))
     (let ((created-ts (-> (float-time)
                           (org-ml-unixtime-to-time-long)
                           (org-ml-build-timestamp!)
                           (org-ml-to-string))))
-      (->> (reset (org-x-logbook-config) created-ts headline)
-           (org-ml-match-map* '(:any * item)
-             (org-ml-set-property :checkbox 'off it))
-           (org-ml-match-map* '(:any * headline)
-             (reset config created-ts it))))))
+      (reset (org-x-logbook-config) created-ts headline))))
 
-(defun org-x--headline-repeat-shifted (n offset unit headline)
+(defun org-x--headline-shift-timestamps (offset unit headline)
+  (->> headline
+    (org-ml-match-map* '(:any * timestamp)
+      (org-ml-timestamp-shift offset unit it))
+    (org-ml-match-map* '(:any * planning)
+      (->> it
+        (org-ml-map-property* :scheduled
+          (when it (org-ml-timestamp-shift offset unit it)))
+        (org-ml-map-property* :deadline
+          (when it (org-ml-timestamp-shift offset unit it)))))))
+
+(defun org-x--subtree-repeat-shifted (n offset unit headline)
   "Return HEADLINE repeated and shifted by OFFSET UNITs N times."
-  (cl-flet
-      ((shift-timestamps
-        (offset unit mult headline)
-        (let ((offset* (* offset mult)))
-          (->> headline
-               (org-ml-match-map* '(:any * timestamp)
-                 (org-ml-timestamp-shift offset* unit it))
-               (org-ml-match-map* '(:any * planning)
-                 (->> it
-                      (org-ml-map-property* :scheduled
-                        (when it (org-ml-timestamp-shift offset* unit it)))
-                      (org-ml-map-property* :deadline
-                        (when it (org-ml-timestamp-shift offset* unit it)))))))))
-    (let ((headlines (org-ml-clone-node-n n headline)))
-      (--map-indexed (shift-timestamps offset unit (1+ it-index) it) headlines))))
+  (->> (org-ml-clone-node-n n headline)
+    (--map-indexed (org-x--headline-shift-timestamps
+                    (* offset (1+ it-index)) unit it))))
 
 (defun org-x-clone-subtree-with-time-shift (n)
   "Like `org-clone-subtree-with-time-shift' except reset items and todos.
 N is the number of clones to produce."
   (interactive "nNumber of clones to produce: ")
-  (-let* ((st (org-ml-parse-this-subtree))
+  (-let* ((subtree (org-ml-parse-this-subtree))
           ((offset unit) (-> (org-entry-get nil org-x-prop-time-shift 'selective)
                            (org-x-read-shift-from-minibuffer)))
-          (ins (->> (org-x--reset-headline st)
-                 (org-x--headline-repeat-shifted n offset unit)
+          (ins (->> (org-x--reset-subtree subtree)
+                 (org-x--subtree-repeat-shifted n offset unit)
                  (-map #'org-ml-to-string)
                  (s-join "")))
-          (end (org-ml-get-property :end st)))
+          (end (org-ml-get-property :end subtree)))
     (org-ml-insert end ins)))
 
 (defun org-x-clone-subtree-with-time-shift-toplevel (n)
@@ -868,9 +872,9 @@ N is the number of clones to produce."
     (org-ml-update-this-subtree*
       (let ((new (->> (org-ml-headline-get-subheadlines it)
                    (-last-item)
-                   (org-x--reset-headline))))
+                   (org-x--reset-subtree))))
         (org-ml-map-children*
-          (append it (org-x--headline-repeat-shifted n offset unit new))
+          (append it (org-x--subtree-repeat-shifted n offset unit new))
           it)))))
 
 ;; marking subtrees

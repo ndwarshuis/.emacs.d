@@ -63,11 +63,18 @@ Forms are denoted like %(FORM)%."
   (declare (indent 2))
   (let ((forms (->> (-partition 4 specs)
                  ;; the _op argument is just for looks to make the decl clearer
-                 (--map (-let (((title buffer _op result) it))
+                 (--map (-let* (((title buffer _op result) it)
+                                (result* (if (and (consp result)
+                                                  (eq (car result) :result))
+                                             (->> (cdr result)
+                                               (s-join "\n")
+                                               (org-x-test-parse-forms))
+                                           result)))
+                          (print result*)
                           `(it ,title
                              (expect (org-ml--with-org-buffer ,buffer ,test)
                                      :to-equal
-                                     ,result)))))))
+                                     ,result*)))))))
     `(describe ,name ,@forms)))
 
 (org-x--test-buffer-strings "Task status"
@@ -259,7 +266,7 @@ Forms are denoted like %(FORM)%."
   ;; TODO this seems error-prone
   "active (singleton...???)"
   ("* TODO project")
-  => :stuck
+  => :undone-complete
 
   "active (subtask)"
   ("* TODO project"
@@ -597,6 +604,107 @@ Forms are denoted like %(FORM)%."
   => '(((:start-time (2022 1 1 0 0) :range 43200 :offset 1 :filepath "fp")
         (:start-time (2022 1 1 12 0) :range 43200 :offset 78 :filepath "fp"))
        ((:start-time (2022 1 2 0 0) :range 86400 :offset 78 :filepath "fp"))))
+
+(org-x--test-buffer-strings "Timestamp shifter"
+    (->> (org-ml-parse-this-subtree)
+      (org-x--subtree-repeat-shifted 3 1 'day)
+      (-map #'org-ml-to-string)
+      (s-join ""))
+
+  "headline"
+  ("* TODO headline"
+   "SCHEDULED: <2020-01-01 Wed>")
+  => (:result "* TODO headline"
+              "SCHEDULED: <2020-01-02 Thu>"
+              "* TODO headline"
+              "SCHEDULED: <2020-01-03 Fri>"
+              "* TODO headline"
+              "SCHEDULED: <2020-01-04 Sat>"
+              "")
+
+  "subtree"
+  ("* TODO headline"
+   "SCHEDULED: <2020-01-01 Wed>"
+   "** TODO headline"
+   "DEADLINE: <2020-02-01 Sat>")
+  => (:result "* TODO headline"
+              "SCHEDULED: <2020-01-02 Thu>"
+              "** TODO headline"
+              "DEADLINE: <2020-02-02 Sun>"
+              "* TODO headline"
+              "SCHEDULED: <2020-01-03 Fri>"
+              "** TODO headline"
+              "DEADLINE: <2020-02-03 Mon>"
+              "* TODO headline"
+              "SCHEDULED: <2020-01-04 Sat>"
+              "** TODO headline"
+              "DEADLINE: <2020-02-04 Tue>"
+              ""))
+
+(org-x--test-buffer-strings "Timestamp resetter"
+    (let ((org-log-into-drawer "LOGGING")
+          (org-clock-into-drawer "CLOCKING"))
+      (->> (org-ml-parse-this-subtree)
+        (org-x--reset-subtree)
+        (org-ml-to-trimmed-string)))
+
+  "closed task"
+  ("* DONE headline [1/1]"
+   "CLOSED: [2021-04-18 Sun 13:09] SCHEDULED: <2020-01-01 Wed>"
+   ":PROPERTIES:"
+   ":CREATED: [2019-01-01 Tue]"
+   ":ID: deadbeef"
+   ":END:"
+   ":LOGGING:"
+   "- State \"DONE\"       from \"TODO\"       [2021-04-18 Sun 13:09]"
+   ":END:"
+   ":CLOCKING:"
+   "CLOCK: [2021-04-18 Sun 13:02]--[2021-04-18 Sun 13:09] =>  0:07"
+   ":END:"
+   "- [X] resetme")
+  => (:result "* TODO headline [0/1]"
+              "SCHEDULED: <2020-01-01 Wed>"
+              ":PROPERTIES:"
+              ":CREATED:  %(org-x-gen-ts 0)%"
+              ":END:"
+              "- [ ] resetme")
+
+  "closed project"
+  ("* TODO top"
+   "** DONE headline [1/1]"
+   "CLOSED: [2021-04-18 Sun 13:09] SCHEDULED: <2020-01-01 Wed>"
+   ":PROPERTIES:"
+   ":CREATED: [2019-01-01 Tue]"
+   ":ID: deadbeef"
+   ":END:"
+   ":LOGGING:"
+   "- State \"DONE\"       from \"TODO\"       [2021-04-18 Sun 13:09]"
+   ":END:"
+   ":CLOCKING:"
+   "CLOCK: [2021-04-18 Sun 13:02]--[2021-04-18 Sun 13:09] =>  0:07"
+   ":END:"
+   "- [X] resetme")
+  => (:result "* TODO top"
+              ":PROPERTIES:"
+              ":CREATED:  %(org-x-gen-ts 0)%"
+              ":END:"
+              "** TODO headline [0/1]"
+              "SCHEDULED: <2020-01-01 Wed>"
+              ":PROPERTIES:"
+              ":CREATED:  %(org-x-gen-ts 0)%"
+              ":END:"
+              "- [ ] resetme"))
+
+  ;; "closed project"
+  ;; ("* DONE headline"
+  ;;  "SCHEDULED: <2020-01-01 Wed>"
+  ;;  "** CANC headline"
+  ;;  "DEADLINE: <2020-02-01 Sat>")
+  ;; => (:result "* TODO headline"
+  ;;             "SCHEDULED: <2020-01-01 Wed>"
+  ;;             "** TODO headline"
+  ;;             "DEADLINE: <2020-02-01 Sat>")
+  ;; )
 
 (defmacro org-x--test-time-splitter-specs (&rest specs)
   (declare (indent 0))
