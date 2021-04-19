@@ -976,28 +976,25 @@ don't log changes in the logbook."
 Does not touch the running clock. When called with one prefix
 ARG, ask for a range in minutes in place of the second date."
   (interactive "P")
-  (let* ((t1 (-> (org-read-date t t) (float-time)))
-         (t2 (if (equal arg '(4))
-                   (-some-> (read-string "Length in minutes: ")
-                            (cl-parse-integer :junk-allowed t)
-                            (* 60)
-                            (+ t1))
-                 (-> (org-read-date t t nil nil t1)
-                     (float-time)
-                     (round)))))
-    (cond
-     ((not t2) (message "Invalid range given!"))
-     ((< t2 t1) (message "Second timestamp earlier than first!"))
-     (t
-      (let ((s (org-ml-unixtime-to-time-long t1))
-            (e (org-ml-unixtime-to-time-long t2)))
-        ;; TODO rewrite this in terms of org-ml code
-        (save-excursion
-          (org-clock-find-position nil)
-	      (org-indent-line)
-          (->> (org-ml-build-clock! s :end e)
-               (org-ml-to-string)
-               (insert))))))))
+  (cl-flet
+      ((read-date
+        (default-time)
+        (round (float-time (org-read-date t t nil nil default-time))))
+       (read-duration
+        (start-epoch)
+        (let ((out (read-string "Length in minutes: ")))
+          (if (not (s-match "[0-9]+" out))
+              (error "Invalid duration: %s" out)
+            (+ start-epoch (* 60 (string-to-number)))))))
+    (let* ((t1 (read-date nil))
+           (t2 (if (equal arg '(4)) (read-duration t1) (read-date t1))))
+      (if (< t2 t1) (message "Second timestamp earlier than first!")
+        (let ((s (org-ml-unixtime-to-time-long t1))
+              (e (org-ml-unixtime-to-time-long t2)))
+          (org-ml-update-this-headline*
+            (org-ml-headline-map-logbook-clocks* (org-x-logbook-config)
+              (cons (org-ml-build-clock! s :end e) it)
+              it)))))))
 
 (defun org-x-refile-logbook ()
   "Refile the current headline with it's logbook.
