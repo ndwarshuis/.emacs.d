@@ -733,6 +733,10 @@ Allowed statuscodes are in list `nd/get-iter-statuscodes.' where
     cur-status))
 
 ;; periodicals
+
+(defconst org-x--first-active-ts-pattern
+  '(:first :any * (:and timestamp (:or (:type 'active) (:type 'active-range))))
+  "Pattern for first active timestamp to be supplied to `org-ml-match' et al.")
     
 (defun org-x-get-periodical-status ()
   "Get the status of a periodical.
@@ -746,9 +750,7 @@ latter codes in the list trump earlier ones."
           ;; wrap in a section here because the matcher needs a single node
           ;; and not a list
           (apply #'org-ml-build-section)
-          (org-ml-match '(:first :any * (:and timestamp
-                                              (:or (:type 'active)
-                                                   (:type 'active-range)))))
+          (org-ml-match org-x--first-active-ts-pattern)
           (car)
           (org-ml-timestamp-get-start-time)
           (org-ml-time-to-unixtime)))
@@ -881,9 +883,7 @@ timestamp in the contents of the headline will be shifted."
             ;; wrap in a section here because the matcher needs a single node
             ;; and not a list
             (->> (apply #'org-ml-build-section it)
-              (org-ml-match-map* '(:first :any * (:and timestamp
-                                                       (:or (:type 'active)
-                                                            (:type 'active-range))))
+              (org-ml-match-map* org-x--first-active-ts-pattern
                 (org-ml-timestamp-shift offset unit it))
               (org-ml-get-children))
             subtree)))
@@ -929,27 +929,13 @@ N is the number of clones to produce."
           it)))))
 
 (defun org-x-subtree-shift-timestamps ()
-  "Shift all scheduled and deadlined timestamps in the current subtree."
+  "Shift all timestamps in the current subtree.
+Only deadline/scheduled timestamp are shifted (tasks) or the
+first active timestamp in the contents (non-tasks)."
   (interactive)
   (-let (((offset unit) (org-x--read-shift-from-minibuffer)))
     (org-ml-update-this-subtree*
       (org-x--subtree-shift-timestamps offset unit it))))
-      
-  ;; (save-excursion
-  ;;   (org-back-to-heading) ;; trigger error here if not at heading
-  ;;   (-let* ((end (save-excursion (org-end-of-subtree)))
-  ;;           ((mag unit) (org-x--read-shift-from-minibuffer))
-  ;;           (shift-ts-maybe
-  ;;            (lambda (type)
-  ;;              (let ((bound (save-excursion (outline-next-heading))))
-  ;;                (save-excursion
-  ;;                  (when (re-search-forward (org-re-timestamp type) bound t)
-  ;;                    (org-timestamp-change mag unit)))))))
-  ;;     (while (< (point) end)
-  ;;       (funcall shift-ts-maybe 'scheduled)
-  ;;       (funcall shift-ts-maybe 'deadline)
-  ;;       (outline-next-heading)))))
-
 
 ;; marking subtrees
 
