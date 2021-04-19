@@ -506,27 +506,6 @@ Assume that point is at the beginning of a headline."
   "Return t if heading has parent for whom HEADING-TEST is t."
   (save-excursion (and (org-up-heading-safe) (funcall heading-test))))
 
-(defun org-x-up-headline ()
-  "Move point up to the next parent headline or `point-min' if none.
-Return point on success and nil on failure. Assume point is
-current at the start of a headline."
-  (let ((cur-level (org-x-headline-get-level)))
-    (if (= 1 cur-level)
-        (beginning-of-buffer)
-      (let ((target-level (1- cur-level))
-            (stop nil))
-        (while (and (not stop) (= 0 (forward-line -1)))
-          (when (= ?* (following-char))
-            (when (= (org-x-headline-get-level) target-level)
-              (setq stop t)
-              (beginning-of-line)
-              (point))))))))
-
-;; (defun org-x-headline-has-parent (heading-test)
-;;   "Return t if heading has parent for whom HEADING-TEST is t."
-;;   (save-excursion
-;;     (and (org-x-up-headline) (funcall heading-test))))
-
 (defun org-x-has-discontinuous-parent ()
   "Return t if heading has a non-todoitem parent which in turn has a todoitem parent."
   (let ((has-todoitem-parent)
