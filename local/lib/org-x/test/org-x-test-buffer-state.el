@@ -606,12 +606,130 @@ Forms are denoted like %(FORM)%."
        ((:start-time (2022 1 2 0 0) :range 86400 :offset 78 :filepath "fp"))))
 
 (org-x--test-buffer-strings "Timestamp shifter"
+    (let ((org-log-into-drawer "LOGGING")
+          (org-clock-into-drawer "CLOCKING"))
+      (->> (org-ml-parse-this-subtree)
+        (org-x--subtree-shift-timestamps 1 'day)
+        (org-ml-to-trimmed-string)))
+
+  ;; none of these should touch anything in the logbook or properties drawer
+
+  "task (scheduled)"
+  ("* TODO headline"
+   "SCHEDULED: <2020-01-01 Wed>"
+   ":PROPERTIES:"
+   ":CREATED:  [2019-01-01 Tue]"
+   ":END:"
+   ":LOGGING:"
+   "- State \"DONE\"       from \"TODO\"       [2021-04-18 Sun 13:09]"
+   ":END:"
+   ":CLOCKING:"
+   "CLOCK: [2021-04-18 Sun 13:02]--[2021-04-18 Sun 13:09] =>  0:07"
+   ":END:")
+  => (:result "* TODO headline"
+              "SCHEDULED: <2020-01-02 Thu>"
+              ":PROPERTIES:"
+              ":CREATED:  [2019-01-01 Tue]"
+              ":END:"
+              ":LOGGING:"
+              "- State \"DONE\"       from \"TODO\"       [2021-04-18 Sun 13:09]"
+              ":END:"
+              ":CLOCKING:"
+              "CLOCK: [2021-04-18 Sun 13:02]--[2021-04-18 Sun 13:09] =>  0:07"
+              ":END:")
+  
+  "task (deadlined)"
+  ("* TODO headline"
+   "DEADLINE: <2020-01-01 Wed>"
+   ":PROPERTIES:"
+   ":CREATED:  [2019-01-01 Tue]"
+   ":END:"
+   ":LOGGING:"
+   "- State \"DONE\"       from \"TODO\"       [2021-04-18 Sun 13:09]"
+   ":END:"
+   ":CLOCKING:"
+   "CLOCK: [2021-04-18 Sun 13:02]--[2021-04-18 Sun 13:09] =>  0:07"
+   ":END:")
+  => (:result "* TODO headline"
+              "DEADLINE: <2020-01-02 Thu>"
+              ":PROPERTIES:"
+              ":CREATED:  [2019-01-01 Tue]"
+              ":END:"
+              ":LOGGING:"
+              "- State \"DONE\"       from \"TODO\"       [2021-04-18 Sun 13:09]"
+              ":END:"
+              ":CLOCKING:"
+              "CLOCK: [2021-04-18 Sun 13:02]--[2021-04-18 Sun 13:09] =>  0:07"
+              ":END:")
+
+  "subtask"
+  ("* top"
+   "** TODO headline"
+   "DEADLINE: <2020-01-01 Wed>"
+   ":PROPERTIES:"
+   ":CREATED:  [2019-01-01 Tue]"
+   ":END:"
+   ":LOGGING:"
+   "- State \"DONE\"       from \"TODO\"       [2021-04-18 Sun 13:09]"
+   ":END:"
+   ":CLOCKING:"
+   "CLOCK: [2021-04-18 Sun 13:02]--[2021-04-18 Sun 13:09] =>  0:07"
+   ":END:")
+  => (:result "* top"
+              "** TODO headline"
+              "DEADLINE: <2020-01-02 Thu>"
+              ":PROPERTIES:"
+              ":CREATED:  [2019-01-01 Tue]"
+              ":END:"
+              ":LOGGING:"
+              "- State \"DONE\"       from \"TODO\"       [2021-04-18 Sun 13:09]"
+              ":END:"
+              ":CLOCKING:"
+              "CLOCK: [2021-04-18 Sun 13:02]--[2021-04-18 Sun 13:09] =>  0:07"
+              ":END:")
+
+  "non-task"
+  ("* headline"
+   ":PROPERTIES:"
+   ":CREATED:  [2019-01-01 Tue]"
+   ":END:"
+   ":LOGGING:"
+   "- State \"DONE\"       from \"TODO\"       [2021-04-18 Sun 13:09]"
+   ":END:"
+   ":CLOCKING:"
+   "CLOCK: [2021-04-18 Sun 13:02]--[2021-04-18 Sun 13:09] =>  0:07"
+   ":END:"
+   "something"
+   "something more"
+   "[2020-01-02 Thu]"
+   "<2020-01-01 Wed>"
+   "<2020-01-01 Wed>")
+  => (:result "* headline"
+              ":PROPERTIES:"
+              ":CREATED:  [2019-01-01 Tue]"
+              ":END:"
+              ":LOGGING:"
+              "- State \"DONE\"       from \"TODO\"       [2021-04-18 Sun 13:09]"
+              ":END:"
+              ":CLOCKING:"
+              "CLOCK: [2021-04-18 Sun 13:02]--[2021-04-18 Sun 13:09] =>  0:07"
+              ":END:"
+              "something"
+              "something more"
+              "[2020-01-02 Thu]"
+              "<2020-01-02 Thu>"
+              "<2020-01-01 Wed>")
+
+  )
+
+
+(org-x--test-buffer-strings "Timestamp cloner"
     (->> (org-ml-parse-this-subtree)
       (org-x--subtree-repeat-shifted 3 1 'day)
       (-map #'org-ml-to-string)
       (s-join ""))
 
-  "headline"
+  "task"
   ("* TODO headline"
    "SCHEDULED: <2020-01-01 Wed>")
   => (:result "* TODO headline"
@@ -622,7 +740,7 @@ Forms are denoted like %(FORM)%."
               "SCHEDULED: <2020-01-04 Sat>"
               "")
 
-  "subtree"
+  "project"
   ("* TODO headline"
    "SCHEDULED: <2020-01-01 Wed>"
    "** TODO headline"

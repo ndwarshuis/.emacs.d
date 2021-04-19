@@ -3999,7 +3999,7 @@ These are for mode-specific bindings that can/should be outside of the evil maps
             (local-set-key (kbd "C-c C-x c") 'org-x-clone-subtree-with-time-shift)
 
             ;; add time shifter
-            (local-set-key (kbd "C-c C-x t") 'org-x-time-shift)
+            (local-set-key (kbd "C-c C-x t") 'org-x-subtree-shift-timestamps)
 
             ;; add clock in/out functions for tomato mode
             (local-set-key (kbd "C-x C-c C-x C-i") 'org-tomato-user-hl-clock-in)
