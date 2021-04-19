@@ -56,6 +56,9 @@
 (defconst org-x-kw-canc "CANC"
   "Headline todo keyword for canceled task or project.")
 
+(defconst org-x-done-keywords `(,org-x-kw-done ,org-x-kw-canc)
+  "Headline todo keywords that mark a task as 'complete'.")
+
 ;;; TAGS
 
 (defun org-x-prepend-char (char string)
@@ -409,15 +412,15 @@ compared to REF-TIME. Returns nil if no timestamp is found."
     (cond
      ((org-x-is-archivable-heading-p)
       :archivable)
-     ((and (not (member kw org-done-keywords)) (org-x-is-expired-headline-p))
+     ((and (not (member kw org-x-done-keywords)) (org-x-is-expired-headline-p))
       :expired)
      ((org-x-is-inert-p)
       :inert)
-     ((and (member kw org-done-keywords) (not (org-x-is-closed-heading-p)))
+     ((and (member kw org-x-done-keywords) (not (org-x-is-closed-heading-p)))
       :done-unclosed)
-     ((and (not (member kw org-done-keywords)) (org-x-is-closed-heading-p))
+     ((and (not (member kw org-x-done-keywords)) (org-x-is-closed-heading-p))
       :undone-closed)
-     ((member kw org-done-keywords)
+     ((member kw org-x-done-keywords)
       :complete)
      (t :active))))
 
@@ -552,7 +555,6 @@ current at the start of a headline."
   "Compare position of statuscodes SC1 and SC2 in SC-LIST using operator OP."
   `(,op (cl-position ,sc1 ,sc-list) (cl-position ,sc2 ,sc-list)))
 
-;; TODO there is likely a better way to handle this
 (defmacro org-x-descend-into-project (statuscode-tree get-task-status callback-fun)
   "Loop through (sub)project and return overall statuscode.
 
@@ -639,7 +641,7 @@ should be this function again)."
                             :scheduled-project :invalid-todostate
                             :undone-complete))
          ;; TODO don't use org-done-keywords
-         (if (member it-kw org-done-keywords)
+         (if (member it-kw org-x-done-keywords)
              (if (org-x-is-archivable-heading-p) 0 1)
            2)
          org-x-get-project-status))
@@ -654,7 +656,7 @@ should be this function again)."
           (:inert)
           (:active))
          (cond
-          ((and (not (member it-kw org-done-keywords)) (org-x-is-inert-p)) 4)
+          ((and (not (member it-kw org-x-done-keywords)) (org-x-is-inert-p)) 4)
           ((equal it-kw org-x-kw-todo) (if (org-x-is-scheduled-heading-p) 5 1))
           ((equal it-kw org-x-kw-hold) 2)
           ((equal it-kw org-x-kw-wait) 3)
@@ -684,7 +686,7 @@ should be this function again)."
     (org-x-descend-into-project
      ((:empt)
       (:project-error :unscheduled :actv))
-     (if (member it-kw org-done-keywords) 0 1)
+     (if (member it-kw org-x-done-keywords) 0 1)
      org-x--clone-get-iterator-project-status))
    
    ;; project with TODO states could be basically any status
@@ -724,7 +726,7 @@ Allowed statuscodes are in list `nd/get-iter-statuscodes.' where
            (setq ts (or (org-x-is-scheduled-heading-p)
                         (org-x-is-deadlined-heading-p)))
            (cond
-            ((member kw org-done-keywords) :empt)
+            ((member kw org-x-done-keywords) :empt)
             ((not ts) :unscheduled)
             ((< org-x-iter-future-time (- ts (float-time))) :actv)
             (t :empt))))
@@ -836,8 +838,8 @@ This includes unchecking all checkboxes, marking keywords as
       ((reset
         (config created-ts headline)
         ;; set keyword to TODO
-        (->> (if (org-ml-headline-is-done headline)
-                 (org-ml-set-property :todo-keyword org-x-kw-todo headline)
+        (->> (org-ml-map-property* :todo-keyword
+               (if (member it org-x-done-keywords) "TODO" it)
                headline)
           ;; remove logbook items and clocks
           (org-ml-headline-map-supercontents* config
@@ -993,7 +995,10 @@ ARG, ask for a range in minutes in place of the second date."
               (e (org-ml-unixtime-to-time-long t2)))
           (org-ml-update-this-headline*
             (org-ml-headline-map-logbook-clocks* (org-x-logbook-config)
-              (cons (org-ml-build-clock! s :end e) it)
+              (let ((new-clock (org-ml-build-clock! s :end e)))
+                (if (org-ml-clock-is-running (car it))
+                    `(,(car it) ,new-clock ,@(cdr it))
+                  (cons new-clock it)))
               it)))))))
 
 (defun org-x-refile-logbook ()
