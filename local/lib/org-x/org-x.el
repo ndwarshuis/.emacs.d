@@ -1070,6 +1070,7 @@ Specifically, navigate to the original header, execute BODY, then
 update the agenda buffer. If GET-HEAD is true, get the headline
 string and use it to update the agenda (this is only needed when
 the headline changes obviously)."
+  (declare (indent 1))
   `(progn
      (org-agenda-check-no-diary)
      (let* ((hdmarker (or (org-get-at-bol 'org-hd-marker)
@@ -1093,31 +1094,27 @@ the headline changes obviously)."
 (defun org-x-agenda-toggle-checkbox ()
   "Toggle checkboxes in org agenda view using `org-toggle-checkbox'."
   (interactive)
-  (org-x-agenda-cmd-wrapper
-   t
-   (call-interactively #'org-toggle-checkbox)))
+  (org-x-agenda-cmd-wrapper t
+    (call-interactively #'org-toggle-checkbox)))
 
 (defun org-x-agenda-clone-subtree-with-time-shift ()
   "Apply `org-x-clone-subtree-with-time-shift' to an agenda entry.
 It will clone the last entry in the selected subtree."
   (interactive)
-  (org-x-agenda-cmd-wrapper
-   nil
-   (call-interactively #'org-x-clone-subtree-with-time-shift-toplevel)))
+  (org-x-agenda-cmd-wrapper nil
+    (call-interactively #'org-x-clone-subtree-with-time-shift-toplevel)))
 
 (defun org-x-agenda-delete-subtree ()
   "Apply `org-x-delete-subtree' to an agenda entry."
   (interactive)
-  (org-x-agenda-cmd-wrapper
-   nil
-   (call-interactively #'org-x-delete-subtree)))
+  (org-x-agenda-cmd-wrapper nil
+    (call-interactively #'org-x-delete-subtree)))
 
 (defun org-x-agenda-clock-range ()
   "Apply `org-x-clock-range' to an agenda entry."
   (interactive)
-  (org-x-agenda-cmd-wrapper
-   nil
-   (call-interactively #'org-x-clock-range)))
+  (org-x-agenda-cmd-wrapper nil
+    (call-interactively #'org-x-clock-range)))
 
 ;; agenda heading navigation functions
 
