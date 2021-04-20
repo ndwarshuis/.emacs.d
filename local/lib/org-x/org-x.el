@@ -278,69 +278,67 @@ entire subtrees to save time and ignore tasks")
 
 ;; timestamp processing
 
-(defun org-x-get-date-property (timestamp-property)
-  "Get TIMESTAMP-PROPERTY on current heading and convert to a number.
-If it does not have a date, it will return nil."
+(defun org-x-headline-get-property-epoch-time (timestamp-property)
+  "Return TIMESTAMP-PROPERTY of the current headline as an epoch time.
+If TIMESTAMP-PROPERTY is missing, return nil. This will return 0
+if a property is given that returns a string that isn't an org
+timestamp."
   (-some-> (org-entry-get nil timestamp-property) (org-2ft)))
 
-;; TODO I don't like this function...it perplexes me
-(defun org-x-heading-compare-timestamp (timestamp-fun &optional ref-time future)
-  "Compare timestamp to some reference time.
+(defmacro org-x-heading-compare-timestamp (ref-epoch-time future epoch-time-form)
+  "Compare epoch-time to some reference time.
 
-TIMESTAMP-FUN is a function that returns a timestamp when called
-on the headline in question. Return t if the returned timestamp
-is further back in time compared to REF-TIME (default to 0 which
-is now, where negative is past and positive is future). If the
-FUTURE flag is t, returns timestamp if it is in the future
-compared to REF-TIME. Returns nil if no timestamp is found."
-  (let* ((timestamp (funcall timestamp-fun))
-        (ref-time (or ref-time 0)))
-    (if (and timestamp
-             (if future
-                 (> (- timestamp (float-time)) ref-time)
-               (<= (- timestamp (float-time)) ref-time)))
-        timestamp)))
+EPOCH-TIME-FORM should return an epoch time when called on the
+headline under point. Return t if epoch time is further back in
+time compared to REF-EPOCH-TIME (0 is now, negative is past, and
+positive is future). If the FUTURE flag is t, returns timestamp
+if it is in the future compared to REF-EPOCH-TIME. Return nil if
+no timestamp is found."
+  (declare (indent 2))
+  (let ((op (if future '> '<=)))
+    `(-when-let (epoch-time ,epoch-time-form)
+       (when (,op (- epoch-time (float-time)) ,ref-epoch-time)
+         epoch-time))))
 
 (defun org-x-is-timestamped-heading-p ()
   "Get active timestamp of current heading."
-  (org-x-get-date-property "TIMESTAMP"))
+  (org-x-headline-get-property-epoch-time "TIMESTAMP"))
 
 (defun org-x-is-scheduled-heading-p ()
   "Get scheduled timestamp of current heading."
-  (org-x-get-date-property "SCHEDULED"))
+  (org-x-headline-get-property-epoch-time "SCHEDULED"))
 
 (defun org-x-is-deadlined-heading-p ()
   "Get scheduled timestamp of current heading."
-  (org-x-get-date-property "DEADLINE"))
+  (org-x-headline-get-property-epoch-time "DEADLINE"))
 
 (defun org-x-is-created-heading-p ()
   "Get scheduled timestamp of current heading."
-  (org-x-get-date-property org-x-prop-created))
+  (org-x-headline-get-property-epoch-time org-x-prop-created))
 
 (defun org-x-is-closed-heading-p ()
   "Get closed timestamp of current heading."
-  (org-x-get-date-property "CLOSED"))
+  (org-x-headline-get-property-epoch-time "CLOSED"))
 
-(defun org-x-is-stale-heading-p (&optional ts-prop)
-  "Return timestamp for TS-PROP (TIMESTAMP by default) if current heading is stale."
-  (org-x-heading-compare-timestamp
-   (lambda () (let ((ts (org-entry-get nil (or ts-prop "TIMESTAMP"))))
-           (when (and ts (not (cl-find ?+ ts))) (org-2ft ts))))))
+(defun org-x-is-stale-heading-p ()
+  "Return epoch time if current heading is stale."
+  (org-x-heading-compare-timestamp 0 nil
+    (-when-let (ts (org-entry-get nil "TIMESTAMP"))
+      (unless (s-matches-p "+[0-9]+[dwmy]" ts)
+        (org-2ft ts)))))
 
 (defun org-x-is-expired-date-headline-p ()
-  "Return timestamp if current headline is expired via `org-x-prop-expire'."
-  (org-x-heading-compare-timestamp
-   (lambda () (-some-> (org-entry-get nil org-x-prop-expire)
-           (org-2ft)))))
+  "Return epoch-time if current headline is expired via `org-x-prop-expire'."
+  (org-x-heading-compare-timestamp 0 nil
+    (org-x-headline-get-property-epoch-time org-x-prop-expire)))
 
 (defun org-x-is-expired-dtl-headline-p ()
-  "Return timestamp if current headline is expired via `org-x-prop-days-to-live'."
-  (org-x-heading-compare-timestamp
-   (lambda () (let ((dtl (org-entry-get nil org-x-prop-days-to-live))
-               (created (org-entry-get nil org-x-prop-created)))
-           (when (and dtl (s-matches-p "[0-9]+" dtl) created)
-             (+ (org-2ft created)
-                (* (string-to-number dtl) 24 60 60)))))))
+  "Return epoch-time if current headline is expired via `org-x-prop-days-to-live'."
+  (org-x-heading-compare-timestamp 0 nil
+    (-when-let (dtl (org-entry-get nil org-x-prop-days-to-live))
+      (when (s-matches-p "[0-9]+" dtl)
+        (-when-let (et (org-x-headline-get-property-epoch-time org-x-prop-created))
+          (+ et (* (string-to-number dtl) 24 60 60)))))))
 
 (defun org-x-is-expired-headline-p ()
   "Return t if current headline is expired."
@@ -350,14 +348,19 @@ compared to REF-TIME. Returns nil if no timestamp is found."
        t))
 
 (defun org-x-is-fresh-heading-p ()
-  "Return timestamp if current heading is fresh."
-  (org-x-heading-compare-timestamp 'org-x-is-timestamped-heading-p nil t))
+  "Return epoch-time if current heading is fresh."
+  (org-x-heading-compare-timestamp 0 t
+    (org-x-is-timestamped-heading-p)))
 
 (defun org-x-is-archivable-heading-p ()
-  "Return timestamp if current heading is archivable."
-  (org-x-heading-compare-timestamp
-   'org-x-is-closed-heading-p
-    (- (* 60 60 24 org-x-archive-delay))))
+  "Return epoch-time if current heading is archivable."
+  (org-x-heading-compare-timestamp (- (* 60 60 24 org-x-archive-delay)) nil
+    (org-x-is-closed-heading-p)))
+
+(defun org-x-is-created-in-future ()
+  "Return epoch-time if current headline has CREATED property in the future."
+  (org-x-heading-compare-timestamp 0 t
+    (org-x-is-created-heading-p)))
 
 (defun org-x-is-inert-p ()
   "Return most recent timestamp if headline is inert."
@@ -424,6 +427,7 @@ compared to REF-TIME. Returns nil if no timestamp is found."
 
 ;; property testing
 
+;; TODO use selective inheritence always? it might be slower
 (defun org-x-headline-has-property (property value &optional inherit)
   "Return t if headline under point has PROPERTY with VALUE.
 INHERIT is passed to `org-entry-get'."

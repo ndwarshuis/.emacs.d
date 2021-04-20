@@ -2882,8 +2882,7 @@ original org entry before executing BODY."
                    (-when-let (kw (org-x-is-task-p))
                      (and
                       (not (member kw org-done-keywords))
-                      (org-x-heading-compare-timestamp
-                       #'org-x-is-created-heading-p 0 t)))))
+                      (org-x-is-created-in-future)))))
           (:discard (:anything t))))))))
 
    ("A"
