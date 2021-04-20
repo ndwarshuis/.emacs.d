@@ -78,7 +78,7 @@
   "Prefix character denoting life category tag.")
 
 (defconst org-x-tag-errand
-  (org-x-prepend-char org-x-tag-location-prefix "errand")
+(org-x-prepend-char org-x-tag-location-prefix "errand")
   "Tag denoting an errand location.")
 
 (defconst org-x-tag-home
@@ -165,19 +165,17 @@
 
 ;;; PROPERTIES
 
-(eval-and-compile
-  (defun org-x-define-prop-choices (prop options &optional allow-other)
-    (let ((options* (if allow-other (-snoc options ":ETC") options)))
-      (cons (format "%s_ALL" prop) (s-join " " options*)))))
+;; all follow the nomenclature `org-x-prop-PROPNAME' (key) or
+;; `org-x-prop-PROPNAME-VALNAME' (value)
 
-(eval-and-compile
-  (defconst org-x-prop-parent-type "PARENT_TYPE"
-    "Property denoting iterator/periodical headline."))
+(defconst org-x-prop-parent-type "PARENT_TYPE"
+  "Property denoting iterator/periodical headline.")
 
-(eval-and-compile
-  (defconst org-x-prop-parent-type-choices
-    (org-x-define-prop-choices org-x-prop-parent-type '("periodical" "iterator"))
-    "Choices for `org-x-prop-parent-type'."))
+(defconst org-x-prop-parent-type-periodical "periodical"
+  "Property value for a periodical parent type.")
+
+(defconst org-x-prop-parent-type-iterator "iterator"
+  "Property value for an iterator parent type.")
 
 (defconst org-x-prop-time-shift "TIME_SHIFT"
   "Property denoting time shift when cloning iterator/periodical headlines.")
@@ -186,14 +184,14 @@
 (defconst org-x-prop-thread "THREAD"
   "Property denoting an email thread to track.")
 
-(eval-and-compile
-  (defconst org-x-prop-routine "X-ROUTINE"
-    "Property denoting a routine group."))
+(defconst org-x-prop-routine "X-ROUTINE"
+  "Property denoting a routine group.")
 
-(eval-and-compile
-  (defconst org-x-prop-routine-choices
-    (org-x-define-prop-choices org-x-prop-routine '("morning" "evening"))
-    "Choices for `org-x-prop-routine'."))
+(defconst org-x-prop-routine-morning "morning"
+  "Property value for morning routine.")
+
+(defconst org-x-prop-routine-evening "evening"
+  "Property value for evening routine.")
 
 (defconst org-x-prop-created "CREATED"
   "Property denoting when a headline was created.")
@@ -426,21 +424,30 @@ compared to REF-TIME. Returns nil if no timestamp is found."
 
 ;; property testing
 
+(defun org-x-headline-has-property (property value &optional inherit)
+  "Return t if headline under point has PROPERTY with VALUE.
+INHERIT is passed to `org-entry-get'."
+  (equal value (org-entry-get nil property inherit)))
+
 (defun org-x-is-periodical-heading-p ()
   "Return t if heading is a periodical."
-  (equal "periodical" (org-entry-get nil org-x-prop-parent-type t)))
+  (org-x-headline-has-property org-x-prop-parent-type
+                               org-x-prop-parent-type-periodical t))
 
 (defun org-x-is-iterator-heading-p ()
   "Return t if heading is an iterator."
-  (equal "iterator" (org-entry-get nil org-x-prop-parent-type t)))
+  (org-x-headline-has-property org-x-prop-parent-type
+                               org-x-prop-parent-type-iterator t))
 
 (defun org-x-is-habit-heading-p ()
   "Return t if heading is an iterator."
-  (equal "habit" (org-entry-get nil "STYLE" t)))
+  (org-x-headline-has-property "STYLE" "habit"))
 
 (defun org-x-headline-has-effort-p ()
   "Return t if heading has an effort."
   (org-entry-get nil org-effort-property))
+
+;; tag testing
 
 (defun org-x-headline-has-context-p ()
   "Return non-nil if heading has a context tag."
