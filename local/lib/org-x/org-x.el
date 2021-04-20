@@ -807,6 +807,14 @@ function will simply return the point of the next headline."
 
 ;; timestamp shifting
 
+(defun org-x--read-number-from-minibuffer (prompt &optional return-str)
+  "Read a number from the minibuffer using PROMPT.
+If RETURN-STR is t, return the string and not the number."
+  (let ((out (read-string (format "%s: " prompt))))
+    (if (s-matches-p "[0-9]+" out)
+        (if return-str out (string-to-number out))
+      (error "Not a valid number: %s" out))))
+
 (defun org-x--read-shift-from-minibuffer (&optional default)
   "Read a timestamp shift from the minibuffer.
 
@@ -987,10 +995,9 @@ ARG, ask for a range in minutes in place of the second date."
         (round (float-time (org-read-date t t nil nil default-time))))
        (read-duration
         (start-epoch)
-        (let ((out (read-string "Length in minutes: ")))
-          (if (not (s-match "[0-9]+" out))
-              (error "Invalid duration: %s" out)
-            (+ start-epoch (* 60 (string-to-number)))))))
+        (->> (org-x--read-number-from-minibuffer "Length in minutes")
+          (* 60)
+          (+ start-epoch))))
     (let* ((t1 (read-date nil))
            (t2 (if (equal arg '(4)) (read-duration t1) (read-date t1))))
       (if (< t2 t1) (message "Second timestamp earlier than first!")
@@ -1289,12 +1296,10 @@ If ARG is non-nil use long timestamp format."
 (defun org-x-set-dtl ()
   "Set days-to-live of the current headline."
   (interactive)
-  (let ((n (read-string "Days to live: ")))
-    (if (not (s-matches-p "[0-9]+" n))
-        (message "Enter a number")
-      (let ((np (org-ml-build-node-property org-x-prop-days-to-live n)))
-        (org-ml-update-this-headline*
-          (org-ml-headline-map-node-properties* (cons np it) it))))))
+  (let ((np (->> (org-x--read-number-from-minibuffer "Days to live" t)
+              (org-ml-build-node-property org-x-prop-days-to-live))))
+    (org-ml-update-this-headline*
+      (org-ml-headline-map-node-properties* (cons np it) it))))
 
 (advice-add 'org-insert-heading :after #'org-x-set-creation-time)
 
