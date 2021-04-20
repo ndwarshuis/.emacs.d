@@ -387,25 +387,40 @@ no timestamp is found."
 
 ;; task-level testing
 
-(defun org-x-is-todoitem-p ()
-  "Return todo keyword if heading has one."
-  (-some-> (org-get-todo-state) (substring-no-properties)))
+(defalias 'org-x-is-todoitem-p 'org-get-todo-state
+  "Return todo keyword if heading has one.")
+
+(defun org-x-headline-has-task-children ()
+  "Return todo keyword of first task child under headline if it exists."
+  (org-x-headline-has-children #'org-x-is-todoitem-p))
+
+(defun org-x-headline-has-task-parent ()
+  "Return todo keyword of current headline's if it exists."
+  (org-x-headline-has-parent #'org-x-is-todoitem-p))
 
 (defun org-x-is-project-p ()
   "Return todo keyword if heading has todoitem children."
-  (and (org-x-headline-has-children 'org-x-is-todoitem-p) (org-x-is-todoitem-p)))
+  (-when-let (kw (org-x-is-todoitem-p))
+    (when (org-x-headline-has-task-children)
+      kw)))
 
 (defun org-x-is-task-p ()
   "Return todo keyword if heading has no todoitem children."
-  (and (not (org-x-headline-has-children 'org-x-is-todoitem-p)) (org-x-is-todoitem-p)))
+  (-when-let (kw (org-x-is-todoitem-p))
+    (unless (org-x-headline-has-task-children)
+      kw)))
 
 (defun org-x-is-project-task-p ()
   "Return todo keyword if heading has todoitem parents."
-  (and (org-x-headline-has-parent 'org-x-is-todoitem-p) (org-x-is-task-p)))
+  (-when-let (kw (org-x-is-task-p))
+    (when (org-x-headline-has-task-parent)
+      kw)))
 
 (defun org-x-is-atomic-task-p ()
   "Return todo keyword if heading has no todoitem parents or children."
-  (and (not (org-x-headline-has-parent 'org-x-is-todoitem-p)) (org-x-is-task-p)))
+  (-when-let (kw (org-x-is-task-p))
+    (unless (org-x-headline-has-task-parent)
+      kw)))
 
 (defun org-x-task-status ()
   "Return the status of the headline under point."
@@ -522,8 +537,7 @@ Assume that point is at the beginning of a headline."
   (let ((has-todoitem-parent)
         (has-non-todoitem-parent))
     (save-excursion
-      (while (and (org-up-heading-safe)
-                  (not has-todoitem-parent))
+      (while (and (not has-todoitem-parent) (org-up-heading-safe))
         (if (org-x-is-todoitem-p)
             (setq has-todoitem-parent t)
           (setq has-non-todoitem-parent t))))
@@ -533,7 +547,7 @@ Assume that point is at the beginning of a headline."
   "Return t if current headline has a parent (at any level) with todo KEYWORD."
   (let ((has-keyword-parent))
     (save-excursion
-      (while (and (org-up-heading-safe) (not has-keyword-parent))
+      (while (and (not has-keyword-parent) (org-up-heading-safe))
         (when (equal keyword (org-x-is-todoitem-p))
           (setq has-keyword-parent t))))
     has-keyword-parent))
