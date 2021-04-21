@@ -398,33 +398,59 @@ no timestamp is found."
   "Return todo keyword of current headline's if it exists."
   (org-x-headline-has-parent #'org-x-is-todoitem-p))
 
-(defun org-x-is-project-p ()
-  "Return todo keyword if heading has todoitem children."
-  (-when-let (kw (org-x-is-todoitem-p))
-    (when (org-x-headline-has-task-children)
-      kw)))
+(defmacro org-x-return-keyword-when (keyword when-form)
+  "Return keyword under headline if WHEN-FORM is t.
+If KEYWORD is non-nil, don't look up the keyword but instead
+return KEYWORD if WHEN-FORM is t."
+  (declare (indent 1))
+  (let ((kw-form (if keyword keyword '(org-x-is-todoitem-p))))
+    `(-when-let (kw ,kw-form)
+       (when ,when-form
+         kw))))
 
-(defun org-x-is-task-p ()
-  "Return todo keyword if heading has no todoitem children."
-  (-when-let (kw (org-x-is-todoitem-p))
-    (unless (org-x-headline-has-task-children)
-      kw)))
+(defmacro org-x-is-project-p (&optional keyword)
+  "Return todo keyword if heading has todoitem children.
 
-(defun org-x-is-project-task-p ()
-  "Return todo keyword if heading has todoitem parents."
-  (-when-let (kw (org-x-is-task-p))
-    (when (org-x-headline-has-task-parent)
-      kw)))
+If KEYWORD is provided, skip the keyword lookup part of this
+function and assume the current headline has KEYWORD. This is
+useful when the keyword is already known from a previous test."
+  `(org-x-return-keyword-when ,keyword
+     (org-x-headline-has-task-children)))
 
-(defun org-x-is-atomic-task-p ()
-  "Return todo keyword if heading has no todoitem parents or children."
-  (-when-let (kw (org-x-is-task-p))
-    (unless (org-x-headline-has-task-parent)
-      kw)))
+(defmacro org-x-is-task-p (&optional keyword)
+  "Return todo keyword if heading has no todoitem children.
 
-(defun org-x-task-status ()
-  "Return the status of the headline under point."
-  (-when-let (kw (org-x-is-task-p))
+If KEYWORD is provided, skip the keyword lookup part of this
+function and assume the current headline has KEYWORD. This is
+useful when the keyword is already known from a previous test."
+  `(org-x-return-keyword-when ,keyword
+     (not (org-x-headline-has-task-children))))
+
+(defmacro org-x-is-project-task-p (&optional keyword)
+  "Return todo keyword if heading has todoitem parents.
+
+If KEYWORD is provided, skip the keyword lookup part of this
+function and assume the current headline has KEYWORD. This is
+useful when the keyword is already known from a previous test."
+  `(org-x-return-keyword-when (org-x-is-task-p ,keyword)
+     (org-x-headline-has-task-parent)))
+
+(defmacro org-x-is-atomic-task-p (&optional keyword)
+  "Return todo keyword if heading has no todoitem parents or children.
+
+If KEYWORD is provided, skip the keyword lookup part of this
+function and assume the current headline has KEYWORD. This is
+useful when the keyword is already known from a previous test."
+  `(org-x-return-keyword-when (org-x-is-task-p ,keyword)
+     (not (org-x-headline-has-task-parent))))
+
+(defun org-x-task-status (&optional keyword)
+  "Return the status of the headline under point.
+
+If KEYWORD is provided, skip the keyword lookup part of this
+function and assume the current headline has KEYWORD. This is
+useful when the keyword is already known from a previous test."
+  (-when-let (kw (or keyword (org-x-is-task-p)))
     (cond
      ((org-x-is-archivable-heading-p)
       :archivable)
@@ -438,7 +464,8 @@ no timestamp is found."
       :undone-closed)
      ((member kw org-x-done-keywords)
       :complete)
-     (t :active))))
+     (t
+      :active))))
 
 ;; property testing
 
@@ -795,13 +822,12 @@ function will simply return the point of the next headline."
 
 (defun org-x-skip-headings-with-tags (pos-tags-list &optional neg-tags-list)
   "Skip headings that have tags in POS-TAGS-LIST and not in NEG-TAGS-LIST."
-  (save-restriction
-    (widen)
-    (let ((heading-tags (org-get-tags)))
-      (if (and (or (not pos-tags-list)
-                   (cl-intersection pos-tags-list heading-tags :test 'equal))
-               (not (cl-intersection neg-tags-list heading-tags :test 'equal)))
-          (org-x-skip-heading)))))
+  (org-with-wide-buffer
+    (-when-let (heading-tags (org-get-tags))
+      (when (and (or (not pos-tags-list)
+                     (-intersection pos-tags-list heading-tags))
+                 (not (-intersection neg-tags-list heading-tags)))
+        (org-x-skip-heading)))))
 
 ;;; INTERACTIVE FUNCTIONS
 
@@ -1307,43 +1333,35 @@ If ARG is non-nil use long timestamp format."
 
 ;; skip functions (all of them)
 
-(defmacro org-x-mk-skip-function (&rest body)
-  "Return a skip function with BODY.
-The only thing this function does is `save-excursion' and `widen'."
-  `(lambda () (save-excursion (widen) ,@body)))
-
 (defun org-x-calendar-skip-function ()
   (org-x-skip-headings-with-tags
    (list org-x-tag-no-agenda
          org-x-tag-maybe org-x-tag-refile)))
 
 (defun org-x-task-skip-function ()
-  (save-excursion
-    (widen)
-    (let ((keyword (org-x-is-todoitem-p)))
+  (org-with-wide-buffer
+    (let ((keyword (org-get-todo-state)))
       ;; currently we assume that periodicals have no TODOs
       (cond
        ;; skip over held/canc projects
        ((and (member keyword org-x-project-skip-todostates)
-             (org-x-is-project-p))
+             (org-x-is-project-p keyword))
         (org-x-skip-subtree))
        ;; skip iterators
        ((org-x-is-iterator-heading-p)
         (org-x-skip-heading))
        ;; skip project headings
-       ((org-x-is-project-p)
+       ((org-x-is-project-p keyword)
         (org-x-skip-heading))
        ;; skip canceled tasks
-       ((and (equal keyword org-x-kw-canc)
-             (org-x-is-task-p))
+       ((and (equal keyword org-x-kw-canc) (org-x-is-task-p keyword))
         (org-x-skip-heading))
        ;; skip habits
        ((org-x-is-habit-heading-p)
         (org-x-skip-heading))))))
   
 (defun org-x-project-skip-function ()
-  (save-excursion
-    (widen)
+  (org-with-wide-buffer
     (cond
      ((or (org-x-is-iterator-heading-p) (org-x-is-periodical-heading-p))
       (org-x-skip-subtree))
@@ -1351,46 +1369,44 @@ The only thing this function does is `save-excursion' and `widen'."
       (org-x-skip-heading)))))
 
 (defun org-x-incubator-skip-function ()
-  (save-excursion
-    (widen)
-    (let ((keyword (org-x-is-todoitem-p)))
+  (org-with-wide-buffer
+    (let ((keyword (org-get-todo-state)))
       (cond
        ;; skip done/canc projects
-       ((and (member keyword org-done-keywords)
-             (org-x-is-project-p))
+       ((and (member keyword org-done-keywords) (org-x-is-project-p keyword))
         (org-x-skip-subtree))
        ;; skip project tasks
-       ((and keyword (org-x-is-project-task-p))
+       ((org-x-is-project-task-p keyword)
         (org-x-skip-heading))
        ;; skip done/canc tasks
        ((member keyword org-done-keywords)
         (org-x-skip-heading))
        ;; skip non-tasks if they don't have a timestamp
-       ((and (not keyword)
-             (not (org-x-is-timestamped-heading-p)))
+       ((not (or keyword (org-x-is-timestamped-heading-p)))
         (org-x-skip-heading))))))
 
 (defun org-x-periodical-skip-function ()
-  (save-excursion
-    (widen)
+  (org-with-wide-buffer
     (cond
      ((not (org-x-is-periodical-heading-p))
       (org-x-skip-heading))
      ((org-x-headline-has-parent #'org-x-is-periodical-heading-p)
+      ;; TODO this can be made faster by skipping to the next headline one
+      ;; level up
       (org-x-skip-heading)))))
 
 (defun org-x-iterator-skip-function ()
-  (save-excursion
-    (widen)
+  (org-with-wide-buffer
     (cond
      ((not (org-x-is-iterator-heading-p))
       (org-x-skip-heading))
      ((org-x-headline-has-parent #'org-x-is-iterator-heading-p)
+      ;; TODO this can be made faster by skipping to the next headline one
+      ;; level up
       (org-x-skip-heading)))))
 
-(defun org-x-critical-error-skip-function ()
-  (save-excursion
-    (widen)
+(defun org-x-error-skip-function ()
+  (org-with-wide-buffer
     (cond
      ((org-x-is-habit-heading-p)
       (org-x-skip-heading))
@@ -1398,32 +1414,101 @@ The only thing this function does is `save-excursion' and `widen'."
       (org-x-skip-subtree)))))
 
 (defun org-x-skip-function-archivable ()
-  ;; (org-x-mk-skip-function
-  (save-excursion
-    (widen)
+  (org-with-wide-buffer
     (let ((keyword (org-get-todo-state)))
       (cond
        ;; skip all non-archivable projects
-       ((and keyword
-             ;; TODO gets the keyword again
-             (org-x-is-project-p)
+       ((and (org-x-is-project-p keyword)
              (not (eq :archivable (org-x-get-project-status))))
         (org-x-skip-subtree))
        ;; skip all incubator tasks
        ((org-x-headline-has-tag-p org-x-tag-incubated)
         (org-x-skip-heading))
        ;; skip all project tasks
-       ((and keyword (org-x-is-project-task-p))
+       ((and (org-x-is-project-task-p keyword))
         (org-x-skip-heading))
        ;; skip all tasks not marked done or archivable
-       ((and keyword
-             ;; TODO gets the keyword again
-             (org-x-is-task-p)
+       ((and (org-x-is-task-p keyword)
              (not (eq :archivable (org-x-task-status))))
         (org-x-skip-heading))
        ;; skip all non-todoitems that are not stale
        ((and (not keyword) (not (org-x-is-stale-heading-p)))
         (org-x-skip-heading))))))
+
+;; super agenda predicate functions
+
+(defmacro org-x-with-raw-headline (agenda-line &rest body)
+  (declare (indent 1))
+  `(-when-let (marker (get-text-property 1 'org-marker ,agenda-line))
+     (with-current-buffer (marker-buffer marker)
+       (goto-char marker)
+       ,@body)))
+
+(defun org-x-agenda-is-morning-routine-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (org-x-headline-has-property org-x-prop-routine org-x-prop-routine-morning)))
+
+(defun org-x-agenda-is-evening-routine-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (org-x-headline-has-property org-x-prop-routine org-x-prop-routine-evening)))
+
+(defun org-x-agenda-is-todoitem-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (org-x-is-todoitem-p)))
+
+(defun org-x-agenda-is-stale-headline-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (org-x-is-stale-heading-p)))
+
+(defun org-x-agenda-is-task-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (org-x-is-task-p)))
+
+(defun org-x-agenda-is-atomic-task-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (org-x-is-atomic-task-p)))
+
+(defun org-x-agenda-is-toplevel-project-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (and (not (org-x-headline-has-task-parent)) (org-x-is-project-p))))
+
+(defun org-x-agenda-is-project-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (org-x-is-project-p)))
+
+(defun org-x-agenda-error-is-discontinous-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (and (org-x-is-todoitem-p) (org-x-has-discontinuous-parent))))
+
+(defun org-x-agenda-error-is-done-unclosed-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (let ((keyword (org-get-todo-state)))
+      (and (member keyword org-x-done-keywords)
+           (not (org-x-is-closed-heading-p))))))
+
+(defun org-x-agenda-error-is-undone-closed-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (-when-let (keyword (org-get-todo-state))
+      (and (not (member keyword org-x-done-keywords))
+           (org-x-is-closed-heading-p)))))
+
+(defun org-x-agenda-error-is-missing-creation-timestamp-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (-when-let (kw (org-x-is-task-p))
+      (not (or (member kw org-x-done-keywords)
+               (org-x-is-created-heading-p))))))
+
+(defun org-x-agenda-error-is-missing-archive-target-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (and (org-x-headline-has-property org-x-prop-parent-type
+                                      org-x-prop-parent-type-iterator)
+         (org-x-headline-has-property "ARCHIVE" nil))))
+
+(defun org-x-agenda-error-has-missing-creation-timestamp-p (agenda-line)
+  (org-x-with-raw-headline agenda-line
+    (-when-let (kw (org-x-is-task-p))
+      (and (not (member kw org-x-done-keywords))
+           (org-x-is-created-in-future)))))
 
 (provide 'org-x)
 ;;; org-x.el ends here

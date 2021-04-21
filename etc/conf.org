@@ -2558,11 +2558,6 @@ By default I want block agendas to sort based on the todo keyword (with NEXT bei
 :END:
 These agenda commands are the center of the gtd workflow.
 #+BEGIN_SRC emacs-lisp
-;; (defmacro org-x-mk-skip-function (&rest body)
-;;   "Return a skip function with BODY.
-;; The only thing this function does is `save-excursion' and `widen'."
-;;   `(lambda () (save-excursion (widen) ,@body)))
-
 (defmacro nd/org-x-mk-super-agenda-pred (&rest body)
   "Return a predicate function with BODY.
 This is meant to be used in `org-super-agenda-groups'. For each item,
@@ -2615,16 +2610,8 @@ original org entry before executing BODY."
        (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
        (org-agenda-include-diary t)
        (org-super-agenda-groups
-        `((:name "Morning routine"
-                 :pred ,(nd/org-x-mk-super-agenda-pred
-                         (org-x-headline-has-property org-x-prop-routine
-                                                      org-x-prop-routine-morning))
-                 :order 0)
-          (:name "Evening routine"
-                 :pred ,(nd/org-x-mk-super-agenda-pred
-                         (org-x-headline-has-property org-x-prop-routine
-                                                      org-x-prop-routine-evening))
-                 :order 3)
+        `((:name "Morning routine" :pred org-x-agenda-is-morning-routine-p :order 0)
+          (:name "Evening routine" :pred org-x-agenda-is-evening-routine-p :order 3)
           (:name "Calendar" :order 1 :time-grid t)
           (:name "Habits" :order 6 :habit t)
           (:name "Deadlined" :order 4 :deadline t)
@@ -2711,30 +2698,19 @@ original org entry before executing BODY."
        (org-super-agenda-groups
         `((:name "Past Deadlines" :deadline past)
           (:name "Future Deadlines" :deadline future)
-          (:name "Stale Appointments" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   (org-x-is-stale-heading-p)))
-          (:name "Future Appointments" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   (and (not (org-x-is-todoitem-p)))))
-          (:name "Tasks" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   (org-x-is-task-p)))
-          (:name "Toplevel Projects" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   (and (not (org-x-headline-has-parent #'org-x-is-todoitem-p))
-                        (org-x-is-project-p))))
-          (:name "Projects" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   (and (org-x-headline-has-parent #'org-x-is-todoitem-p)
-                        (org-x-is-project-p))))
+          (:name "Stale Appointments" :pred org-x-agenda-is-stale-headline-p)
+          (:name "Future Appointments"
+                 :pred (lambda (a) (not (org-x-agenda-is-todoitem-p a))))
+          (:name "Tasks" :pred org-x-agenda-is-task-p)
+          (:name "Toplevel Projects" :pred org-x-agenda-is-toplevel-project-p)
+          (:name "Projects" :pred org-x-agenda-is-project-p)
           (:discard (:anything t))))))))
    
    ("P"
     "Periodical View"
     ((tags
       ,(nd/org-x-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
-      ((org-agenda-overriding-header "Iterator Status")
+      ((org-agenda-overriding-header "Periodical Status")
        (org-agenda-skip-function #'org-x-periodical-skip-function)
        (org-agenda-sorting-strategy '(category-keep))
        (org-super-agenda-groups
@@ -2780,45 +2756,18 @@ original org entry before executing BODY."
         - org-x-tag-refile
         - org-x-tag-incubated)
       ((org-agenda-overriding-header "Critical Errors")
-       (org-agenda-skip-function #'org-x-critical-error-skip-function)
+       (org-agenda-skip-function #'org-x-error-skip-function)
        (org-super-agenda-groups
-        `((:name "Discontinuous Projects" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   (and (org-x-is-todoitem-p)
-                        (org-x-has-discontinuous-parent))))
-          ;; TODO this is redundant, only thing this checks is
-          ;; project headers
-          (:name "Done Unclosed" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   (let ((keyword (org-x-is-todoitem-p)))
-                     (and keyword
-                          (member keyword org-done-keywords)
-                          (not (org-x-is-closed-heading-p))))))
-          (:name "Undone Closed" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   (let ((keyword (org-x-is-todoitem-p)))
-                     (and keyword
-                          (not (member keyword org-done-keywords))
-                          (org-x-is-closed-heading-p)))))
-          (:name "Missing Creation Timestamp" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   ;; TODO extend this to non-todoitems
-                   (-when-let (kw (org-x-is-task-p))
-                     (and
-                      (not (member kw org-done-keywords))
-                      (not (org-x-is-created-heading-p))))))
-          (:name "Missing Archive Target (iterators)" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   (and (org-x-headline-has-property
-                         org-x-prop-parent-type org-x-prop-parent-type-iterator)
-                        (org-x-headline-has-property "ARCHIVE" nil))))
-          (:name "Future Creation Timestamp" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   ;; TODO extend this to non-todoitems
-                   (-when-let (kw (org-x-is-task-p))
-                     (and
-                      (not (member kw org-done-keywords))
-                      (org-x-is-created-in-future)))))
+        `((:name "Discontinuous Projects" :pred org-x-agenda-error-is-discontinous-p)
+          ;; TODO this is redundant, only thing this checks is project headers
+          (:name "Done Unclosed" :pred org-x-agenda-error-is-done-unclosed-p)
+          (:name "Undone Closed" :pred org-x-agenda-error-is-undone-closed-p)
+          (:name "Missing Creation Timestamp"
+                 :pred org-x-agenda-error-is-missing-creation-timestamp-p)
+          (:name "Missing Archive Target (iterators)"
+                 :pred org-x-agenda-error-is-missing-archive-target-p)
+          (:name "Future Creation Timestamp"
+                 :pred org-x-agenda-error-has-missing-creation-timestamp-p)
           (:discard (:anything t))))))))
 
    ("A"
@@ -2829,17 +2778,9 @@ original org entry before executing BODY."
        (org-agenda-skip-function #'org-x-skip-function-archivable)
        (org-agenda-sorting-strategy '(category-keep))
        (org-super-agenda-groups
-        `((:name "Atomic Tasks" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   (org-x-is-atomic-task-p)))
-          (:name "Toplevel Projects" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   (and (not (org-x-headline-has-parent #'org-x-is-todoitem-p))
-                        (org-x-is-project-p))))
-          (:name "Projects" :pred
-                 ,(nd/org-x-mk-super-agenda-pred
-                   (and (org-x-headline-has-parent #'org-x-is-todoitem-p)
-                        (org-x-is-project-p))))
+        `((:name "Atomic Tasks" :pred org-x-agenda-is-atomic-task-p)
+          (:name "Toplevel Projects" :pred org-x-agenda-is-toplevel-project-p)
+          (:name "Projects" :pred org-x-agenda-is-project-p)
           (:name "Appointments" :anything)))))))))
 #+END_SRC
 ** gtd next generation
