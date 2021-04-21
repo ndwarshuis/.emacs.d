@@ -2666,23 +2666,18 @@ original org entry before executing BODY."
        (org-super-agenda-groups
         `((:auto-map
            ,(nd/org-x-mk-super-agenda-pred
-             ;; TODO this ain't DRY
              (let* ((status (org-x-get-project-status))
-                    (priority (alist-get status nd/org-x-project-status-priorities))
-                    (is-subproject (org-x-headline-has-parent 'org-x-is-todoitem-p))
-                    ;; skip anything that is in a CANC or HOLD project
-                    (is-masked (when is-subproject
-                                 (or (org-x-is-todo-child org-x-kw-canc)
-                                     (org-x-is-todo-child org-x-kw-hold)))))
-               (unless (or is-masked (< priority 0))
-                 (--> status
-                      (symbol-name it)
-                      (substring it 1)
-                      (s-replace "-" " " it)
-                      (s-titleize it)
-                      (concat "%s.%s " it)
-                      (format it (if is-subproject 1 0) priority)
-                      (concat it (if is-subproject " (σ)" " (τ)")))))))
+                    (priority (alist-get status nd/org-x-project-status-priorities)))
+               (unless (< priority 0)
+                 (let* ((is-subproject (org-x-headline-has-task-parent))
+                        (level (if is-subproject 1 0))
+                        (subtitle (if is-subproject "σ" "τ"))
+                        (fmt (format "%s.%s %%s (%s)" level priority subtitle)))
+                   (->> (symbol-name status)
+                     (s-chop-prefix ":")
+                     (s-replace "-" " ")
+                     (s-titleize)
+                     (format fmt)))))))
           (:discard (:anything t))))))))
    
    ("i"

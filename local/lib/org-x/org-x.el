@@ -231,7 +231,7 @@
   "Defines the order in which todo keywords should be sorted.")
   
 (defconst org-x-project-skip-todostates
-  '(org-x-kw-hold org-x-kw-canc)
+  (list org-x-kw-hold org-x-kw-canc)
   "These keywords override all contents within their subtrees.
 Currently used to tell skip functions when they can hop over
 entire subtrees to save time and ignore tasks")
@@ -1366,7 +1366,11 @@ If ARG is non-nil use long timestamp format."
      ((or (org-x-is-iterator-heading-p) (org-x-is-periodical-heading-p))
       (org-x-skip-subtree))
      ((not (org-x-is-project-p))
-      (org-x-skip-heading)))))
+      (org-x-skip-heading))
+     ((org-x-headline-has-parent
+       (lambda ()
+         (member (org-get-todo-state) org-x-project-skip-todostates)))
+      (org-x-skip-children)))))
 
 (defun org-x-incubator-skip-function ()
   (org-with-wide-buffer
@@ -1391,9 +1395,7 @@ If ARG is non-nil use long timestamp format."
      ((not (org-x-is-periodical-heading-p))
       (org-x-skip-heading))
      ((org-x-headline-has-parent #'org-x-is-periodical-heading-p)
-      ;; TODO this can be made faster by skipping to the next headline one
-      ;; level up
-      (org-x-skip-heading)))))
+      (org-x-skip-children)))))
 
 (defun org-x-iterator-skip-function ()
   (org-with-wide-buffer
@@ -1401,9 +1403,7 @@ If ARG is non-nil use long timestamp format."
      ((not (org-x-is-iterator-heading-p))
       (org-x-skip-heading))
      ((org-x-headline-has-parent #'org-x-is-iterator-heading-p)
-      ;; TODO this can be made faster by skipping to the next headline one
-      ;; level up
-      (org-x-skip-heading)))))
+      (org-x-skip-children)))))
 
 (defun org-x-error-skip-function ()
   (org-with-wide-buffer
