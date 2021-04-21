@@ -1305,5 +1305,125 @@ If ARG is non-nil use long timestamp format."
 
 (add-hook 'org-capture-before-finalize-hook #'org-x-set-creation-time)
 
+;; skip functions (all of them)
+
+(defmacro org-x-mk-skip-function (&rest body)
+  "Return a skip function with BODY.
+The only thing this function does is `save-excursion' and `widen'."
+  `(lambda () (save-excursion (widen) ,@body)))
+
+(defun org-x-calendar-skip-function ()
+  (org-x-skip-headings-with-tags
+   (list org-x-tag-no-agenda
+         org-x-tag-maybe org-x-tag-refile)))
+
+(defun org-x-task-skip-function ()
+  (save-excursion
+    (widen)
+    (let ((keyword (org-x-is-todoitem-p)))
+      ;; currently we assume that periodicals have no TODOs
+      (cond
+       ;; skip over held/canc projects
+       ((and (member keyword org-x-project-skip-todostates)
+             (org-x-is-project-p))
+        (org-x-skip-subtree))
+       ;; skip iterators
+       ((org-x-is-iterator-heading-p)
+        (org-x-skip-heading))
+       ;; skip project headings
+       ((org-x-is-project-p)
+        (org-x-skip-heading))
+       ;; skip canceled tasks
+       ((and (equal keyword org-x-kw-canc)
+             (org-x-is-task-p))
+        (org-x-skip-heading))
+       ;; skip habits
+       ((org-x-is-habit-heading-p)
+        (org-x-skip-heading))))))
+  
+(defun org-x-project-skip-function ()
+  (save-excursion
+    (widen)
+    (cond
+     ((or (org-x-is-iterator-heading-p) (org-x-is-periodical-heading-p))
+      (org-x-skip-subtree))
+     ((not (org-x-is-project-p))
+      (org-x-skip-heading)))))
+
+(defun org-x-incubator-skip-function ()
+  (save-excursion
+    (widen)
+    (let ((keyword (org-x-is-todoitem-p)))
+      (cond
+       ;; skip done/canc projects
+       ((and (member keyword org-done-keywords)
+             (org-x-is-project-p))
+        (org-x-skip-subtree))
+       ;; skip project tasks
+       ((and keyword (org-x-is-project-task-p))
+        (org-x-skip-heading))
+       ;; skip done/canc tasks
+       ((member keyword org-done-keywords)
+        (org-x-skip-heading))
+       ;; skip non-tasks if they don't have a timestamp
+       ((and (not keyword)
+             (not (org-x-is-timestamped-heading-p)))
+        (org-x-skip-heading))))))
+
+(defun org-x-periodical-skip-function ()
+  (save-excursion
+    (widen)
+    (cond
+     ((not (org-x-is-periodical-heading-p))
+      (org-x-skip-heading))
+     ((org-x-headline-has-parent #'org-x-is-periodical-heading-p)
+      (org-x-skip-heading)))))
+
+(defun org-x-iterator-skip-function ()
+  (save-excursion
+    (widen)
+    (cond
+     ((not (org-x-is-iterator-heading-p))
+      (org-x-skip-heading))
+     ((org-x-headline-has-parent #'org-x-is-iterator-heading-p)
+      (org-x-skip-heading)))))
+
+(defun org-x-critical-error-skip-function ()
+  (save-excursion
+    (widen)
+    (cond
+     ((org-x-is-habit-heading-p)
+      (org-x-skip-heading))
+     ((org-x-is-periodical-heading-p)
+      (org-x-skip-subtree)))))
+
+(defun org-x-skip-function-archivable ()
+  ;; (org-x-mk-skip-function
+  (save-excursion
+    (widen)
+    (let ((keyword (org-get-todo-state)))
+      (cond
+       ;; skip all non-archivable projects
+       ((and keyword
+             ;; TODO gets the keyword again
+             (org-x-is-project-p)
+             (not (eq :archivable (org-x-get-project-status))))
+        (org-x-skip-subtree))
+       ;; skip all incubator tasks
+       ((org-x-headline-has-tag-p org-x-tag-incubated)
+        (org-x-skip-heading))
+       ;; skip all project tasks
+       ((and keyword (org-x-is-project-task-p))
+        (org-x-skip-heading))
+       ;; skip all tasks not marked done or archivable
+       ((and keyword
+             ;; TODO gets the keyword again
+             (org-x-is-task-p)
+             (not (eq :archivable (org-x-task-status))))
+        (org-x-skip-heading))
+       ;; skip all non-todoitems that are not stale
+       ((and (not keyword) (not (org-x-is-stale-heading-p)))
+        (org-x-skip-heading))))))
+
 (provide 'org-x)
 ;;; org-x.el ends here
