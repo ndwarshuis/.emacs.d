@@ -2539,17 +2539,21 @@ This gives more flexibility in ignoring items with timestamps
 
 By default I want block agendas to sort based on the todo keyword (with NEXT being up top as these have priority).
 #+BEGIN_SRC emacs-lisp
-(setq org-agenda-cmp-user-defined
-      '(lambda (a b)
-         (let ((pa (- (length (member
-                               (get-text-property 1 'todo-state a)
-                               org-x-agenda-todo-sort-order))))
-               (pb (- (length (member
-                               (get-text-property 1 'todo-state b)
-                               org-x-agenda-todo-sort-order)))))
-           (cond ((or (null pa) (null pb)) nil)
-                 ((> pa pb) +1)
-                 ((< pa pb) -1)))))
+(let* ((sort-order (list org-x-kw-next
+                         org-x-kw-wait
+                         org-x-kw-hold
+                         org-x-kw-todo))
+       (get-rank `(lambda (it)
+                   (-> (get-text-property 1 'todo-state it)
+                     (member ',sort-order)
+                     (length)
+                     (-)))))
+  (setq org-agenda-cmp-user-defined `(lambda (a b)
+                                       (let ((pa (funcall ,get-rank a))
+                                             (pb (funcall ,get-rank b)))
+                                         (cond ((or (null pa) (null pb)) nil)
+                                               ((> pa pb) +1)
+                                               ((< pa pb) -1))))))
 
 #+END_SRC
 ***** custom commands

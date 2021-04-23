@@ -226,10 +226,6 @@
   (list org-x-kw-wait org-x-kw-next)
   "Projects cannot have these todostates.")
   
-(defconst org-x-agenda-todo-sort-order
-  (list org-x-kw-next org-x-kw-wait org-x-kw-hold org-x-kw-todo)
-  "Defines the order in which todo keywords should be sorted.")
-  
 (defconst org-x-project-skip-todostates
   (list org-x-kw-hold org-x-kw-canc)
   "These keywords override all contents within their subtrees.
