@@ -78,7 +78,7 @@
   "Prefix character denoting life category tag.")
 
 (defconst org-x-tag-errand
-(org-x-prepend-char org-x-tag-location-prefix "errand")
+  (org-x-prepend-char org-x-tag-location-prefix "errand")
   "Tag denoting an errand location.")
 
 (defconst org-x-tag-home
@@ -202,19 +202,7 @@
 (defconst org-x-prop-days-to-live "X-DAYS_TO_LIVE"
   "Property denoting after how many days a headline will expire.")
 
-;;; CONSTANTS
-
-(defconst org-x-iter-future-time (* 7 24 60 60)
-  "Iterators must have at least one task greater into the future to be active.")
-  
-;; TODO ;unscheduled should trump all
-(defconst org-x-iter-statuscodes '(:uninit :empt :actv :project-error :unscheduled)
-  "Iterators can have these statuscodes.")
- 
-(defconst org-x-peri-future-time org-x-iter-future-time
-  "Periodicals must have at least one heading greater into the future to be fresh.")
-
-(defconst org-x-peri-statuscodes '(:uninit :empt :actv :unscheduled))
+;;; PUBLIC VARS
 
 (defconst org-x-archive-delay 30
   "The number of days to wait before tasks are considered archivable.")
@@ -222,27 +210,43 @@
 (defconst org-x-inert-delay-days 90
   "The number of days to wait before tasks are considered inert.")
 
-(defconst org-x-project-invalid-todostates
+(defconst org-x-iterator-active-future-offset (* 7 24 60 60)
+  "Iterators must have at least one task this far in the future to be active.")
+
+(defconst org-x-periodical-active-future-offset
+  org-x-iterator-active-future-offset
+  "Periodicals must have at least one heading this far in the future to be active.")
+
+;;; INTERNAL CONSTANTS
+  
+;; TODO ;unscheduled should trump all
+(defconst org-x--iter-statuscodes
+  '(:uninit :empt :actv :project-error :unscheduled)
+  "Statuscodes for iterators, arranged from high to low precedence.")
+ 
+(defconst org-x--peri-statuscodes
+  '(:uninit :empt :actv :unscheduled)
+  "Statuscodes for periodicals, arranged from high to low precedence.")
+
+(defconst org-x--project-invalid-todostates
   (list org-x-kw-wait org-x-kw-next)
   "Projects cannot have these todostates.")
   
-(defconst org-x-project-skip-todostates
+(defconst org-x--project-skip-todostates
   (list org-x-kw-hold org-x-kw-canc)
   "These keywords override all contents within their subtrees.
 Currently used to tell skip functions when they can hop over
 entire subtrees to save time and ignore tasks")
 
-;; internal vars
+(defconst org-x--first-active-ts-pattern
+  '(:first :any * (:and timestamp (:or (:type 'active) (:type 'active-range))))
+  "Pattern for first active timestamp to be supplied to `org-ml-match' et al.")
 
-(defvar org-x-agenda-hasprop-filter nil)
+;; INTERNAL VARS
 
-;; list
+(defvar org-x--agenda-hasprop-filter nil)
 
-(defun org-x-filter-list-prefix (prefix str-list)
-  "Return a subset of STR-LIST whose first characters are PREFIX."
-  (--filter (and (stringp it) (s-prefix-p prefix it)) str-list))
-
-;; org-element
+;; ORG-ELEMENT EXTENSIONS
 
 ;; TODO this should be in org-ml
 (defun org-x-logbook-config ()
@@ -272,16 +276,74 @@ entire subtrees to save time and ignore tasks")
      (first-item-ut first-item-ut)
      (first-clock-ut first-clock-ut))))
 
-;; timestamp processing
+;;; STATEFUL BUFFER HEADLINE FUNCTIONS
 
-(defun org-x-headline-get-property-epoch-time (timestamp-property)
+;; All of these functions operate on the current headline
+
+;; helper function
+
+(defun org-x--headline-get-level ()
+  "Return level of the current headline.
+Assumes point is at the start of a headline."
+  (save-excursion
+    (forward-char 1)
+    (while (= ?* (following-char)) (forward-char 1))
+    (current-column)))
+
+(defmacro org-x--while-child-headlines (while-form &rest body)
+  "Run BODY for each child headline in the subtree under point.
+Assume point is at the start of a headline. Loop through children
+until WHILE-FORM evals to nil. Note that this only applies BODY
+to the children one level down from the current headline."
+  ;; Rather than using regular expressions, it is much faster and simpler to
+  ;; walk down each line and count the number of stars to get the level.
+  ;;
+  ;; Algorithm steps:
+  ;; 1. Count stars on the current headline (move point forward until first
+  ;;    non-star, and use the column number to get level) and add 1 to get
+  ;;    the "target-level" (that is the child level of the current headline)
+  ;; 2. Move forward one line until a) `while-form' returns nil b) the current
+  ;;    level of the org-tree is less than the target-level or c) the end of
+  ;;    the buffer is reached.
+  ;;    2.1. If point not on a star, continue looping.
+  ;;    2.2. Otherwise, get the current level similar to (1) using the column
+  ;;         number. If the current level is equal to the target level, eval
+  ;;         `body', otherwise do nothing since point is too deep in the tree.
+  (declare (indent 1))
+  `(save-excursion
+     (let* ((target-level (1+ (org-x--headline-get-level)))
+            (cur-level target-level))
+       (while (and ,while-form
+                   (<= target-level cur-level)
+                   (= 0 (forward-line 1)))
+         (when (= ?* (following-char))
+           (setq cur-level (org-x--headline-get-level))
+           (when (= cur-level target-level)
+             ,@body))))))
+
+(defun org-x--headline-has-children (test-fun)
+  "Return t if heading has a child for whom TEST-FUN is t.
+Assume that point is at the beginning of a headline."
+  (let ((has-children nil))
+    (org-x--while-child-headlines (not has-children)
+      (when (funcall test-fun)
+        (setq has-children t)))
+    has-children))
+
+(defun org-x--headline-has-parent (heading-test)
+  "Return t if heading has parent for whom HEADING-TEST is t."
+  (save-excursion (and (org-up-heading-safe) (funcall heading-test))))
+
+;; timestamp predicates
+
+(defun org-x--headline-get-property-epoch-time (timestamp-property)
   "Return TIMESTAMP-PROPERTY of the current headline as an epoch time.
 If TIMESTAMP-PROPERTY is missing, return nil. This will return 0
 if a property is given that returns a string that isn't an org
 timestamp."
   (-some-> (org-entry-get nil timestamp-property) (org-2ft)))
 
-(defmacro org-x-heading-compare-timestamp (ref-epoch-time future epoch-time-form)
+(defmacro org-x--headline-compare-timestamp (ref-epoch-time future epoch-time-form)
   "Compare epoch-time to some reference time.
 
 EPOCH-TIME-FORM should return an epoch time when called on the
@@ -296,70 +358,105 @@ no timestamp is found."
        (when (,op (- epoch-time (float-time)) ,ref-epoch-time)
          epoch-time))))
 
-(defun org-x-is-timestamped-heading-p ()
-  "Get active timestamp of current heading."
-  (org-x-headline-get-property-epoch-time "TIMESTAMP"))
+(defun org-x-headline-is-scheduled-p ()
+  "Return non-nil if current headline has a scheduled timestamp.
+Actual returned value is the epoch time of the timestamp."
+  (org-x--headline-get-property-epoch-time "SCHEDULED"))
 
-(defun org-x-is-scheduled-heading-p ()
-  "Get scheduled timestamp of current heading."
-  (org-x-headline-get-property-epoch-time "SCHEDULED"))
+(defun org-x-headline-is-deadlined-p ()
+  "Return non-nil if current headline has a deadline timestamp.
+Actual returned value is the epoch time of the timestamp."
+  (org-x--headline-get-property-epoch-time "DEADLINE"))
 
-(defun org-x-is-deadlined-heading-p ()
-  "Get scheduled timestamp of current heading."
-  (org-x-headline-get-property-epoch-time "DEADLINE"))
+(defun org-x-headline-is-closed-p ()
+  "Return non-nil if current headline has a closed timestamp.
+Actual returned value is the epoch time of the timestamp."
+  (org-x--headline-get-property-epoch-time "CLOSED"))
 
-(defun org-x-is-created-heading-p ()
-  "Get scheduled timestamp of current heading."
-  (org-x-headline-get-property-epoch-time org-x-prop-created))
+(defun org-x-headline-is-timestamped-p ()
+  "Return non-nil if current headline has an active timestamp.
+Actual returned value is the epoch time of the timestamp."
+  (org-x--headline-get-property-epoch-time "TIMESTAMP"))
 
-(defun org-x-is-closed-heading-p ()
-  "Get closed timestamp of current heading."
-  (org-x-headline-get-property-epoch-time "CLOSED"))
+(defun org-x-headline-is-created-p ()
+  "Return non-nil if current headline has a created timestamp.
+Created timestamps are held in the `org-x-prop-created' property.
+Actual returned value is the epoch time of the property."
+  (org-x--headline-get-property-epoch-time org-x-prop-created))
 
-(defun org-x-is-stale-heading-p ()
-  "Return epoch time if current heading is stale."
-  (org-x-heading-compare-timestamp 0 nil
+(defun org-x-headline-is-stale-p ()
+  "Return non-nil if current headline is stale.
+'Stale' means the headline has an active timestamp in the past.
+Actual returned value is the epoch time of the timestamp."
+  (org-x--headline-compare-timestamp 0 nil
     (-when-let (ts (org-entry-get nil "TIMESTAMP"))
       (unless (s-matches-p "+[0-9]+[dwmy]" ts)
         (org-2ft ts)))))
 
-(defun org-x-is-expired-date-headline-p ()
-  "Return epoch-time if current headline is expired via `org-x-prop-expire'."
-  (org-x-heading-compare-timestamp 0 nil
-    (org-x-headline-get-property-epoch-time org-x-prop-expire)))
+(defun org-x-headline-is-expired-date-p ()
+  "Return non-nil if current headline is expired.
+'Expired' means the headline has an `org-x-prop-expire' property
+that is in the past. Actual returned value is the epoch time of
+the timestamp."
+  (org-x--headline-compare-timestamp 0 nil
+    (org-x--headline-get-property-epoch-time org-x-prop-expire)))
 
-(defun org-x-is-expired-dtl-headline-p ()
-  "Return epoch-time if current headline is expired via `org-x-prop-days-to-live'."
-  (org-x-heading-compare-timestamp 0 nil
+(defun org-x-headline-is-expired-days-to-live ()
+  "Return non-nil if current headline is expired.
+'Expired' means the headline has passed its days to live
+according to the `org-x-prop-days-to-live' and
+`org-x-prop-created' properties. Actual returned value is the
+epoch time of the created property plus the days to live."
+  (org-x--headline-compare-timestamp 0 nil
     (-when-let (dtl (org-entry-get nil org-x-prop-days-to-live))
       (when (s-matches-p "[0-9]+" dtl)
-        (-when-let (et (org-x-headline-get-property-epoch-time org-x-prop-created))
+        (-when-let (et (org-x--headline-get-property-epoch-time org-x-prop-created))
           (+ et (* (string-to-number dtl) 24 60 60)))))))
 
-(defun org-x-is-expired-headline-p ()
-  "Return t if current headline is expired."
-  ;; NOTE: this will return the dtl ft even if the date ft is less
-  (and (or (org-x-is-expired-dtl-headline-p)
-           (org-x-is-expired-date-headline-p))
-       t))
+(defun org-x-headline-is-expired-p ()
+  "Return non-nil if current headline is expired.
+This will test the current headline using
+`org-x-headline-is-expired-date-p' and
+`org-x-headline-is-expired-days-to-live' (in that order)."
+  (or (org-x-headline-is-expired-days-to-live)
+      (org-x-headline-is-expired-date-p)))
 
-(defun org-x-is-fresh-heading-p ()
-  "Return epoch-time if current heading is fresh."
-  (org-x-heading-compare-timestamp 0 t
-    (org-x-is-timestamped-heading-p)))
+(defun org-x-headline-is-fresh-p ()
+  "Return non-nil if current headline is fresh.
+'Fresh' means the headline has an active timestamp in the future.
+Actual returned value is the epoch time of the timestamp."
+  (org-x--headline-compare-timestamp 0 t
+    (org-x-headline-is-timestamped-p)))
 
-(defun org-x-is-archivable-heading-p ()
-  "Return epoch-time if current heading is archivable."
-  (org-x-heading-compare-timestamp (- (* 60 60 24 org-x-archive-delay)) nil
-    (org-x-is-closed-heading-p)))
+(defun org-x-headline-is-archivable-p ()
+  "Return non-nil if current headline is fresh.
+'Archivable' means the headline has been closed at least
+`org-x-archive-delay' days in the past. Actual returned value is
+the epoch time of the timestamp."
+  (org-x--headline-compare-timestamp (- (* 60 60 24 org-x-archive-delay)) nil
+    (org-x-headline-is-closed-p)))
 
-(defun org-x-is-created-in-future ()
-  "Return epoch-time if current headline has CREATED property in the future."
-  (org-x-heading-compare-timestamp 0 t
-    (org-x-is-created-heading-p)))
+(defun org-x-headline-is-created-in-future ()
+  "Return non-nil if current headline was 'created' in the future.
+This should not happen and is an error if it does, and the
+headline is tested analogously to `org-x-headline-is-created-p'
+except tests if the timestamp is in the future. Actual returned
+value is the epoch time of the timestamp."
+  (org-x--headline-compare-timestamp 0 t
+    (org-x-headline-is-created-p)))
 
-(defun org-x-is-inert-p ()
-  "Return most recent timestamp if headline is inert."
+(defun org-x-headline-is-inert-p ()
+  "Return non-nil if current headline is inert.
+
+'Inert means that the headline has had no activity in
+`org-x-inert-delay-days' in the past. Activity is assessed using
+logbook entries (clocks or items), and the headline must have
+been created `org-x-inert-delay-days' in the past to be inert.
+Furthermore, headlines with deadline or scheduled timestamps in
+the future cannot be inert.
+
+Actual return value is the epoch time of the most recent
+timestamp."
   (let* ((now (float-time))
          (hl (org-ml-parse-this-headline))
          (most-recent-log-ut (-some->> hl (org-x-element-first-lb-entry)))
@@ -381,87 +478,73 @@ no timestamp is found."
                 (- now it)
                 (when (> it (* 86400 org-x-inert-delay-days)) it)))))
 
-;; task-level testing
+;; keyword testing
 
-(defalias 'org-x-is-todoitem-p 'org-get-todo-state
-  "Return todo keyword if heading has one.")
-
-(defun org-x-headline-has-task-children ()
-  "Return todo keyword of first task child under headline if it exists."
-  (org-x-headline-has-children #'org-x-is-todoitem-p))
-
-(defun org-x-headline-has-task-parent ()
-  "Return todo keyword of current headline's if it exists."
-  (org-x-headline-has-parent #'org-x-is-todoitem-p))
-
-(defmacro org-x-return-keyword-when (keyword when-form)
+(defmacro org-x--return-keyword-when (keyword when-form)
   "Return keyword under headline if WHEN-FORM is t.
 If KEYWORD is non-nil, don't look up the keyword but instead
 return KEYWORD if WHEN-FORM is t."
   (declare (indent 1))
-  (let ((kw-form (if keyword keyword '(org-x-is-todoitem-p))))
-    `(-when-let (kw ,kw-form)
-       (when ,when-form
-         kw))))
+  (if keyword `(and ,when-form ,keyword)
+    `(-when-let (kw (org-x-headline-is-todoitem-p))
+       (and ,when-form kw))))
 
-(defmacro org-x-is-project-p (&optional keyword)
+(defalias 'org-x-headline-is-todoitem-p 'org-get-todo-state
+  "Return todo keyword if current headline has one.")
+
+(defun org-x-headline-has-discontinuous-parent ()
+  "Return t if heading has a non-todoitem parent which in turn has a todoitem parent."
+  (let ((has-todoitem-parent)
+        (has-non-todoitem-parent))
+    (save-excursion
+      (while (and (not has-todoitem-parent) (org-up-heading-safe))
+        (if (org-x-headline-is-todoitem-p)
+            (setq has-todoitem-parent t)
+          (setq has-non-todoitem-parent t))))
+    (and has-todoitem-parent has-non-todoitem-parent)))
+
+(defun org-x-headline-has-task-children ()
+  "Return todo keyword of first task child under headline if it exists."
+  (org-x--headline-has-children #'org-x-headline-is-todoitem-p))
+
+(defun org-x-headline-has-task-parent ()
+  "Return todo keyword of current headline's if it exists."
+  (org-x--headline-has-parent #'org-x-headline-is-todoitem-p))
+
+(defmacro org-x-headline-is-project-p (&optional keyword)
   "Return todo keyword if heading has todoitem children.
 
-If KEYWORD is provided, skip the keyword lookup part of this
-function and assume the current headline has KEYWORD. This is
-useful when the keyword is already known from a previous test."
-  `(org-x-return-keyword-when ,keyword
+See `org-x--return-keyword-when' for meaning of KEYWORD."
+  `(org-x--return-keyword-when ,keyword
      (org-x-headline-has-task-children)))
 
-(defmacro org-x-is-task-p (&optional keyword)
-  "Return todo keyword if heading has no todoitem children.
+(defmacro org-x-headline-is-toplevel-project-p (&optional keyword)
+  "Return todo keyword if headline has task children and no task parents.
 
-If KEYWORD is provided, skip the keyword lookup part of this
-function and assume the current headline has KEYWORD. This is
-useful when the keyword is already known from a previous test."
-  `(org-x-return-keyword-when ,keyword
-     (not (org-x-headline-has-task-children))))
-
-(defmacro org-x-is-project-task-p (&optional keyword)
-  "Return todo keyword if heading has todoitem parents.
-
-If KEYWORD is provided, skip the keyword lookup part of this
-function and assume the current headline has KEYWORD. This is
-useful when the keyword is already known from a previous test."
-  `(org-x-return-keyword-when (org-x-is-task-p ,keyword)
-     (org-x-headline-has-task-parent)))
-
-(defmacro org-x-is-atomic-task-p (&optional keyword)
-  "Return todo keyword if heading has no todoitem parents or children.
-
-If KEYWORD is provided, skip the keyword lookup part of this
-function and assume the current headline has KEYWORD. This is
-useful when the keyword is already known from a previous test."
-  `(org-x-return-keyword-when (org-x-is-task-p ,keyword)
+See `org-x--return-keyword-when' for meaning of KEYWORD."
+  `(org-x--return-keyword-when (org-x-headline-is-project-p ,keyword)
      (not (org-x-headline-has-task-parent))))
 
-(defun org-x-task-status (&optional keyword)
-  "Return the status of the headline under point.
+(defmacro org-x-headline-is-task-p (&optional keyword)
+  "Return todo keyword if heading has no todoitem children.
 
-If KEYWORD is provided, skip the keyword lookup part of this
-function and assume the current headline has KEYWORD. This is
-useful when the keyword is already known from a previous test."
-  (-when-let (kw (or keyword (org-x-is-task-p)))
-    (cond
-     ((org-x-is-archivable-heading-p)
-      :archivable)
-     ((and (not (member kw org-x-done-keywords)) (org-x-is-expired-headline-p))
-      :expired)
-     ((org-x-is-inert-p)
-      :inert)
-     ((and (member kw org-x-done-keywords) (not (org-x-is-closed-heading-p)))
-      :done-unclosed)
-     ((and (not (member kw org-x-done-keywords)) (org-x-is-closed-heading-p))
-      :undone-closed)
-     ((member kw org-x-done-keywords)
-      :complete)
-     (t
-      :active))))
+See `org-x--return-keyword-when' for meaning of KEYWORD."
+  `(org-x--return-keyword-when ,keyword
+     (not (org-x-headline-has-task-children))))
+
+(defmacro org-x-headline-is-project-task-p (&optional keyword)
+  "Return todo keyword if heading has todoitem parents.
+
+See `org-x--return-keyword-when' for meaning of KEYWORD."
+  `(org-x--return-keyword-when (org-x-headline-is-task-p ,keyword)
+     (org-x-headline-has-task-parent)))
+
+(defmacro org-x-headline-is-atomic-task-p (&optional keyword)
+  "Return todo keyword if heading has no todoitem parents or children.
+
+See `org-x--return-keyword-when' for meaning of KEYWORD."
+  `(org-x--return-keyword-when (org-x-headline-is-task-p ,keyword)
+     (not (org-x-headline-has-task-parent))))
 
 ;; property testing
 
@@ -471,17 +554,17 @@ useful when the keyword is already known from a previous test."
 INHERIT is passed to `org-entry-get'."
   (equal value (org-entry-get nil property inherit)))
 
-(defun org-x-is-periodical-heading-p ()
+(defun org-x-headline-is-periodical-p ()
   "Return t if heading is a periodical."
   (org-x-headline-has-property org-x-prop-parent-type
                                org-x-prop-parent-type-periodical t))
 
-(defun org-x-is-iterator-heading-p ()
+(defun org-x-headline-is-iterator-p ()
   "Return t if heading is an iterator."
   (org-x-headline-has-property org-x-prop-parent-type
                                org-x-prop-parent-type-iterator t))
 
-(defun org-x-is-habit-heading-p ()
+(defun org-x-headline-is-habit-p ()
   "Return t if heading is an iterator."
   (org-x-headline-has-property "STYLE" "habit"))
 
@@ -501,87 +584,90 @@ INHERIT is passed to `org-entry-get'."
   "Return t if heading has tag TAG."
   (member tag (org-get-tags)))
 
-;; relational testing
+;; compound headline testing
 
-(defun org-x-headline-get-level ()
-  "Return level of the current headline.
-Assumes point is at the start of a headline."
-  (save-excursion
-    (forward-char 1)
-    (while (= ?* (following-char)) (forward-char 1))
-    (current-column)))
+(defmacro org-x-headline-get-task-status (&optional keyword)
+  "Return the status of the headline under point.
 
-(defmacro org-x-while-child-headlines (while-form &rest body)
-  "Run BODY for each child headline in the subtree under point.
-Assume point is at the start of a headline. Loop through children
-until WHILE-FORM evals to nil. Note that this only applies BODY
-to the children one level down from the current headline."
-  ;; Rather than using regular expressions, it is much faster and simpler to
-  ;; walk down each line and count the number of stars to get the level.
-  ;;
-  ;; Algorithm steps:
-  ;; 1. Count stars on the current headline (move point forward until first
-  ;;    non-star, and use the column number to get level) and add 1 to get
-  ;;    the "target-level" (that is the child level of the current headline)
-  ;; 2. Move forward one line until a) `while-form' returns nil b) the current
-  ;;    level of the org-tree is less than the target-level or c) the end of
-  ;;    the buffer is reached.
-  ;;    2.1. If point not on a star, continue looping.
-  ;;    2.2. Otherwise, get the current level similar to (1) using the column
-  ;;         number. If the current level is equal to the target level, eval
-  ;;         `body', otherwise do nothing since point is too deep in the tree.
-  (declare (indent 1))
-  `(save-excursion
-     (let* ((target-level (1+ (org-x-headline-get-level)))
-            (cur-level target-level))
-       (while (and ,while-form
-                   (<= target-level cur-level)
-                   (= 0 (forward-line 1)))
-         (when (= ?* (following-char))
-           (setq cur-level (org-x-headline-get-level))
-           (when (= cur-level target-level)
-             ,@body))))))
+See `org-x--return-keyword-when' for meaning of KEYWORD."
+  `(-when-let (kw (org-x-headline-is-task-p ,keyword))
+     (cond
+      ((org-x-headline-is-archivable-p)
+       :archivable)
+      ((and (not (member kw org-x-done-keywords)) (org-x-headline-is-expired-p))
+       :expired)
+      ((org-x-headline-is-inert-p)
+       :inert)
+      ((and (member kw org-x-done-keywords) (not (org-x-headline-is-closed-p)))
+       :done-unclosed)
+      ((and (not (member kw org-x-done-keywords)) (org-x-headline-is-closed-p))
+       :undone-closed)
+      ((member kw org-x-done-keywords)
+       :complete)
+      (t
+       :active))))
 
-(defun org-x-headline-has-children (test-fun)
-  "Return t if heading has a child for whom TEST-FUN is t.
-Assume that point is at the beginning of a headline."
-  (let ((has-children nil))
-    (org-x-while-child-headlines (not has-children)
-      (when (funcall test-fun)
-        (setq has-children t)))
-    has-children))
+(defun org-x-headline-is-discontinous-project-task-p ()
+  "Return t if headline is a task with a discontinous project parent."
+  (org-x--return-keyword-when (org-x-headline-is-todoitem-p)
+    (org-x-headline-has-discontinuous-parent)))
 
-(defun org-x-headline-has-parent (heading-test)
-  "Return t if heading has parent for whom HEADING-TEST is t."
-  (save-excursion (and (org-up-heading-safe) (funcall heading-test))))
+(defun org-x-headline-is-done-unclosed-task-p ()
+  "Return t if headline is a done unclosed task.
+'Done unclosed' means it is marked with a done keyword but is
+missing a closed timestamp."
+  (and (member (org-get-todo-state) org-x-done-keywords)
+       (not (org-x-headline-is-closed-p))
+       t))
 
-(defun org-x-has-discontinuous-parent ()
-  "Return t if heading has a non-todoitem parent which in turn has a todoitem parent."
-  (let ((has-todoitem-parent)
-        (has-non-todoitem-parent))
-    (save-excursion
-      (while (and (not has-todoitem-parent) (org-up-heading-safe))
-        (if (org-x-is-todoitem-p)
-            (setq has-todoitem-parent t)
-          (setq has-non-todoitem-parent t))))
-    (and has-todoitem-parent has-non-todoitem-parent)))
+(defun org-x-headline-is-undone-closed-task-p ()
+  "Return t if headline is a undone closed task.
+'Undone closed' means it is not marked with a done keyword but
+has closed timestamp."
+  (-when-let ((keyword (org-get-todo-state)))
+    (and (not (member keyword org-x-done-keywords))
+         (org-x-headline-is-closed-p)
+         t)))
 
-(defun org-x-is-todo-child (keyword)
-  "Return t if current headline has a parent (at any level) with todo KEYWORD."
-  (let ((has-keyword-parent))
-    (save-excursion
-      (while (and (not has-keyword-parent) (org-up-heading-safe))
-        (when (equal keyword (org-x-is-todoitem-p))
-          (setq has-keyword-parent t))))
-    has-keyword-parent))
+(defun org-x-headline-is-task-without-creation-timestamp-p ()
+  "Return t if headline is a task without a creation timestamp.
+Creation timestamps are set using the `org-x-prop-created'
+property."
+  (-when-let (kw (org-x-headline-is-task-p))
+    (and (not (member kw org-x-done-keywords))
+         (not (org-x-headline-is-created-p))
+         t)))
+
+(defun org-x-headline-is-iterator-without-archive-target-p ()
+  "Return t if headline is an iterator without an archive target."
+  (and (org-x-headline-has-property org-x-prop-parent-type
+                                    org-x-prop-parent-type-iterator)
+       (org-x-headline-has-property "ARCHIVE" nil)
+       t))
+
+(defun org-x-headline-is-task-with-future-creation-timestamp-p ()
+  "Return t if current headline is undone task with missing creation timestamp."
+  (-when-let (kw (org-x-headline-is-task-p))
+    (and (not (member kw org-x-done-keywords))
+         (org-x-headline-is-created-in-future)
+         t)))
+
+;; (defun org-x-is-todo-child (keyword)
+;;   "Return t if current headline has a parent (at any level) with todo KEYWORD."
+;;   (let ((has-keyword-parent))
+;;     (save-excursion
+;;       (while (and (not has-keyword-parent) (org-up-heading-safe))
+;;         (when (equal keyword (org-x-headline-is-todoitem-p))
+;;           (setq has-keyword-parent t))))
+;;     has-keyword-parent))
 
 ;; project level testing
 
-(defmacro org-x-compare-statuscodes (op sc1 sc2 sc-list)
+(defmacro org-x--compare-statuscodes (op sc1 sc2 sc-list)
   "Compare position of statuscodes SC1 and SC2 in SC-LIST using operator OP."
   `(,op (cl-position ,sc1 ,sc-list) (cl-position ,sc2 ,sc-list)))
 
-(defmacro org-x-descend-into-project (statuscode-tree get-task-status callback-fun)
+(defmacro org-x--descend-into-project (statuscode-tree get-task-status callback-fun)
   "Loop through (sub)project and return overall statuscode.
 
 The returned statuscode is chosen from list ALLOWED-STATUSCODES where
@@ -614,10 +700,10 @@ should be this function again)."
             (new-status nil)
             (it-kw nil))
         ;; loop through tasks one level down until breaker-status found
-        (org-x-while-child-headlines (not (eq project-status ,breaker-status))
+        (org-x--while-child-headlines (not (eq project-status ,breaker-status))
           (setq it-kw (org-get-todo-state))
           (when it-kw
-            (if (org-x-headline-has-children #'org-x-is-todoitem-p)
+            (if (org-x--headline-has-children #'org-x-headline-is-todoitem-p)
                 (progn
                   ;; If project returns an allowed status then use that.
                   ;; Otherwise look up the value in the translation table and
@@ -627,31 +713,31 @@ should be this function again)."
                     (setq new-status (alist-get new-status ',trans-tbl))))
               ;; if tasks then use get-task-status to obtain status
               (setq new-status (nth ,get-task-status ',allowed-statuscodes)))
-            (when (org-x-compare-statuscodes > new-status project-status ',allowed-statuscodes)
+            (when (org-x--compare-statuscodes > new-status project-status ',allowed-statuscodes)
               (setq project-status new-status))))
          project-status))))
 
-(defun org-x-get-project-status ()
+(defun org-x-headline-get-project-status ()
   "Return project heading statuscode (assumes it is indeed a project)."
   ;;
   ;; these first three are easy because they only require
   ;; testing the project headline and nothing underneath
   ;;
   ;; it does not make sense for projects to be scheduled
-  (if (org-x-is-scheduled-heading-p) :scheduled-project
+  (if (org-x-headline-is-scheduled-p) :scheduled-project
     (-when-let (keyword (org-get-todo-state))
       (cond
        ;; held projects do not care what is underneath them
        ;; only need to test if they are inert
-       ((equal keyword org-x-kw-hold) (if (org-x-is-inert-p) :inert :held))
+       ((equal keyword org-x-kw-hold) (if (org-x-headline-is-inert-p) :inert :held))
 
        ;; projects with invalid todostates are nonsense
-       ((member keyword org-x-project-invalid-todostates)
+       ((member keyword org-x--project-invalid-todostates)
         :invalid-todostate)
 
        ;; canceled projects can either be archivable or complete
        ;; any errors or undone tasks are irrelevant
-       ((equal keyword org-x-kw-canc) (if (org-x-is-archivable-heading-p) :archivable
+       ((equal keyword org-x-kw-canc) (if (org-x-headline-is-archivable-p) :archivable
                                  :complete))
        
        ;;
@@ -660,7 +746,7 @@ should be this function again)."
 
        ;; done projects are like canceled projects but can also be incomplete
        ((equal keyword org-x-kw-done)
-        (org-x-descend-into-project
+        (org-x--descend-into-project
          ((:archivable)
           (:complete)
           (:done-incomplete :stuck :inert :held :wait :active
@@ -668,13 +754,13 @@ should be this function again)."
                             :undone-complete))
          ;; TODO don't use org-done-keywords
          (if (member it-kw org-x-done-keywords)
-             (if (org-x-is-archivable-heading-p) 0 1)
+             (if (org-x-headline-is-archivable-p) 0 1)
            2)
-         org-x-get-project-status))
+         org-x-headline-get-project-status))
        
        ;; project with TODO states could be basically any status
        ((equal keyword org-x-kw-todo)
-        (org-x-descend-into-project
+        (org-x--descend-into-project
          ((:undone-complete :complete :archivable)
           (:stuck :scheduled-project :invalid-todostate :done-incomplete)
           (:held)
@@ -682,22 +768,24 @@ should be this function again)."
           (:inert)
           (:active))
          (cond
-          ((and (not (member it-kw org-x-done-keywords)) (org-x-is-inert-p)) 4)
-          ((equal it-kw org-x-kw-todo) (if (org-x-is-scheduled-heading-p) 5 1))
+          ((and (not (member it-kw org-x-done-keywords)) (org-x-headline-is-inert-p)) 4)
+          ((equal it-kw org-x-kw-todo) (if (org-x-headline-is-scheduled-p) 5 1))
           ((equal it-kw org-x-kw-hold) 2)
           ((equal it-kw org-x-kw-wait) 3)
           ((equal it-kw org-x-kw-next) 5)
           (t 0))
-         org-x-get-project-status))
+         org-x-headline-get-project-status))
        
        (t (error (concat "invalid keyword detected: " keyword)))))))
 
 ;; iterators
 
 (defun org-x--clone-get-iterator-project-status (kw)
+  "Get the status of a project in an iterator.
+KW is the keyword of the parent."
   (cond
-   ((or (org-x-is-scheduled-heading-p)
-        (member kw org-x-project-invalid-todostates)) :project-error)
+   ((or (org-x-headline-is-scheduled-p)
+        (member kw org-x--project-invalid-todostates)) :project-error)
 
    ;; canceled tasks add nothing
    ((equal kw org-x-kw-canc) :empt)
@@ -709,7 +797,7 @@ should be this function again)."
    ;; done projects either add nothing (empty) or are not actually
    ;; done (project error)
    ((equal kw org-x-kw-done)
-    (org-x-descend-into-project
+    (org-x--descend-into-project
      ((:empt)
       (:project-error :unscheduled :actv))
      (if (member it-kw org-x-done-keywords) 0 1)
@@ -717,56 +805,52 @@ should be this function again)."
    
    ;; project with TODO states could be basically any status
    ((equal kw org-x-kw-todo)
-    (org-x-descend-into-project
+    (org-x--descend-into-project
      ((:unscheduled :project-error)
       (:empt)
       (:actv))
-     (let ((ts (org-x-is-scheduled-heading-p)))
+     (let ((ts (org-x-headline-is-scheduled-p)))
        (cond
         ((not ts) 0)
-        ((> org-x-iter-future-time (- ts (float-time))) 1)
+        ((> org-x-iterator-active-future-offset (- ts (float-time))) 1)
         (t 2)))
      org-x--clone-get-iterator-project-status))
    
    (t (error (concat "invalid keyword detected: " kw)))))
 
-(defun org-x-get-iterator-status ()
+(defun org-x-headline-get-iterator-status ()
   "Get the status of an iterator.
 Allowed statuscodes are in list `nd/get-iter-statuscodes.' where
  latter codes in the list trump earlier ones."
-  (let ((cur-status (first org-x-iter-statuscodes))
-        (breaker-status (-last-item org-x-iter-statuscodes))
+  (let ((cur-status (first org-x--iter-statuscodes))
+        (breaker-status (-last-item org-x--iter-statuscodes))
         (kw nil)
         (new-status nil)
         (ts nil))
-    (org-x-while-child-headlines (not (eq cur-status breaker-status))
-      (setq kw (org-x-is-todoitem-p))
+    (org-x--while-child-headlines (not (eq cur-status breaker-status))
+      (setq kw (org-x-headline-is-todoitem-p))
       (when kw
         ;; test if project or atomic task
         ;; assume that there are no todoitems above this headline
         ;; to make checking easier
         (setq
          new-status
-         (if (org-x-headline-has-children 'org-x-is-todoitem-p)
+         (if (org-x--headline-has-children 'org-x-headline-is-todoitem-p)
              (org-x--clone-get-iterator-project-status kw)
-           (setq ts (or (org-x-is-scheduled-heading-p)
-                        (org-x-is-deadlined-heading-p)))
+           (setq ts (or (org-x-headline-is-scheduled-p)
+                        (org-x-headline-is-deadlined-p)))
            (cond
             ((member kw org-x-done-keywords) :empt)
             ((not ts) :unscheduled)
-            ((< org-x-iter-future-time (- ts (float-time))) :actv)
+            ((< org-x-iterator-active-future-offset (- ts (float-time))) :actv)
             (t :empt))))
-        (when (org-x-compare-statuscodes > new-status cur-status org-x-iter-statuscodes)
+        (when (org-x--compare-statuscodes > new-status cur-status org-x--iter-statuscodes)
           (setq cur-status new-status))))
     cur-status))
 
 ;; periodicals
 
-(defconst org-x--first-active-ts-pattern
-  '(:first :any * (:and timestamp (:or (:type 'active) (:type 'active-range))))
-  "Pattern for first active timestamp to be supplied to `org-ml-match' et al.")
-    
-(defun org-x-get-periodical-status ()
+(defun org-x-headline-get-periodical-status ()
   "Get the status of a periodical.
 Allowed statuscodes are in list `nd/get-peri-statuscodes.' where
 latter codes in the list trump earlier ones."
@@ -786,18 +870,20 @@ latter codes in the list trump earlier ones."
         (cur-status ts)
         (let ((new (cond
                     ((not ts) :unscheduled)
-                    ((< org-x-peri-future-time (- ts (float-time))) :actv)
+                    ((< org-x-periodical-active-future-offset (- ts (float-time))) :actv)
                     (t :empt))))
-          (if (org-x-compare-statuscodes > new cur-status org-x-peri-statuscodes)
+          (if (org-x--compare-statuscodes > new cur-status org-x--peri-statuscodes)
               new
             cur-status))))
-    (let ((cur-status (first org-x-peri-statuscodes))
-          (breaker-status (-last-item org-x-peri-statuscodes)))
-      (org-x-while-child-headlines (not (eq cur-status breaker-status))
+    (let ((cur-status (first org-x--peri-statuscodes))
+          (breaker-status (-last-item org-x--peri-statuscodes)))
+      (org-x--while-child-headlines (not (eq cur-status breaker-status))
         (setq cur-status (->> (get-ts) (new-status cur-status))))
       cur-status)))
 
-;; skip functions
+;;; SKIP FUNCTIONS
+
+;; fundumental skip functions
 
 (defun org-x-skip-heading ()
   "Skip forward to next heading."
@@ -825,7 +911,118 @@ function will simply return the point of the next headline."
                  (not (-intersection neg-tags-list heading-tags)))
         (org-x-skip-heading)))))
 
-;;; INTERACTIVE FUNCTIONS
+;; high-level skip functions (used in org-agenda)
+
+(defun org-x-calendar-skip-function ()
+  "Skip function for calendar view."
+  (org-x-skip-headings-with-tags
+   (list org-x-tag-no-agenda org-x-tag-maybe org-x-tag-refile)))
+
+(defun org-x-task-skip-function ()
+  "Skip function for task view."
+  (org-with-wide-buffer
+    (let ((keyword (org-get-todo-state)))
+      ;; currently we assume that periodicals have no TODOs
+      (cond
+       ;; skip over held/canc projects
+       ((and (member keyword org-x--project-skip-todostates)
+             (org-x-headline-is-project-p keyword))
+        (org-x-skip-subtree))
+       ;; skip iterators
+       ((org-x-headline-is-iterator-p)
+        (org-x-skip-heading))
+       ;; skip project headings
+       ((org-x-headline-is-project-p keyword)
+        (org-x-skip-heading))
+       ;; skip canceled tasks
+       ((and (equal keyword org-x-kw-canc) (org-x-headline-is-task-p keyword))
+        (org-x-skip-heading))
+       ;; skip habits
+       ((org-x-headline-is-habit-p)
+        (org-x-skip-heading))))))
+  
+(defun org-x-project-skip-function ()
+  "Skip function for project view."
+  (org-with-wide-buffer
+    (cond
+     ((or (org-x-headline-is-iterator-p) (org-x-headline-is-periodical-p))
+      (org-x-skip-subtree))
+     ((not (org-x-headline-is-project-p))
+      (org-x-skip-heading))
+     ((org-x--headline-has-parent
+       (lambda ()
+         (member (org-get-todo-state) org-x--project-skip-todostates)))
+      (org-x-skip-children)))))
+
+(defun org-x-incubator-skip-function ()
+  "Skip function for incubator view."
+  (org-with-wide-buffer
+    (let ((keyword (org-get-todo-state)))
+      (cond
+       ;; skip done/canc projects
+       ((and (member keyword org-done-keywords) (org-x-headline-is-project-p keyword))
+        (org-x-skip-subtree))
+       ;; skip project tasks
+       ((org-x-headline-is-project-task-p keyword)
+        (org-x-skip-heading))
+       ;; skip done/canc tasks
+       ((member keyword org-done-keywords)
+        (org-x-skip-heading))
+       ;; skip non-tasks if they don't have a timestamp
+       ((not (or keyword (org-x-headline-is-timestamped-p)))
+        (org-x-skip-heading))))))
+
+(defun org-x-periodical-skip-function ()
+  "Skip function for periodical view."
+  (org-with-wide-buffer
+    (cond
+     ((not (org-x-headline-is-periodical-p))
+      (org-x-skip-heading))
+     ((org-x--headline-has-parent #'org-x-headline-is-periodical-p)
+      (org-x-skip-children)))))
+
+(defun org-x-iterator-skip-function ()
+  "Skip function for iterator view."
+  (org-with-wide-buffer
+    (cond
+     ((not (org-x-headline-is-iterator-p))
+      (org-x-skip-heading))
+     ((org-x--headline-has-parent #'org-x-headline-is-iterator-p)
+      (org-x-skip-children)))))
+
+(defun org-x-error-skip-function ()
+  "Skip function for critical error view."
+  (org-with-wide-buffer
+    (cond
+     ((org-x-headline-is-habit-p)
+      (org-x-skip-heading))
+     ((org-x-headline-is-periodical-p)
+      (org-x-skip-subtree)))))
+
+(defun org-x-archive-skip-function ()
+  "Skip function for archive view."
+  (org-with-wide-buffer
+    (let ((keyword (org-get-todo-state)))
+      (cond
+       ;; skip all non-archivable projects
+       ((and (org-x-headline-is-project-p keyword)
+             (not (eq :archivable (org-x-headline-get-project-status))))
+        (org-x-skip-subtree))
+       ;; skip all incubator tasks
+       ((org-x-headline-has-tag-p org-x-tag-incubated)
+        (org-x-skip-heading))
+       ;; skip all project tasks
+       ((and (org-x-headline-is-project-task-p keyword))
+        (org-x-skip-heading))
+       ;; skip all tasks not marked done or archivable
+       ((and (org-x-headline-is-task-p keyword)
+             (not (eq :archivable (org-x-headline-get-task-status))))
+        (org-x-skip-heading))
+       ;; skip all non-todoitems that are not stale
+       ((and (not keyword) (not (org-x-headline-is-stale-p)))
+        (org-x-skip-heading))))))
+
+;;; INTERACTIVE BUFFER FUNCTIONS
 
 ;; timestamp shifting
 
@@ -986,7 +1183,7 @@ don't log changes in the logbook."
         (error "Exclude must be a list if provided"))
     (save-excursion
       (while (< (point) subtree-end)
-        (let ((keyword (org-x-is-todoitem-p)))
+        (let ((keyword (org-x-headline-is-todoitem-p)))
           (if (and keyword (not (member keyword exclude)))
               (org-todo new-keyword)))
         (outline-next-heading)))))
@@ -1091,6 +1288,8 @@ and slow."
   (org-back-to-heading t)
   (delete-region (point) (1+ (save-excursion (org-end-of-subtree)))))
 
+;;; INTERACTIVE AGENDA FUNCTIONS
+
 ;; lift buffer commands into agenda context
 
 (defmacro org-x-agenda-cmd-wrapper (get-head &rest body)
@@ -1188,7 +1387,7 @@ If BACK is t seek backward, else forward. Ignore blank lines."
 
 ;; As it is, this allows any filter using =hasprop= to be applied and removed
 ;; using the standard =org-agenda-filter-apply= function with the
-;; =org-x-agenda-hasprop-filter= variable (obviously these can all be extended
+;; =org-x--agenda-hasprop-filter= variable (obviously these can all be extended
 ;; to different filter types). Note this does not give a shiny indicator at the
 ;; bottom of spaceline like the built-in filter does...oh well.
 
@@ -1214,14 +1413,14 @@ If BACK is t seek backward, else forward. Ignore blank lines."
 (defun org-x-agenda-filter-non-effort ()
   "Filter agenda by non-effort tasks."
   (interactive)
-  (setq org-x-agenda-hasprop-filter '("-Effort"))
-  (org-agenda-filter-apply org-x-agenda-hasprop-filter 'hasprop))
+  (setq org-x--agenda-hasprop-filter '("-Effort"))
+  (org-agenda-filter-apply org-x--agenda-hasprop-filter 'hasprop))
 
 (defun org-x-agenda-filter-delegate ()
   "Filter agenda by tasks with an external delegate."
   (interactive)
-  (setq org-x-agenda-hasprop-filter '("+DELEGATE"))
-  (org-agenda-filter-apply org-x-agenda-hasprop-filter 'hasprop))
+  (setq org-x--agenda-hasprop-filter '("+DELEGATE"))
+  (org-agenda-filter-apply org-x--agenda-hasprop-filter 'hasprop))
 
 (defun org-x-agenda-filter-make-matcher-prop (filter type &rest _args)
   "Override the standard match filter.
@@ -1259,7 +1458,7 @@ H is a string like +prop or -prop"
             #'org-x-agenda-filter-make-matcher-prop)
 
 (advice-add #'org-agenda-filter-remove-all :before
-            (lambda () (when org-x-agenda-hasprop-filter
+            (lambda () (when org-x--agenda-hasprop-filter
                     (org-x-agenda-filter-show-all-hasprop))))
 
 ;; advice
@@ -1326,185 +1525,6 @@ If ARG is non-nil use long timestamp format."
 (advice-add 'org-insert-heading :after #'org-x-set-creation-time)
 
 (add-hook 'org-capture-before-finalize-hook #'org-x-set-creation-time)
-
-;; skip functions (all of them)
-
-(defun org-x-calendar-skip-function ()
-  (org-x-skip-headings-with-tags
-   (list org-x-tag-no-agenda
-         org-x-tag-maybe org-x-tag-refile)))
-
-(defun org-x-task-skip-function ()
-  (org-with-wide-buffer
-    (let ((keyword (org-get-todo-state)))
-      ;; currently we assume that periodicals have no TODOs
-      (cond
-       ;; skip over held/canc projects
-       ((and (member keyword org-x-project-skip-todostates)
-             (org-x-is-project-p keyword))
-        (org-x-skip-subtree))
-       ;; skip iterators
-       ((org-x-is-iterator-heading-p)
-        (org-x-skip-heading))
-       ;; skip project headings
-       ((org-x-is-project-p keyword)
-        (org-x-skip-heading))
-       ;; skip canceled tasks
-       ((and (equal keyword org-x-kw-canc) (org-x-is-task-p keyword))
-        (org-x-skip-heading))
-       ;; skip habits
-       ((org-x-is-habit-heading-p)
-        (org-x-skip-heading))))))
-  
-(defun org-x-project-skip-function ()
-  (org-with-wide-buffer
-    (cond
-     ((or (org-x-is-iterator-heading-p) (org-x-is-periodical-heading-p))
-      (org-x-skip-subtree))
-     ((not (org-x-is-project-p))
-      (org-x-skip-heading))
-     ((org-x-headline-has-parent
-       (lambda ()
-         (member (org-get-todo-state) org-x-project-skip-todostates)))
-      (org-x-skip-children)))))
-
-(defun org-x-incubator-skip-function ()
-  (org-with-wide-buffer
-    (let ((keyword (org-get-todo-state)))
-      (cond
-       ;; skip done/canc projects
-       ((and (member keyword org-done-keywords) (org-x-is-project-p keyword))
-        (org-x-skip-subtree))
-       ;; skip project tasks
-       ((org-x-is-project-task-p keyword)
-        (org-x-skip-heading))
-       ;; skip done/canc tasks
-       ((member keyword org-done-keywords)
-        (org-x-skip-heading))
-       ;; skip non-tasks if they don't have a timestamp
-       ((not (or keyword (org-x-is-timestamped-heading-p)))
-        (org-x-skip-heading))))))
-
-(defun org-x-periodical-skip-function ()
-  (org-with-wide-buffer
-    (cond
-     ((not (org-x-is-periodical-heading-p))
-      (org-x-skip-heading))
-     ((org-x-headline-has-parent #'org-x-is-periodical-heading-p)
-      (org-x-skip-children)))))
-
-(defun org-x-iterator-skip-function ()
-  (org-with-wide-buffer
-    (cond
-     ((not (org-x-is-iterator-heading-p))
-      (org-x-skip-heading))
-     ((org-x-headline-has-parent #'org-x-is-iterator-heading-p)
-      (org-x-skip-children)))))
-
-(defun org-x-error-skip-function ()
-  (org-with-wide-buffer
-    (cond
-     ((org-x-is-habit-heading-p)
-      (org-x-skip-heading))
-     ((org-x-is-periodical-heading-p)
-      (org-x-skip-subtree)))))
-
-(defun org-x-skip-function-archivable ()
-  (org-with-wide-buffer
-    (let ((keyword (org-get-todo-state)))
-      (cond
-       ;; skip all non-archivable projects
-       ((and (org-x-is-project-p keyword)
-             (not (eq :archivable (org-x-get-project-status))))
-        (org-x-skip-subtree))
-       ;; skip all incubator tasks
-       ((org-x-headline-has-tag-p org-x-tag-incubated)
-        (org-x-skip-heading))
-       ;; skip all project tasks
-       ((and (org-x-is-project-task-p keyword))
-        (org-x-skip-heading))
-       ;; skip all tasks not marked done or archivable
-       ((and (org-x-is-task-p keyword)
-             (not (eq :archivable (org-x-task-status))))
-        (org-x-skip-heading))
-       ;; skip all non-todoitems that are not stale
-       ((and (not keyword) (not (org-x-is-stale-heading-p)))
-        (org-x-skip-heading))))))
-
-;; super agenda predicate functions
-
-(defmacro org-x-with-raw-headline (agenda-line &rest body)
-  (declare (indent 1))
-  `(-when-let (marker (get-text-property 1 'org-marker ,agenda-line))
-     (with-current-buffer (marker-buffer marker)
-       (goto-char marker)
-       ,@body)))
-
-(defun org-x-agenda-is-morning-routine-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (org-x-headline-has-property org-x-prop-routine org-x-prop-routine-morning)))
-
-(defun org-x-agenda-is-evening-routine-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (org-x-headline-has-property org-x-prop-routine org-x-prop-routine-evening)))
-
-(defun org-x-agenda-is-todoitem-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (org-x-is-todoitem-p)))
-
-(defun org-x-agenda-is-stale-headline-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (org-x-is-stale-heading-p)))
-
-(defun org-x-agenda-is-task-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (org-x-is-task-p)))
-
-(defun org-x-agenda-is-atomic-task-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (org-x-is-atomic-task-p)))
-
-(defun org-x-agenda-is-toplevel-project-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (and (not (org-x-headline-has-task-parent)) (org-x-is-project-p))))
-
-(defun org-x-agenda-is-project-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (org-x-is-project-p)))
-
-(defun org-x-agenda-error-is-discontinous-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (and (org-x-is-todoitem-p) (org-x-has-discontinuous-parent))))
-
-(defun org-x-agenda-error-is-done-unclosed-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (let ((keyword (org-get-todo-state)))
-      (and (member keyword org-x-done-keywords)
-           (not (org-x-is-closed-heading-p))))))
-
-(defun org-x-agenda-error-is-undone-closed-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (-when-let (keyword (org-get-todo-state))
-      (and (not (member keyword org-x-done-keywords))
-           (org-x-is-closed-heading-p)))))
-
-(defun org-x-agenda-error-is-missing-creation-timestamp-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (-when-let (kw (org-x-is-task-p))
-      (not (or (member kw org-x-done-keywords)
-               (org-x-is-created-heading-p))))))
-
-(defun org-x-agenda-error-is-missing-archive-target-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (and (org-x-headline-has-property org-x-prop-parent-type
-                                      org-x-prop-parent-type-iterator)
-         (org-x-headline-has-property "ARCHIVE" nil))))
-
-(defun org-x-agenda-error-has-missing-creation-timestamp-p (agenda-line)
-  (org-x-with-raw-headline agenda-line
-    (-when-let (kw (org-x-is-task-p))
-      (and (not (member kw org-x-done-keywords))
-           (org-x-is-created-in-future)))))
 
 (provide 'org-x)
 ;;; org-x.el ends here

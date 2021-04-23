@@ -2544,10 +2544,10 @@ By default I want block agendas to sort based on the todo keyword (with NEXT bei
                          org-x-kw-hold
                          org-x-kw-todo))
        (get-rank `(lambda (it)
-                   (-> (get-text-property 1 'todo-state it)
-                     (member ',sort-order)
-                     (length)
-                     (-)))))
+                    (-> (get-text-property 1 'todo-state it)
+                      (member ',sort-order)
+                      (length)
+                      (-)))))
   (setq org-agenda-cmp-user-defined `(lambda (a b)
                                        (let ((pa (funcall ,get-rank a))
                                              (pb (funcall ,get-rank b)))
@@ -2562,18 +2562,47 @@ By default I want block agendas to sort based on the todo keyword (with NEXT bei
 :END:
 These agenda commands are the center of the gtd workflow.
 #+BEGIN_SRC emacs-lisp
-(defmacro nd/org-x-mk-super-agenda-pred (&rest body)
+(defmacro nd/org-with-raw-headline (agenda-line &rest body)
+  "Execute BODY on original headline referred to with AGENDA-LINE."
+  (declare (indent 1))
+  `(-when-let (marker (get-text-property 1 'org-marker ,agenda-line))
+     (with-current-buffer (marker-buffer marker)
+       (goto-char marker)
+       ,@body)))
+
+(defun nd/org-x-mk-super-agenda-pred (body)
   "Return a predicate function with BODY.
-This is meant to be used in `org-super-agenda-groups'. For each item,
-the returned function will navigate from the agenda buffer to the
-original org entry before executing BODY."
-  `(lambda (item)
-     (-when-let (marker (get-text-property 1 'org-marker item))
-       (with-current-buffer (marker-buffer marker)
-         (goto-char marker)
-         ,@body))))
+The function will be a lambda form that takes one argument, the
+current agenda line, and executes BODY at the point in the
+original buffer pointed at by the agenda line."
+  `(lambda (agenda-line) (nd/org-with-raw-headline agenda-line ,@body)))
+
+(defmacro nd/org-x-def-super-agenda-pred (name &rest body)
+  "Make super agenda predicate form with NAME and BODY.
+Key-pairs at the end of BODY will be interpreted as a plist to append
+to the end of the predicate form."
+  (declare (indent 1))
+  (-let* (((pred-body plist) (--split-with (not (keywordp it)) body))
+          (pred (nd/org-x-mk-super-agenda-pred pred-body)))
+    `(quote (:name ,name :pred ,pred ,@plist))))
+
+(defun nd/org-x-mapper-title (level1 level2 status subtitle)
+  "Make an auto-mapper title.
+The title will have the form 'LEVEL1.LEVEL2 STATUS (SUBTITLE)'."
+  (let ((status* (->> (symbol-name status)
+                   (s-chop-prefix ":")
+                   (s-replace "-" " ")
+                   (s-titleize))))
+    (format "%s.%s %s (%s)" level1 level2 status* subtitle)))
+
+(defmacro nd/org-x-def-super-agenda-automap (&rest body)
+  "Make super agenda auto-map form with BODY."
+  (declare (indent 0))
+  `(quote ((:auto-map ,(nd/org-x-mk-super-agenda-pred body))
+           (:discard (:anything t)))))
 
 (defmacro nd/org-x-mk-match-string (&rest body)
+  "Make an agenda match string from BODY."
   (->> body
     (--map (cond
             ((stringp it) it)
@@ -2582,7 +2611,8 @@ original org entry before executing BODY."
             (t it)))
     (s-join "")))
 
-(defconst nd/org-x-task-status-priorities
+
+(defconst nd/org-headline-task-status-priorities
   '((:archivable . -1)
     (:complete . -1)
     (:expired . 0)
@@ -2614,8 +2644,14 @@ original org entry before executing BODY."
        (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
        (org-agenda-include-diary t)
        (org-super-agenda-groups
-        `((:name "Morning routine" :pred org-x-agenda-is-morning-routine-p :order 0)
-          (:name "Evening routine" :pred org-x-agenda-is-evening-routine-p :order 3)
+        `(,(nd/org-x-def-super-agenda-pred "Morning routine"
+             (org-x-headline-has-property org-x-prop-routine
+                                          org-x-prop-routine-morning)
+             :order 0)
+          ,(nd/org-x-def-super-agenda-pred "Evening routine"
+             (org-x-headline-has-property org-x-prop-routine
+                                          org-x-prop-routine-evening)
+             :order 3)
           (:name "Calendar" :order 1 :time-grid t)
           (:name "Habits" :order 6 :habit t)
           (:name "Deadlined" :order 4 :deadline t)
@@ -2638,24 +2674,16 @@ original org entry before executing BODY."
        (org-agenda-todo-ignore-with-date t)
        (org-agenda-sorting-strategy '(user-defined-up category-keep))
        (org-super-agenda-groups
-        `((:auto-map
-           ,(nd/org-x-mk-super-agenda-pred
-             (let* ((is-atomic (org-x-is-atomic-task-p))
-                    ;; lump inert and active non-atomic tasks together
-                    (status (--> (org-x-task-status)
-                                 (if (and (not is-atomic) (eq it :inert))
-                                     :active it)))
-                    (priority (alist-get status nd/org-x-task-status-priorities)))
-               (unless (< priority 0)
-                 (--> status
-                      (symbol-name it)
-                      (substring it 1)
-                      (s-replace "-" " " it)
-                      (s-titleize it)
-                      (concat "%s.%s " it)
-                      (format it priority (if is-atomic 1 0))
-                      (concat it (if is-atomic " (α)" " (σ)")))))))
-          (:discard (:anything t))))))))
+        ',(nd/org-x-def-super-agenda-automap
+            (let* ((is-atomic (org-x-headline-is-atomic-task-p))
+                   ;; lump inert and active non-atomic tasks together
+                   (status (--> (org-x-headline-get-task-status)
+                             (if (and (not is-atomic) (eq it :inert))
+                                 :active it)))
+                   (priority (alist-get status nd/org-headline-task-status-priorities)))
+              (unless (< priority 0)
+                (-let (((level1 subtitle) (if is-atomic '(1 "α") '(0 "σ"))))
+                  (nd/org-x-mapper-title level1 priority status subtitle))))))))))
 
    ("p"
     "Project View"
@@ -2668,21 +2696,13 @@ original org entry before executing BODY."
        (org-agenda-skip-function #'org-x-project-skip-function)
        (org-agenda-sorting-strategy '(category-keep))
        (org-super-agenda-groups
-        `((:auto-map
-           ,(nd/org-x-mk-super-agenda-pred
-             (let* ((status (org-x-get-project-status))
-                    (priority (alist-get status nd/org-x-project-status-priorities)))
-               (unless (< priority 0)
-                 (let* ((is-subproject (org-x-headline-has-task-parent))
-                        (level (if is-subproject 1 0))
-                        (subtitle (if is-subproject "σ" "τ"))
-                        (fmt (format "%s.%s %%s (%s)" level priority subtitle)))
-                   (->> (symbol-name status)
-                     (s-chop-prefix ":")
-                     (s-replace "-" " ")
-                     (s-titleize)
-                     (format fmt)))))))
-          (:discard (:anything t))))))))
+        ',(nd/org-x-def-super-agenda-automap
+            (let* ((status (org-x-headline-get-project-status))
+                   (priority (alist-get status nd/org-x-project-status-priorities)))
+              (unless (< priority 0)
+                (-let* ((is-subproject (org-x-headline-has-task-parent))
+                        ((level1 subtitle) (if is-subproject '(1 "σ") '(0 "τ"))))
+                  (nd/org-x-mapper-title level1 priority status subtitle))))))))))
    
    ("i"
     "Incubator View"
@@ -2697,12 +2717,16 @@ original org entry before executing BODY."
        (org-super-agenda-groups
         `((:name "Past Deadlines" :deadline past)
           (:name "Future Deadlines" :deadline future)
-          (:name "Stale Appointments" :pred org-x-agenda-is-stale-headline-p)
-          (:name "Future Appointments"
-                 :pred (lambda (a) (not (org-x-agenda-is-todoitem-p a))))
-          (:name "Tasks" :pred org-x-agenda-is-task-p)
-          (:name "Toplevel Projects" :pred org-x-agenda-is-toplevel-project-p)
-          (:name "Projects" :pred org-x-agenda-is-project-p)
+          ,(nd/org-x-def-super-agenda-pred "Stale Appointments"
+             (org-x-headline-is-stale-p))
+          ,(nd/org-x-def-super-agenda-pred "Future Appointments"
+             (not (org-x-headline-is-todoitem-p)))
+          ,(nd/org-x-def-super-agenda-pred "Tasks"
+             (org-x-headline-is-task-p))
+          ,(nd/org-x-def-super-agenda-pred "Toplevel Projects"
+             (org-x-headline-is-toplevel-project-p))
+          ,(nd/org-x-def-super-agenda-pred "Projects"
+             (org-x-headline-is-project-p))
           (:discard (:anything t))))))))
    
    ("P"
@@ -2715,7 +2739,7 @@ original org entry before executing BODY."
        (org-super-agenda-groups
         `((:auto-map
            ,(nd/org-x-mk-super-agenda-pred
-             (cl-case (org-x-get-periodical-status)
+             (cl-case (org-x-headline-get-periodical-status)
                (:uninit "0. Uninitialized")
                (:unscheduled "0. Unscheduled")
                (:empt "1. Empty")
@@ -2732,7 +2756,7 @@ original org entry before executing BODY."
        (org-super-agenda-groups
         `((:auto-map
            ,(nd/org-x-mk-super-agenda-pred
-             (cl-case (org-x-get-iterator-status)
+             (cl-case (org-x-headline-get-iterator-status)
                (:uninit "0. Uninitialized")
                (:project-error "0. Project Error")
                (:unscheduled "0. Unscheduled")
@@ -2757,16 +2781,19 @@ original org entry before executing BODY."
       ((org-agenda-overriding-header "Critical Errors")
        (org-agenda-skip-function #'org-x-error-skip-function)
        (org-super-agenda-groups
-        `((:name "Discontinuous Projects" :pred org-x-agenda-error-is-discontinous-p)
+        `(,(nd/org-x-def-super-agenda-pred "Discontinuous Projects"
+             (org-x-headline-is-discontinous-project-task-p))
           ;; TODO this is redundant, only thing this checks is project headers
-          (:name "Done Unclosed" :pred org-x-agenda-error-is-done-unclosed-p)
-          (:name "Undone Closed" :pred org-x-agenda-error-is-undone-closed-p)
-          (:name "Missing Creation Timestamp"
-                 :pred org-x-agenda-error-is-missing-creation-timestamp-p)
-          (:name "Missing Archive Target (iterators)"
-                 :pred org-x-agenda-error-is-missing-archive-target-p)
-          (:name "Future Creation Timestamp"
-                 :pred org-x-agenda-error-has-missing-creation-timestamp-p)
+          ,(nd/org-x-def-super-agenda-pred "Done Unclosed"
+             (org-x-headline-is-done-unclosed-task-p))
+          ,(nd/org-x-def-super-agenda-pred "Undone Closed"
+             (org-x-headline-is-undone-closed-task-p))
+          ,(nd/org-x-def-super-agenda-pred "Missing Creation Timestamp"
+             (org-x-headline-is-task-without-creation-timestamp-p))
+          ,(nd/org-x-def-super-agenda-pred "Missing Archive Target (iterators)"
+             (org-x-headline-is-iterator-without-archive-target-p))
+          ,(nd/org-x-def-super-agenda-pred "Future Creation Timestamp"
+             (org-x-headline-is-task-with-future-creation-timestamp-p))
           (:discard (:anything t))))))))
 
    ("A"
@@ -2774,12 +2801,15 @@ original org entry before executing BODY."
     ((tags
       ,(nd/org-x-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
       ((org-agenda-overriding-header "Archive")
-       (org-agenda-skip-function #'org-x-skip-function-archivable)
+       (org-agenda-skip-function #'org-x-archive-skip-function)
        (org-agenda-sorting-strategy '(category-keep))
        (org-super-agenda-groups
-        `((:name "Atomic Tasks" :pred org-x-agenda-is-atomic-task-p)
-          (:name "Toplevel Projects" :pred org-x-agenda-is-toplevel-project-p)
-          (:name "Projects" :pred org-x-agenda-is-project-p)
+        `(,(nd/org-x-def-super-agenda-pred "Atomic Tasks"
+             (org-x-headline-is-atomic-task-p))
+          ,(nd/org-x-def-super-agenda-pred "Toplevel Projects"
+             (org-x-headline-is-toplevel-project-p))
+          ,(nd/org-x-def-super-agenda-pred "Projects"
+             (org-x-headline-is-project-p))
           (:name "Appointments" :anything)))))))))
 #+END_SRC
 ** gtd next generation
