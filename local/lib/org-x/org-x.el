@@ -1232,6 +1232,22 @@ ARG, ask for a range in minutes in place of the second date."
                   (cons new-clock it)))
               it)))))))
 
+(defun org-x--headline-add-archive-context (afile apath acat atags headline)
+  "Add archive context properties to HEADLINE.
+AFILE is the source file. APATH is the headline path in the
+original buffer. ACAT is the category. ATAGS is a list of tags,
+including those that are inherited."
+  (let ((atodo (org-ml-get-property :todo-keyword headline))
+        (atime (-> (substring (cdr org-time-stamp-formats) 1 -1)
+                 (format-time-string))))
+    (->> (org-ml-clone-node headline)
+      (org-ml-headline-set-node-property "ARCHIVE_TIME" atime)
+      (org-ml-headline-set-node-property "ARCHIVE_FILE" afile)
+      (org-ml-headline-set-node-property "ARCHIVE_OLPATH" apath)
+      (org-ml-headline-set-node-property "ARCHIVE_CATEGORY" acat)
+      (org-ml-headline-set-node-property "ARCHIVE_TODO" atodo)
+      (org-ml-headline-set-node-property "ARCHIVE_ITAGS" atags))))
+
 (defun org-x-refile-logbook ()
   "Refile the current headline with it's logbook.
 The original target headline is left in place but without the
@@ -1239,48 +1255,41 @@ logbook. Intended use is for habits and repeating tasks that
 build up massive logbook entries that will make my org files huge
 and slow."
   (interactive)
-  (let ((acat (org-get-category))
-        (atime (format-time-string (substring (cdr org-time-stamp-formats) 1 -1)))
-        (afile (abbreviate-file-name
-                (or (buffer-file-name (buffer-base-buffer))
-                    (error "No file associated to buffer"))))
-        (apath (s-join "/" (org-get-outline-path)))
-        (atags (->> (org-get-tags)
-                    (--filter (get-text-property 0 'inherited it))
-                    (s-join " ")))
-        (config (org-x-logbook-config)))
-    ;; TODO this is basically a function version of org-archive and could
-    ;; be refactored/reused as a separate function
+  (let* ((acat (org-get-category))
+         (afile (abbreviate-file-name
+                 (or (buffer-file-name (buffer-base-buffer))
+                     (error "No file associated to buffer"))))
+         (apath (s-join "/" (org-get-outline-path)))
+         (atags (->> (org-get-tags)
+                  (--filter (get-text-property 0 'inherited it))
+                  (s-join " ")))
+         (add-context (-partial #'org-x--headline-add-archive-context
+                                afile apath acat atags))
+         (target (format "%s_archive" afile)))
     (cl-flet
         ((archive
-          (atime afile _apath acat atodo atags target headline)
+          (target headline)
           (let* ((level-shift (-some-> (org-ml-get-property :level headline)
                                 (1-)
                                 (-)))
                  (headline*
-                  (->> (org-ml-clone-node headline)
-                       (org-ml-set-property :todo-keyword org-x-kw-done)
-                       (org-ml-headline-map-planning*
-                         (let ((time (->> (float-time)
-                                          (org-ml-unixtime-to-time-long))))
-                           (org-ml-planning-set-timestamp! :closed time it)))
-                       (org-ml-headline-set-node-property "ARCHIVE_TIME" atime)
-                       (org-ml-headline-set-node-property "ARCHIVE_FILE" afile)
-                       (org-ml-headline-set-node-property "ARCHIVE_OLPATH" afile)
-                       (org-ml-headline-set-node-property "ARCHIVE_CATEGORY" acat)
-                       (org-ml-headline-set-node-property "ARCHIVE_TODO" atodo)
-                       (org-ml-headline-set-node-property "ARCHIVE_ITAGS" atags)
-                       (org-ml-shift-property :level level-shift)
-                       (org-ml-match-map* '(:any * headline)
-                         (org-ml-shift-property :level level-shift it)))))
+                  (->> (add-context headline)
+                    ;; close the headline (assume it isn't already)
+                    (org-ml-set-property :todo-keyword org-x-kw-done)
+                    (org-ml-headline-map-planning*
+                      (let ((time (org-ml-unixtime-to-time-long (float-time))))
+                        (org-ml-planning-set-timestamp! :closed time it)))
+                    ;; shift it to the top level
+                    (org-ml-shift-property :level level-shift)
+                    (org-ml-match-map* '(:any * headline)
+                      (org-ml-shift-property :level level-shift it)))))
             ;; TODO this currently does not refile under specific headlines
             (with-current-buffer (find-file-noselect target)
               (org-ml-insert (point-max) headline*)))))
       (org-ml-update-this-subtree*
-        (let ((atodo (org-ml-get-property :todo-keyword it))
-              (target (format "%s_archive" afile)))
-          (archive atime afile apath acat atodo atags target it)
-          (org-ml-headline-map-supercontents* config
+        (progn
+          (archive target it)
+          (org-ml-headline-map-supercontents* (org-x-logbook-config)
             (org-ml-supercontents-set-logbook nil it)
             it))))))
 
