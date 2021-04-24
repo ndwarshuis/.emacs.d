@@ -2335,6 +2335,12 @@ In some capture templates I want to automatically store a link to the entry so I
                 (org-back-to-heading)
                 (call-interactively #'org-store-link)))))
 #+END_SRC
+**** creation time
+Add the creation time upon completing a capture.
+#+begin_src emacs-lisp
+(add-hook 'org-capture-before-finalize-hook
+          (lambda (&optional _always &rest _args) (org-x-set-creation-time)))
+#+end_src
 *** refile
 :PROPERTIES:
 :ID:       8316d4a9-1365-40a7-89ab-e4670c30303c
@@ -2611,6 +2617,32 @@ The title will have the form 'LEVEL1.LEVEL2 STATUS (SUBTITLE)'."
             (t it)))
     (s-join "")))
 
+;; advice
+
+;; The `org-tags-view' can filter tags along with TODO keywords (eg tags-todo)
+;; but this automatically excludes keywords in `org-done-keywords'. Therefore,
+;; if I want to include these in any custom agenda blocks, I need to use type
+;; tags instead and skip the unwanted TODO keywords with a skip function. This
+;; is far slower as it applies the skip function to EVERY headline. Fix that
+;; here by nullifying `org--matcher-tags-todo-only' which controls how the
+;; matcher is created for tags and tags-todo. Now I can select done keywords
+;; using a match string like "+tag/DONE|CANC" (also much clearer in my opinion).
+;; While this is usually more efficient, it may be counterproductive in cases
+;; where skip functions can be used to ignore huge sections of an org file
+;; (which is rarely for me; most only skip ahead to the next heading).
+
+(defun org-x-tags-view-advice (orig-fn &rest args)
+  "Include done states in `org-tags-view' for tags-todo agenda types.
+This is meant to be used as :around advice, where ORIG-FN is the
+original function being advised and ARGS are the arguments."
+  (nd/with-advice
+      ((#'org-make-tags-matcher
+        :around (lambda (f m)
+                  (let ((org--matcher-tags-todo-only nil))
+                    (funcall f m)))))
+    (apply orig-fn args)))
+
+(advice-add #'org-tags-view :around #'org-x-tags-view-advice)
 
 (defconst nd/org-headline-task-status-priorities
   '((:archivable . -1)
@@ -2842,6 +2874,12 @@ In these cases, it is nice to know what happened during each cycle, so force not
 #+BEGIN_SRC emacs-lisp
 (setq org-log-repeat 'note)
 #+END_SRC
+**** created time
+Override the standard headline insertion function to add a timestamp for the time at which it was created.
+#+begin_export emacs-lisp
+(advice-add 'org-insert-heading :after
+            (lambda (&optional _always &rest _args) (org-x-set-creation-time)))
+#+end_export
 *** sqlite backend
 Org mode is great and all, but in many cases, text files just won't cut it. Hardcore data analysis is one of them, so make functions to shove org files (specifically archive files) into a sql database
 #+BEGIN_SRC emacs-lisp

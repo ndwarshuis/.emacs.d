@@ -244,7 +244,7 @@ entire subtrees to save time and ignore tasks")
 
 ;; INTERNAL VARS
 
-(defvar org-x--agenda-hasprop-filter nil)
+(defvar org-x--agenda-property-filter nil)
 
 ;; ORG-ELEMENT EXTENSIONS
 
@@ -633,8 +633,8 @@ has closed timestamp."
   "Return t if headline is a task without a creation timestamp.
 Creation timestamps are set using the `org-x-prop-created'
 property."
-  (-when-let (kw (org-x-headline-is-task-p))
-    (and (not (member kw org-x-done-keywords))
+  (-when-let (keyword (org-x-headline-is-task-p))
+    (and (not (member keyword org-x-done-keywords))
          (not (org-x-headline-is-created-p))
          t)))
 
@@ -647,8 +647,8 @@ property."
 
 (defun org-x-headline-is-task-with-future-creation-timestamp-p ()
   "Return t if current headline is undone task with missing creation timestamp."
-  (-when-let (kw (org-x-headline-is-task-p))
-    (and (not (member kw org-x-done-keywords))
+  (-when-let (keyword (org-x-headline-is-task-p))
+    (and (not (member keyword org-x-done-keywords))
          (org-x-headline-is-created-in-future)
          t)))
 
@@ -663,8 +663,9 @@ property."
 
 ;; project level testing
 
-(defmacro org-x--compare-statuscodes (op sc1 sc2 sc-list)
+(defmacro org-x--compare-statuscodes (sc-list sc1 op sc2)
   "Compare position of statuscodes SC1 and SC2 in SC-LIST using operator OP."
+  (declare (indent 1))
   `(,op (cl-position ,sc1 ,sc-list) (cl-position ,sc2 ,sc-list)))
 
 (defmacro org-x--descend-into-project (statuscode-tree get-task-status callback-fun)
@@ -713,7 +714,8 @@ should be this function again)."
                     (setq new-status (alist-get new-status ',trans-tbl))))
               ;; if tasks then use get-task-status to obtain status
               (setq new-status (nth ,get-task-status ',allowed-statuscodes)))
-            (when (org-x--compare-statuscodes > new-status project-status ',allowed-statuscodes)
+            (when (org-x--compare-statuscodes ',allowed-statuscodes
+                    new-status > project-status)
               (setq project-status new-status))))
          project-status))))
 
@@ -752,7 +754,6 @@ should be this function again)."
           (:done-incomplete :stuck :inert :held :wait :active
                             :scheduled-project :invalid-todostate
                             :undone-complete))
-         ;; TODO don't use org-done-keywords
          (if (member it-kw org-x-done-keywords)
              (if (org-x-headline-is-archivable-p) 0 1)
            2)
@@ -844,7 +845,8 @@ Allowed statuscodes are in list `nd/get-iter-statuscodes.' where
             ((not ts) :unscheduled)
             ((< org-x-iterator-active-future-offset (- ts (float-time))) :actv)
             (t :empt))))
-        (when (org-x--compare-statuscodes > new-status cur-status org-x--iter-statuscodes)
+        (when (org-x--compare-statuscodes org-x--iter-statuscodes
+                new-status > cur-status)
           (setq cur-status new-status))))
     cur-status))
 
@@ -872,7 +874,7 @@ latter codes in the list trump earlier ones."
                     ((not ts) :unscheduled)
                     ((< org-x-periodical-active-future-offset (- ts (float-time))) :actv)
                     (t :empt))))
-          (if (org-x--compare-statuscodes > new cur-status org-x--peri-statuscodes)
+          (if (org-x--compare-statuscodes org-x--peri-statuscodes new > cur-status)
               new
             cur-status))))
     (let ((cur-status (first org-x--peri-statuscodes))
@@ -1288,6 +1290,39 @@ and slow."
   (org-back-to-heading t)
   (delete-region (point) (1+ (save-excursion (org-end-of-subtree)))))
 
+(defun org-x-set-creation-time ()
+  "Set the creation time property of the current heading."
+  (let ((np (->> (float-time)
+                 (org-ml-unixtime-to-time-long)
+                 (org-ml-build-timestamp!)
+                 (org-ml-to-string)
+                 (org-ml-build-node-property org-x-prop-created))))
+    (org-ml-update-this-headline*
+      (org-ml-headline-map-node-properties* (cons np it) it))))
+
+(defun org-x-set-expired-time (&optional arg)
+  "Set the expired time of the current headline.
+If ARG is non-nil use long timestamp format."
+  (interactive "P")
+  (-when-let (ut (-some->> (org-read-date nil t)
+                   (float-time)
+                   (round)))
+    (let ((np (->> (if arg (org-ml-unixtime-to-time-long ut)
+                     (org-ml-unixtime-to-time-short ut))
+                (org-ml-build-timestamp!)
+                (org-ml-to-string)
+                (org-ml-build-node-property org-x-prop-expire))))
+      (org-ml-update-this-headline*
+        (org-ml-headline-map-node-properties* (cons np it) it)))))
+
+(defun org-x-set-dtl ()
+  "Set days-to-live of the current headline."
+  (interactive)
+  (let ((np (->> (org-x--read-number-from-minibuffer "Days to live" t)
+              (org-ml-build-node-property org-x-prop-days-to-live))))
+    (org-ml-update-this-headline*
+      (org-ml-headline-map-node-properties* (cons np it) it))))
+
 ;;; INTERACTIVE AGENDA FUNCTIONS
 
 ;; lift buffer commands into agenda context
@@ -1356,17 +1391,14 @@ If BACK is t seek backward, else forward. Ignore blank lines."
                                    (line-end-position))))
           (and (not (equal h ""))
                (get-text-property 0 'org-agenda-structural-header h)))))
-    (let* ((limit (if back (point-min) (point-max)))
-           (inc (if back -1 1))
-           (next
-            (let ((header-point))
-              (save-excursion
-                (while (and (< 0 (abs (- limit (point)))) (not header-point))
-                  (forward-line inc)
-                  (when (is-valid-header)
-                    (setq header-point (point))))
-                header-point))))
-      (if next (goto-char next)
+    (let ((inc (if back -1 1))
+          (header-point))
+      (save-excursion
+        (while (and (not header-point) (= 0 (forward-line inc)))
+          (when (is-valid-header)
+            (setq header-point (point))))
+        header-point)
+      (if header-point (goto-char header-point)
         (message (if back "Cannot move up" "Cannot move down"))))))
 
 (defun org-x-agenda-previous-heading ()
@@ -1379,17 +1411,7 @@ If BACK is t seek backward, else forward. Ignore blank lines."
   (interactive)
   (org-x-agenda--seek-heading))
 
-;; agenda filtering
-
-;; In order to implement the =hasprop= filter, the functions
-;; =org-agenda-filter-make-matcher= and =org-agenda-filter-remove-all= need to
-;; be advised in order to add the functionality for the =hasprop= filter type.
-
-;; As it is, this allows any filter using =hasprop= to be applied and removed
-;; using the standard =org-agenda-filter-apply= function with the
-;; =org-x--agenda-hasprop-filter= variable (obviously these can all be extended
-;; to different filter types). Note this does not give a shiny indicator at the
-;; bottom of spaceline like the built-in filter does...oh well.
+;; agenda tag filtering
 
 (defun org-x-agenda-filter-non-context ()
   "Filter all tasks with context tags."
@@ -1409,122 +1431,67 @@ If BACK is t seek backward, else forward. Ignore blank lines."
     (setq org-agenda-tag-filter
           (mapcar (lambda (tag) (concat "-" tag)) peripheral-tags))
     (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
+
+;; agenda property filtering
+
+;; The agenda buffer doesn't do property filtering out of the box. In order to
+;; implement the property filter, the functions `org-agenda-filter-make-matcher'
+;; and `org-agenda-filter-remove-all' need to be advised; this will add a new
+;; path to check properties against some user-defined filter.
+
+;; This allows any property filter using to be applied and removed using the
+;; standard `org-agenda-filter-apply' function with the
+;; `org-x--agenda-property-filter' variable. Obviously these can all be extended
+;; to different filter types. Note this does not give a shiny indicator at the
+;; bottom of modeline like the built-in filter does...oh well.
     
-(defun org-x-agenda-filter-non-effort ()
-  "Filter agenda by non-effort tasks."
-  (interactive)
-  (setq org-x--agenda-hasprop-filter '("-Effort"))
-  (org-agenda-filter-apply org-x--agenda-hasprop-filter 'hasprop))
-
-(defun org-x-agenda-filter-delegate ()
-  "Filter agenda by tasks with an external delegate."
-  (interactive)
-  (setq org-x--agenda-hasprop-filter '("+DELEGATE"))
-  (org-agenda-filter-apply org-x--agenda-hasprop-filter 'hasprop))
-
-(defun org-x-agenda-filter-make-matcher-prop (filter type &rest _args)
-  "Override the standard match filter.
-This will return matching matcher form for FILTER and TYPE
-where TYPE is not in the regular `org-agenda-filter-make-matcher'
-function. This is intended to be uses as :before-until advice and
-will return nil if the type is not valid (which is currently
-'prop')"
-  (let (f)
-    ;; has property
-    (cond
-     ((eq type 'hasprop)
-      (dolist (x filter)
-        (push (org-x-agenda-filter-make-matcher-hasprop-exp x) f))))
-    (if f (cons 'and (nreverse f)))))
-
-(defun org-x-agenda-filter-make-matcher-hasprop-exp (h)
+(defun org-x-agenda-filter-make-property-matcher-form (h)
  "Return form to test the presence or absence of properties H.
 H is a string like +prop or -prop"
  (let* ((op (string-to-char h))
         (h (substring h 1))
         (f `(save-excursion
               (let ((m (org-get-at-bol 'org-hd-marker)))
-                (with-current-buffer
-                    (marker-buffer m)
+                (with-current-buffer (marker-buffer m)
                   (goto-char m)
                   (org-entry-get nil ,h))))))
-   (if (eq op ?-) (list 'not f) f)))
+   (if (eq op ?-) `(not ,f) f)))
 
-(defun org-x-agenda-filter-show-all-hasprop ()
-  "Remove the 'hasprop filter."
-  (org-agenda-remove-filter 'hasprop))
+(defun org-x-agenda-filter-make-property-matcher (filter type &rest _args)
+  "Make a property agenda filter matcher.
+This will return matching matcher form for FILTER and TYPE
+where TYPE is not in the regular `org-agenda-filter-make-matcher'
+function. This is intended to be used as :before-until advice and
+will return nil if the type is not valid (which is currently
+'property')"
+  (when (eq type 'property)
+    (-some->> (-map #'org-x-agenda-filter-make-property-matcher-form filter)
+      (cons 'and))))
+
+(defun org-x-agenda-filter-remove-property ()
+  "Remove the agenda property filter.
+This is meant to be :before advice for
+`org-agenda-filter-remove-all'."
+  (when org-x--agenda-property-filter
+    (org-agenda-remove-filter 'property)))
+
+(defun org-x-agenda-filter-non-effort ()
+  "Filter agenda by non-effort tasks."
+  (interactive)
+  (setq org-x--agenda-property-filter '("-Effort"))
+  (org-agenda-filter-apply org-x--agenda-property-filter 'property))
+
+(defun org-x-agenda-filter-delegate ()
+  "Filter agenda by tasks with an external delegate."
+  (interactive)
+  (setq org-x--agenda-property-filter '("+DELEGATE"))
+  (org-agenda-filter-apply org-x--agenda-property-filter 'property))
 
 (advice-add #'org-agenda-filter-make-matcher :before-until
-            #'org-x-agenda-filter-make-matcher-prop)
+            #'org-x-agenda-filter-make-property-matcher)
 
 (advice-add #'org-agenda-filter-remove-all :before
-            (lambda () (when org-x--agenda-hasprop-filter
-                    (org-x-agenda-filter-show-all-hasprop))))
-
-;; advice
-
-;; The =org-tags-view= can filter tags for only headings with TODO keywords
-;; (with type tags-todo), but this automatically excludes keywords in
-;; =org-done-keywords=. Therefore, if I want to include these in any custom
-;; agenda blocks, I need to use type tags instead and skip the unwanted TODO
-;; keywords with a skip function. This is far slower as it applies the skip
-;; function to EVERY heading. Fix that here by nullifying
-;; =org--matcher-tags-todo-only= which controls how the matcher is created for
-;; tags and tags-todo. Now I can select done keywords using a match string like
-;; "+tag/DONE|CANC" (also much clearer in my opinion). While this is usually
-;; more efficient, it may be counterproductive in cases where skip functions can
-;; be used to ignore huge sections of an org file (which is rarely for me; most
-;; only skip ahead to the next heading).
-
-(defun org-x-tags-view-advice (orig-fn &rest args)
-  "Include done states in `org-tags-view' for tags-todo agenda types.
-This is meant to be used as :around advice, where ORIG-FN is the
-original function being advised and ARGS are the arguments."
-  (nd/with-advice
-      ((#'org-make-tags-matcher
-        :around (lambda (f m)
-                  (let ((org--matcher-tags-todo-only nil))
-                    (funcall f m)))))
-    (apply orig-fn args)))
-
-(advice-add #'org-tags-view :around #'org-x-tags-view-advice)
-
-(defun org-x-set-creation-time (&optional _always &rest _args)
-  "Set the creation time property of the current heading."
-  (let ((np (->> (float-time)
-                 (org-ml-unixtime-to-time-long)
-                 (org-ml-build-timestamp!)
-                 (org-ml-to-string)
-                 (org-ml-build-node-property org-x-prop-created))))
-    (org-ml-update-this-headline*
-      (org-ml-headline-map-node-properties* (cons np it) it))))
-
-(defun org-x-set-expired-time (&optional arg)
-  "Set the expired time of the current headline.
-If ARG is non-nil use long timestamp format."
-  (interactive "P")
-  (-when-let (ut (-some->> (org-read-date nil t)
-                   (float-time)
-                   (round)))
-    (let ((np (->> (if arg (org-ml-unixtime-to-time-long ut)
-                     (org-ml-unixtime-to-time-short ut))
-                (org-ml-build-timestamp!)
-                (org-ml-to-string)
-                (org-ml-build-node-property org-x-prop-expire))))
-      (org-ml-update-this-headline*
-        (org-ml-headline-map-node-properties* (cons np it) it)))))
-
-(defun org-x-set-dtl ()
-  "Set days-to-live of the current headline."
-  (interactive)
-  (let ((np (->> (org-x--read-number-from-minibuffer "Days to live" t)
-              (org-ml-build-node-property org-x-prop-days-to-live))))
-    (org-ml-update-this-headline*
-      (org-ml-headline-map-node-properties* (cons np it) it))))
-
-(advice-add 'org-insert-heading :after #'org-x-set-creation-time)
-
-(add-hook 'org-capture-before-finalize-hook #'org-x-set-creation-time)
+            #'org-x-agenda-filter-remove-property)
 
 (provide 'org-x)
 ;;; org-x.el ends here
