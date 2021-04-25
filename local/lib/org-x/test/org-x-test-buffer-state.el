@@ -78,7 +78,7 @@ Forms are denoted like %(FORM)%."
     `(describe ,name ,@forms)))
 
 (org-x--test-buffer-strings "Task status"
-    (org-x-task-status)
+    (org-x-headline-get-task-status)
 
   "no status"
   "* headline"
@@ -165,7 +165,7 @@ Forms are denoted like %(FORM)%."
 ;; NOTE the silly thing about this function is that headlines need not actually
 ;; be projects :/
 (org-x--test-buffer-strings "Project status"
-    (org-x-get-project-status)
+    (org-x-headline-get-project-status)
 
   "scheduled"
   ("* TODO project"
@@ -343,7 +343,7 @@ Forms are denoted like %(FORM)%."
   => :stuck)
 
 (org-x--test-buffer-strings "Iterator status"
-    (org-x-get-iterator-status)
+    (org-x-headline-get-iterator-status)
 
     "uninitialized"
     ("* TODO iterator"
@@ -385,7 +385,7 @@ Forms are denoted like %(FORM)%."
      ":PARENT_TYPE: iterator"
      ":END:"
      "** TODO sub"
-     "SCHEDULED: %(org-x-gen-ts (+ (* 60 60 24) org-x-iter-future-time))%")
+     "SCHEDULED: %(org-x-gen-ts (+ (* 60 60 24) org-x-iterator-active-future-offset))%")
     => :actv
 
     "project error"
@@ -395,11 +395,11 @@ Forms are denoted like %(FORM)%."
      ":END:"
      "** NEXT sub"
      "*** TODO subsub"
-     "SCHEDULED: %(org-x-gen-ts (1+ org-x-iter-future-time))%")
+     "SCHEDULED: %(org-x-gen-ts (1+ org-x-iterator-active-future-offset))%")
     => :project-error)
 
 (org-x--test-buffer-strings "Periodical status"
-    (org-x-get-periodical-status)
+    (org-x-headline-get-periodical-status)
 
     "uninitialized"
     ("* periodical"
@@ -423,7 +423,7 @@ Forms are denoted like %(FORM)%."
      ":PARENT_TYPE: periodical"
      ":END:"
      "** sub"
-     "%(org-x-gen-ts (+ (* 60 60 24) org-x-peri-future-time) t)%")
+     "%(org-x-gen-ts (+ (* 60 60 24) org-x-periodical-active-future-offset) t)%")
     => :actv
 
     "unscheduled"
