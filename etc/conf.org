@@ -42,7 +42,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#exporting][exporting]]
   - [[#project-management][project management]]
   - [[#gtd-implementation][gtd implementation]]
-  - [[#gtd-next-generation][gtd next generation]]
+  - [[#tracking-and-analytics][tracking and analytics]]
   - [[#tomato-mode][tomato mode]]
 - [[#tools][tools]]
   - [[#printing][printing]]
@@ -1656,18 +1656,13 @@ Include this so I can have the docs and indentation specs handy when writing tes
 :END:
 Org has several extensions in the form of loadable modules. =org-protocol= is used as a backend for external programs to communicate with =org-mode=. =org-habit= allows the habit todoitem which is used as a more flexible recurring task.
 #+BEGIN_SRC emacs-lisp
-(org-set-modules 'org-modules
-                 (list 'org-habit    ; for habit viewing in agenda
-                       'org-protocol)) ; for external captures
-                       ;; required for 9.2
-                       ;;'org-tempo))  ; for autocomplete src blocks
+(org-set-modules 'org-modules '(org-habit org-protocol))
 
-;; make sure everything else works that I have customly defined
+;; pull in other org files to ensure that my customizations below work on load
 (require 'org-agenda)
 (require 'org-protocol)
 (require 'org-habit)
 (require 'org-clock)
-;;(require 'org-tempo) ;; required for 9.2
 #+END_SRC
 *** directory
 :PROPERTIES:
@@ -1690,20 +1685,27 @@ Save all org buffers 1 minute before the hour.
 
 (run-at-time "00:59" 3600 #'nd/org-save-all-org-buffers)
 #+END_SRC
-*** libraries
+*** stateless configuration
 :PROPERTIES:
 :ID:       455ce793-920c-4244-a25d-ec40fdf74bc1
 :END:
-Org extras
+=org-ml= provides stateless functions for operating on org buffers.
 #+BEGIN_SRC emacs-lisp
 (use-package org-ml
   :straight t
   :config
+  ;; make the match functions super fast with memoization
   (setq org-ml-memoize-match-patterns t))
   
+#+END_SRC
+*** personal library
+My org config became so huge that I decided to move it all to a separate library. Anything starting with =org-x-= is from this library.
+
+The advantage of doing it this way is that I can byte-compile and test independent of the other messy things in the main config. Furthermore, I can use it as a testing ground for new packages if I deem some functionality useful enough for more than just me.
+#+begin_src emacs-lisp
 (add-to-list 'load-path (nd/expand-lib-directory "org-x"))
 (require 'org-x)
-#+END_SRC
+#+end_src
 ** buffer interface
 *** startup folding
 Org 9.4 by default makes files open with the outline totally unfolded. I don't like this; it makes it seem like my laptop is screaming at me whenever I view an org file.
@@ -1732,17 +1734,16 @@ By default all org content is squished to the left side of the buffer regardless
 :PROPERTIES:
 :ID:       d72f63d5-7adc-469b-8ec1-f5198b2babac
 :END:
-TODO: These don't work in evil mode (using the usual line commands).
+Some nice modifiers to key behavior. These still work in evil mode (see keybindings section).
 #+BEGIN_SRC emacs-lisp
-(setq org-special-ctrl-a/e t
-      org-special-ctrl-k t
+(setq org-special-ctrl-a/e t ;; in evil mode this affects what I/A do
       org-yank-adjusted-subtrees t)
 #+END_SRC
 *** bullets
 :PROPERTIES:
 :ID:       109afbf1-164e-4da5-b6e8-6c1f6fc4b1fd
 :END:
-These are just so much better to read
+Replace the default stars with unicode. These are just so much better to read.
 #+BEGIN_SRC emacs-lisp
 (use-package org-bullets
   :straight t
@@ -1809,21 +1810,25 @@ Since I use org mode as my config file, makes sense to have a table of contents 
 :PROPERTIES:
 :ID:       50532a03-13cf-47b3-92a3-2ee34a3b75ae
 :END:
+Set org columns view to be more informative with clocksums and effort.
 #+BEGIN_SRC emacs-lisp
 (setq org-columns-default-format
       (s-join
        " "
-       '("%25ITEM" "%4TODO" "%TAGS" "%5Effort(EFFRT){:}"
-         "%5CLOCKSUM(CLKSM){:}" "%ALLOCATE(ALLOC)")))
+       (list "%25ITEM"
+             "%4TODO"
+             "%TAGS"
+             "%5Effort(EFFRT){:}"
+             "%5CLOCKSUM(CLKSM){:}"
+             "%ALLOCATE(ALLOC)")))
 
 (set-face-attribute 'org-column nil :background "#1e2023")
-;; org-columns-summary-types
 #+END_SRC
 ** calfw
 :PROPERTIES:
 :ID:       57d3105c-eab1-4784-ab27-cf63e6c56b05
 :END:
-This is a nifty calendar...sometimes way faster than the agenda buffer for looking at long term things.
+This is a nifty calendar. Sometimes it is way faster than the agenda buffer for looking at long term things.
 #+BEGIN_SRC emacs-lisp
 (use-package calfw
   :straight t
@@ -1869,14 +1874,14 @@ I only need a teeny tiny window below my current window for todo selection
 :END:
 By default, the tag selection window obliterates all but the current window...how disorienting :/
 #+BEGIN_SRC emacs-lisp
-(defun nd/org-tag-window-advice (orig-fn current inherited table &optional todo-table)
+(defun nd/org-tag-window-advice (orig-fn &rest args)
   "Advice to fix window placement in `org-fast-tags-selection'."
   (nd/with-advice
       ((#'delete-other-windows :override #'ignore)
        ;; pretty sure I just got lucky here...
        (#'split-window-vertically :override #'(lambda (&optional size)
                                                 (split-window-below (or size -10)))))
-    (unwind-protect (funcall orig-fn current inherited table todo-table))))
+    (unwind-protect (apply orig-fn args))))
 
 (advice-add #'org-fast-tag-selection :around #'nd/org-tag-window-advice)
 #+END_SRC
@@ -1891,13 +1896,13 @@ Capture should show up in the bottom of any currently active buffer
     (set-window-buffer new buffer)
     new))
 
-(defun nd/org-capture-window-advice (orig-fn table title &optional prompt specials)
+(defun nd/org-capture-window-advice (orig-fn &rest args)
   "Advice to fix window placement in `org-capture-select-template'."
   (let  ((override '("\\*Org Select\\*" nd/org-capture-position)))
     (add-to-list 'display-buffer-alist override)
     (nd/with-advice
         ((#'org-switch-to-buffer-other-window :override #'pop-to-buffer))
-      (unwind-protect (funcall orig-fn table title prompt specials)
+      (unwind-protect (apply orig-fn args)
         (setq display-buffer-alist
               (delete override display-buffer-alist))))))
 
@@ -1910,7 +1915,8 @@ Capture should show up in the bottom of any currently active buffer
 :END:
 Use =latexmk= instead of =pdflatex= as it is more flexible and doesn't require running the process zillion times just to make a bibliography work. Importantly, add support here for BibTeX as well as the custom output directory (see below).
 #+BEGIN_SRC emacs-lisp
-(setq org-latex-pdf-process (list "latexmk -output-directory=%o -shell-escape -bibtex -f -pdf %f"))
+(setq org-latex-pdf-process
+      '("latexmk -output-directory=%o -shell-escape -bibtex -f -pdf %f"))
 #+END_SRC
 *** custom output directory
 :PROPERTIES:
@@ -1936,7 +1942,7 @@ By default org export files to the same location as the buffer. This is insanity
 :PROPERTIES:
 :ID:       fbe3cb50-3d30-4fb0-ba7f-3b7fa2bbdf46
 :END:
-The default is XHTML for some reason (which few use and makes certain barbaric word processors complain). Use the much-superior html5.
+The default is XHTML for some reason. Use the much-superior html5.
 #+BEGIN_SRC emacs-lisp
 (setq org-html-doctype "html5")
 #+END_SRC
@@ -1980,15 +1986,15 @@ GTD as described in its [[https://en.wikipedia.org/wiki/Getting_Things_Done][ori
 ***** collect
 The whole point of GTD is to get stuff out of one's head, and this is purpose of the /collect/ step. Basically if a thought or task pops in my head or interrupts me, I record it somewhere. These thoughts can happen any time and anywhere, so it is important to keep them out of consciousness so that I can concentrate on whatever I am doing.
 
-When =org-mode= is in front of me, I use =org-capture= (see below for =org-capture-templates=). The "things" that could be collected include anything from random ideas, things I remember to do, appointments I need to attend, etc. I also capture emails with =mu4e= (which links to =org-mode= through =org-protocol=). Everythign collected with =org-capture= gets sent to a dedicated file where I deal with it later (see /process/ step).
+When =org-mode= is in front of me, I use =org-capture= (see below for =org-capture-templates=). The "things" that could be collected include anything from random ideas, things I remember to do, appointments I need to attend, etc. I also capture emails with =mu4e= (which links to =org-mode= through =org-protocol=). Everything collected with =org-capture= gets sent to a dedicated file where I deal with it later (see /process/ step).
 
-When =org-mode= is not in front of me, I record my thoughts in the Orgzly app on my android. It doesn't really sync so I transfer everything manually.
+When =org-mode= is not in front of me, I record my thoughts in the Orgzly app on my phone. It doesn't sync the way I want so I transfer everything manually.
 ***** process
 Collecting only records things; it doesn't make decisions. The point of the /process/ step is to decide if the task/note is worth my time and when. This involves several key questions.
 
 The first question to ask is if the task is actionable. If yes, it gets moved to a project file or a general task file. If not, I ask it can either be moved to the "incubator" (a place for things I might do), be moved any number of reference files (for storing inportant information), or flat-out deleted if I think it is stupid or no longer relevant.
 
-In =org-mode= these decisions are made and recorded by moving headings between files with =org-refile=. To facilitate this process I have an agenda view to filter out captured tasks. From there it is easy to refile to wherever the headers need to go.
+In =org-mode= these decisions are made and recorded by moving headlines between files with =org-refile=. To facilitate this process I have an agenda view to filter out captured tasks. From there it is easy to refile to wherever the headers need to go.
 
 This step happens daily along with /organize/ below.
 ***** organize
@@ -1998,56 +2004,57 @@ After refiling with =org-refile=, the next step is to add any remaining meta inf
 
 Delegation (assingning something to someone else) is simple and is represented by a simple property which is filled with the initials of the person doing the work. It filter and view this with =org-columns= and =org-agenda-columns=.
 
-When tasks don't have a specific date, GTD outlines a four-criteria model for deciding what to do: context, required time, available energy, and priority. Context describes required locations and resources for tasks, and I represent them with tags (see =org-tags-alist=). Required time is represented by the =Effort= property (see =org-default-properties= below). Available energy is subjective and not represented in =org-mode=. Priority is again represented with tags, here chosen from one of seven "life categories."
+When tasks don't have a specific date, GTD outlines a four-criteria model for deciding what to do: context, required attention, available energy, and priority. Context describes required locations and resources for tasks, and I represent them with tags (see =org-tags-alist=). Required attention is represented by the =Effort= property (see =org-default-properties= below). Available energy is subjective and not represented in =org-mode=. Priority is again represented with tags, here chosen from one of seven "life categories."
 
 In assigning timestamps, =org-mode= offers several possibilities out of the box. Putting a plain active timestamp denotes an appointment (something at which I need to show up). A scheduled timestamp denotes a task that I want to work on starting at a certain time. A deadline denotes a task that must be finished by a certain time. I try to only use these for "hard" times as anything "soft" risks me not fulfilling to the timestamp and hence diminishing the value of timestamps in general.
 
-I have three main agenda views for handling this. The first is a daily view that shows the tasks needed for today, including anything with a timestamp. The second has all tasks that are not timestamps (eg things that can be done at any time). The third is a project view that shows the top level headings for collections of tasks (this is where I find any projects that need a NEXT task).
+I have three main agenda views for handling this. The first is a daily view that shows the tasks needed for today, including anything with a timestamp. The second has all tasks that are not timestamps (eg things that can be done at any time). The third is a project view that shows the top level headline for collections of tasks (this is where I find any projects that need a NEXT task).
 
-The /organize/ step may seem like it requires alot of work but luckily =org-mode= allows enough automation that some of this meta information can be added in the /collect/ and /process/ phases. For instance, timestamps and tags can be added (forcibly) in =org-capture= depending on what template is used. Furthermore, the priority tag and some context tags are added when the task is refiled to its proper file or project; this happens via tag inheritance, defined at either the file level or a parent heading (for instance, a computer-related tasks may be filed under =environmental/computer= where =environment= has the =_env= tag and =computer= has the =#laptop= tag).
+The /organize/ step may seem like it requires too much work but luckily =org-mode= allows enough automation that some of this meta information can be added in the /collect/ and /process/ phases. For instance, timestamps and tags can be added (forcibly) in =org-capture= depending on what template is used. Furthermore, the priority tag and some context tags are added when the task is refiled to its proper file or project; this happens via tag inheritance, defined at either the file level or a parent headline (for instance, a computer-related tasks may be filed under =environmental/computer= where =environment= has the =_env= tag and =computer= has the =#laptop= tag).
 ***** review
 In order to keep the entire workflow moving smoothly, it is necessary to do a high-level /review/. 
 
 This happens weekly and involves several things.
-- Scheduling important tasks and resolve conflicts. For this I use =calfw= (basically a calendar) to look at the next week and check if anything overlaps and move things around. I also "reload" repeater tasks using =nd/org-clone-subtree-with-timeshift=.
+- Scheduling important tasks and resolve conflicts. For this I use =calfw= (basically a calendar) to look at the next week and check if anything overlaps and move things around. I also "reload" repeater tasks using =org-x-clone-subtree-with-time-shift=.
 - Moving tasks to the archive as they are available. This keeps =org-mode= fast and uncluttered.
 - Reviewing the incubator and moving tasks out that I actually decide to do.
 - Reviewing reference material and moving it to appropriate tasks.
 - Assessing projects based on their status (see below for the definition of "status"). Ideally all projects are "active," and if they are not I try to make them active by assigning NEXT.
+- Reviewing inert tasks and projects (eg those with no recent activity) and moving them to the incubator if I don't deem them worthy of immediate attention (see below for definition of "inert").
 
 I have specialized agenda views and commands for facilitating all of this.
 ***** execute
 /Execute/ involves doing the predefined work laid out in the previous four steps. Generally I work through two agenda views (in order). The first being all my tasks that need to get done in the day, and the second being all tasks with no specific timestamp.
 
-Besides physically doing the tasks here, the other special thing in =org-mode= that I use is clocking. In addition to tracking time spent, it also encourages clean breaks between tasks (eg no multitasking).
+Besides physically doing the tasks here, the other special thing in =org-mode= that I use is clocking. If a clock is running on a headline, it means I'm paying attention to whatever that headline represents. This implies that multitasking isn't allowed, which is bad idea in general.
 **** file hierarchy and structure
 All org files are kept in one place (see =org-directory=). This is futher subdivided into directories for project (as per terms and definitions, these are any tasks that involve at least on subtask) and reference files. At the top level are files for incubated tasks, captured tasks, and catchall general tasks (which also includes small projects that don't fit anywhere else).
 
-In order to make sorting easier and minimize work during processing, the files are further subdivided using tags at the file level and heading level that will automatically categorize tasks when they are refiled to a certain location. For example, some project may be to create a computer program, so I would set =#+FILETAGS: #laptop= because every task in this project will require a laptop. See the tags section below for more information on tags.
+In order to make sorting easier and minimize work during processing, the files are further subdivided using tags at the file level and headline level that will automatically categorize tasks when they are refiled to a certain location. For example, some project may be to create a computer program, so I would set =#+FILETAGS: #laptop= because every task in this project will require a laptop. See the tags section below for more information on tags.
 **** repetition
 This deserves special attention because it comprises a significant percentage of tasks I do (and likely everyone does). I personally never liked the org's repeated task functionality. It is way too temporally rigid to be useful to me, and offers very little flexibility in mutating a task as it moves forward. Habits (which I use) are a partial fix for the first problem but do not aleviate the mutability problem.
 
-My (somewhat convoluted) solution was to use =org-clone-subtree-with-time-shift=, which creates an easy way to make repeated tasks from some template, but also allows modification. The only problem with the vanilla implementation is that it lacks automation and agenda-block awareness (they all get treated as regular tasks which I don't want). This is partially fixed with my own =org-x-clone-subtree-with-time-shift= which automaticlly resets tasks which are cloned (eg clearing checkboxes and resetting todo state). The remainding problems I fixed by defining several properties to be applied to repeated groupings under a heading (see properties).
+My (somewhat convoluted) solution was to use =org-clone-subtree-with-time-shift=, which creates an easy way to make repeated tasks from some template, but also allows modification. The only problem with the vanilla implementation is that it lacks automation and agenda-block awareness (they all get treated as regular tasks which I don't want). This is partially fixed with my own =org-x-clone-subtree-with-time-shift= which automaticlly resets tasks which are cloned (eg clearing checkboxes and resetting todo state). The remainding problems I fixed by defining several properties to be applied to repeated groupings under a headline (see properties).
 
-The first property is called =PARENT_TYPE= and has two values =iterator= and =periodical=. The first applies to repeated tasks and second which applies to timestamped headings such as appointments. These are mostly useful for agenda sorting, where I have views specifically for managing repeated tasks. The second property is =TIME_SHIFT=; =org-x-clone-subtree-with-time-shift= is aware of this value and automatically shifts cloned tasks accordingly if available.
+The first property is called =PARENT_TYPE= and has two values =iterator= and =periodical=. The first applies to repeated tasks and second which applies to timestamped headlines such as appointments. These are mostly useful for agenda sorting, where I have views specifically for managing repeated tasks. The second property is =TIME_SHIFT=; =org-x-clone-subtree-with-time-shift= is aware of this value and automatically shifts cloned tasks accordingly if available.
 
-In practice, I use this for tasks like workouts, paying bills, maintenance, grocery shopping, work meetings, GTD reviews, etc. These are all *almost* consistent but may change slightly in their timing, action items, effort, context, etc. If any of these change, it is easy enough to modify one heading without disrupting the rest.
+In practice, I use this for tasks like workouts, paying bills, maintenance, grocery shopping, work meetings, GTD reviews, etc. These are all *almost* consistent but may change slightly in their timing, action items, effort, context, etc. If any of these change, it is easy enough to modify one headline without disrupting the rest.
 
 In an org tree these look like this:
 #+BEGIN_SRC
- ***** clean room
+`***** clean room
 :PROPERTIES:
 :PARENT_TYPE: iterator
 :TIME_SHIFT: +1m
 :END:
- ****** DONE clean room [0/2]
+`****** DONE clean room [0/2]
 CLOSED: [2018-11-21 Wed 22:13] SCHEDULED: <2018-10-29 Mon>
 :PROPERTIES:
 :Effort:   0:15
 :END:
 - [ ] vacuum
 - [ ] throw away trash
- ****** TODO clean room [0/2]
+`****** TODO clean room [0/2]
 SCHEDULED: <2018-11-29 Thu>
 :PROPERTIES:
 :Effort:   0:30
@@ -2058,30 +2065,37 @@ SCHEDULED: <2018-11-29 Thu>
 **** block agenda views
 The heart of this implementation is an army of block agenda views (basically filters on the underlying org trees that bring whatever I need into focus). These have become tailored enough to my workflow that I don't even use the built-in views anymore (I also have not found an "easy" way to turn these off). Besides projects, these agenda views are primarily driven using skip functions.
 ***** projects
-When it comes to the agenda view, I never liked how org-mode by default handled "projects" (see how that is defined in "terms and definitions"). It mostly falls short because of the number of todo keywords I insist on using. The solution I implemented was to used "statuscodes" (which are just keywords in lisp) to define higher-level descriptions based on the keyword content of a project. For example a "stuck" project (with statuscode =:stuck=) is a project with only =TODO= keywords. Adding a =NEXT= status turns the statuscode to =:active=. Likewise =WAIT= makes =:waiting=. This seems straightforward, except that =NEXT= trumps =WAIT=, =WAIT= trumps =HOLD=, etc. Furthermore, there are errors I wish to catch to ensure subtrees get efficiently cleaned out, such as a project heading with =DONE= that still has a =TODO= underneath. 
+When it comes to the agenda view, I never liked how org-mode by default handled "projects" (see how that is defined in "terms and definitions"). It mostly falls short because of the number of todo keywords I insist on using. The solution I implemented was to used "statuscodes" (which are just keywords in lisp) to define higher-level descriptions based on the keyword content of a project. For example a "stuck" project (with statuscode =:stuck=) is a project with only =TODO= keywords. Adding a =NEXT= status turns the statuscode to =:active=. Likewise =WAIT= makes =:waiting=. This seems straightforward, except that =NEXT= trumps =WAIT=, =WAIT= trumps =HOLD=, etc. Furthermore, there are errors I wish to catch to ensure subtrees get efficiently cleaned out, such as a project headline with =DONE= that still has a =TODO= underneath.
 
-I used to take care of this problem with lots of skip functions, but it turned out to be unmaintainable and offered poor performance (eg if I wanted a block agenda for =N= statuscodes, I needed to scan the entire org tree =N= times). A far easier way to implement this was to embed the statuscodes in text properties in each agenda line, which could then be sorted and the prefix string formatted with the status code for identification in the block agenda view. Since this only requires one block, it only requires one scan, and is very fast.
+For a full overview of how these statuscodes are implemented, see =org-x-headline-get-project-status=.
 ***** repeaters
-Similarly to projects, repeaters (eg iterators and periodicals) are assessed via a statuscode (after all they are a group of headings and thus depending on the evaluation of todo keywoards and timestamps in aggregate). These prove much simpler than projects as essentially all I need are codes for uninitialized (there is nothing in the repeater), empty (all subheadings are in the past and therefore irrelevant), and active (there are some subtasks in the future).
+Similarly to projects, repeaters (eg iterators and periodicals) are assessed via a statuscode (after all they are a group of headlings and thus depending on the evaluation of todo keywoards and timestamps in aggregate). These prove much simpler than projects as essentially all I need are codes for uninitialized (there is nothing in the repeater), empty (all subheadings are in the past and therefore irrelevant), and active (there are some subtasks in the future).
+
+See =org-x-headline-get-iterator-status= and =org-x-headline-get-periodical-status= for how these statuscodes are implemented.
+***** tasks
+Tasks are mostly just defined by their todo keyword (or lack of one). Like projects and repeaters, I use statuscodes to do the agenda filtering, which is necessary to concisely keep track of not only the keywords but the timestamps and logbook status (for example, and "archivable" task is one that was completed a while ago and thus is ready to be archived).
+
+See =org-x-headline-get-task-status= for this implementation.
 **** terms and definitions
 These conventions are used throughout to be precise when naming functions/variables and describing their effects
-***** headings
-- heading: the topmost part after the bullet in an org outline. Org-mode cannot seem to make up it's mind in calling it a header, heading, or headline, so I picked heading
-- todoitem: any heading with a todo keyword
+***** headlines
+- headline: the topmost part after the bullet in an org outline. Org-mode cannot seem to make up it's mind in calling it a header, heading, or headline, so I picked headline
+- todoitem: any headline with a todo keyword
 - task: a todoitem with no todoitem children
-  - atomic: further specifies that the task is not part of a project
+  - atomic: a task is not part of a project
 - project: a todoitem with that has todoitem children or other projects
-  - status(code): a keyword used to describe the overall status of a project. See skip functions in the block agenda section for their implementation.
+  - toplevel: a project that has no parents that have todo items
 ***** time
-- stale: refers to timestamps that are in the past/present
-  - archivable: further specifies that the timestamp is older than some cutoff that defines when tasks can be archived (usually 30 days)
-- fresh: refers to timestamps that are in the future
+- stale: headlines with timestamps that are in the past/present
+  - archivable: like stale but further specifies the timestamp is older than a cutoff that defines when tasks can be archived (usually 30 days)
+- fresh: headlines with timestamps that are in the future
+- inert: tasks that have not had a recent clock or logbook entry, see =org-x-headline-headline-is-inert-p=
 *** todo states
 **** sequences
 :PROPERTIES:
 :ID:       5c1c4731-54a1-4a68-99f2-688505347dec
 :END:
-These keywords are used universally for all org files (see below on quick explanation for each, they are all quite straightforward). Note that projects have a more specific meaning for these keywords in defining project status (see the library of agenda function). Also, it looks way better in the agenda buffer when they are all the same number of chars. 
+These keywords are used universally for all org files. Note that projects have a more specific meaning for these keywords in defining project status (see =org-x-headline-get-project-status=).
 
 In terms of logging, I like to record the time of each change upon leaving any state, and I like recording information in notes when waiting, holding, or canceling (as these usually have some external trigger or barrier that should be specified).
 #+BEGIN_SRC emacs-lisp
@@ -2218,7 +2232,7 @@ Each group also has its own color, defined by its prefix symbol.
 :END:
 The built-in =effort= is used as the fourth and final homonymous GTD context (the other three being covered above using tags). It is further restricted with =Effort_All= to allow easier filtering in the agenda.
 
-Also here are the properties for repeated tasks and a few others (see comments in code).
+Also here are the properties for repeateders and routine types.
 #+BEGIN_SRC emacs-lisp
 (setq org-default-properties (->>  (list org-x-prop-parent-type
                                          org-x-prop-time-shift
@@ -2380,7 +2394,7 @@ Prevent accidental refiling under tasks with done keywords
 :PROPERTIES:
 :ID:       82484193-9c46-48be-9092-f62fd0b80f5d
 :END:
-Clocking is still new and experimental (I'm not a ninja like Bernt yet). I mostly use clocking now as a way to make clean breaks between tasks (eg to discourage "mixing" tasks which is a slippery multitasking slope). I bound =F4= to =org-clock-goto= as an easy way to find my current/last clocked task in any mode (see keybindigs).
+Clocking = attention. If a task has a running clock, I pay attention to it (or at least that's the idea). I bound =F4= to =org-clock-goto= as an easy way to find my current/last clocked task in any mode (see keybindigs).
 #+BEGIN_SRC emacs-lisp
 (setq org-clock-history-length 23
       org-clock-out-when-done t
@@ -2391,7 +2405,9 @@ Clocking is still new and experimental (I'm not a ninja like Bernt yet). I mostl
 :PROPERTIES:
 :ID:       9d32382c-5860-4e15-a8ad-12afb45dc59c
 :END:
-The modeline is a nice place to indicate if something is clocked in or out. Unfortunately, sometimes is is so crowded that I can't see the text for the currently clocked task. Solution, use colors.
+The modeline is a nice place to indicate if something is clocked in or out. Unfortunately, sometimes is is so crowded that I can't see the text for the currently clocked task.
+
+Solution: flashy colors.
 #+BEGIN_SRC emacs-lisp
 (defface nd/spaceline-highlight-clocked-face
   `((t (:background "chartreuse3"
@@ -2415,6 +2431,40 @@ The main code is defined in =org-x= so the following is only to set some domain-
 (setq org-x-agg-filtered-files '("incubator" "peripheral")
       org-x-agg-filtered-keywords (list org-x-kw-canc org-x-kw-done))
 #+end_src
+*** logging
+**** drawer
+:PROPERTIES:
+:ID:       ff6c8da8-a1dd-442a-aa64-89eabe6ba21e
+:END:
+I prefer all logging to go in a seperate drawer (aptly named) which allows easier navigation and parsing for data analytics.
+#+BEGIN_SRC emacs-lisp
+(setq org-log-into-drawer "LOGGING"
+      org-clock-into-drawer "CLOCKING")
+#+END_SRC
+**** events
+:PROPERTIES:
+:ID:       9d45274d-92c3-4a52-842e-14af7173a8c3
+:END:
+Events are nice to record because it enables tracking of my behavior (eg how often I reschedule, which may indicate how well I can predict when things should happen).
+#+BEGIN_SRC emacs-lisp
+(setq org-log-done 'time
+      org-log-redeadline 'time
+      org-log-reschedule 'time)
+#+END_SRC
+**** repeated tasks
+:PROPERTIES:
+:ID:       6da71583-1bb7-4031-92f1-9dc0e1f422bf
+:END:
+In these cases, it is nice to know what happened during each cycle, so force notes.
+#+BEGIN_SRC emacs-lisp
+(setq org-log-repeat 'note)
+#+END_SRC
+**** created time
+Override the standard headline insertion function to add a timestamp for the time at which it was created.
+#+begin_src emacs-lisp
+(advice-add 'org-insert-heading :after
+            (lambda (&optional _always &rest _args) (org-x-set-creation-time)))
+#+end_src
 *** agenda
 :PROPERTIES:
 :ID:       73c154c8-e13e-4e90-8a1d-77c3be067502
@@ -2426,8 +2476,8 @@ The main code is defined in =org-x= so the following is only to set some domain-
 The agenda files are limited to as few as possible to keep scanning and startup reasonably fast.
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-files '("~/Org"
-                        "~/Org/projects"
-                        "~/Org/reference/peripheral.org"))
+                         "~/Org/projects"
+                         "~/Org/reference/peripheral.org"))
 #+END_SRC
 **** appearence
 ***** sticky agendas
@@ -2442,6 +2492,7 @@ I personally like having sticky agendas by default so I can use multiple windows
 :PROPERTIES:
 :ID:       fe6255b4-7569-41d1-b496-8db9888c0282
 :END:
+Make tags appear on the right side of the screen.
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-tags-column 'auto)
 #+END_SRC 
@@ -2518,6 +2569,7 @@ If I don't include this, I actually forget about major holidays.
 :PROPERTIES:
 :ID:       6bd2a7c9-2104-4b18-9f56-c1581ed86d82
 :END:
+=org-super-agenda= has many nice functions for grouping and filtering agenda blocks. I used to have a bunch of clunky custom functions, and this replaced most of them.
 #+BEGIN_SRC emacs-lisp
 (use-package org-super-agenda
   :straight t
@@ -2538,7 +2590,7 @@ If I don't include this, I actually forget about major holidays.
 :PROPERTIES:
 :ID:       5b2e0510-1100-421e-ad47-ddc663d6efad
 :END:
-This gives more flexibility in ignoring items with timestamps
+This gives more flexibility in ignoring items with timestamps.
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-tags-todo-honor-ignore-options t)
 #+END_SRC
@@ -2566,7 +2618,7 @@ By default I want block agendas to sort based on the todo keyword (with NEXT bei
 :PROPERTIES:
 :ID:       c82f432c-be19-477f-b20f-b768bc573c70
 :END:
-These agenda commands are the center of the gtd workflow.
+These agenda commands are the center of the gtd workflow. See comments in the actual code for most specific descriptions of each.
 #+BEGIN_SRC emacs-lisp
 (defmacro nd/org-with-raw-headline (agenda-line &rest body)
   "Execute BODY on original headline referred to with AGENDA-LINE."
@@ -2576,23 +2628,23 @@ These agenda commands are the center of the gtd workflow.
        (goto-char marker)
        ,@body)))
 
-(defun nd/org-x-mk-super-agenda-pred (body)
+(defun nd/org-mk-super-agenda-pred (body)
   "Return a predicate function with BODY.
 The function will be a lambda form that takes one argument, the
 current agenda line, and executes BODY at the point in the
 original buffer pointed at by the agenda line."
   `(lambda (agenda-line) (nd/org-with-raw-headline agenda-line ,@body)))
 
-(defmacro nd/org-x-def-super-agenda-pred (name &rest body)
+(defmacro nd/org-def-super-agenda-pred (name &rest body)
   "Make super agenda predicate form with NAME and BODY.
 Key-pairs at the end of BODY will be interpreted as a plist to append
 to the end of the predicate form."
   (declare (indent 1))
   (-let* (((pred-body plist) (--split-with (not (keywordp it)) body))
-          (pred (nd/org-x-mk-super-agenda-pred pred-body)))
+          (pred (nd/org-mk-super-agenda-pred pred-body)))
     `(quote (:name ,name :pred ,pred ,@plist))))
 
-(defun nd/org-x-mapper-title (level1 level2 status subtitle)
+(defun nd/org-mapper-title (level1 level2 status subtitle)
   "Make an auto-mapper title.
 The title will have the form 'LEVEL1.LEVEL2 STATUS (SUBTITLE)'."
   (let ((status* (->> (symbol-name status)
@@ -2601,13 +2653,13 @@ The title will have the form 'LEVEL1.LEVEL2 STATUS (SUBTITLE)'."
                    (s-titleize))))
     (format "%s.%s %s (%s)" level1 level2 status* subtitle)))
 
-(defmacro nd/org-x-def-super-agenda-automap (&rest body)
+(defmacro nd/org-def-super-agenda-automap (&rest body)
   "Make super agenda auto-map form with BODY."
   (declare (indent 0))
-  `(quote ((:auto-map ,(nd/org-x-mk-super-agenda-pred body))
+  `(quote ((:auto-map ,(nd/org-mk-super-agenda-pred body))
            (:discard (:anything t)))))
 
-(defmacro nd/org-x-mk-match-string (&rest body)
+(defmacro nd/org-mk-match-string (&rest body)
   "Make an agenda match string from BODY."
   (->> body
     (--map (cond
@@ -2668,6 +2720,15 @@ original function being advised and ARGS are the arguments."
 
 (setq
  org-agenda-custom-commands
+ ;; Calendar - for showing what I need to do in a given day
+ ;;
+ ;; In the order of display
+ ;; 1. morning tasks/habits (to do immediately after waking)
+ ;; 2. daily calendar (for thing that begin today at a specific time)
+ ;; 3. evening tasks/habits (to do immediately before sleeping)
+ ;; 4. deadlines
+ ;; 5. scheduled tasks (for things that begin today at no specific time)
+ ;; 6. habits
  `(("a"
     "Calendar View"
     ((agenda
@@ -2676,11 +2737,11 @@ original function being advised and ARGS are the arguments."
        (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
        (org-agenda-include-diary t)
        (org-super-agenda-groups
-        `(,(nd/org-x-def-super-agenda-pred "Morning routine"
+        `(,(nd/org-def-super-agenda-pred "Morning routine"
              (org-x-headline-has-property org-x-prop-routine
                                           org-x-prop-routine-morning)
              :order 0)
-          ,(nd/org-x-def-super-agenda-pred "Evening routine"
+          ,(nd/org-def-super-agenda-pred "Evening routine"
              (org-x-headline-has-property org-x-prop-routine
                                           org-x-prop-routine-evening)
              :order 3)
@@ -2689,10 +2750,14 @@ original function being advised and ARGS are the arguments."
           (:name "Deadlined" :order 4 :deadline t)
           (:name "Scheduled" :order 5 :scheduled t)))))))
 
+   ;; Tasks - a view for all individual, non-repeated actions I need to do
+   ;;
+   ;; Distinguish between atomic and project tasks, as well as tasks that
+   ;; are inert (which I may move to the incubator during a review phase)
    ("t"
     "Task View"
     ((tags-todo
-      ,(nd/org-x-mk-match-string
+      ,(nd/org-mk-match-string
         - org-x-tag-no-agenda
         - org-x-tag-refile
         - org-x-tag-incubated
@@ -2706,7 +2771,7 @@ original function being advised and ARGS are the arguments."
        (org-agenda-todo-ignore-with-date t)
        (org-agenda-sorting-strategy '(user-defined-up category-keep))
        (org-super-agenda-groups
-        ',(nd/org-x-def-super-agenda-automap
+        ',(nd/org-def-super-agenda-automap
             (let* ((is-atomic (org-x-headline-is-atomic-task-p))
                    ;; lump inert and active non-atomic tasks together
                    (status (--> (org-x-headline-get-task-status)
@@ -2715,12 +2780,12 @@ original function being advised and ARGS are the arguments."
                    (priority (alist-get status nd/org-headline-task-status-priorities)))
               (unless (< priority 0)
                 (-let (((level1 subtitle) (if is-atomic '(1 "α") '(0 "σ"))))
-                  (nd/org-x-mapper-title level1 priority status subtitle))))))))))
+                  (nd/org-mapper-title level1 priority status subtitle))))))))))
 
    ("p"
     "Project View"
     ((tags-todo
-      ,(nd/org-x-mk-match-string
+      ,(nd/org-mk-match-string
         - org-x-tag-no-agenda
         - org-x-tag-refile
         - org-x-tag-incubated)
@@ -2728,18 +2793,18 @@ original function being advised and ARGS are the arguments."
        (org-agenda-skip-function #'org-x-project-skip-function)
        (org-agenda-sorting-strategy '(category-keep))
        (org-super-agenda-groups
-        ',(nd/org-x-def-super-agenda-automap
+        ',(nd/org-def-super-agenda-automap
             (let* ((status (org-x-headline-get-project-status))
                    (priority (alist-get status nd/org-x-project-status-priorities)))
               (unless (< priority 0)
                 (-let* ((is-subproject (org-x-headline-has-task-parent))
                         ((level1 subtitle) (if is-subproject '(1 "σ") '(0 "τ"))))
-                  (nd/org-x-mapper-title level1 priority status subtitle))))))))))
+                  (nd/org-mapper-title level1 priority status subtitle))))))))))
    
    ("i"
     "Incubator View"
     ((tags
-      ,(nd/org-x-mk-match-string
+      ,(nd/org-mk-match-string
         - org-x-tag-no-agenda
         - org-x-tag-refile
         + org-x-tag-incubated)
@@ -2749,52 +2814,50 @@ original function being advised and ARGS are the arguments."
        (org-super-agenda-groups
         `((:name "Past Deadlines" :deadline past)
           (:name "Future Deadlines" :deadline future)
-          ,(nd/org-x-def-super-agenda-pred "Stale Appointments"
+          ,(nd/org-def-super-agenda-pred "Stale Appointments"
              (org-x-headline-is-stale-p))
-          ,(nd/org-x-def-super-agenda-pred "Future Appointments"
+          ,(nd/org-def-super-agenda-pred "Future Appointments"
              (not (org-x-headline-is-todoitem-p)))
-          ,(nd/org-x-def-super-agenda-pred "Tasks"
+          ,(nd/org-def-super-agenda-pred "Tasks"
              (org-x-headline-is-task-p))
-          ,(nd/org-x-def-super-agenda-pred "Toplevel Projects"
+          ,(nd/org-def-super-agenda-pred "Toplevel Projects"
              (org-x-headline-is-toplevel-project-p))
-          ,(nd/org-x-def-super-agenda-pred "Projects"
+          ,(nd/org-def-super-agenda-pred "Projects"
              (org-x-headline-is-project-p))
           (:discard (:anything t))))))))
    
    ("P"
     "Periodical View"
     ((tags
-      ,(nd/org-x-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
+      ,(nd/org-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
       ((org-agenda-overriding-header "Periodical Status")
        (org-agenda-skip-function #'org-x-periodical-skip-function)
        (org-agenda-sorting-strategy '(category-keep))
        (org-super-agenda-groups
-        `((:auto-map
-           ,(nd/org-x-mk-super-agenda-pred
-             (cl-case (org-x-headline-get-periodical-status)
-               (:uninit "0. Uninitialized")
-               (:unscheduled "0. Unscheduled")
-               (:empt "1. Empty")
-               (:actv "2. Active")
-               (t "3. Other"))))))))))
+        ',(nd/org-def-super-agenda-automap
+            (cl-case (org-x-headline-get-periodical-status)
+              (:uninit "0. Uninitialized")
+              (:unscheduled "0. Unscheduled")
+              (:empt "1. Empty")
+              (:actv "2. Active")
+              (t "3. Other"))))))))
 
    ("I"
     "Iterator View"
     ((tags
-      ,(nd/org-x-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
+      ,(nd/org-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
       ((org-agenda-overriding-header "Iterator Status")
        (org-agenda-skip-function #'org-x-iterator-skip-function)
        (org-agenda-sorting-strategy '(category-keep))
        (org-super-agenda-groups
-        `((:auto-map
-           ,(nd/org-x-mk-super-agenda-pred
-             (cl-case (org-x-headline-get-iterator-status)
-               (:uninit "0. Uninitialized")
-               (:project-error "0. Project Error")
-               (:unscheduled "0. Unscheduled")
-               (:empt "1. Empty")
-               (:actv "2. Active")
-               (t "3. Other"))))))))))
+        ',(nd/org-def-super-agenda-automap
+            (cl-case (org-x-headline-get-iterator-status)
+              (:uninit "0. Uninitialized")
+              (:project-error "0. Project Error")
+              (:unscheduled "0. Unscheduled")
+              (:empt "1. Empty")
+              (:actv "2. Active")
+              (t "3. Other"))))))))
 
    ("r" "Refile"
     ((tags ,org-x-tag-refile ((org-agenda-overriding-header "Tasks to Refile"))
@@ -2806,82 +2869,65 @@ original function being advised and ARGS are the arguments."
    ("e"
     "Critical Errors"
     ((tags
-      ,(nd/org-x-mk-match-string
+      ,(nd/org-mk-match-string
         - org-x-tag-no-agenda
         - org-x-tag-refile
         - org-x-tag-incubated)
       ((org-agenda-overriding-header "Critical Errors")
        (org-agenda-skip-function #'org-x-error-skip-function)
        (org-super-agenda-groups
-        `(,(nd/org-x-def-super-agenda-pred "Discontinuous Projects"
+        `(,(nd/org-def-super-agenda-pred "Discontinuous Projects"
              (org-x-headline-is-discontinous-project-task-p))
           ;; TODO this is redundant, only thing this checks is project headers
-          ,(nd/org-x-def-super-agenda-pred "Done Unclosed"
+          ,(nd/org-def-super-agenda-pred "Done Unclosed"
              (org-x-headline-is-done-unclosed-task-p))
-          ,(nd/org-x-def-super-agenda-pred "Undone Closed"
+          ,(nd/org-def-super-agenda-pred "Undone Closed"
              (org-x-headline-is-undone-closed-task-p))
-          ,(nd/org-x-def-super-agenda-pred "Missing Creation Timestamp"
+          ,(nd/org-def-super-agenda-pred "Missing Creation Timestamp"
              (org-x-headline-is-task-without-creation-timestamp-p))
-          ,(nd/org-x-def-super-agenda-pred "Missing Archive Target (iterators)"
+          ,(nd/org-def-super-agenda-pred "Missing Archive Target (iterators)"
              (org-x-headline-is-iterator-without-archive-target-p))
-          ,(nd/org-x-def-super-agenda-pred "Future Creation Timestamp"
+          ,(nd/org-def-super-agenda-pred "Future Creation Timestamp"
              (org-x-headline-is-task-with-future-creation-timestamp-p))
           (:discard (:anything t))))))))
 
    ("A"
     "Archivable Tasks and Projects"
     ((tags
-      ,(nd/org-x-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
+      ,(nd/org-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
       ((org-agenda-overriding-header "Archive")
        (org-agenda-skip-function #'org-x-archive-skip-function)
        (org-agenda-sorting-strategy '(category-keep))
        (org-super-agenda-groups
-        `(,(nd/org-x-def-super-agenda-pred "Atomic Tasks"
+        `(,(nd/org-def-super-agenda-pred "Atomic Tasks"
              (org-x-headline-is-atomic-task-p))
-          ,(nd/org-x-def-super-agenda-pred "Toplevel Projects"
+          ,(nd/org-def-super-agenda-pred "Toplevel Projects"
              (org-x-headline-is-toplevel-project-p))
-          ,(nd/org-x-def-super-agenda-pred "Projects"
+          ,(nd/org-def-super-agenda-pred "Projects"
              (org-x-headline-is-project-p))
           (:name "Appointments" :anything)))))))))
 #+END_SRC
-** gtd next generation
-GTD is great but has many limitations...mostly due to the fact that it was originally made on paper. This is meant to extend the GTD workflow into a comprehensive tracking engine that can be used and analyze and project long-term plans and goals.
-*** logging
-**** drawer
+** tracking and analytics
 :PROPERTIES:
-:ID:       ff6c8da8-a1dd-442a-aa64-89eabe6ba21e
+:CREATED:  [2021-04-25 Sun 12:46]
 :END:
-I prefer all logging to go in a seperate drawer (aptly named) which allows easier navigation and parsing for data analytics.
-#+BEGIN_SRC emacs-lisp
-(setq org-log-into-drawer "LOGGING"
-      org-clock-into-drawer "CLOCKING")
-#+END_SRC
-**** events
-:PROPERTIES:
-:ID:       9d45274d-92c3-4a52-842e-14af7173a8c3
-:END:
-Events are nice to record because it enables tracking of my behavior (eg how often I reschedule, which may indicate how well I can predict when things should happen).
-#+BEGIN_SRC emacs-lisp
-(setq org-log-done 'time
-      org-log-redeadline 'time
-      org-log-reschedule 'time)
-#+END_SRC
-**** repeated tasks
-:PROPERTIES:
-:ID:       6da71583-1bb7-4031-92f1-9dc0e1f422bf
-:END:
-In these cases, it is nice to know what happened during each cycle, so force notes.
-#+BEGIN_SRC emacs-lisp
-(setq org-log-repeat 'note)
-#+END_SRC
-**** created time
-Override the standard headline insertion function to add a timestamp for the time at which it was created.
-#+begin_export emacs-lisp
-(advice-add 'org-insert-heading :after
-            (lambda (&optional _always &rest _args) (org-x-set-creation-time)))
-#+end_export
-*** sqlite backend
-Org mode is great and all, but in many cases, text files just won't cut it. Hardcore data analysis is one of them, so make functions to shove org files (specifically archive files) into a sql database
+Because =org-mode= has rich metadata (clocking, logbook, tags, etc) and a robust long-term storage mechanism (archive which can be git-backed), it is a powerful lens with which to study one's own behavior.
+
+Questions I am concerned with answering (non-exhaustive):
+- What time of day am I most productive? (can be measured using =CLOSED= timestamps)
+- How good am I at estimating how long projects will take (can be measured using clocks and the =Effort= property)
+- How well do I follow my habits? (measured with logbook entries and the =SCHEDULED= timestamp on the habit)
+  - Specifically, are there certain habits I tend to skip? If so, how long does it take before I start skipping them?
+  - One important habit I track is sleeping. How consistent am in terms of start of sleep and length of sleep?
+- How many tasks do I write down and then forget about? (use task creation time and tags/category/properties to classify into subgroups)
+  - As an inverse corollary to this, what characteristics do the tasks I end up doing in a timely manner have in common?
+- Which projects/life categories recieve most of my attention? (sum completed clocks and group by tag or project)
+  
+=org-mode= itself has a few utilities and 3rd-party packages for answering these questions directly in emacs, but they are limited in that they often only look at an isolated slice of all =org-mode= data within a limited time period (the agenda habit tracker for example, or column views in org buffers which can display clock summaries per project). I have data spanning years of time that I want to analyze comprehensively.
+
+=org-sql= is a package that can store org files in a SQL database, which which one can perform whatever analysis they want. Obviously this isn't done in Emacs and is quite complicated, but the advantage of using a system like this is that SQL itself is meant purely to be a data language and many analysis tools understand it.
+
+I personally store my data in a postgreSQL database. For analysis and visualization I use a combination of [[https://github.com/metabase/metabase][Metabase]] (which is automatically awesome because it's written in Clojure) and R scripts.
 #+BEGIN_SRC emacs-lisp
 (use-package org-sql
   :straight t
@@ -2899,8 +2945,6 @@ Org mode is great and all, but in many cases, text files just won't cut it. Hard
         org-sql-files '("~/Org/.archive/"
                         "~/Org/general.org_archive"
                         "~/Org/general.org"
-                        "~/Org/test1.org_archive"
-                        "~/Org/test2.org_archive"
                         "~/Org/incubator.org"
                         "~/Org/projects/"
                         "~/Org/repeater.org_archive")))
