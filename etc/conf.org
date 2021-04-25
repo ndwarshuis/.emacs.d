@@ -71,13 +71,29 @@ This is my personal emacs config. It is quite massive. Please use the table of c
 ** for new users
 Feel free to take bits and pieces for your own configuration file. Like many things in emacs, the config file is quite self documenting; however, there are some useful ramblings that decribe why I made some design choices over others. As someone who learned from countless emacs configs of other experienced users, I thought it was extremely beneficial to see the thought process behind their workflow and code, and I hope my annotations pay that forward. Finally, please don't just blindly copy this config into your =~/.emacs.d=. I don't care if you do, but you will learn more if you build from scratch.
 ** config structure
-The "config file" is actually two files. 
-
+The "config file" is actually multiple files. 
+*** init.el
 The "root" is =init.el= which is the file explicitly loaded by emacs. Most users have their entire config in this file but I put most of my actuall settings in another file as explained in the next paragraph. Here =init.el= has minimum functionality, including setting the repositories, configuring =use-package= (which installs all other packages and ensures they are available, useful if I move this elsewhere), and load paths for other config file.
+*** conf.org/conf.el
+Once loaded, the =init.el= pulls in another file called =conf.el= with the function =org-babel-load-file=. =conf.el= is actually sourced from an [[https://en.wikipedia.org/wiki/Org-mode][org-mode]] file called =conf.org= (this file).
 
-Once loaded, the =init.el= pulls in another file called =conf.el= with the function =org-babel-load-file=. =conf.el= is actually sourced from an [[https://en.wikipedia.org/wiki/Org-mode][org]] file called =conf.org=.
+Using an org file like this offers several advantages:
+1. org files are foldable in emacs which makes navigation easy.
+2. org files allow code snippets (the bit that actually go into =conf.el=) which allows for explanatory prose to be written around them, making documentation easy and clear.
+3. =org-mode= has an automatic table of contents through the =toc-org= package, which makes naviagation even easier.
+4. github itself is awesome enough to recognize org files as valid markdown and will render all the text, code snippets, headers, and table of contents in the nice html that you are reading now if on github.
 
-Using an org file like this offers several advantages. First, org files are foldable in emacs which makes navigation easy. Second, they allow code snippets (the bit that actually go into =conf.el=) which allows for explanatory prose to be written around them, making documentation easy and clear. Third, =org-mode= has an automatic table of contents through the =toc-org= package, which makes naviagation even easier. Fourth, github itself is awesome enough to recognize org files as valid markdown and will render all the text, code snippets, headers, and table of contents in the nice html that you are reading now if on github. The result is a nearly self-documenting, self-organizing configuration that is easy to maintain and also easy to view for other users. Using the =init.el= itself would just have plain eLisp, which gets cluttered quickly. Some people break the =init.el= down into multiple files to keep everything sane, but I personally think it is easier to use one giant file that itself can be folded and abstracted to reduce the clutter.
+The result is a nearly self-documenting, self-organizing configuration that is easy to maintain and also easy to view for other users.
+*** personal modules
+=conf.el= in turn also loads "personal modules" located in =local/lib=. These modules are effectively packages that I use only for myself (and may submit to an offcial repo if I clean them up and deem them general enough for more than just me).
+
+In general, code from =conf.org= is moved into a module for any of several reasons:
+1. They represent large sections of code that have a small public API (perhaps one interactive function that in turn calls 20 supporting functions).
+2. They are worth testing independently 
+3. They are worth byte-compiling independently (for speed and/or compile-time checks)
+   1. In my experience =init.el= and =conf.el= aren't worth byte compiling because there are often many false-flag errors and scoping errors due to the order of loading certain components
+4. The code might become an official package in the future
+5. The code is executed inside some toplevel macro and I don't feel like indenting hundreds of lines
 ** continuous integration
 In the root of this directory is a =.github= folder with some simple tests to ensure this config is 'valid'. I'm experimenting with this and it may not turn out to be worth it, but the main reason these exist is that I would like to ensure I can transfer my emacs config to another system and have it work with no problems.
 
@@ -1128,7 +1144,7 @@ I have also found this to be much simpler and conflicting with other packages su
 :PROPERTIES:
 :ID:       004cd31c-efe1-47e1-9ded-b7fc375d2ee3
 :END:
-This is an additional syntax checker and requires the =hlint= binary (install through stack).
+This is an additional syntax checker and requires the =hlint= binary.
 #+BEGIN_SRC emacs-lisp
 (nd/when-bin "hlint"
   :aur "hlint-bin"
@@ -3005,6 +3021,7 @@ For some reason there is no default way to get a "print prompt." Instead one nee
 :END:
 Only supports tar.gz, tar.bz2, tar.xz, and .zip by default. Add support for more fun algos such as lzo and zpaq
 #+BEGIN_SRC emacs-lisp
+;; TODO use when-bin
 (if (file-exists-p "/usr/bin/7z")
     (add-to-list 'dired-compress-files-alist
                     '("\\.7z\\'" . "7z a %o %i")))
@@ -3412,10 +3429,14 @@ Everyone forgets keybindings. When typing a key chord, this will display a windo
 :PROPERTIES:
 :ID:       13437ca2-ef6a-40a4-b528-85ea019cceb1
 :END:
-#+BEGIN_SRC emacs-lisp
+Hydra allows commands to be arranged on a set of keybindings like a tree.
+#+begin_src emacs-lisp
 (use-package hydra
   :straight t)
-
+#+end_src
+*** common interfaces
+Many programming modes have a common set of commands (compiling, sending to repl, looking up function doc, etc). Rather than memorize a bunch of esoteric keybindings from each individual mode, define a common interface here and map those functions to a common set of keys.
+#+BEGIN_SRC emacs-lisp
 (defvar nd/hydra-standard-interactive-map
   '(("M-i" :exit t)
     (:send-line "M-i")
@@ -3503,7 +3524,7 @@ with their corresponding body/head hydra keys."
                       ,keymap ,@cmds))
 #+END_SRC
 ** evil
-I like being evil. All package and custom bindings go here.
+I like being evil, which means I think vim is a good editor and emacs is a good operating system. All package and custom bindings go here.
 *** base
 :PROPERTIES:
 :ID:       07d06b91-fa97-41f5-8d12-ac0d1e86c988
