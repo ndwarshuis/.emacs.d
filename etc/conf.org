@@ -52,7 +52,6 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#mu4e][mu4e]]
   - [[#shell][shell]]
   - [[#ediff][ediff]]
-  - [[#mulitmedia-controls][mulitmedia controls]]
 - [[#keybindings][keybindings]]
   - [[#setup][setup]]
   - [[#whichkey][whichkey]]
@@ -3381,18 +3380,6 @@ Initialize by running =nd/mu-init=.
 #+BEGIN_SRC emacs-lisp
 (setq ediff-window-setup-function 'ediff-setup-windows-plain)
 #+END_SRC
-** mulitmedia controls
-:PROPERTIES:
-:ID:       46d2458c-5c6d-4487-b066-ecf250911fe3
-:END:
-This controls the music player daemon (MPD) which in my case is modidy with several backends (notably a subsonic client).
-#+BEGIN_SRC emacs-lisp
-(use-package mingus
-  :straight t
-  :config
-  (setq mingus-mpd-host "localhost"
-        mingus-mpd-port 6600))
-#+END_SRC
 * keybindings
 For the sake of my sanity, all bindings go here. Note this means I don't use =:bind= in use-package forms.
 ** setup
@@ -3728,23 +3715,6 @@ This is somewhat strange because all I really care about is moving between lines
   (kbd "M-k") #'outline-move-subtree-up ; requires outline magic
   (kbd "M-j") #'outline-move-subtree-down ; requires outline magic
   (kbd "M-RET") #'outline-insert-heading)
-#+END_SRC
-*** mingus
-:PROPERTIES:
-:ID:       d4c70a6b-db7f-4707-a694-d5b0b96fff2d
-:END:
-#+BEGIN_SRC emacs-lisp
-(evil-define-key '(visual normal) mingus-browse-map
-  (kbd "RET") #'mingus-down-dir-or-play-song
-  "^" #'mingus-open-parent
-  "s" #'mingus-search
-  "a" #'mingus-add-things-at-p)
-
-(evil-define-key '(visual normal) mingus-playlist-map
-  (kbd "RET") #'mingus-play
-  "m" #'mingus-mark
-  "D" #'mingus-del-marked
-  "U" #'mingus-unmark-all)
 #+END_SRC
 *** collection
 :PROPERTIES:
@@ -4218,22 +4188,6 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "<f8> s") #'swiper-thing-at-point)
 (global-set-key (kbd "<f8> o") #'counsel-org-goto-all)
 (global-set-key (kbd "<f8> f") #'flyspell-correct-at-point)
-
-(defhydra hydra-multimedia (global-map "<f10>" :exit t)
-  "convenient multimedia controls"
-  ("<f10>" mingus)
-  ("b" mingus-browse)
-  ("c" mingus-clear)
-  ("p" mingus-pause)
-  ("v" mingus-volume)
-  ("r" mingus-repeat)
-  ("s" mingus-stop)
-  ("-" mingus-vol-down :exit nil)
-  ("=" mingus-vol-up :exit nil)
-  ("]" mingus-seek :exit nil)
-  ("[" mingus-seek-backward :exit nil)
-  (">" mingus-next :exit nil)
-  ("<" mingus-prev :exit nil))
 
 (defhydra hydra-modes (global-map "<f11>" :exit t)
   "convenient mode toggles"
