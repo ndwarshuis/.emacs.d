@@ -107,49 +107,48 @@ The list is like (TYPE PACKAGE) where TYPE is a keyword and
 PACKAGE is string for the package name that should be
 installed. TYPE is one of :pacman, :aur, :stack, or :ignore")
 
-(defmacro nd/when-bin (bin &rest body)
-  "Execute BODY if the program BIN exists.
-Additionally, add BIN to a list of packages to `nd/required-exes'.
-If the first two members of BODY are a keyword and another form,
-add this to `nd/required-exes'. If these are not specified, BIN is
-added with TYPE :pacman."
+(defun nd/require-bin (bin &optional pkg-type pkg-name)
+  "Indicate that a binary executable is required.
+BIN is a string indicating the executable name. PKG-TYPE
+indicates how BIN must be installed (see `nd/required-exes' for
+available types). PKG-NAME indicates the package name to install
+which provides BIN, which defaults to BIN if not given."
+  (let* ((pt (or pkg-type :pacman))
+         (pn (or pkg-name bin))
+         (new (list :binary bin
+                    :pkg-type pt
+                    :pkg-name pn)))
+    (setq nd/required-exes (cons new nd/required-exes))))
+
+(defmacro nd/if-bin (bin then &rest else)
+  "Execute THEN if BIN exists, otherwise do ELSE."
   (declare (indent 1))
-  (-let* (((first . (second . rest)) body)
-          ((install-key body*) (if (keywordp first) `((,first ,second) ,rest)
-                                 `((:pacman ,bin) ,body))))
-    `(progn
-       (setq nd/required-exes (-union '(,install-key) nd/required-exes))
-       (if (executable-find ,bin) (progn ,@body)
-         (print (format "Executable %s not found. Skipping." ,bin))))))
+  (unless (member bin (--map (plist-get it :binary) nd/required-exes))
+    (message "WARNING: executable '%s' must be required" bin))
+  `(if (executable-find ,bin) ,then ,@else))
+
+(defmacro nd/when-bin (bin &rest body)
+  "Execute BODY if the program BIN exists."
+  (declare (indent 1))
+  `(nd/if-bin ,bin (progn ,@body)
+     (message "Executable %s not found. Skipping." ,bin)))
 
 (defun nd/verify-required-packages ()
   "Verify `nd/required-exes'.
-All packages should be specified once."
-  (->> (-map #'cadr nd/required-exes)
+All binaries should be specified once."
+  (->> (--map (plist-get it :binary) nd/required-exes)
        (-uniq)
        (length)
        (equal (length nd/required-exes))))
 
-(defun nd/get-pacman-dependencies ()
-  "Return list of all pacman dependencies."
+(defun nd/get-dependencies (keys)
+  "Return list of all dependencies.
+KEYS is a list of keywords that indicate the :pkg-type of
+dependencies to return."
   (->> nd/required-exes
-       (--filter (eq (car it) :pacman))
-       (-map #'cadr)))
-
-(defun nd/get-aur-dependencies (&optional include-pacman)
-  "Return list of all aur dependencies.
-If INCLUDE-PACMAN is t, include pacman packages as well."
-  (let ((keys (if include-pacman '(:aur :pacman) '(:aur))))
-    (->> nd/required-exes
-         (--filter (memq (car it) keys))
-         (-map #'cadr))))
-
-(defun nd/get-stack-dependencies ()
-  "Return list of all aur dependencies.
-If INCLUDE-PACMAN is t, include pacman packages as well."
-  (->> nd/required-exes
-       (--filter (eq (car it) :stack))
-       (-map #'cadr)))
+       (--filter (memq (plist-get it :pkg-type) keys))
+       (--map (plist-get it :pkg-name))
+       (-uniq)))
 #+end_src
 ** external
 Some useful external libraries that I use all over the place
@@ -864,8 +863,9 @@ Elisp can use vanilla company with no plugins
 #+END_SRC
 *** Clojure
 #+begin_src emacs-lisp
+(nd/require-bin "lein" :pacman "leiningen")
+
 (nd/when-bin "lein"
-  :pacman "leiningen"
   (use-package cider
     :straight t
     :hook ((cider-mode . company-mode))))
@@ -879,8 +879,11 @@ For me this means R but ess also supports S-plus, SAS, Stata, and other statisti
 Flycheck syntax checkers
 - r-lintr (install from CRAN)
 #+begin_src emacs-lisp
+(nd/require-bin "R" :pacman "r")
+(nd/require-bin "docker" :aur "docker-rootless-extras-bin")
+
 (nd/when-bin "R"
-  :pamcan "r"
+  ;; :pamcan "r"
   (use-package ess
     :straight t
     :init
@@ -913,7 +916,7 @@ Flycheck syntax checkers
   (advice-add #'run-ess-r :around #'nd/ess-r-start-env)
 
   (nd/when-bin "docker"
-    :aur "docker-rootless-extras-bin"
+    ;; :aur "docker-rootless-extras-bin"
     (defun nd/ess-r-setwd-maybe (orig-fun &rest args)
         (nd/with-advice
             ((#'ess-set-working-directory :override #'ignore))
@@ -940,7 +943,9 @@ Flycheck syntax checkers
                                  company-dabbrev-code
                                  company-irony)))
 
+
 ;; requires clang (duh)
+(nd/require-bin "clang")
 (nd/when-bin "clang"
   (use-package flycheck-clang-analyzer
     :straight t
@@ -949,6 +954,7 @@ Flycheck syntax checkers
     (flycheck-clang-analyzer-setup)))
 
 ;; requires cmake/llvm
+(nd/require-bin "cmake")
 (nd/when-bin "cmake"
   (use-package irony
     :straight t
@@ -980,15 +986,23 @@ I don't really use elpy, but it has really nice inferior process commands, so im
 (use-package elpy
   :straight t)
 #+END_SRC
-**** anaconda and ipython
+**** anaconda, ipython, and flycheck
 :PROPERTIES:
 :ID:       320b60fe-2082-4644-913b-f7c703c1642e
 :END:
 Anaconda (not related to the Python/R distribution?) is much lighter and easier than elpy. Also use ipython instead of the built-in shell. (Note this requires ipython to be installed externally).
+
+=Flycheck= has built in support for syntax checking and can be additionally enhanced by installing the following:
+- flake8
+- pylint
 #+BEGIN_SRC emacs-lisp
 (defun nd/init-anaconda-company ()
   "Set the company backends for anaconda mode."
   (setq-local company-backends '(company-anaconda)))
+
+(nd/require-bin "ipython")
+(nd/require-bin "flake8")
+(nd/require-bin "pylint")
 
 (use-package python
   :after flycheck
@@ -1018,18 +1032,15 @@ Anaconda (not related to the Python/R distribution?) is much lighter and easier 
   :straight t
   :after (python company anaconda))
 #+END_SRC
-**** syntax checking
-=Flycheck= has built in support for syntax checking and can be additionally enhanced by installing the following:
-- flake8
-- pylint
 **** formatting
 :PROPERTIES:
 :ID:       4ed019d1-fdce-4552-be1e-5644ebcacdb7
 :END:
 [[https://github.com/python/black][Black]] is a really nice syntax formatter. It must be externally installed to work.
 #+BEGIN_SRC emacs-lisp
+(nd/require-bin "black" :pacman "python-black")
+
 (nd/when-bin "black"
-  :pacman "python-black"
   (use-package blacken
     :straight t))
 #+END_SRC
@@ -1041,6 +1052,8 @@ For isolation I use [[https://github.com/pyenv/pyenv][pyenv]] and [[https://gith
 
 Note this also requires all external packages to be installed in each environement (eg ipython, black, flake8, and pylint).
 #+BEGIN_SRC emacs-lisp
+(nd/require-bin "pyenv")
+
 (nd/when-bin "pyenv"
   (use-package pyenv-mode
     :straight t
@@ -1062,8 +1075,9 @@ Note this also requires all external packages to be installed in each environeme
   "Set the company backends for robe mode."
   (setq-local company-backends '(company-robe)))
 
+(nd/require-bin "irb" :pacman "ruby-irb")
+
 (nd/when-bin "irb"
-  :pacman "ruby-irb"
   (use-package inf-ruby
     :straight t
     :hook (ruby-mode . inf-ruby-minor-mode))
@@ -1098,8 +1112,9 @@ Since most of these need GHCi to run properly, I added a hook to load haskell so
 
 I have also found this to be much simpler and conflicting with other packages such as =dante= and =intero= (and probably =haskell-ide-engine= and friends).
 #+BEGIN_SRC emacs-lisp
+(nd/require-bin "stack" :aur "stack-static")
+
 (nd/when-bin "stack"
-  :aur "stack-static"
   (defun nd/init-haskell-company ()
     "Set the company backends for haskell mode."
     (setq-local company-backends
@@ -1145,8 +1160,9 @@ I have also found this to be much simpler and conflicting with other packages su
 :END:
 This is an additional syntax checker and requires the =hlint= binary.
 #+BEGIN_SRC emacs-lisp
+(nd/require-bin "hlint" :aur "hlint-bin")
+
 (nd/when-bin "hlint"
-  :aur "hlint-bin"
   (with-eval-after-load 'haskell
     (flycheck-add-next-checker 'haskell-stack-ghc '(t . haskell-hlint))))
 #+END_SRC
@@ -1171,6 +1187,8 @@ Other helper functions that make haskell even more fun.
 :END:
 For flycheck, install =luacheck= (from AUR on Arch).
 #+BEGIN_SRC emacs-lisp
+(nd/require-bin "luacheck" :aur)
+
 (nd/when-bin "luacheck"
   (use-package lua-mode
     :straight t))
@@ -1321,6 +1339,8 @@ Together, =org-ref= and =ivy-bibtex= (also includes =ivy-bibtex=) provide a nice
 :END:
 For flycheck, install =tidy= (privides the =html-tidy= binary).
 #+BEGIN_SRC emacs-lisp
+(nd/require-bin "html-tidy" :pacman "tidy")
+
 (use-package impatient-mode
   :straight t
   :config
@@ -1332,6 +1352,8 @@ For flycheck, install =tidy= (privides the =html-tidy= binary).
 :END:
 Overlays hex color codes with matching colors in certain modes like css and html. For flycheck, install =stylelint= (from the AUR on Arch).
 #+BEGIN_SRC emacs-lisp
+(nd/require-bin "stylelint")
+
 (use-package rainbow-mode
   :straight t)
 #+END_SRC
@@ -1359,6 +1381,8 @@ An exception to the rule
 :ID:       af009285-2261-47b1-8bf1-01434b87dec0
 :END:
 #+BEGIN_SRC emacs-lisp
+(nd/require-bin "node" :pacman "nodejs")
+
 (nd/when-bin "node"
   ;; TODO nodejs-repl might be more complete if ESS/elpy behavior is desired
   (use-package js-comint
@@ -1449,23 +1473,24 @@ This adds support for csv files. Almost makes them editable like a spreadsheet. 
 :PROPERTIES:
 :ID:       8d8cf098-eea1-469b-9ada-1d2e709c6977
 :END:
-No custom code here, but flycheck needs =shellcheck= (a Haskell program). On Arch (or any other distro that loves dynamic binding) easiest way to install is via =stack install ShellCheck=
+No custom code here, but flycheck needs =shellcheck= (a Haskell program).
 #+BEGIN_SRC emacs-lisp
-(nd/when-bin "shellcheck"
-  :aur "shellcheck-bin")
+(nd/require-bin "shellcheck" :aur "shellcheck-bin")
 
 ;;(add-to-list 'load-path (nd/expand-local-pkg-directory "essh"))
 ;;(require 'essh)
 #+END_SRC
 *** SQL
-No custom code here, but flycheck needs =sqlint= (on Arch available through the AUR).
+No custom code here, but flycheck needs =sqlint= (a ruby gem).
+#+begin_src emacs-lisp
+(nd/require-bin "sqlint" :gem)
+#+end_src
 *** Docker
 :PROPERTIES:
 :ID:       ce24b075-ede6-4d6c-81db-4c6aa40e4fd0
 :END:
 #+BEGIN_SRC emacs-lisp
 (nd/when-bin "docker"
-  :aur "docker-rootless-extras-bin"
   (use-package dockerfile-mode
     :straight t))
 #+END_SRC
@@ -2984,27 +3009,31 @@ This really means "super awesome pomodoro implementation." =Tomato-mode= sounds 
 :END:
 For some reason there is no default way to get a "print prompt." Instead one needs to either install some third-party helper or make a function like this.
 #+BEGIN_SRC emacs-lisp
-(defun nd/find-printers ()
-  "Return a list of available printers on Unix systems."
-  (when (executable-find "lpstat")
+(nd/require-bin "lpstat" :pacman "cups")
+
+(nd/when-bin "lpstat"
+  (defun nd/find-printers ()
+    "Return a list of available printers on Unix systems."
     (with-temp-buffer
       (call-process "lpstat" nil t nil "-a")
       (->> (buffer-string)
-           (s-split "\n")
-           (-remove-item "")
-           (--map (car (s-split " " it)))))))
+        (s-split "\n")
+        (-remove-item "")
+        (--map (car (s-split " " it))))))
 
-(defun nd/ivy-set-printer-name ()
-  "Set the printer name using ivy-completion to select printer."
-  (interactive)
-  (let ((pl (nd/find-printers)))
-    (when pl (setq printer-name (ivy-read "Printer: " pl)))))
+  (defun nd/ivy-set-printer-name ()
+    "Set the printer name using ivy-completion to select printer."
+    (interactive)
+    (let ((pl (nd/find-printers)))
+      (when pl (setq printer-name (ivy-read "Printer: " pl))))))
 #+END_SRC
 ** magit
 :PROPERTIES:
 :ID:       67e11402-a9e5-4aae-8644-0e2c4f9ad2bc
 :END:
 #+BEGIN_SRC emacs-lisp
+(nd/require-bin "git")
+
 (nd/when-bin "git"
   (use-package magit
     :straight t
@@ -3059,8 +3088,9 @@ make sizes human readable
 :END:
 By default the included gnus-dired package does not understan mu4e, so override the existing =gnus-dired-mail-buffers= function to fix. This allows going to a dired buffer, marking files, and attaching them interactively to mu4e draft buffers.
 #+BEGIN_SRC emacs-lisp
+(nd/require-bin "mu" :aur)
+
 (nd/when-bin "mu"
-  :aur "mu"
   ;; from here:
   ;; https://www.djcbsoftware.nl/code/mu/mu4e/Dired.html#Dired
   (require 'gnus-dired)
@@ -3139,8 +3169,9 @@ The following will only be defined if the =mu= command is found (which it won't 
 
 Initialize by running =nd/mu-init=.
 #+BEGIN_SRC emacs-lisp
+(nd/require-bin "pandoc" :aur "pandoc-bin")
+
 (nd/when-bin "mu"
-  :aur "mu"
   (require 'mu4e)
 
   (use-package password-store
@@ -3285,7 +3316,7 @@ Initialize by running =nd/mu-init=.
             (html (and msg (plist-get msg :body-html)))
             ;; oops, mu4e screwed up
             (mu4e-html2text-command
-             (if (executable-find "pandoc")
+             (nd/if-bin "pandoc"
                  "pandoc -f html -t plain --reference-links"
                'mu4e-shr2text)))
        (when (and html mu4e-view-prefer-html (member mu4e-compose-type '(reply forward)))
@@ -3919,7 +3950,6 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
 **** cider
 #+begin_src emacs-lisp
 (nd/when-bin "lein"
-  :pacman "leiningen"
   (evil-define-key '(normal insert) cider-repl-mode-map
     (kbd "C-k") 'cider-repl-previous-input
     (kbd "C-j") 'cider-repl-next-input)
@@ -3997,7 +4027,6 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 ;;     (mu4e-view-open-attachment-emacs msg attnum)))
 
 (nd/when-bin "mu"
-  :aur "mu"
   (defun nd/insert-mu4e-signature-at-point ()
     (interactive)
     (insert mu4e-compose-signature))
@@ -4066,7 +4095,6 @@ They removed the underscore-inserts-arrow feature. Bring it back.
 *** clojure
 #+begin_src emacs-lisp
 (nd/when-bin "lein"
-  :pacman "leiningen"
   (require 'cider-connection)
 
   (defun nd/cider-switch-to-repl-or-start (&optional set-ns)
