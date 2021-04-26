@@ -668,7 +668,7 @@ property."
   (declare (indent 1))
   `(,op (cl-position ,sc1 ,sc-list) (cl-position ,sc2 ,sc-list)))
 
-(defmacro org-x--descend-into-project (statuscode-tree get-task-status callback-fun)
+(defmacro org-x--descend-into-project (statuscode-tree get-task-status callback-form)
   "Loop through (sub)project and return overall statuscode.
 
 The returned statuscode is chosen from list ALLOWED-STATUSCODES where
@@ -709,7 +709,7 @@ should be this function again)."
                   ;; If project returns an allowed status then use that.
                   ;; Otherwise look up the value in the translation table and
                   ;; return error if not found.
-                  (setq new-status (,callback-fun))
+                  (setq new-status ,callback-form)
                   (unless (member new-status ',allowed-statuscodes)
                     (setq new-status (alist-get new-status ',trans-tbl))))
               ;; if tasks then use get-task-status to obtain status
@@ -719,7 +719,7 @@ should be this function again)."
               (setq project-status new-status))))
          project-status))))
 
-(defun org-x-headline-get-project-status ()
+(defun org-x-headline-get-project-status (&optional kw)
   "Return project heading statuscode (assumes it is indeed a project)."
   ;;
   ;; these first three are easy because they only require
@@ -727,7 +727,7 @@ should be this function again)."
   ;;
   ;; it does not make sense for projects to be scheduled
   (if (org-x-headline-is-scheduled-p) :scheduled-project
-    (-when-let (keyword (org-get-todo-state))
+    (-when-let (keyword (or kw (org-get-todo-state)))
       (cond
        ;; held projects do not care what is underneath them
        ;; only need to test if they are inert
@@ -757,7 +757,7 @@ should be this function again)."
          (if (member it-kw org-x-done-keywords)
              (if (org-x-headline-is-archivable-p) 0 1)
            2)
-         org-x-headline-get-project-status))
+         (org-x-headline-get-project-status it-kw)))
        
        ;; project with TODO states could be basically any status
        ((equal keyword org-x-kw-todo)
@@ -775,7 +775,7 @@ should be this function again)."
           ((equal it-kw org-x-kw-wait) 3)
           ((equal it-kw org-x-kw-next) 5)
           (t 0))
-         org-x-headline-get-project-status))
+         (org-x-headline-get-project-status it-kw)))
        
        (t (error (concat "invalid keyword detected: " keyword)))))))
 
@@ -802,7 +802,7 @@ KW is the keyword of the parent."
      ((:empt)
       (:project-error :unscheduled :actv))
      (if (member it-kw org-x-done-keywords) 0 1)
-     org-x--clone-get-iterator-project-status))
+     (org-x--clone-get-iterator-project-status it-kw)))
    
    ;; project with TODO states could be basically any status
    ((equal kw org-x-kw-todo)
@@ -815,7 +815,7 @@ KW is the keyword of the parent."
         ((not ts) 0)
         ((> org-x-iterator-active-future-offset (- ts (float-time))) 1)
         (t 2)))
-     org-x--clone-get-iterator-project-status))
+     (org-x--clone-get-iterator-project-status it-kw)))
    
    (t (error (concat "invalid keyword detected: " kw)))))
 
@@ -1273,7 +1273,7 @@ and slow."
                                 (1-)
                                 (-)))
                  (headline*
-                  (->> (add-context headline)
+                  (->> (funcall add-context headline)
                     ;; close the headline (assume it isn't already)
                     (org-ml-set-property :todo-keyword org-x-kw-done)
                     (org-ml-headline-map-planning*

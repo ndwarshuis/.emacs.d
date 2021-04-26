@@ -1743,7 +1743,10 @@ My org config became so huge that I decided to move it all to a separate library
 
 The advantage of doing it this way is that I can byte-compile and test independent of the other messy things in the main config. Furthermore, I can use it as a testing ground for new packages if I deem some functionality useful enough for more than just me.
 #+begin_src emacs-lisp
-(add-to-list 'load-path (nd/expand-lib-directory "org-x"))
+(let ((dir (nd/expand-lib-directory "org-x")))
+  (add-to-list 'load-path dir)
+  (--each (directory-files dir t ".*\\.el$") (byte-recompile-file it nil 0)))
+
 (require 'org-x)
 #+end_src
 ** buffer interface
