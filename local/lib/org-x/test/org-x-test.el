@@ -23,6 +23,22 @@
 (require 'dash)
 (require 'org-x)
 
+(defmacro org-ml--with-org-env (&rest body)
+  "Execute BODY in a standardized Org-mode buffer."
+  `(let ((org-tags-column 20)
+         (org-todo-keywords
+          ;; shamelessly copies from me
+          '((sequence "TODO(t/!)" "NEXT(n/!)" "|" "DONE(d/!)")
+            (sequence "WAIT(w@/!)" "HOLD(h@/!)" "|" "CANC(c@/!)")))
+         (org-archive-tag "ARCHIVE")
+         (org-lowest-priority ?C)
+         (org-highest-priority ?A)
+         (org-list-allow-alphabetical nil)
+         (org-log-into-drawer "LOGBOOK"))
+     (with-temp-buffer
+       (org-mode)
+       ,@body)))
+
 (defun org-ts-to-unixtime (timestamp-string)
   "Convert TIMESTAMP-STRING to unixtime."
   (let ((decoded (org-parse-time-string timestamp-string)))
@@ -70,7 +86,6 @@ Forms are denoted like %(FORM)%."
                                                (s-join "\n")
                                                (org-x-test-parse-forms))
                                            result)))
-                          (print result*)
                           `(it ,title
                              (expect (org-ml--with-org-buffer ,buffer ,test)
                                      :to-equal

@@ -29,5 +29,13 @@ jobs:
 
     - name: Verify dependencies
       run: |
-        emacs -batch -l "~/.emacs.d/init.el" --eval '(assert (nd/verify-required-packages))'
+        emacs -batch -l ~/.emacs.d/init.el --eval '(assert (nd/verify-required-packages))'
+    
+    - name: Test org-x
+      run: >
+        emacs -batch
+        -l ~/.emacs.d/init.el
+        -l ~/.emacs.d/local/lib/org-x/test/org-x-test.el
+        -f buttercup-run
+        
 
