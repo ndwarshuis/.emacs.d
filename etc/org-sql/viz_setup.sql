@@ -4,6 +4,43 @@ as $$
   select ts::time at time zone 'US/Eastern';
 $$ language SQL;
 
+CREATE OR REPLACE FUNCTION histogram(tname text, cname text, width int)
+RETURNS TABLE(bin_number int, bin_interval text, count bigint)
+AS $func$
+BEGIN
+RETURN QUERY EXECUTE format('
+  with recursive
+    no_bins_t as (
+      select min(floor(a.%1$s/%2$s)*%2$s)::int as bin_number from %3$s a
+
+      union all
+
+      select bin_number + 1 as bin_number from no_bins_t
+      where
+        bin_number < (select max(floor(a.%1$s/%2$s)) + 1 from %3$s a)
+    )
+
+  select
+    bin_number,
+    concat(bin_number*%2$s, ''-'', bin_number*%2$s + %2$s - 1) as bin_interval,
+    case when count is null then 0 else count end as count
+    from no_bins_t
+    left join
+      (select
+        floor(a.%1$s/%2$s)*%2$s as ab_floor,
+        count(*) as count
+      from %3$s a
+      group by ab_floor
+      order by ab_floor) as binned
+    on no_bins_t.bin_number*%2$s=binned.ab_floor
+    order by no_bins_t.bin_number;',
+  cname,
+  width,
+  tname
+  );
+END
+$func$ LANGUAGE plpgsql;
+
 create or replace procedure make_vis_tables()
 language plpgsql
 as $$
