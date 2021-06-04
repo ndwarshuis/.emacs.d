@@ -1105,7 +1105,8 @@ timestamp in the contents of the headline will be shifted."
   (cl-labels
       ((shift-timestamps
         (offset unit subtree)
-        (if (org-ml-get-property :todo-keyword subtree)
+        (if (not (member (org-ml-get-property :todo-keyword subtree)
+                         (list org-x-kw-done org-x-kw-canc)))
             (org-ml-headline-map-planning*
               (-some->> it
                 (org-ml-map-property* :scheduled
