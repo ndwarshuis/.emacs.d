@@ -3763,7 +3763,7 @@ Most packages that don't have an evil version are in this one. Some don't behave
   (setq evil-collection-mode-list
         '(anaconda-mode arc-mode cider company comint custom debug edebug dired
                         doc-view ebib ediff elfeed flycheck ivy help magit
-                        minibuffer mu4e profiler term which-key)
+                        minibuffer mu4e profiler term which-key xref)
         evil-collection-setup-minibuffer t
         evil-collection-want-unimpaired-p nil)
   :config
