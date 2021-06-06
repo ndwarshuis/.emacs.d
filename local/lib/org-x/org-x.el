@@ -1105,23 +1105,27 @@ timestamp in the contents of the headline will be shifted."
   (cl-labels
       ((shift-timestamps
         (offset unit subtree)
-        (if (not (member (org-ml-get-property :todo-keyword subtree)
-                         org-x-done-keywords))
+        (let ((kw (org-ml-get-property :todo-keyword subtree)))
+          (cond
+           ((null kw)
+            (org-ml-headline-map-contents* (org-x-logbook-config)
+              ;; wrap in a section here because the matcher needs a single node
+              ;; and not a list
+              (->> (apply #'org-ml-build-section it)
+                (org-ml-match-map* org-x--first-active-ts-pattern
+                  (org-ml-timestamp-shift offset unit it))
+                (org-ml-get-children))
+              subtree))
+           ((member kw org-x-done-keywords)
+            subtree)
+           (t
             (org-ml-headline-map-planning*
               (-some->> it
                 (org-ml-map-property* :scheduled
                   (when it (org-ml-timestamp-shift offset unit it)))
                 (org-ml-map-property* :deadline
                   (when it (org-ml-timestamp-shift offset unit it))))
-              subtree)
-          (org-ml-headline-map-contents* (org-x-logbook-config)
-            ;; wrap in a section here because the matcher needs a single node
-            ;; and not a list
-            (->> (apply #'org-ml-build-section it)
-              (org-ml-match-map* org-x--first-active-ts-pattern
-                (org-ml-timestamp-shift offset unit it))
-              (org-ml-get-children))
-            subtree)))
+              subtree)))))
        (shift
         (offset unit subtree)
         (->> (shift-timestamps offset unit subtree)
