@@ -1,0 +1,18 @@
+#!/bin/bash
+
+## Install all dependencies for emacs to run at full capacity
+
+if emacs -batch -l "init.el"; then
+    IFS=' ' read -r -a emacs_pkgs \
+        < <(emacs -batch -l "init.el" --eval \
+            '(print (format "pkgs: %s" (s-join " " (nd/get-dependencies (list :pacman :aur)))))' \
+        2>/dev/null | \
+        sed -n -e 's/"pkgs: \(.*\)"/\1/p')
+    echo "Emacs requires the following system pkgs: ${emacs_pkgs[*]}"
+else
+    echo "Could not get list of emacs dependencies."
+    emacs_pkgs=()
+fi
+
+MAKEFLAGS="-j$(nproc)" \
+    yay --needed --noconfirm --norebuild --removemake -S "${emacs_pkgs[@]}"
