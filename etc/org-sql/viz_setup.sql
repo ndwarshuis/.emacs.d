@@ -16,22 +16,21 @@ RETURNS TABLE(bin_number int, bin_interval text)
 AS $func$
 BEGIN
 RETURN QUERY EXECUTE format('
-  with recursive
-    no_bins_t as (
-      select min(get_bin_num(%1$s,%2$s)) as bin_number from %3$s a
-
-      union all
-
-      select bin_number + 1 as bin_number from no_bins_t
-      where
-        bin_number < (select max(get_bin_num(%1$s,%2$s)) + 1 from %3$s a)
+  with 
+    bin_numbers as (
+      select
+      generate_series(
+        min(get_bin_num(%1$s,%2$s)), 
+        max(get_bin_num(%1$s,%2$s))
+      ) as bin_number
+      from %3$s
     )
 
   select
     bin_number,
     concat(bin_number*%2$s, ''-'', bin_number*%2$s + %2$s - 1) as bin_interval
-    from no_bins_t
-    order by no_bins_t.bin_number;',
+    from bin_numbers
+    order by bin_number;',
   cname,
   width,
   tname

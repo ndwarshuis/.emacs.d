@@ -2,6 +2,7 @@
 !.gitignore
 !README.org
 !init.el
+!install_deps
 
 # track versions of installed packages
 !straight
