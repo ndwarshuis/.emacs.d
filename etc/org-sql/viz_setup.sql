@@ -583,13 +583,13 @@ select
   left join _task_parent_mappings tm on tm.child_id = h.headline_id
   order by a.headline_id, a.closed_timestamp desc;
 
-
 drop table if exists viz.sleep_length;
 create table viz.sleep_length as
 with
   tmp as (
     select distinct
     to_localtime(clock_start) as time_start_clock,
+    to_localtime(scheduled_timestamp) as time_sched,
     clock_sum,
     clock_start,
     clock_end  
@@ -598,15 +598,18 @@ with
       headline_text = 'sleep')
   select distinct
     clock_start as sleep_timestamp,
+    time_sched as sleep_sched,
     clock_sum / 60.0 as sleep_hours,
     time_start_clock as sleep_start_clock,
     -- day of week that sleep starts; subtract 12 hours off timestamp to count
     -- bedtime after midnight as starting on the previous day
     extract(dow from (clock_start - (12||' hours')::interval) at time zone 'US/Eastern')
       as sleep_start_day,
-    -- offset from target bedtime start (assume target bedtime is 23:45)
     mod((extract(hour from time_start_clock) * 60
-		 + extract(minute from time_start_clock) + 15 + 720)::bigint,
+         - extract(hour from time_sched) * 60
+		 + extract(minute from time_start_clock)
+		 - extract(minute from time_sched)
+         + 720 * 3)::bigint,
 		1440) / 1440.0 * 24 - 12 as sleep_start_offset from tmp;
 
 drop table if exists viz.check_email_2;
