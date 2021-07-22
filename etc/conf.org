@@ -1315,7 +1315,7 @@ I like having my lines short and readable (also easier to git). Turn on autofill
 :PROPERTIES:
 :ID:       13b5981b-4f22-4565-97a7-933570009797
 :END:
-Together, =org-ref= and =ivy-bibtex= (also includes =ivy-bibtex=) provide a nice pipeline to search a BibTex database and insert citations.
+Together, =org-ref= and =ivy-bibtex= provide a nice pipeline to search a BibTex database and insert citations.
 #+BEGIN_SRC emacs-lisp
 (use-package org-ref
   :straight t
