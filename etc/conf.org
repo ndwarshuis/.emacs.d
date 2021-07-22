@@ -1331,7 +1331,9 @@ Together, =org-ref= and =ivy-bibtex= provide a nice pipeline to search a BibTex 
   :config
   (setq bibtex-completion-bibliography (expand-file-name "~/BibTeX/master.bib")
         bibtex-completion-library-path (expand-file-name "~/BibTeX/pdf")
-        bibtex-completion-pdf-field "File"))
+        bibtex-completion-pdf-field "File"
+        ;; I want to insert citations by default
+        ivy-bibtex-default-action 'ivy-bibtex-insert-citation))
 #+END_SRC
 *** HTML
 :PROPERTIES:
@@ -4224,6 +4226,7 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "C-S-<f4>") 'org-tomato-user-pomodoro-goto)
 (global-set-key (kbd "<f8> s") #'swiper-thing-at-point)
 (global-set-key (kbd "<f8> o") #'counsel-org-goto-all)
+(global-set-key (kbd "<f8> b") #'ivy-bibtex-with-local-bibliography)
 (global-set-key (kbd "<f8> f") #'flyspell-correct-at-point)
 
 (defhydra hydra-modes (global-map "<f11>" :exit t)
