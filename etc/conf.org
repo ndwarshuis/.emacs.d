@@ -1206,11 +1206,32 @@ Install auctex through emacs as this is OS independent and more automatic. Note 
   ((LaTeX-mode . flycheck-mode)
    (LaTeX-mode . flyspell-mode)
    (LaTeX-mode . fci-mode)
+   (LaTeX-mode . reftex-mode)
    ;; sync tex buffer positions to output pdf
    (LaTeX-mode . TeX-source-correlate-mode))
   :config
-  (setq TeX-after-compilation-finished-functions
-        '(TeX-revert-document-buffer)))
+  (turn-on-reftex)
+  (setq TeX-after-compilation-finished-functions '(TeX-revert-document-buffer)
+        reftex-plug-into-AUCTeX t
+        reftex-ref-style-default-list '("Cleveref" "Default")))
+
+;; add cleveref support
+(with-eval-after-load 'latex
+  (TeX-add-style-hook
+   "cleveref"
+   (lambda ()
+     (when (boundp 'reftex-ref-style-alist)
+       (add-to-list 'reftex-ref-style-alist
+                    '("Cleveref" "cleveref" (("\\cref" ?c)
+                                             ("\\Cref" ?C)
+                                             ("\\cpageref" ?d)
+                                             ("\\Cpageref" ?D)))))
+     (reftex-ref-style-activate "Cleveref")
+     (TeX-add-symbols
+      '("cref" TeX-arg-ref)
+      '("Cref" TeX-arg-ref)
+      '("cpageref" TeX-arg-ref)
+      '("Cpageref" TeX-arg-ref)))))
 #+END_SRC
 **** external viewers
 :PROPERTIES:
@@ -3765,7 +3786,7 @@ Most packages that don't have an evil version are in this one. Some don't behave
   (setq evil-collection-mode-list
         '(anaconda-mode arc-mode cider company comint custom debug edebug dired
                         doc-view ebib ediff elfeed flycheck ivy help magit
-                        minibuffer mu4e profiler term which-key xref)
+                        minibuffer mu4e profiler reftex term which-key xref)
         evil-collection-setup-minibuffer t
         evil-collection-want-unimpaired-p nil)
   :config
