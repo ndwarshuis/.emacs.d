@@ -3242,7 +3242,14 @@ Initialize by running =nd/mu-init=.
         mu4e-confirm-quit nil
         mu4e-compose-dont-reply-to-self t
         mu4e-get-mail-command "mbsync -a && mu-index-emacs-maybe"
-        mu4e-use-fancy-chars nil
+        mu4e-use-fancy-chars t
+
+        ;; sub some fancy chars that don't have valid codes
+        mu4e-headers-trashed-mark '("T" . "Ω")
+        mu4e-headers-unread-mark '("T" . "✉")
+        mu4e-headers-thread-root-prefix '("* " . "● ")
+        mu4e-headers-threaded-label '("T" . "Ψ")
+        mu4e-headers-related-label '("R" . "↔")
 
         ;; directories
         mu4e-attachment-dir "~/Downloads"
