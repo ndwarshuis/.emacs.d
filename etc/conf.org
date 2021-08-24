@@ -1861,6 +1861,74 @@ Make todo insertion respect contents
 #+BEGIN_SRC emacs-lisp
 (setq org-insert-heading-respect-content t)
 #+END_SRC
+*** flights
+:PROPERTIES:
+:CREATED:  [2021-08-24 Tue 11:56]
+:END:
+To remind myself to check into flights and stuff
+#+begin_src emacs-lisp
+(defun nd/org-insert-flight (arg)
+  "Insert a flight.
+
+Add a prefix ARG to add check in date."
+  (interactive "P")
+  (cl-flet*
+      ((try-until
+        (try-fun test-fun msg)
+        (let ((res))
+          (while (not (funcall test-fun (setq res (funcall try-fun))))
+            (message msg))
+          res))
+        (read-airport
+        (prompt)
+        (try-until (lambda () (read-from-minibuffer (format "%s: " prompt)))
+                   (lambda (r) (< 0 (length r)))
+                   "Enter a valid location (Ex. YYZ)"))
+       (read-date
+        (prompt)
+        (try-until (lambda () (float-time (org-read-date t t nil prompt)))
+                   (lambda (r) (or (not r) (< 0 (- r (float-time)))))
+                   "Enter a valid datetime in the future"))
+       (mk-flight-headline
+        (level loc1 loc2 flight-time)
+        (let ((contents (--> (org-ml-unixtime-to-time-long flight-time)
+                             (org-ml-build-timestamp! it :active t)
+                             (org-ml-build-paragraph it)
+                             (list it)))
+              (title (format "%s -> %s" loc1 loc2)))
+          (->> (org-ml-build-headline! :level level
+                                       :title-text title
+                                       :tags (list org-x-tag-errand))
+               (org-x-element-headline-add-created nil)
+               (org-ml-headline-set-contents (org-x-logbook-config) contents))))
+       (mk-checkin-headline
+        (level loc flight-time)
+        (let* ((pl (--> (- flight-time (* 24 60 60))
+                        (org-ml-unixtime-to-time-long it)
+                        (org-ml-build-timestamp! it :active t)
+                        (org-ml-build-planning :scheduled it)))
+               (title (format "check into %s flight" loc)))
+          (->> (org-ml-build-headline! :level level
+                                       :title-text title
+                                       :todo-keyword org-x-kw-todo
+                                       :tags (list org-x-tag-laptop))
+               (org-x-element-headline-add-created nil)
+               (org-ml-headline-set-planning pl)
+               (org-ml-headline-set-node-property "Effort" "0:15")))))
+    (let ((t1 (read-date "Depart date"))
+          (t2 (read-date "Return date")))
+      (if (< t2 t1) (error "Return time must be after depart time")
+        (let* ((level (or (org-ml-get-property :level (org-ml-parse-this-headline)) 1))
+               (loc1 (read-airport "Depart location"))
+               (loc2 (read-airport "Arrive location"))
+               (fh1 (mk-flight-headline level loc1 loc2 t1))
+               (fh2 (mk-flight-headline level loc2 loc1 t2))
+               (ch1 (when (equal arg '(4)) (mk-checkin-headline level loc1 t1)))
+               (ch2 (when (equal arg '(4)) (mk-checkin-headline level loc2 t2))))
+          (->> (list ch1 fh1 ch2 fh2)
+           (-non-nil)
+           (org-ml-insert (1+ (org-end-of-subtree)))))))))
+#+end_src
 *** table of contents
 :PROPERTIES:
 :ID:       77cd66b2-08b8-4c53-bdd3-4af3b9eade2e

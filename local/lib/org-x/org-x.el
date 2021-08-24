@@ -276,6 +276,17 @@ entire subtrees to save time and ignore tasks")
      (first-item-ut first-item-ut)
      (first-clock-ut first-clock-ut))))
 
+(defun org-x-element-headline-add-created (epoch-time headline)
+  "Add the CREATED property to HEADLINE.
+
+EPOCH-TIME is an integer/float for the created time. If nil, use
+the current time."
+  (let ((ts (->> (float-time)
+                 (org-ml-unixtime-to-time-long)
+                 (org-ml-build-timestamp!)
+                 (org-ml-to-string))))
+    (org-ml-headline-set-node-property org-x-prop-created ts headline)))
+
 ;;; STATEFUL BUFFER HEADLINE FUNCTIONS
 
 ;; All of these functions operate on the current headline
