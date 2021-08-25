@@ -4068,6 +4068,13 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
     "gj" #'lispy-down
     "gk" #'lispy-up))
 #+end_src
+**** mu4e
+#+begin_src emacs-lisp
+;; the old open attachment function broke in mu 1.6, fix it here
+(nd/when-bin "mu"
+  (evil-define-key '(normal) mu4e-view-mode-map
+    "p" 'mu4e-view-mime-part-action))
+#+end_src
 ** local
 These are for mode-specific bindings that can/should be outside of the evil maps above (there are not many, and these may be merged with their evil bretheren in the future).
 *** org-mode
