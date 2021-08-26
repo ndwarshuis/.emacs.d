@@ -1958,6 +1958,26 @@ Set org columns view to be more informative with clocksums and effort.
 
 (set-face-attribute 'org-column nil :background "#1e2023")
 #+END_SRC
+*** navigation
+:PROPERTIES:
+:CREATED:  [2021-08-26 Thu 11:21]
+:END:
+Some common functions that I use often that don't seem to exist
+#+begin_src emacs-lisp
+(defun nd/org-goto-last-child-headline ()
+  "Go to the last child headline under the current headline."
+  (interactive)
+  (-if-let (level (-some->> (org-ml-parse-this-headline)
+                    (org-ml-get-property :level)
+                    (1+)))
+      (progn
+        (org-show-children)
+        (org-end-of-subtree)
+        (org-back-to-heading)
+        (while (< level (org-current-level))
+          (org-up-heading-safe)))
+    (message "Not on a headline")))
+#+end_src
 ** calfw
 :PROPERTIES:
 :ID:       57d3105c-eab1-4784-ab27-cf63e6c56b05
@@ -3801,6 +3821,10 @@ Some of these commands just get in the way of being evil (which really means tha
   :config
   (add-hook 'org-mode-hook 'evil-org-mode)
   (add-hook 'evil-org-mode-hook 'evil-org-set-key-theme)
+
+
+  (evil-define-key 'normal org-mode-map
+    "g]" #'nd/org-goto-last-child-headline)
 
   (require 'evil-org-agenda)
   (evil-org-agenda-set-keys)
