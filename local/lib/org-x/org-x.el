@@ -281,7 +281,7 @@ entire subtrees to save time and ignore tasks")
 
 EPOCH-TIME is an integer/float for the created time. If nil, use
 the current time."
-  (let ((ts (->> (float-time)
+  (let ((ts (->> (or epoch-time (float-time))
                  (org-ml-unixtime-to-time-long)
                  (org-ml-build-timestamp!)
                  (org-ml-to-string))))
