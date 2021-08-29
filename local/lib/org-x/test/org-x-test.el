@@ -238,9 +238,12 @@ Forms are denoted like %(FORM)%."
    "CLOSED: %(org-x-gen-ts (- (* (1+ org-x-archive-delay) 24 60 60)))%")
   => :archivable
 
+  ;; the bold thingy should make this choke unless we specifically detect stars
+  ;; with a space after them
   "done-incomplete (subtask TODO)"
   ("* DONE project"
    "CLOSED: %(org-x-gen-ts (- (* (1+ org-x-archive-delay) 24 60 60)))%"
+   "*bold thingy*"
    "** TODO task 1")
   => :done-incomplete
 

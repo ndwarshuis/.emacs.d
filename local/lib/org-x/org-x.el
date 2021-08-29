@@ -293,11 +293,16 @@ the current time."
 
 ;; helper function
 
+(defun org-x--forward-stars ()
+  "Move point forward until a star is not encountered."
+  (forward-char 1)
+  (while (= ?* (following-char))
+    (forward-char 1)))
+
 (defun org-x--headline-get-level ()
   "Return level of the current headline.
 Assumes point is at the start of a headline."
   (save-excursion
-    (forward-char 1)
     (while (= ?* (following-char)) (forward-char 1))
     (current-column)))
 
@@ -328,9 +333,11 @@ to the children one level down from the current headline."
                    (<= target-level cur-level)
                    (= 0 (forward-line 1)))
          (when (= ?* (following-char))
-           (setq cur-level (org-x--headline-get-level))
-           (when (= cur-level target-level)
-             ,@body))))))
+           (org-x--forward-stars)
+           (when (= 32 (following-char))
+             (setq cur-level (current-column))
+             (when (= cur-level target-level)
+               ,@body)))))))
 
 (defun org-x--headline-has-children (test-fun)
   "Return t if heading has a child for whom TEST-FUN is t.
