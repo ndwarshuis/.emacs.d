@@ -1066,6 +1066,11 @@ Note this also requires all external packages to be installed in each environeme
   ;; strange errors when activating a symlinked env
   (advice-add #'pyenv-mode-full-path :filter-return #'file-truename))
 #+END_SRC
+*** Snakemake
+#+begin_src emacs-lisp
+(use-package snakemake-mode
+  :straight t)
+#+end_src
 *** Ruby
 :PROPERTIES:
 :ID:       bd1723ec-daec-4c45-82c5-41430e9b02fc
