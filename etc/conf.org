@@ -2648,6 +2648,7 @@ The agenda files are limited to as few as possible to keep scanning and startup 
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-files '("~/Org"
                          "~/Org/projects"
+                         "~/Org/reference/meetings"
                          "~/Org/reference/peripheral.org"))
 #+END_SRC
 **** appearence
@@ -3061,6 +3062,22 @@ original function being advised and ARGS are the arguments."
           ,(nd/org-def-super-agenda-pred "Future Creation Timestamp"
              (org-x-headline-is-task-with-future-creation-timestamp-p))
           (:discard (:anything t))))))))
+
+   ("m"
+    "Past Meetings"
+    ((tags-todo
+      ,(nd/org-mk-match-string
+        - org-x-tag-refile
+        + org-x-tag-meeting)
+      ((org-agenda-overriding-header "Meetings")
+       (org-super-agenda-groups
+        ',(nd/org-def-super-agenda-automap
+            (-when-let (ts (org-x--headline-get-property-epoch-time "SCHEDULED"))
+              (cond
+               ((< (float-time) ts)
+                "1. Future Meetings")
+               ((< (- (float-time) 10368000) ts)
+                "2. Past Meetings (120 days)")))))))))
 
    ("A"
     "Archivable Tasks and Projects"

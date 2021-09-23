@@ -674,6 +674,14 @@ property."
          (org-x-headline-is-created-in-future)
          t)))
 
+(defun org-x-headline-is-task-meeting ()
+  "Return t if current headline is a meeting."
+  (-when-let (keyword (org-x-headline-is-task-p))
+    (and (not (member keyword org-x-done-keywords))
+         (org-x-headline-has-tag-p org-x-tag-meeting)
+         (org-x-headline-is-scheduled-p)
+         t)))
+
 ;; (defun org-x-is-todo-child (keyword)
 ;;   "Return t if current headline has a parent (at any level) with todo KEYWORD."
 ;;   (let ((has-keyword-parent))
