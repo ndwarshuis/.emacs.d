@@ -2351,6 +2351,9 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
 
         ;; catchall to mark important headings, usually for meetings
         (,org-x-tag-flagged . ?f)
+
+        ;; a tag to make meetings suck less
+        (,org-x-tag-meeting . ?g)
         
         ;; life categories, used for gtd priorities
         (:startgroup)
@@ -2469,9 +2472,18 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
                     "DEADLINE: %(nd/org-timestamp-future 1)\n"
                     "%a\n"))
 
-          ;; for interruptions that produce useful reference material
+          ;; make meetings suck less
+          ;; TODO use constants for the drawer names
           ("m" "meeting" entry (file ,capfile)
-           "* meeting with%?\t:%(eval org-x-tag-note):\n")
+           ,(concat "* TODO%?\t:%(eval org-x-tag-meeting):\n"
+                    "SCHEDULED: %^t\n"
+                    ":AGENDA_ITEMS:\n"
+                    ":END:\n"
+                    ":ACTION_ITEMS:\n"
+                    ":END:\n"
+                    "attendees:\n\n"
+                    "location:\n\n"
+                    "notes:"))
 
           ;; for capturing web pages with web browser
           ("p" "org-protocol" entry (file ,capfile)

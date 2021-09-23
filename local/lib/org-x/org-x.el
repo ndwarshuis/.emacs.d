@@ -125,6 +125,10 @@
   (org-x-prepend-char org-x-tag-misc-prefix "flag")
   "Tag denoting a flagged task.")
 
+(defconst org-x-tag-meeting
+  (org-x-prepend-char org-x-tag-misc-prefix "meeting")
+  "Tag denoting a meeting.")
+
 (defconst org-x-tag-environmental
   (org-x-prepend-char org-x-tag-category-prefix "env")
   "Tag denoting an environmental life category.")
