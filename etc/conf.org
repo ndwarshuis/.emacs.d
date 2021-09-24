@@ -3061,6 +3061,12 @@ original function being advised and ARGS are the arguments."
              (org-x-headline-is-iterator-without-archive-target-p))
           ,(nd/org-def-super-agenda-pred "Future Creation Timestamp"
              (org-x-headline-is-task-with-future-creation-timestamp-p))
+          ,(nd/org-def-super-agenda-pred "Unscheduled Meetings"
+             (org-x-headline-is-unscheduled-meeting-p))
+          ,(nd/org-def-super-agenda-pred "Meeting without Effort"
+             (org-x-headline-is-meeting-without-effort-p))
+          ,(nd/org-def-super-agenda-pred "Meeting without Agenda"
+             (org-x-headline-is-meeting-without-agenda-p))
           (:discard (:anything t))))))))
 
    ("m"
@@ -3070,6 +3076,7 @@ original function being advised and ARGS are the arguments."
         - org-x-tag-refile
         + org-x-tag-meeting)
       ((org-agenda-overriding-header "Meetings")
+       (org-agenda-sorting-strategy '(time-up scheduled-down))
        (org-super-agenda-groups
         ',(nd/org-def-super-agenda-automap
             (-when-let (ts (org-x--headline-get-property-epoch-time "SCHEDULED"))

@@ -674,12 +674,55 @@ property."
          (org-x-headline-is-created-in-future)
          t)))
 
-(defun org-x-headline-is-task-meeting ()
+(defun org-x-headline-is-meeting-p ()
   "Return t if current headline is a meeting."
   (-when-let (keyword (org-x-headline-is-task-p))
     (and (not (member keyword org-x-done-keywords))
          (org-x-headline-has-tag-p org-x-tag-meeting)
-         (org-x-headline-is-scheduled-p)
+         t)))
+
+(defun org-x-headline-is-unscheduled-meeting-p ()
+  "Return t if current headline is an unscheduled meeting."
+  (-when-let (keyword (org-x-headline-is-task-p))
+    (and (not (member keyword org-x-done-keywords))
+         (org-x-headline-has-tag-p org-x-tag-meeting)
+         (not (org-x-headline-is-scheduled-p))
+         t)))
+
+(defun org-x-headline-is-meeting-without-effort-p ()
+  "Return t if current headline is a meeting with no effort property."
+  (-when-let (keyword (org-x-headline-is-task-p))
+    (and (not (member keyword org-x-done-keywords))
+         (org-x-headline-has-tag-p org-x-tag-meeting)
+         (not (org-entry-get nil "Effort" nil))
+         t)))
+
+(defun org-x-headline-get-meeting-agenda-items ()
+  "Return the agenda items for the current headline.
+If none are present, return nil. If \"NA\" is present, return
+'none'. Agenda items are in the 'AGENDA_ITEMS' drawer and should
+actually be items (that is part of a plain-list node)"
+  (-when-let (n (-some->> (org-ml-parse-this-headline)
+                  (org-ml-headline-get-section)
+                  (--find (and (org-ml-is-type 'drawer it)
+                               (equal (org-ml-get-property :drawer-name it)
+                                      "AGENDA_ITEMS")))
+                  (org-ml-get-children)
+                  (car)))
+    (let ((y (org-ml-get-type n)))
+      (cond
+       ((eq y 'plain-list)
+        (org-ml-get-children n))
+       ((and (eq y 'paragraph)
+             (equal "NA" (s-trim (car (org-ml-get-children n)))))
+        'none)))))
+
+(defun org-x-headline-is-meeting-without-agenda-p ()
+  "Return t if current headline is a meeting with no agenda."
+  (-when-let (keyword (org-x-headline-is-task-p))
+    (and (not (member keyword org-x-done-keywords))
+         (org-x-headline-has-tag-p org-x-tag-meeting)
+         (not (org-x-headline-get-meeting-agenda-items))
          t)))
 
 ;; (defun org-x-is-todo-child (keyword)
