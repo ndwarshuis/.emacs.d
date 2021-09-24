@@ -990,7 +990,7 @@ I don't really use elpy, but it has really nice inferior process commands, so im
 :PROPERTIES:
 :ID:       320b60fe-2082-4644-913b-f7c703c1642e
 :END:
-Anaconda (not related to the Python/R distribution?) is much lighter and easier than elpy. Also use ipython instead of the built-in shell. (Note this requires ipython to be installed externally).
+Anaconda is much lighter and easier than elpy. Also use ipython instead of the built-in shell. (Note this requires ipython to be installed externally).
 
 =Flycheck= has built in support for syntax checking and can be additionally enhanced by installing the following:
 - flake8
@@ -1066,6 +1066,21 @@ Note this also requires all external packages to be installed in each environeme
   ;; strange errors when activating a symlinked env
   (advice-add #'pyenv-mode-full-path :filter-return #'file-truename))
 #+END_SRC
+**** conda
+Conda is a package manager and virtual environment manager. It handles much more than just python-related things, a fact I will conveniently ignore because I don't know where I would put this otherwise.
+
+Also, this seems to have no relation to the =anaconda.el= package installed above.
+#+begin_src emacs-lisp
+(use-package conda
+  :straight t
+  :config
+  (setq
+   ;; assume conda is installed system-wide
+   conda-anaconda-home "/usr"
+   ;; this should reflect what is in condarc (which does not appear to be read
+   ;; by this package)
+   conda-env-home-directory (expand-file-name "~/.local/share/conda/")))
+#+end_src
 *** Snakemake
 #+begin_src emacs-lisp
 (use-package snakemake-mode
