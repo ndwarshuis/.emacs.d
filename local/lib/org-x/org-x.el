@@ -1224,6 +1224,13 @@ an empty checkbox."
   (interactive)
   (org-x--headline-meeting-add-link org-x-drwr-agenda nil))
 
+(defun org-x-id-store-link (arg &optional interactive)
+  "Make and ID for the current headline and store it in the org link ring.
+ARG and INTERACTIVE are passed to `org-store-link'."
+  (interactive "P\np")
+  (org-id-store-link)
+  (org-store-link arg interactive))
+
 ;; timestamp shifting
 
 (defun org-x--read-number-from-minibuffer (prompt &optional return-str)
