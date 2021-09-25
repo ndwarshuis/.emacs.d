@@ -59,6 +59,9 @@
 (defconst org-x-done-keywords `(,org-x-kw-done ,org-x-kw-canc)
   "Headline todo keywords that mark a task as 'complete'.")
 
+(defconst org-x-meeting-keywords (cons org-x-kw-todo org-x-done-keywords)
+  "Allowed keywords for meetings.")
+
 ;;; TAGS
 
 (defun org-x-prepend-char (char string)
@@ -184,6 +187,9 @@
 (defconst org-x-prop-time-shift "TIME_SHIFT"
   "Property denoting time shift when cloning iterator/periodical headlines.")
 
+(defconst org-x-prop-location "X-LOCATION"
+  "Property denoting location for meetings.")
+
 ;; TODO this is a WIP
 (defconst org-x-prop-thread "THREAD"
   "Property denoting an email thread to track.")
@@ -205,6 +211,14 @@
 
 (defconst org-x-prop-days-to-live "X-DAYS_TO_LIVE"
   "Property denoting after how many days a headline will expire.")
+
+;;; DRAWERS
+
+(defconst org-x-drwr-agenda "AGENDA_ITEMS"
+  "Drawer to hold agenda items in meetings.")
+
+(defconst org-x-drwr-action "ACTION_ITEMS"
+  "Drawer to hold action items in meetings.")
 
 ;;; PUBLIC VARS
 
@@ -667,56 +681,63 @@ property."
        (org-x-headline-has-property "ARCHIVE" nil)
        t))
 
+(defmacro org-x-headline-is-task-with-p (&rest body)
+  "Return t if all of BODY is t on the current headline.
+'it' is bound to the keyword (if any)."
+  (declare (indent 0))
+  `(-when-let (it (org-x-headline-is-task-p))
+    (and ,@body t)))
+
 (defun org-x-headline-is-task-with-future-creation-timestamp-p ()
   "Return t if current headline is undone task with missing creation timestamp."
-  (-when-let (keyword (org-x-headline-is-task-p))
-    (and (not (member keyword org-x-done-keywords))
-         (org-x-headline-is-created-in-future)
-         t)))
+  (org-x-headline-is-task-with-p
+    (not (member it org-x-done-keywords))
+    (org-x-headline-is-created-in-future)))
 
 (defun org-x-headline-is-meeting-p ()
   "Return t if current headline is a meeting."
-  (-when-let (keyword (org-x-headline-is-task-p))
-    (and (member keyword (cons org-x-kw-todo org-x-done-keywords))
-         (org-x-headline-has-tag-p org-x-tag-meeting)
-         t)))
+  (org-x-headline-is-task-with-p
+    (member it org-x-meeting-keywords)
+    (org-x-headline-has-tag-p org-x-tag-meeting)))
+
+(defun org-x-headline-is-open-unscheduled-meeting-p ()
+  "Return t if current headline is an unscheduled meeting."
+  (org-x-headline-is-task-with-p
+    (equal it org-x-kw-todo)
+    (org-x-headline-has-tag-p org-x-tag-meeting)
+    (not (org-x-headline-is-scheduled-p))))
 
 (defun org-x-headline-is-open-meeting-p ()
   "Return t if current headline is a meeting."
-  (-when-let (keyword (org-x-headline-is-task-p))
-    (and (equal keyword org-x-kw-todo)
-         (org-x-headline-has-tag-p org-x-tag-meeting)
-         t)))
+  (org-x-headline-is-task-with-p
+    (equal it org-x-kw-todo)
+    (org-x-headline-has-tag-p org-x-tag-meeting)))
 
-(defun org-x-headline-is-meeting-with-invalid-keyword-p ()
-  "Return t if current headline is a meeting."
-  (-when-let (keyword (org-x-headline-is-task-p))
-    (and (not (member keyword (cons org-x-kw-todo org-x-done-keywords)))
-         (org-x-headline-has-tag-p org-x-tag-meeting)
-         t)))
+(defun org-x-headline-is-open-meeting-without-effort-p ()
+  "Return t if current headline is a meeting with no effort property."
+  (org-x-headline-is-task-with-p
+    (equal it org-x-kw-todo)
+    (org-x-headline-has-tag-p org-x-tag-meeting)
+    (not (org-entry-get nil "Effort" nil))))
+
+(defun org-x-headline-is-open-meeting-without-location-p ()
+  "Return t if current headline is a meeting without a location."
+  (org-x-headline-is-task-with-p
+    (equal it org-x-kw-todo)
+    (org-x-headline-has-tag-p org-x-tag-meeting)
+    (not (org-entry-get nil org-x-prop-location t))))
+
+(defun org-x-headline-is-open-meeting-with-invalid-keyword-p ()
+  "Return t if current headline is a meeting with invalid keywords."
+  (org-x-headline-is-task-with-p
+    (not (member it org-x-meeting-keywords))
+    (org-x-headline-has-tag-p org-x-tag-meeting)))
 
 (defun org-x-headline-is-closed-meeting-p ()
-  "Return t if current headline is a meeting."
-  (-when-let (keyword (org-x-headline-is-task-p))
-    (and (member keyword org-x-done-keywords)
-         (org-x-headline-has-tag-p org-x-tag-meeting)
-         t)))
-
-(defun org-x-headline-is-unscheduled-meeting-p ()
-  "Return t if current headline is an unscheduled meeting."
-  (-when-let (keyword (org-x-headline-is-task-p))
-    (and (equal keyword org-x-kw-todo)
-         (org-x-headline-has-tag-p org-x-tag-meeting)
-         (not (org-x-headline-is-scheduled-p))
-         t)))
-
-(defun org-x-headline-is-meeting-without-effort-p ()
-  "Return t if current headline is a meeting with no effort property."
-  (-when-let (keyword (org-x-headline-is-task-p))
-    (and (not (member keyword org-x-done-keywords))
-         (org-x-headline-has-tag-p org-x-tag-meeting)
-         (not (org-entry-get nil "Effort" nil))
-         t)))
+  "Return t if current headline is a closed meeting."
+  (org-x-headline-is-task-with-p
+     (member it org-x-done-keywords)
+     (org-x-headline-has-tag-p org-x-tag-meeting)))
 
 (defun org-x-headline-get-meeting-drawer (drawer-name)
   "Return DRAWER-NAME under current headline.
@@ -737,13 +758,13 @@ list of nodes. If none of these conditions are true, return nil."
   "Return the agenda items for the current headline.
 See `org-x-headline-get-meeting-drawer' for rules on what is
 returned."
-  (org-x-headline-get-meeting-drawer "AGENDA_ITEMS"))
+  (org-x-headline-get-meeting-drawer org-x-drwr-agenda))
 
 (defun org-x-headline-get-meeting-action-items ()
   "Return the action items for the current headline.
 See `org-x-headline-get-meeting-drawer' for rules on what is
 returned."
-  (org-x-headline-get-meeting-drawer "ACTION_ITEMS"))
+  (org-x-headline-get-meeting-drawer org-x-drwr-action))
 
 (defun org-x-headline-get-meeting-unresolved-agenda-items ()
   "Return unresolved agenda items for current headline."
@@ -753,27 +774,24 @@ returned."
 
 (defun org-x-headline-is-open-meeting-without-agenda-p ()
   "Return t if current headline is a meeting with no agenda."
-  (-when-let (keyword (org-x-headline-is-task-p))
-    (and (not (member keyword org-x-done-keywords))
-         (org-x-headline-has-tag-p org-x-tag-meeting)
-         (not (org-x-headline-get-meeting-agenda-items))
-         t)))
+  (org-x-headline-is-task-with-p
+    (not (member it org-x-done-keywords))
+    (org-x-headline-has-tag-p org-x-tag-meeting)
+    (not (org-x-headline-get-meeting-agenda-items))))
 
 (defun org-x-headline-is-closed-meeting-without-action-items-p ()
   "Return t if current headline is a meeting with no action items."
-  (-when-let (keyword (org-x-headline-is-task-p))
-    (and (member keyword org-x-done-keywords)
-         (org-x-headline-has-tag-p org-x-tag-meeting)
-         (not (org-x-headline-get-meeting-action-items))
-         t)))
+  (org-x-headline-is-task-with-p
+    (member it org-x-done-keywords)
+    (org-x-headline-has-tag-p org-x-tag-meeting)
+    (not (org-x-headline-get-meeting-action-items))))
 
 (defun org-x-headline-is-closed-meeting-with-unresolved-agenda-p ()
   "Return t if current headline is a meeting with unresolved agenda items."
-  (-when-let (keyword (org-x-headline-is-task-p))
-    (and (member keyword org-x-done-keywords)
+  (org-x-headline-is-task-with-p
+    (and (member it org-x-done-keywords)
          (org-x-headline-has-tag-p org-x-tag-meeting)
-         (org-x-headline-get-meeting-unresolved-agenda-items)
-         t)))
+         (org-x-headline-get-meeting-unresolved-agenda-items))))
 
 ;; (defun org-x-is-todo-child (keyword)
 ;;   "Return t if current headline has a parent (at any level) with todo KEYWORD."
@@ -1199,12 +1217,12 @@ an empty checkbox."
 (defun org-x-headline-meeting-add-agenda-item ()
   "Add a link to headline in agenda items for current headline."
   (interactive)
-  (org-x--headline-meeting-add-link "AGENDA_ITEMS" t))
+  (org-x--headline-meeting-add-link org-x-drwr-agenda t))
 
 (defun org-x-headline-meeting-add-action-item ()
   "Add a link to headline in action items for current headline."
   (interactive)
-  (org-x--headline-meeting-add-link "ACTION_ITEMS" nil))
+  (org-x--headline-meeting-add-link org-x-drwr-agenda nil))
 
 ;; timestamp shifting
 

@@ -2440,6 +2440,7 @@ Also here are the properties for repeateders and routine types.
 (setq org-default-properties (->>  (list org-x-prop-parent-type
                                          org-x-prop-time-shift
                                          org-x-prop-thread
+                                         org-x-prop-location
                                          org-x-prop-routine
                                          org-x-prop-created
                                          org-x-prop-expire
@@ -2514,16 +2515,10 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
                     "%a\n"))
 
           ;; make meetings suck less
-          ;; TODO use constants for the drawer names
           ("m" "meeting" entry (file ,capfile)
            ,(concat "* TODO%?\t:%(eval org-x-tag-meeting):\n"
                     "SCHEDULED: %^t\n"
-                    ":AGENDA_ITEMS:\n"
-                    ":END:\n"
-                    ":ACTION_ITEMS:\n"
-                    ":END:\n"
                     "attendees:\n\n"
-                    "location:\n\n"
                     "notes:"))
 
           ;; for capturing web pages with web browser
@@ -3129,12 +3124,14 @@ original function being advised and ARGS are the arguments."
                     (-if-let (ts (org-x--headline-get-property-epoch-time "SCHEDULED"))
                         (< ts (- (float-time) 10368000))
                       nil))))
-          ,(nd/org-def-super-agenda-pred "Error: Unscheduled Meetings"
-             (org-x-headline-is-unscheduled-meeting-p))
-          ,(nd/org-def-super-agenda-pred "Error: Invalid States"
-             (org-x-headline-is-meeting-with-invalid-keyword-p))
+          ,(nd/org-def-super-agenda-pred "Open: Unscheduled Meetings"
+             (org-x-headline-is-open-unscheduled-meeting-p))
+          ,(nd/org-def-super-agenda-pred "Open: Invalid States"
+             (org-x-headline-is-open-meeting-with-invalid-keyword-p))
           ,(nd/org-def-super-agenda-pred "Open: Needs Agenda Items"
              (org-x-headline-is-open-meeting-without-agenda-p))
+          ,(nd/org-def-super-agenda-pred "Open: Missing Location"
+             (org-x-headline-is-open-meeting-without-location-p))
           ,(nd/org-def-super-agenda-pred "Open: Scheduled"
              (org-x-headline-is-open-meeting-p))
           ,(nd/org-def-super-agenda-pred "Closed: Unresolved Agenda"
