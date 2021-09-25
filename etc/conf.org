@@ -4224,6 +4224,7 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 
             ;; storing links is important, make a shortcut
             (local-set-key (kbd "C-c l") 'org-store-link)
+            (local-set-key (kbd "C-c L") 'org-x-id-store-link)
 
             ;; this is just a useful function I made (actually I think I stole)
             (local-set-key (kbd "C-c C-x x") 'org-x-mark-subtree-done)
