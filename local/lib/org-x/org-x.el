@@ -1156,11 +1156,12 @@ function will simply return the point of the next headline."
   (and (org-ml-is-type 'drawer node)
        (equal (org-ml-get-property :drawer-name node) name)))
 
-(defun org-x-headline-meeting-add-agenda-item ()
-  "Add a linked headline to the agenda items of the current headline.
+;; TODO try to make agenda come before action
+(defun org-x--headline-meeting-add-link (dname checkbox)
+  "Add a linked headline to drawer with DNAME under the current headline.
 Only ID links are considered. Headline must be a meeting (tagged
-with proper todo keywords)."
-  (interactive)
+with proper todo keywords). If CHECKBOX is non-nil, add item with
+an empty checkbox."
   (if (not (org-x-headline-is-meeting-p))
       (message "Not in a meeting headline")
     (-if-let (id-alist (->> org-stored-links
@@ -1173,12 +1174,10 @@ with proper todo keywords)."
                                (alist-get id-alist nil nil #'equal)))
                 (item* (->> (org-ml-build-link id desc)
                             (org-ml-build-paragraph)
-                            (org-ml-build-item :checkbox 'off))))
+                            (org-ml-build-item :checkbox (when checkbox 'off)))))
           (org-ml-update-this-headline*
             (org-ml-headline-map-contents* (org-x-logbook-config)
-              (-if-let (i (--find-index
-                           (org-x--is-drawer-with-name "AGENDA_ITEMS" it)
-                           it))
+              (-if-let (i (--find-index (org-x--is-drawer-with-name dname it) it))
                   (let ((drawer* (org-ml-map-children*
                                    (-let* (((all &as x . xs) it))
                                      (if (org-ml-is-type 'plain-list x)
@@ -1190,13 +1189,22 @@ with proper todo keywords)."
                                    (nth i it))))
                     (-replace-at i drawer* it))
                 (let ((drawer* (->> (org-ml-build-plain-list item*)
-                                    (org-ml-build-drawer
-                                     :drawer-name "AGENDA_ITEMS"))))
+                                    (org-ml-build-drawer dname))))
                   (cons drawer* it)))
               it))
           (setq org-stored-links (delq (assoc id org-stored-links)
                                        org-stored-links)))
       (message "No stored IDs to insert"))))
+
+(defun org-x-headline-meeting-add-agenda-item ()
+  "Add a link to headline in agenda items for current headline."
+  (interactive)
+  (org-x--headline-meeting-add-link "AGENDA_ITEMS" t))
+
+(defun org-x-headline-meeting-add-action-item ()
+  "Add a link to headline in action items for current headline."
+  (interactive)
+  (org-x--headline-meeting-add-link "ACTION_ITEMS" nil))
 
 ;; timestamp shifting
 
