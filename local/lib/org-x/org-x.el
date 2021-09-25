@@ -674,6 +674,13 @@ property."
          (org-x-headline-is-created-in-future)
          t)))
 
+(defun org-x-headline-is-meeting-p ()
+  "Return t if current headline is a meeting."
+  (-when-let (keyword (org-x-headline-is-task-p))
+    (and (member keyword (cons org-x-kw-todo org-x-done-keywords))
+         (org-x-headline-has-tag-p org-x-tag-meeting)
+         t)))
+
 (defun org-x-headline-is-open-meeting-p ()
   "Return t if current headline is a meeting."
   (-when-let (keyword (org-x-headline-is-task-p))
@@ -1141,6 +1148,55 @@ function will simply return the point of the next headline."
         (org-x-skip-heading))))))
 
 ;;; INTERACTIVE BUFFER FUNCTIONS
+
+;; meeting
+
+(defun org-x--is-drawer-with-name (name node)
+  "Return t is NODE is a drawer named NAME."
+  (and (org-ml-is-type 'drawer node)
+       (equal (org-ml-get-property :drawer-name node) name)))
+
+(defun org-x-headline-meeting-add-agenda-item ()
+  "Add a linked headline to the agenda items of the current headline.
+Only ID links are considered. Headline must be a meeting (tagged
+with proper todo keywords)."
+  (interactive)
+  (if (not (org-x-headline-is-meeting-p))
+      (message "Not in a meeting headline")
+    (-if-let (id-alist (->> org-stored-links
+                            (--map (cons (car it) (nth 1 it)))
+                            (--filter (s-prefix-p "id:" (car it)))
+                            (--map (cons (format "%s: %s" (cdr it) (car it))
+                                         (list (car it) (cdr it))))))
+        ;; ASSUME this will never return nil due to required read
+        (-let* (((id desc) (-> (completing-read "Link: " id-alist nil t)
+                               (alist-get id-alist nil nil #'equal)))
+                (item* (->> (org-ml-build-link id desc)
+                            (org-ml-build-paragraph)
+                            (org-ml-build-item :checkbox 'off))))
+          (org-ml-update-this-headline*
+            (org-ml-headline-map-contents* (org-x-logbook-config)
+              (-if-let (i (--find-index
+                           (org-x--is-drawer-with-name "AGENDA_ITEMS" it)
+                           it))
+                  (let ((drawer* (org-ml-map-children*
+                                   (-let* (((all &as x . xs) it))
+                                     (if (org-ml-is-type 'plain-list x)
+                                         (cons (org-ml-map-children*
+                                                 (-snoc it item*)
+                                                 x)
+                                               xs)
+                                       all))
+                                   (nth i it))))
+                    (-replace-at i drawer* it))
+                (let ((drawer* (->> (org-ml-build-plain-list item*)
+                                    (org-ml-build-drawer
+                                     :drawer-name "AGENDA_ITEMS"))))
+                  (cons drawer* it)))
+              it))
+          (setq org-stored-links (delq (assoc id org-stored-links)
+                                       org-stored-links)))
+      (message "No stored IDs to insert"))))
 
 ;; timestamp shifting
 
