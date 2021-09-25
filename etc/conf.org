@@ -100,6 +100,9 @@ The danger with only having emacs on my daily driver is that I could silently in
 * library
 This is code that is used generally throughout the emacs config
 ** system dependencies
+:PROPERTIES:
+:ID:       2dc12a82-cb0c-40f1-ab5a-46d2800e9e53
+:END:
 #+begin_src emacs-lisp
 (defvar nd/required-exes '()
   "Running list of executables required to run various configuations.
@@ -862,6 +865,9 @@ Elisp can use vanilla company with no plugins
   :straight t)
 #+END_SRC
 *** Clojure
+:PROPERTIES:
+:ID:       f1638eae-295f-4040-9d87-1e5d2457356a
+:END:
 #+begin_src emacs-lisp
 (nd/require-bin "lein" :pacman "leiningen")
 
@@ -1067,6 +1073,9 @@ Note this also requires all external packages to be installed in each environeme
   (advice-add #'pyenv-mode-full-path :filter-return #'file-truename))
 #+END_SRC
 **** conda
+:PROPERTIES:
+:ID:       0294d429-2bfa-4e38-aed0-55942b87d7cc
+:END:
 Conda is a package manager and virtual environment manager. It handles much more than just python-related things, a fact I will conveniently ignore because I don't know where I would put this otherwise.
 
 Also, this seems to have no relation to the =anaconda.el= package installed above.
@@ -1082,6 +1091,9 @@ Also, this seems to have no relation to the =anaconda.el= package installed abov
    conda-env-home-directory (expand-file-name "~/.local/share/conda/")))
 #+end_src
 *** Snakemake
+:PROPERTIES:
+:ID:       0d8c4a61-5657-4972-89ce-cabb336b1319
+:END:
 #+begin_src emacs-lisp
 (use-package snakemake-mode
   :straight t)
@@ -1524,6 +1536,9 @@ No custom code here, but flycheck needs =shellcheck= (a Haskell program).
 ;;(require 'essh)
 #+END_SRC
 *** SQL
+:PROPERTIES:
+:ID:       0c0e08e4-6b18-410c-adf3-51a086abfa96
+:END:
 No custom code here, but flycheck needs =sqlint= (a ruby gem).
 #+begin_src emacs-lisp
 (nd/require-bin "sqlint" :gem)
@@ -1538,6 +1553,9 @@ No custom code here, but flycheck needs =sqlint= (a ruby gem).
     :straight t))
 #+END_SRC
 *** AMPL
+:PROPERTIES:
+:ID:       014fef8e-b65e-47dc-874a-d4acb1683d5b
+:END:
 Code shamelessly ripped off from [[https://github.com/dpo/ampl-mode/blob/master/emacs/ampl-mode.el][here]]. It is not in MELPA and is short enough for me to just put in a block in my config.
 #+begin_src emacs-lisp
 (defvar ampl-mode-hook nil
@@ -1782,6 +1800,9 @@ Save all org buffers 1 minute before the hour.
   
 #+END_SRC
 *** personal library
+:PROPERTIES:
+:ID:       85234c55-a34d-43c3-93bc-e9499c368bb4
+:END:
 My org config became so huge that I decided to move it all to a separate library. Anything starting with =org-x-= is from this library.
 
 The advantage of doing it this way is that I can byte-compile and test independent of the other messy things in the main config. Furthermore, I can use it as a testing ground for new packages if I deem some functionality useful enough for more than just me.
@@ -1794,6 +1815,9 @@ The advantage of doing it this way is that I can byte-compile and test independe
 #+end_src
 ** buffer interface
 *** startup folding
+:PROPERTIES:
+:ID:       14eda4c9-8b4d-4c9e-99a6-6515897f3f3b
+:END:
 Org 9.4 by default makes files open with the outline totally unfolded. I don't like this; it makes it seem like my laptop is screaming at me whenever I view an org file.
 #+begin_src emacs-lisp
 (setq org-startup-folded t)
@@ -1884,6 +1908,7 @@ Make todo insertion respect contents
 *** flights
 :PROPERTIES:
 :CREATED:  [2021-08-24 Tue 11:56]
+:ID:       85e4dd36-0192-4ee3-b51e-95d101ef4fed
 :END:
 To remind myself to check into flights and stuff
 #+begin_src emacs-lisp
@@ -1981,6 +2006,7 @@ Set org columns view to be more informative with clocksums and effort.
 *** navigation
 :PROPERTIES:
 :CREATED:  [2021-08-26 Thu 11:21]
+:ID:       2c8e9989-3b21-45a1-962e-00557b258862
 :END:
 Some common functions that I use often that don't seem to exist
 #+begin_src emacs-lisp
@@ -2536,6 +2562,9 @@ In some capture templates I want to automatically store a link to the entry so I
                 (call-interactively #'org-store-link)))))
 #+END_SRC
 **** creation time
+:PROPERTIES:
+:ID:       9b40efc1-c47b-417c-ba7c-332972fb0541
+:END:
 Add the creation time upon completing a capture.
 #+begin_src emacs-lisp
 (add-hook 'org-capture-before-finalize-hook
@@ -2610,6 +2639,9 @@ Solution: flashy colors.
 (setq spaceline-highlight-face-func 'nd/spaceline-highlight-face-clocked)
 #+END_SRC
 *** aggregation
+:PROPERTIES:
+:ID:       c0ed520b-2da8-48c3-bef5-116372fab7b3
+:END:
 Org mode has no way of detecting if conflicts exist. It also has no way of alerting someone if they have overbooked their schedule.
 
 The main code is defined in =org-x= so the following is only to set some domain-specific options.
@@ -2646,6 +2678,9 @@ In these cases, it is nice to know what happened during each cycle, so force not
 (setq org-log-repeat 'note)
 #+END_SRC
 **** created time
+:PROPERTIES:
+:ID:       85335398-df60-4b4a-8903-7c6caff1d42e
+:END:
 Override the standard headline insertion function to add a timestamp for the time at which it was created.
 #+begin_src emacs-lisp
 (advice-add 'org-insert-heading :after
@@ -3076,16 +3111,12 @@ original function being advised and ARGS are the arguments."
              (org-x-headline-is-iterator-without-archive-target-p))
           ,(nd/org-def-super-agenda-pred "Future Creation Timestamp"
              (org-x-headline-is-task-with-future-creation-timestamp-p))
-          ,(nd/org-def-super-agenda-pred "Unscheduled Meetings"
-             (org-x-headline-is-unscheduled-meeting-p))
           ,(nd/org-def-super-agenda-pred "Meeting without Effort"
              (org-x-headline-is-meeting-without-effort-p))
-          ,(nd/org-def-super-agenda-pred "Meeting without Agenda"
-             (org-x-headline-is-meeting-without-agenda-p))
           (:discard (:anything t))))))))
 
    ("m"
-    "Past Meetings"
+    "Meetings"
     ((tags-todo
       ,(nd/org-mk-match-string
         - org-x-tag-refile
@@ -3093,13 +3124,26 @@ original function being advised and ARGS are the arguments."
       ((org-agenda-overriding-header "Meetings")
        (org-agenda-sorting-strategy '(time-up scheduled-down))
        (org-super-agenda-groups
-        ',(nd/org-def-super-agenda-automap
-            (-when-let (ts (org-x--headline-get-property-epoch-time "SCHEDULED"))
-              (cond
-               ((< (float-time) ts)
-                "1. Future Meetings")
-               ((< (- (float-time) 10368000) ts)
-                "2. Past Meetings (120 days)")))))))))
+        `((:discard
+           (:pred (lambda (_)
+                    (-if-let (ts (org-x--headline-get-property-epoch-time "SCHEDULED"))
+                        (< ts (- (float-time) 10368000))
+                      nil))))
+          ,(nd/org-def-super-agenda-pred "Error: Unscheduled Meetings"
+             (org-x-headline-is-unscheduled-meeting-p))
+          ,(nd/org-def-super-agenda-pred "Error: Invalid States"
+             (org-x-headline-is-meeting-with-invalid-keyword-p))
+          ,(nd/org-def-super-agenda-pred "Open: Needs Agenda Items"
+             (org-x-headline-is-open-meeting-without-agenda-p))
+          ,(nd/org-def-super-agenda-pred "Open: Scheduled"
+             (org-x-headline-is-open-meeting-p))
+          ,(nd/org-def-super-agenda-pred "Closed: Unresolved Agenda"
+             (org-x-headline-is-closed-meeting-with-unresolved-agenda-p))
+          ,(nd/org-def-super-agenda-pred "Closed: Needs Action Items"
+             (org-x-headline-is-closed-meeting-without-action-items-p))
+          ,(nd/org-def-super-agenda-pred "Closed: Resolved"
+             (org-x-headline-is-closed-meeting-p))
+          (:discard (:anything t))))))))
 
    ("A"
     "Archivable Tasks and Projects"
@@ -3120,6 +3164,7 @@ original function being advised and ARGS are the arguments."
 ** tracking and analytics
 :PROPERTIES:
 :CREATED:  [2021-04-25 Sun 12:46]
+:ID:       0b13360d-58ee-45f3-a03f-ca05d2ddd5a1
 :END:
 Because =org-mode= has rich metadata (clocking, logbook, tags, etc) and a robust long-term storage mechanism (archive which can be git-backed), it is a powerful lens with which to study one's own behavior.
 
@@ -3630,6 +3675,9 @@ Hydra allows commands to be arranged on a set of keybindings like a tree.
   :straight t)
 #+end_src
 *** common interfaces
+:PROPERTIES:
+:ID:       f5a7c5a3-b96e-46e0-9895-eb58a6f39b94
+:END:
 Many programming modes have a common set of commands (compiling, sending to repl, looking up function doc, etc). Rather than memorize a bunch of esoteric keybindings from each individual mode, define a common interface here and map those functions to a common set of keys.
 #+BEGIN_SRC emacs-lisp
 (defvar nd/hydra-standard-interactive-map
@@ -4131,6 +4179,9 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
   "G" #'ivy-end-of-buffer)
 #+end_src
 **** cider
+:PROPERTIES:
+:ID:       6b77d3df-f7ae-4ec8-8f13-4d2b43ce11fb
+:END:
 #+begin_src emacs-lisp
 (nd/when-bin "lein"
   (evil-define-key '(normal insert) cider-repl-mode-map
@@ -4150,6 +4201,9 @@ Since I use vi mode in my terminal emulator, need to preserve the escape key's r
     "gk" #'lispy-up))
 #+end_src
 **** mu4e
+:PROPERTIES:
+:ID:       7aa97eb9-84a5-4efb-86dc-249e1b5914ce
+:END:
 #+begin_src emacs-lisp
 ;; the old open attachment function broke in mu 1.6, fix it here
 (nd/when-bin "mu"
@@ -4288,6 +4342,9 @@ They removed the underscore-inserts-arrow feature. Bring it back.
 (define-key emacs-lisp-mode-map (kbd "M-RET") #'emr-show-refactor-menu)
 #+END_SRC
 *** clojure
+:PROPERTIES:
+:ID:       eb624852-2e59-455d-bfa6-c2f1cc79859e
+:END:
 #+begin_src emacs-lisp
 (nd/when-bin "lein"
   (require 'cider-connection)
@@ -4344,6 +4401,9 @@ The only thing I like about elpy is the interactive shell
   (:doc-at . anaconda-mode-show-doc))
 #+END_SRC
 *** javascript
+:PROPERTIES:
+:ID:       f6131de8-4068-413b-90e6-c8796abd6b88
+:END:
 #+begin_src emacs-lisp
 (nd/hydra-standard-int js-mode-map
  (:send-line . js-comint-send-last-sexp)
