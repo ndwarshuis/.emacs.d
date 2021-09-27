@@ -2562,7 +2562,7 @@ In some capture templates I want to automatically store a link to the entry so I
             (when (org-capture-get :x-autolink)
               (save-excursion
                 (org-back-to-heading)
-                (call-interactively #'org-store-link)))))
+                (call-interactively #'org-x-id-store-link)))))
 #+END_SRC
 **** creation time
 :PROPERTIES:
