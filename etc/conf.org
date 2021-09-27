@@ -1999,7 +1999,15 @@ Set org columns view to be more informative with clocksums and effort.
              "%TAGS"
              "%5Effort(EFFRT){:}"
              "%5CLOCKSUM(CLKSM){:}"
-             "%ALLOCATE(ALLOC)")))
+             "%ALLOCATE(ALLOC)"))
+      ;; this is really just meant for the meeting view but I can't figure
+      ;; out how to make it only apply to one agenda view
+      org-columns-default-format-for-agenda
+      (s-join
+       " "
+       (list "%25ITEM"
+             "%SCHEDULED(DATE)"
+             "%5Effort(EFF)")))
 
 (set-face-attribute 'org-column nil :background "#1e2023")
 #+END_SRC
