@@ -2979,7 +2979,7 @@ original function being advised and ARGS are the arguments."
                (org-back-to-heading t)
                (and (org-x-headline-is-deadlined-p)
                     (org-x-headline-is-project-p)))
-             :order 4)
+             :order 7)
           (:name "Deadlined Tasks" :order 5 :deadline t)
           (:name "Scheduled" :order 4 :scheduled t)))))))
 
