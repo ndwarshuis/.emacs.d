@@ -4276,7 +4276,9 @@ These are for mode-specific bindings that can/should be outside of the evil maps
             (local-set-key (kbd "C-c C-x C-b") 'org-x-agenda-toggle-checkbox)
             (local-set-key (kbd "C-c C-x C-r") 'org-x-agenda-clock-range)
             (local-set-key (kbd "C-x C-c C-x C-i") 'org-tomato-user-hl-agenda-clock-in)
-            (local-set-key (kbd "C-x C-c C-x C-o") 'org-tomato-user-hl-agenda-clock-out)))
+            (local-set-key (kbd "C-x C-c C-x C-o") 'org-tomato-user-hl-agenda-clock-out)
+            (local-set-key (kbd "C-x C-c m") 'org-x-agenda-meeting-add-agenda-item)
+            (local-set-key (kbd "C-x C-c M") 'org-x-agenda-meeting-add-action-item)))
 
 (setq org-super-agenda-header-map (make-sparse-keymap))
 (define-key org-super-agenda-header-map (kbd "<tab>") #'origami-toggle-node)
