@@ -2870,11 +2870,19 @@ The title will have the form 'LEVEL1.LEVEL2 STATUS (SUBTITLE)'."
                    (s-titleize))))
     (format "%s.%s %s (%s)" level1 level2 status* subtitle)))
 
+(defmacro nd/org-def-super-agenda-automap-with (pre post &rest body)
+  "Make super agenda auto-map form with BODY.
+PRE and POST are forms to add before and after the auto-map."
+  (declare (indent 0))
+  `(quote (,@pre
+           (:auto-map ,(nd/org-mk-super-agenda-pred body))
+           ,@post
+           (:discard (:anything t)))))
+
 (defmacro nd/org-def-super-agenda-automap (&rest body)
   "Make super agenda auto-map form with BODY."
   (declare (indent 0))
-  `(quote ((:auto-map ,(nd/org-mk-super-agenda-pred body))
-           (:discard (:anything t)))))
+  `(nd/org-def-super-agenda-automap-with nil nil ,@body))
 
 (defmacro nd/org-mk-match-string (&rest body)
   "Make an agenda match string from BODY."
@@ -2964,8 +2972,16 @@ original function being advised and ARGS are the arguments."
              :order 3)
           (:name "Calendar" :order 1 :time-grid t)
           (:name "Habits" :order 6 :habit t)
-          (:name "Deadlined" :order 4 :deadline t)
-          (:name "Scheduled" :order 5 :scheduled t)))))))
+          ,(nd/org-def-super-agenda-pred "Deadlined Projects"
+             (progn
+               ;; TODO IDK why this is needed, but the point starts on the
+               ;; deadline timestamp and then the project test fails
+               (org-back-to-heading t)
+               (and (org-x-headline-is-deadlined-p)
+                    (org-x-headline-is-project-p)))
+             :order 4)
+          (:name "Deadlined Tasks" :order 5 :deadline t)
+          (:name "Scheduled" :order 4 :scheduled t)))))))
 
    ;; Tasks - a view for all individual, non-repeated actions I need to do
    ;;
@@ -3107,7 +3123,7 @@ original function being advised and ARGS are the arguments."
           ,(nd/org-def-super-agenda-pred "Future Creation Timestamp"
              (org-x-headline-is-task-with-future-creation-timestamp-p))
           ,(nd/org-def-super-agenda-pred "Meeting without Effort"
-             (org-x-headline-is-meeting-without-effort-p))
+             (org-x-headline-is-open-meeting-without-effort-p))
           (:discard (:anything t))))))))
 
    ("m"
