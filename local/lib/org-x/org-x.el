@@ -1175,11 +1175,12 @@ function will simply return the point of the next headline."
        (equal (org-ml-get-property :drawer-name node) name)))
 
 ;; TODO try to make agenda come before action
-(defun org-x--headline-meeting-add-link (dname checkbox)
+(defun org-x--headline-meeting-add-link (dname checkbox name)
   "Add a linked headline to drawer with DNAME under the current headline.
 Only ID links are considered. Headline must be a meeting (tagged
 with proper todo keywords). If CHECKBOX is non-nil, add item with
-an empty checkbox."
+an empty checkbox. NAME is used as an extra identifier in the
+minibuffer."
   (if (not (org-x-headline-is-meeting-p))
       (message "Not in a meeting headline")
     (-if-let (id-alist (->> org-stored-links
@@ -1188,7 +1189,8 @@ an empty checkbox."
                             (--map (cons (format "%s: %s" (cdr it) (car it))
                                          (list (car it) (cdr it))))))
         ;; ASSUME this will never return nil due to required read
-        (-let* (((id desc) (-> (completing-read "Link: " id-alist nil t)
+        (-let* (((id desc) (-> (format "%s Link: " name)
+                               (completing-read id-alist nil t)
                                (alist-get id-alist nil nil #'equal)))
                 (item* (->> (org-ml-build-link id desc)
                             (org-ml-build-paragraph)
@@ -1217,12 +1219,12 @@ an empty checkbox."
 (defun org-x-headline-meeting-add-agenda-item ()
   "Add a link to headline in agenda items for current headline."
   (interactive)
-  (org-x--headline-meeting-add-link org-x-drwr-agenda t))
+  (org-x--headline-meeting-add-link org-x-drwr-agenda t "Agenda Item"))
 
 (defun org-x-headline-meeting-add-action-item ()
   "Add a link to headline in action items for current headline."
   (interactive)
-  (org-x--headline-meeting-add-link org-x-drwr-agenda nil))
+  (org-x--headline-meeting-add-link org-x-drwr-action nil "Action Item"))
 
 (defun org-x-id-store-link (arg &optional interactive)
   "Make and ID for the current headline and store it in the org link ring.
@@ -1650,6 +1652,20 @@ If BACK is t seek backward, else forward. Ignore blank lines."
     (setq org-agenda-tag-filter
           (mapcar (lambda (tag) (concat "-" tag)) peripheral-tags))
     (org-agenda-filter-apply org-agenda-tag-filter 'tag)))
+
+;; agenda meeting management
+
+(defun org-x-agenda-meeting-add-agenda-item ()
+  "Add item to current agenda headline."
+  (interactive)
+  (org-x-agenda-cmd-wrapper nil
+    (call-interactively #'org-x-headline-meeting-add-agenda-item)))
+
+(defun org-x-agenda-meeting-add-action-item ()
+  "Add item to current action headline."
+  (interactive)
+  (org-x-agenda-cmd-wrapper nil
+    (call-interactively #'org-x-headline-meeting-add-action-item)))
 
 ;; agenda property filtering
 
