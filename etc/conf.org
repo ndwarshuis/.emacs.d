@@ -3133,14 +3133,15 @@ original function being advised and ARGS are the arguments."
         - org-x-tag-refile
         + org-x-tag-meeting)
       ((org-agenda-overriding-header "Meetings")
+       ;; seems like this should be in the agenda groups, but works fine here
+       (org-agenda-skip-function
+        (lambda ()
+          (-when-let (ts (org-x--headline-get-property-epoch-time "SCHEDULED"))
+              (when (< ts (- (float-time) 10368000))
+                (org-x-skip-heading)))))
        (org-agenda-sorting-strategy '(time-up scheduled-down))
        (org-super-agenda-groups
-        `((:discard
-           (:pred (lambda (_)
-                    (-if-let (ts (org-x--headline-get-property-epoch-time "SCHEDULED"))
-                        (< ts (- (float-time) 10368000))
-                      nil))))
-          ,(nd/org-def-super-agenda-pred "Open: Unscheduled Meetings"
+        `(,(nd/org-def-super-agenda-pred "Open: Unscheduled Meetings"
              (org-x-headline-is-open-unscheduled-meeting-p))
           ,(nd/org-def-super-agenda-pred "Open: Invalid States"
              (org-x-headline-is-open-meeting-with-invalid-keyword-p))
