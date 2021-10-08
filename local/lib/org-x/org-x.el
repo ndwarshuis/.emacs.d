@@ -1233,6 +1233,41 @@ ARG and INTERACTIVE are passed to `org-store-link'."
   (org-id-store-link)
   (org-store-link arg interactive))
 
+;; meeting agenda
+
+(defun org-x--get-meeting-from-buffer ()
+  "Return meeting agenda items from the current buffer."
+  (cl-labels
+      ((has-meeting-tag
+        (headline)
+        (org-ml-headline-has-tag org-x-tag-meeting headline))
+       (has-parent-meeting
+        (headline)
+        (-when-let (p (org-ml-get-property :parent headline))
+          (or (has-meeting-tag p) (has-parent-meeting p))))
+       (is-task
+        (headline)
+        (when (org-ml-get-property :todo-keyword headline)
+          (->> (org-ml-headline-get-subheadlines headline)
+               (--any (org-ml-get-property :todo-keyword it))
+               (not))))
+       (is-meeting
+        (headline)
+          (and (is-task headline)
+               (or (has-meeting-tag headline)
+                   (has-parent-meeting headline)))))
+    (->> (org-ml-parse-headlines 'all)
+         (-filter #'is-meeting))))
+
+(defun org-x--meeting-get-agenda-items (headline)
+  "Return agenda items for HEADLINE."
+  (-let ((first (->> (org-ml-headline-get-contents (org-x-log-delete) headline)
+                     (--find (org-x--is-drawer-with-name org-x-drwr-agenda it))
+                     (org-ml-get-children)
+                     (car))))
+    (when (org-ml-is-type 'plain-list first)
+      (org-ml-get-children first))))
+
 ;; timestamp shifting
 
 (defun org-x--read-number-from-minibuffer (prompt &optional return-str)
