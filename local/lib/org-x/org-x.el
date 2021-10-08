@@ -1259,14 +1259,37 @@ ARG and INTERACTIVE are passed to `org-store-link'."
     (->> (org-ml-parse-headlines 'all)
          (-filter #'is-meeting))))
 
+(defun org-x--make-agenda-metaitem (is-closed ts item)
+  (list :meeting-closed-p is-closed
+        :meeting-time ts
+        :item-desc (org-ml-item-get-paragraph item)
+        :item-state (eq 'on (org-ml-get-property :checkbox item))))
+
 (defun org-x--meeting-get-agenda-items (headline)
   "Return agenda items for HEADLINE."
   (-let ((first (->> (org-ml-headline-get-contents (org-x-log-delete) headline)
                      (--find (org-x--is-drawer-with-name org-x-drwr-agenda it))
                      (org-ml-get-children)
-                     (car))))
+                     (car)))
+         (is-closed (and (member (org-ml-get-property :todo-keyword headline)
+                                 org-x-done-keywords)
+                         t))
+         (ts (-some->> (org-ml-headline-get-planning headline)
+               (org-ml-get-property :scheduled)
+               (org-ml-timestamp-get-start-time)
+               (org-ml-time-to-unixtime))))
     (when (org-ml-is-type 'plain-list first)
-      (org-ml-get-children first))))
+      (->> (org-ml-get-children first)
+           (--map (org-x--make-agenda-metaitem is-closed ts it))))))
+
+(defun org-x--metaitem-get-link-target (mi)
+  (-let (((&plist :item-desc) mi))
+    (-some->> (--find (org-ml-is-type 'link it) item-desc)
+      (org-ml-get-property :path))))
+
+(defun org-x--group-agenda-metaitems-by-link-target (mis)
+  (->> (-group-by #'org-x--metaitem-get-link-target mis)
+       (--remove (not (car it)))))
 
 ;; timestamp shifting
 
