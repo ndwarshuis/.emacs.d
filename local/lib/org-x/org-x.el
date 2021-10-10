@@ -1262,13 +1262,13 @@ ARG and INTERACTIVE are passed to `org-store-link'."
 (defun org-x--make-agenda-metaitem (headline is-closed ts item)
   (list :meeting-closed-p is-closed
         :meeting-timestamp ts
-        :meeting-node headline
+        :meeting-node (org-ml-remove-parents headline)
         :item-desc (org-ml-item-get-paragraph item)
         :item-closed (eq 'on (org-ml-get-property :checkbox item))))
 
 (defun org-x--meeting-get-agenda-items (headline)
   "Return agenda items for HEADLINE."
-  (-let ((first (->> (org-ml-headline-get-contents (org-x-log-delete) headline)
+  (-let ((first (->> (org-ml-headline-get-contents (org-x-logbook-config) headline)
                      (--find (org-x--is-drawer-with-name org-x-drwr-agenda it))
                      (org-ml-get-children)
                      (car)))
@@ -1311,6 +1311,23 @@ ARG and INTERACTIVE are passed to `org-store-link'."
   (->> (org-x--group-agenda-metaitems-by-link-target mis)
        (-map #'org-x--metaitems-are-unresolved)
        (-non-nil)))
+
+(defun org-x--id-parse-headline (id)
+  "Return the headline node for ID."
+  (save-excursion
+    (-let (((file . offset) (org-id-find id)))
+      (with-current-buffer (find-file-noselect file)
+        (goto-char offset)
+        (org-ml-parse-this-headline)))))
+
+(defun org-x--group-unresolved-links (ls)
+  "Return links and headlines plist LS grouped by headline offset."
+  (->> (--group-by (plist-get it :item-headline) ls)
+       (--map
+        (-let (((key . rest) it))
+          (->> rest
+               (--map (org-x--id-parse-headline (plist-get it :item-target)))
+               (cons key))))))
 
 ;; timestamp shifting
 
