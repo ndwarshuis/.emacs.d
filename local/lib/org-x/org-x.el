@@ -1235,7 +1235,7 @@ ARG and INTERACTIVE are passed to `org-store-link'."
 
 ;; meeting agenda
 
-(defun org-x--get-meeting-from-buffer ()
+(defun org-x--get-meetings-from-buffer ()
   "Return meeting agenda items from the current buffer."
   (cl-labels
       ((has-meeting-tag
@@ -1259,11 +1259,12 @@ ARG and INTERACTIVE are passed to `org-store-link'."
     (->> (org-ml-parse-headlines 'all)
          (-filter #'is-meeting))))
 
-(defun org-x--make-agenda-metaitem (is-closed ts item)
+(defun org-x--make-agenda-metaitem (headline is-closed ts item)
   (list :meeting-closed-p is-closed
-        :meeting-time ts
+        :meeting-timestamp ts
+        :meeting-node headline
         :item-desc (org-ml-item-get-paragraph item)
-        :item-state (eq 'on (org-ml-get-property :checkbox item))))
+        :item-closed (eq 'on (org-ml-get-property :checkbox item))))
 
 (defun org-x--meeting-get-agenda-items (headline)
   "Return agenda items for HEADLINE."
@@ -1280,7 +1281,7 @@ ARG and INTERACTIVE are passed to `org-store-link'."
                (org-ml-time-to-unixtime))))
     (when (org-ml-is-type 'plain-list first)
       (->> (org-ml-get-children first)
-           (--map (org-x--make-agenda-metaitem is-closed ts it))))))
+           (--map (org-x--make-agenda-metaitem headline is-closed ts it))))))
 
 (defun org-x--metaitem-get-link-target (mi)
   (-let (((&plist :item-desc) mi))
@@ -1290,6 +1291,26 @@ ARG and INTERACTIVE are passed to `org-store-link'."
 (defun org-x--group-agenda-metaitems-by-link-target (mis)
   (->> (-group-by #'org-x--metaitem-get-link-target mis)
        (--remove (not (car it)))))
+
+(defun org-x--metaitem-is-open (mi)
+  (not (plist-get mi :item-closed)))
+
+(defun org-x--metaitems-are-unresolved (grouped-mis)
+  (-let* ((now (float-time))
+          ((target . mis) grouped-mis)
+          ((past future) (--separate
+                          (< (plist-get it :meeting-timestamp) now)
+                          mis)))
+    (-when-let (most-recent (-last-item past))
+      (and (org-x--metaitem-is-open most-recent)
+           (-none? #'org-x--metaitem-is-open future)
+           (list :item-target target
+                 :item-headline (plist-get most-recent :meeting-node))))))
+
+(defun org-x--metaitems-get-unresolved-link-targets (mis)
+  (->> (org-x--group-agenda-metaitems-by-link-target mis)
+       (-map #'org-x--metaitems-are-unresolved)
+       (-non-nil)))
 
 ;; timestamp shifting
 
