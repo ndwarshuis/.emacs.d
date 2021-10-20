@@ -1380,6 +1380,11 @@ This includes unchecking all checkboxes, marking keywords as
           (org-ml-headline-map-supercontents* config
             (-some->> it (org-ml-supercontents-set-logbook nil)))
           (org-ml-headline-set-node-property org-x-prop-created created-ts)
+          ;; remove agenda/action items (don't bother checking if a meeting)
+          (org-ml-headline-map-contents* (org-x-logbook-config)
+            (-some->> it
+              (--remove (org-x--is-drawer-with-name org-x-drwr-action it))
+              (--remove (org-x--is-drawer-with-name org-x-drwr-agenda it))))
           ;; remove CLOSED planning entry
           (org-ml-headline-map-planning*
             (-some->> it (org-ml-planning-set-timestamp! :closed nil)))
