@@ -422,7 +422,7 @@ some calling interactive function."
       (org-agenda-prepare)
       (org-compile-prefix-format 'agenda)
 
-      (setq org-agenda-redo-command '(org-x-agg--show-overloads))
+      (setq org-agenda-redo-command '(org-x-agg-show-overloads))
 
       (insert (format "%s: \n" title))
       (add-text-properties (point-min) (1- (point))
