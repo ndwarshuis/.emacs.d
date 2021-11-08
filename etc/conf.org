@@ -4503,6 +4503,7 @@ The function keys are nice because they are almost (not always) free in every mo
 (global-set-key (kbd "<f4>") 'org-clock-goto)
 (global-set-key (kbd "C-<f4>") 'org-tomato-user-get-summary)
 (global-set-key (kbd "C-S-<f4>") 'org-tomato-user-pomodoro-goto)
+(global-set-key (kbd "<f8> i") #'org-id-update-id-locations)
 (global-set-key (kbd "<f8> s") #'swiper-thing-at-point)
 (global-set-key (kbd "<f8> o") #'counsel-org-goto-all)
 (global-set-key (kbd "<f8> b") #'ivy-bibtex-with-local-bibliography)
