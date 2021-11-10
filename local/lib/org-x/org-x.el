@@ -100,10 +100,6 @@
   (org-x-prepend-char org-x-tag-resource-prefix "laptop")
   "Tag denoting a laptop resource.")
 
-(defconst org-x-tag-tcult
-  (org-x-prepend-char org-x-tag-resource-prefix "tcult")
-  "Tag denoting a tissue-culture resource.")
-
 (defconst org-x-tag-phone
   (org-x-prepend-char org-x-tag-resource-prefix "phone")
   "Tag denoting a phone resource.")

@@ -2381,7 +2381,6 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
         
         ;; gtd resource context 
         (,org-x-tag-laptop . ?l)
-        (,org-x-tag-tcult . ?t)
         (,org-x-tag-phone . ?p)
         
         ;; misc tags 
