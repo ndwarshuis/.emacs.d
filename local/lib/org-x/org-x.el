@@ -1595,7 +1595,7 @@ and slow."
             ;; TODO this currently does not refile under specific headlines
             (with-current-buffer (find-file-noselect target)
               (org-ml-insert (point-max) headline*)))))
-      (org-ml-update-this-subtree*
+      (org-ml~update-this-subtree* nil
         (progn
           (archive target it)
           (org-ml-headline-map-supercontents* (org-x-logbook-config)
