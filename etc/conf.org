@@ -1152,7 +1152,7 @@ I have also found this to be much simpler and conflicting with other packages su
     (setq-local company-backends
                 ;; capf is standard completion and dabbrev provides
                 ;; local completions in 'where' and 'let' clauses
-                '((company-capf company-dabbrev))))
+                '((company-capf company-dabbrev-code))))
 
 
   (use-package haskell-mode
