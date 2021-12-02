@@ -45,7 +45,7 @@
  ("evil-ReplaceWithRegister" . "91cc7bf21a94703c441cc9212214075b226b7f67")
  ("evil-collection" . "96ef16b3a03e917166835359e9eb869cdaafba86")
  ("evil-commentary" . "2dab6ac34d1617971768ad219d73af48f7473fec")
- ("evil-org-mode" . "59173083a1923ca940f86e0ff8d57af7fb9f0fef")
+ ("evil-org-mode" . "26ad08b5f629370f57690315102140878891ef61")
  ("evil-surround" . "282a975bda83310d20a2c536ac3cf95d2bf188a5")
  ("f.el" . "50af874cd19042f17c8686813d52569b1025c76a")
  ("fill-column-indicator" . "c35f9de072c241699b57bcb46da84bed5af29cfe")
