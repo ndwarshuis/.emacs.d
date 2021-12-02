@@ -880,16 +880,25 @@ Elisp can use vanilla company with no plugins
 :PROPERTIES:
 :ID:       7e1017a8-8780-403e-9222-9cb097380c57
 :END:
-For me this means R but ess also supports S-plus, SAS, Stata, and other statistical black-magic languages. Note that ESS is not part of =prog-mode= so it must be added manually to hooks.
+For me this means R but ess also supports S-plus, SAS, Stata, and other statistical black-magic languages. ESS is not part of =prog-mode= so it must be added manually to hooks.
 
-Flycheck syntax checkers
-- r-lintr (install from CRAN)
+Begin rant:
+
+R is a pain to install and maintain. I've tried various things over the years that all kinda sucked.
+
+One way to run R is by installing it systemwide and then installing things through CRAN. This works, but then things will break everytime the systemwide binary upgrades. This would happen for most any language run like this but is especially bad for R given the number of binary dependencies required to make it (kinda) fast.
+
+The next solution is to use something like packrat to keep all R installations in a nice, neat environment. In my experience, this is extremely slow and unusable for anything involving more than a few packages (tidyverse and friends).
+
+Another solution (which I used for a long time) is to use pre-built docker images such as rocker and add to them as needed. This actually works really well. Just make a few pre-built images for each project and call them as needed. Unfortunately this is a giant hack that requires a super convoluted wrapper around R which reads a magic file containing the name of the docker image before calling =docker run r-image etc etc etc= (details pertaining to X11 omitted for sanity and brevity here). Also, if you need to update or add even a 0.5MB package, the entire image needs to be rebuilt.
+
+There's a solution to all this madness. Just use conda. Build an environment with R in it, activate it in Emacs, and Get Things Done (TM). No docker. No systemwide breakage. No convoluted scripts. No waiting for packrat to install 500MB because it forgot where my cache is. The only caveat is to actually using =mamba= and not =conda= to install things...unless you like waiting.
+
+End rant.
+
+Oh yes, and to get linting to work, also install r-lintr in the conda environment. In general it seems better and less risky to install things from =conda= rather than from within an R session.
 #+begin_src emacs-lisp
-(nd/require-bin "R" :pacman "r")
-(nd/require-bin "docker" :aur "docker-rootless-extras-bin")
-
-(nd/when-bin "R"
-  ;; :pamcan "r"
+(nd/when-bin "conda"
   (use-package ess
     :straight t
     :init
@@ -907,36 +916,19 @@ Flycheck syntax checkers
     (setq inferior-R-program "R"
           inferior-R-args "--quiet --no-save"
           ess-history-file "session.Rhistory"
-          ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")))
+          ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))))
 
-  ;; fast compile
-  (defun nd/ess-r-add-env (orig-fun inf-buf proc-name start-args)
-    (let ((process-environment (cons "MAKEFLAGS=-j8" process-environment)))
-      (funcall orig-fun inf-buf proc-name start-args)))
+;; ;; fast compile
+;; (defun nd/ess-r-add-env (orig-fun inf-buf proc-name start-args)
+;;   (let ((process-environment (cons "MAKEFLAGS=-j8" process-environment)))
+;;     (funcall orig-fun inf-buf proc-name start-args)))
 
-  (defun nd/ess-r-start-env (orig-fun &rest args)
-    (nd/with-advice
-        ((#'inferior-ess--start-process :around #'nd/ess-r-add-env))
-      (apply orig-fun args)))
+;; (defun nd/ess-r-start-env (orig-fun &rest args)
+;;   (nd/with-advice
+;;       ((#'inferior-ess--start-process :around #'nd/ess-r-add-env))
+;;     (apply orig-fun args)))
 
-  (advice-add #'run-ess-r :around #'nd/ess-r-start-env)
-
-  (nd/when-bin "docker"
-    ;; :aur "docker-rootless-extras-bin"
-    (defun nd/ess-r-setwd-maybe (orig-fun &rest args)
-        (nd/with-advice
-            ((#'ess-set-working-directory :override #'ignore))
-        (apply orig-fun args)))
-
-    (advice-add #'run-ess-r :around #'nd/ess-r-setwd-maybe)
-
-    ;; force flycheck to use system R instead of whatever is in docker
-    (defun nd/flycheck-find-exe-no-docker (orig-fun exe)
-        (if (or (equal exe "R") (s-starts-with? "R " exe))
-            "/bin/R" (funcall orig-fun exe)))
-
-    (advice-add #'flycheck-default-executable-find :around
-                #'nd/flycheck-find-exe-no-docker)))
+;; (advice-add #'run-ess-r :around #'nd/ess-r-start-env)
 #+END_SRC
 *** C
 :PROPERTIES:
