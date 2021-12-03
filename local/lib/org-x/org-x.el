@@ -104,6 +104,10 @@
   (org-x-prepend-char org-x-tag-resource-prefix "phone")
   "Tag denoting a phone resource.")
 
+(defconst org-x-tag-deep
+  (org-x-prepend-char org-x-tag-misc-prefix "deep")
+  "Tag denoting deep work.")
+
 (defconst org-x-tag-note
   (org-x-prepend-char org-x-tag-misc-prefix "note")
   "Tag denoting a note.")

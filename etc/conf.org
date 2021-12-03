@@ -2092,7 +2092,7 @@ By default, the tag selection window obliterates all but the current window...ho
 Capture should show up in the bottom of any currently active buffer
 #+BEGIN_SRC emacs-lisp
 (defun nd/org-capture-position (buffer alist)
-  (let ((new (split-window (get-buffer-window) -19 'below)))
+  (let ((new (split-window (get-buffer-window) -20 'below)))
     (set-window-buffer new buffer)
     new))
 
@@ -2376,6 +2376,9 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
         (,org-x-tag-phone . ?p)
         
         ;; misc tags 
+        ;; deep work (TM)
+        (,org-x-tag-deep . ?d)
+
         ;; denotes reference information
         (,org-x-tag-note . ?n)
         
@@ -2527,6 +2530,12 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
                     "%i\n"
                     "#+END_QUOTE")
            :immediate-finish t)
+
+          ("M" "metablock" entry (file+olp+datetree "~/Org/metablocks.org")
+           ,(concat "* %^{Metablock Title}\n"
+                    "%^{Effort}p"
+                    "%^t\n"
+                    "%?"))
 
           ;; or capturing links with web browser
           ("L" "org-protocol link" entry (file ,capfile)
