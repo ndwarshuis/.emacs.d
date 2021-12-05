@@ -2536,8 +2536,8 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
 
           ("M" "metablock" entry (file+olp+datetree "~/Org/metablocks.org")
            ,(concat "* %^{Metablock Title}\n"
-                    "%^{Effort}p"
                     "%^t\n"
+                    "%^{Effort}p"
                     "%?"))
 
           ;; or capturing links with web browser
@@ -4274,6 +4274,7 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 (add-hook 'org-agenda-mode-hook
           (lambda ()
             (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)
+            (local-set-key (kbd "C-c L") 'org-x-agenda-id-store-link)
             (local-set-key (kbd "C-c C-x c") 'org-x-agenda-clone-subtree-with-time-shift)
             (local-set-key (kbd "C-c C-x C-b") 'org-x-agenda-toggle-checkbox)
             (local-set-key (kbd "C-c C-x C-r") 'org-x-agenda-clock-range)

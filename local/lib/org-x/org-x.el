@@ -1649,50 +1649,60 @@ If ARG is non-nil use long timestamp format."
 
 ;; lift buffer commands into agenda context
 
-(defmacro org-x-agenda-cmd-wrapper (get-head &rest body)
+(defmacro org-x-agenda-cmd-wrapper (update &rest body)
   "Execute BODY in context of agenda buffer.
 Specifically, navigate to the original header, execute BODY, then
-update the agenda buffer. If GET-HEAD is true, get the headline
-string and use it to update the agenda (this is only needed when
-the headline changes obviously)."
+update the agenda buffer. If UPDATE is 'update-headline', get the
+headline string and use it to update the agenda (this is only
+needed when the headline changes obviously). When update is
+'update-all', reload the entire buffer. When UPDATE is nil, do
+nothing."
   (declare (indent 1))
-  `(progn
-     (org-agenda-check-no-diary)
-     (let* ((hdmarker (or (org-get-at-bol 'org-hd-marker)
-                          (org-agenda-error)))
-            (buffer (marker-buffer hdmarker))
-            (pos (marker-position hdmarker))
-            (inhibit-read-only t)
-            newhead)
-       (org-with-remote-undo buffer
-         (with-current-buffer buffer
-           (widen)
-           (goto-char pos)
-           (org-show-context 'agenda)
-           ,@body
-           (when ,get-head (setq newhead (org-get-heading))))
-         (if ,get-head
-             (org-agenda-change-all-lines newhead hdmarker)
-           (org-agenda-redo))
-	     (beginning-of-line 1)))))
+  (-let* ((newhead (make-symbol "newhead"))
+          (hdmarker (make-symbol "hdmarker"))
+          ((update-form get-head-form)
+           (cond
+            ((eq update 'update-headline)
+             (list `((org-agenda-change-all-lines ,newhead ,hdmarker))
+                   `((setq ,newhead (org-get-heading)))))
+            ((eq update 'update-all)
+             (list '((org-agenda-redo))
+                   nil)))))
+    `(progn
+       (org-agenda-check-no-diary)
+       (let* ((,hdmarker (or (org-get-at-bol 'org-hd-marker)
+                             (org-agenda-error)))
+              (buffer (marker-buffer ,hdmarker))
+              (pos (marker-position ,hdmarker))
+              (inhibit-read-only t)
+              ,newhead)
+         (org-with-remote-undo buffer
+           (with-current-buffer buffer
+             (widen)
+             (goto-char pos)
+             (org-show-context 'agenda)
+             ,@body
+             ,@get-head-form)
+           ,@update-form
+	       (beginning-of-line 1))))))
   
 (defun org-x-agenda-toggle-checkbox ()
   "Toggle checkboxes in org agenda view using `org-toggle-checkbox'."
   (interactive)
-  (org-x-agenda-cmd-wrapper t
+  (org-x-agenda-cmd-wrapper update-headline
     (call-interactively #'org-toggle-checkbox)))
 
 (defun org-x-agenda-clone-subtree-with-time-shift ()
   "Apply `org-x-clone-subtree-with-time-shift' to an agenda entry.
 It will clone the last entry in the selected subtree."
   (interactive)
-  (org-x-agenda-cmd-wrapper nil
+  (org-x-agenda-cmd-wrapper update-all
     (call-interactively #'org-x-clone-subtree-with-time-shift-toplevel)))
 
 (defun org-x-agenda-delete-subtree ()
   "Apply `org-x-delete-subtree' to an agenda entry."
   (interactive)
-  (org-x-agenda-cmd-wrapper nil
+  (org-x-agenda-cmd-wrapper update-all
     (call-interactively #'org-x-delete-subtree)))
 
 (defun org-x-agenda-clock-range ()
@@ -1700,6 +1710,12 @@ It will clone the last entry in the selected subtree."
   (interactive)
   (org-x-agenda-cmd-wrapper nil
     (call-interactively #'org-x-clock-range)))
+
+(defun org-x-agenda-id-store-link ()
+  "Apply `org-x-id-store-link' to an agenda entry."
+  (interactive)
+  (org-x-agenda-cmd-wrapper nil
+    (call-interactively #'org-x-id-store-link)))
 
 ;; agenda heading navigation functions
 
