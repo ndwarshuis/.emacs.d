@@ -898,6 +898,7 @@ End rant.
 
 Oh yes, and to get linting to work, also install r-lintr in the conda environment. In general it seems better and less risky to install things from =conda= rather than from within an R session.
 #+begin_src emacs-lisp
+(nd/require-bin "conda")
 (nd/when-bin "conda"
   (use-package ess
     :straight t
@@ -1540,6 +1541,8 @@ No custom code here, but flycheck needs =sqlint= (a ruby gem).
 :ID:       ce24b075-ede6-4d6c-81db-4c6aa40e4fd0
 :END:
 #+BEGIN_SRC emacs-lisp
+(nd/require-bin "docker")
+
 (nd/when-bin "docker"
   (use-package dockerfile-mode
     :straight t))
