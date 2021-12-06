@@ -1574,8 +1574,8 @@ and slow."
                      (error "No file associated to buffer"))))
          (apath (s-join "/" (org-get-outline-path)))
          (atags (->> (org-get-tags)
-                  (--filter (get-text-property 0 'inherited it))
-                  (s-join " ")))
+                     (--filter (get-text-property 0 'inherited it))
+                     (s-join " ")))
          (add-context (-partial #'org-x--headline-add-archive-context
                                 afile apath acat atags))
          (target (format "%s_archive" afile)))
@@ -1587,15 +1587,17 @@ and slow."
                                 (-)))
                  (headline*
                   (->> (funcall add-context headline)
-                    ;; close the headline (assume it isn't already)
-                    (org-ml-set-property :todo-keyword org-x-kw-done)
-                    (org-ml-headline-map-planning*
-                      (let ((time (org-ml-unixtime-to-time-long (float-time))))
-                        (org-ml-planning-set-timestamp! :closed time it)))
-                    ;; shift it to the top level
-                    (org-ml-shift-property :level level-shift)
-                    (org-ml-match-map* '(:any * headline)
-                      (org-ml-shift-property :level level-shift it)))))
+                       ;; remove the ID property if it exists
+                       (org-ml-headline-set-node-property "ID" nil)
+                       ;; close the headline (assume it isn't already)
+                       (org-ml-set-property :todo-keyword org-x-kw-done)
+                       (org-ml-headline-map-planning*
+                         (let ((time (org-ml-unixtime-to-time-long (float-time))))
+                           (org-ml-planning-set-timestamp! :closed time it)))
+                       ;; shift it to the top level
+                       (org-ml-shift-property :level level-shift)
+                       (org-ml-match-map* '(:any * headline)
+                         (org-ml-shift-property :level level-shift it)))))
             ;; TODO this currently does not refile under specific headlines
             (with-current-buffer (find-file-noselect target)
               (org-ml-insert (point-max) headline*)))))
