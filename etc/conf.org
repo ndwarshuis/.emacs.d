@@ -30,6 +30,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
 - [[#editing][editing]]
   - [[#standardization][standardization]]
   - [[#auto-completion][auto completion]]
+  - [[#auto-formatting][auto formatting]]
   - [[#parenthesis-matching][parenthesis matching]]
   - [[#sudo-edit][sudo edit]]
   - [[#formats-and-languages][formats and languages]]
@@ -818,6 +819,15 @@ Company provides a dropdown of completion options. It has many backends which ar
   (setq company-idle-delay 0
         company-minimum-prefix-length 3))
 #+END_SRC
+** auto formatting
+Most languages have a plugin/command to make their code "look pretty" (usually on save). This package is a catch-all formatter for many languages that can be added as a minor mode.
+
+#+begin_src emacs-lisp
+(use-package format-all
+  :straight t)
+
+(delight 'format-all-mode "α" "format-all")
+#+end_src
 ** parenthesis matching
 :PROPERTIES:
 :ID:       a8d75763-b67d-448e-a95f-04cfee0fb824
@@ -1089,7 +1099,8 @@ Also, this seems to have no relation to the =anaconda.el= package installed abov
 :END:
 #+begin_src emacs-lisp
 (use-package snakemake-mode
-  :straight t)
+  :straight t
+  :hook ((snakemake-mode . format-all-mode)))
 #+end_src
 *** Ruby
 :PROPERTIES:
