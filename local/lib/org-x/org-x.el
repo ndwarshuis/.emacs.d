@@ -235,6 +235,10 @@
   org-x-iterator-active-future-offset
   "Periodicals must have at least one heading this far in the future to be active.")
 
+(defconst org-x-metablox-file
+  (f-join org-directory "metablox.org")
+  "The file to which metablocks will be written.")
+
 ;;; INTERNAL CONSTANTS
   
 ;; TODO ;unscheduled should trump all
@@ -304,6 +308,24 @@ the current time."
                  (org-ml-build-timestamp!)
                  (org-ml-to-string))))
     (org-ml-headline-set-node-property org-x-prop-created ts headline)))
+
+(defmacro org-x-with-file (path &rest body)
+  "Open PATH and execute BODY."
+  (declare (indent 1))
+  `(with-current-buffer (find-file-noselect ,path)
+    ,@body))
+
+(defun org-x-parse-file-subtrees (path which)
+  "Return a list of headlines from file at PATH.
+WHICH is passed to the one argument of `org-ml-parse-subtrees'."
+  (org-x-with-file path
+    (org-ml-parse-subtrees which)))
+
+(defun org-x-parse-file-headlines (path which)
+  "Return a list of headlines from file at PATH.
+WHICH is passed to the one argument of `org-ml-parse-headlines'."
+  (org-x-with-file path
+    (org-ml-parse-headlines which)))
 
 ;;; STATEFUL BUFFER HEADLINE FUNCTIONS
 
@@ -1233,6 +1255,60 @@ ARG and INTERACTIVE are passed to `org-store-link'."
   (org-id-store-link)
   (org-store-link arg interactive))
 
+;; metablox
+
+(defun org-x-metablock-get-timestamp (node)
+  "Return the first timestamp of NODE or nil if not found."
+  (car (org-ml-match '(:first section paragraph timestamp) node)))
+
+(defun org-x-get-future-metablox ()
+  "Return a list of headline nodes representing metablocks in the future."
+  (cl-flet
+      ((is-future
+        (node)
+        (-some->> (org-x-metablock-get-timestamp node)
+          (org-ml-timestamp-get-start-time)
+          (org-ml-time-to-unixtime)
+          (< (float-time)))))
+    (->> (org-x-parse-file-headlines org-x-metablox-file 'all)
+         (--filter (null (org-ml-headline-get-subheadlines it)))
+         (-filter #'is-future)
+         (-map #'org-ml-remove-parents))))
+
+;; TODO mark lines in the completion buffer that already have a link with the
+;; ID we are inserting
+(defun org-x-id-store-link-metablock ()
+  "Make and ID for the current headline and store it in the org link ring.
+ARG and INTERACTIVE are passed to `org-store-link'."
+  (interactive)
+  (cl-flet
+      ((to-menu-line
+        (node)
+        (let ((ts (->> (org-x-metablock-get-timestamp node)
+                       (org-ml-get-property :raw-value)))
+              (title (org-ml-get-property :raw-value node)))
+          (format "%s | %s" ts title))))
+    (-if-let (path (org-id-store-link))
+        (-if-let (desc (-some->> (org-ml-parse-this-headline)
+                         (org-ml-get-property :raw-value)))
+            (-if-let (hls (org-x-get-future-metablox))
+                (let* ((lines (-map #'to-menu-line hls))
+                       (col (-zip-pair lines hls))
+                       (sel (completing-read "Metablock: " col nil t))
+                       (target (alist-get sel col nil nil #'equal))
+                       (link (org-ml-build-link path desc))
+                       ;; ASSUME there will be one paragraph at the end holding
+                       ;; the timestamp
+                       (para (car (org-ml-match '(:last section paragraph) target))))
+                  (org-x-with-file org-x-metablox-file
+                    (org-ml~update* nil
+                      (org-ml-map-children* (-snoc it link) it)
+                      para))
+                  (message "Successfully added '%s' to block '%s'" desc sel))
+              (message "No metablocks available"))
+          (message "Could not get link description (not on headline?)"))
+      (message "Could not get link to store"))))
+    
 ;; meeting agenda
 
 (defun org-x--get-meetings-from-buffer ()
