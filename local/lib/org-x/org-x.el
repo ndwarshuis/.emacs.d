@@ -1798,6 +1798,12 @@ It will clone the last entry in the selected subtree."
   (org-x-agenda-cmd-wrapper nil
     (call-interactively #'org-x-id-store-link)))
 
+(defun org-x-agenda-id-store-link-metablock ()
+  "Apply `org-x-id-store-link-metablock' to an agenda entry."
+  (interactive)
+  (org-x-agenda-cmd-wrapper nil
+    (call-interactively #'org-x-id-store-link-metablock)))
+
 ;; agenda heading navigation functions
 
 (defun org-x-agenda--seek-heading (&optional back)
