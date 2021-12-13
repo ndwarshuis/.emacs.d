@@ -1291,10 +1291,10 @@ ARG and INTERACTIVE are passed to `org-store-link'."
                        (org-ml-get-property :raw-value)))
               (title (org-ml-get-property :raw-value node)))
           (format "%s | %s" ts title))))
-    (-if-let (path (org-id-store-link))
+    (-if-let (hls (org-x-get-future-metablox))
         (-if-let (desc (-some->> (org-ml-parse-this-headline)
                          (org-ml-get-property :raw-value)))
-            (-if-let (hls (org-x-get-future-metablox))
+            (-if-let (path (org-id-store-link))
                 (let* ((lines (-map #'to-menu-line hls))
                        (col (-zip-pair lines hls))
                        (sel (completing-read "Metablock: " col nil t))
@@ -1308,9 +1308,9 @@ ARG and INTERACTIVE are passed to `org-store-link'."
                       (org-ml-map-children* (-snoc it link) it)
                       para))
                   (message "Successfully added '%s' to block '%s'" desc sel))
-              (message "No metablocks available"))
+              (message "Could not get link to store"))
           (message "Could not get link description (not on headline?)"))
-      (message "Could not get link to store"))))
+      (message "No metablocks available"))))
     
 ;; meeting agenda
 
