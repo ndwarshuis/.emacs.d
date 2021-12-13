@@ -4291,6 +4291,7 @@ These are for mode-specific bindings that can/should be outside of the evil maps
             ;; storing links is important, make a shortcut
             (local-set-key (kbd "C-c l") 'org-store-link)
             (local-set-key (kbd "C-c L") 'org-x-id-store-link)
+            (local-set-key (kbd "C-c m") 'org-x-id-store-link-metablock)
 
             ;; this is just a useful function I made (actually I think I stole)
             (local-set-key (kbd "C-c C-x x") 'org-x-mark-subtree-done)
@@ -4314,6 +4315,7 @@ These are for mode-specific bindings that can/should be outside of the evil maps
           (lambda ()
             (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)
             (local-set-key (kbd "C-c L") 'org-x-agenda-id-store-link)
+            (local-set-key (kbd "C-c m") 'org-x-agenda-id-store-link-metablock)
             (local-set-key (kbd "C-c C-x c") 'org-x-agenda-clone-subtree-with-time-shift)
             (local-set-key (kbd "C-c C-x C-b") 'org-x-agenda-toggle-checkbox)
             (local-set-key (kbd "C-c C-x C-r") 'org-x-agenda-clock-range)
