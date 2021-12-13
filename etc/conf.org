@@ -820,6 +820,9 @@ Company provides a dropdown of completion options. It has many backends which ar
         company-minimum-prefix-length 3))
 #+END_SRC
 ** auto formatting
+:PROPERTIES:
+:ID:       f8e2d511-5124-4dd8-a8f2-63f4bf66728e
+:END:
 Most languages have a plugin/command to make their code "look pretty" (usually on save). This package is a catch-all formatter for many languages that can be added as a minor mode.
 
 #+begin_src emacs-lisp
@@ -2967,17 +2970,15 @@ original function being advised and ARGS are the arguments."
 
 (setq
  org-agenda-custom-commands
- ;; Calendar - for showing what I need to do in a given day
+ ;; Timeblock planner - for showing what I need to do in a given day
  ;;
  ;; In the order of display
  ;; 1. morning tasks/habits (to do immediately after waking)
  ;; 2. daily calendar (for thing that begin today at a specific time)
  ;; 3. evening tasks/habits (to do immediately before sleeping)
- ;; 4. deadlines
- ;; 5. scheduled tasks (for things that begin today at no specific time)
- ;; 6. habits
- `(("a"
-    "Calendar View"
+ ;; 4. habits
+ `(("b"
+    "Timeblock View"
     ((agenda
       ""
       ((org-agenda-skip-function #'org-x-calendar-skip-function)
@@ -2993,7 +2994,30 @@ original function being advised and ARGS are the arguments."
                                           org-x-prop-routine-evening)
              :order 3)
           (:name "Calendar" :order 1 :time-grid t)
-          (:name "Habits" :order 6 :habit t)
+          (:discard (:anything t))))))))
+
+   ;; Deadline/scheduled task view
+   ;;
+   ;; Display deadlines and scheduled tasks for the day/future. Used to
+   ;; create a timeblock plan for any given day
+   ("a"
+    "Agenda View"
+    ((agenda
+      ""
+      ((org-agenda-skip-function #'org-x-calendar-skip-function)
+       (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
+       (org-agenda-include-diary t)
+       (org-super-agenda-groups
+        `(
+          (:name "Habits" :order 1 :habit t)
+          (:discard (:time-grid t))
+          (:discard (:pred ,(nd/org-mk-super-agenda-pred
+                             '((or (org-x-headline-has-property
+                                    org-x-prop-routine
+                                    org-x-prop-routine-evening)
+                                   (org-x-headline-has-property
+                                    org-x-prop-routine
+                                    org-x-prop-routine-morning))))))
           ,(nd/org-def-super-agenda-pred "Deadlined Projects"
              (progn
                ;; TODO IDK why this is needed, but the point starts on the
