@@ -167,6 +167,9 @@
 (defconst org-x-tag-no-agenda "NA"
   "Tag denoting a headlines that shouldn't go in the agenda.")
 
+(defconst org-x-tag-no-archive "NRXIV"
+  "Tag denoting a headlines that shouldn't go in the archive.")
+
 (defconst org-x-tag-refile "REFILE"
   "Tag denoting a headlines that are to be refiled.")
 

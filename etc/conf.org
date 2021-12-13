@@ -3208,7 +3208,10 @@ original function being advised and ARGS are the arguments."
    ("A"
     "Archivable Tasks and Projects"
     ((tags
-      ,(nd/org-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
+      ,(nd/org-mk-match-string
+        - org-x-tag-no-agenda
+        - org-x-tag-refile
+        - org-x-tag-no-archive)
       ((org-agenda-overriding-header "Archive")
        (org-agenda-skip-function #'org-x-archive-skip-function)
        (org-agenda-sorting-strategy '(category-keep))
