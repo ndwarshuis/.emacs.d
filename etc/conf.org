@@ -2500,10 +2500,10 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
                       (time-add (current-time) (days-to-time 1))))
 
 (let* ((capfile "~/Org/capture.org")
-       (todo-options `(entry (file ,capfile) "* %(eval org-x-kw-todo) %?\n"))
+       (todo-options `(entry (file ,capfile) "* %(eval org-x-kw-todo) %^{Task Name}\n%?"))
        (deadline-options `(entry (file ,capfile)
-                                 ,(concat "* %(eval org-x-kw-todo) %?\n"
-                                          "DEADLINE: %^t\n"))))
+                                 ,(concat "* %(eval org-x-kw-todo) %^{Deadline Name}\n"
+                                          "DEADLINE: %^t\n%?"))))
   (setq org-capture-templates
         ;; regular TODO task
         `(("t" "todo" ,@todo-options)
@@ -2511,17 +2511,17 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
 
           ;; for useful reference information that may be grouped with tasks
           ("n" "note" entry (file ,capfile)
-           "* %?\n")
+           "* %^{Note Title}\n%?")
 
           ;; for non-actionable events that happen at a certain time
           ("a" "appointment" entry (file ,capfile)
-           ,(concat "* %?\n"
-                    "%^t\n"))
+           ,(concat "* %^{Apt Title}\n"
+                    "%^t\n%?"))
 
           ;; like appointment but multiple days
           ("s" "appointment-span" entry (file ,capfile)
-           ,(concat "* %?\n"
-                    "%^t--%^t\n"))
+           ,(concat "* %^{Apt Title}\n"
+                    "%^t--%^t\n%?"))
 
           ;; task with a deadline
           ("d" "deadline" ,@deadline-options)
@@ -2535,10 +2535,11 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
 
           ;; make meetings suck less
           ("m" "meeting" entry (file ,capfile)
-           ,(concat "* TODO%?\t:%(eval org-x-tag-meeting):\n"
+           ,(concat "* TODO %^{Meeting Title}\t:%(eval org-x-tag-meeting):\n"
                     "SCHEDULED: %^t\n"
+                    "%^{Effort}p"
                     "attendees:\n\n"
-                    "notes:"))
+                    "notes:%?"))
 
           ;; for capturing web pages with web browser
           ("p" "org-protocol" entry (file ,capfile)
