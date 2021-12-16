@@ -4003,6 +4003,9 @@ Some of these commands just get in the way of being evil (which really means tha
     "M" #'org-agenda-month-view
     "Y" #'org-agenda-year-view
     "Y" #'org-agenda-year-view
+    ;; I keep accidentally archiving from the agenda, so take this out
+    "da" nil
+    "dA" nil
     "ct" nil
     "g]" #'org-agenda-later
     "g[" #'org-agenda-earlier
