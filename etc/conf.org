@@ -39,12 +39,12 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#low-level-config-1][low-level config]]
   - [[#buffer-interface][buffer interface]]
   - [[#calfw][calfw]]
-  - [[#window-splitting][window splitting]]
   - [[#exporting][exporting]]
   - [[#project-management][project management]]
   - [[#gtd-implementation][gtd implementation]]
   - [[#tracking-and-analytics][tracking and analytics]]
   - [[#tomato-mode][tomato mode]]
+  - [[#window-splitting][window splitting]]
 - [[#tools][tools]]
   - [[#printing][printing]]
   - [[#magit][magit]]
@@ -1748,6 +1748,16 @@ Code shamelessly ripped off from [[https://github.com/dpo/ampl-mode/blob/master/
   (use-local-map ampl-mode-map)
   (run-mode-hooks 'ampl-mode-hook))
 #+end_src
+*** GraphViz
+:PROPERTIES:
+:ID:       92ac0a27-a1d3-4a0f-a8e1-476d545a6ebf
+:END:
+Used for making fancy flowchart with dot.
+#+begin_src emacs-lisp
+(use-package graphviz-dot-mode
+  :straight t
+  :hook ((graphviz-dot-mode . company-mode)))
+#+end_src
 ** testing
 *** buttercup
 :PROPERTIES:
@@ -2065,65 +2075,6 @@ This is a nifty calendar. Sometimes it is way faster than the agenda buffer for 
   :config
   (setq cfw:org-agenda-schedule-args
         '(:deadline* :scheduled* :timestamp)))
-#+END_SRC
-** window splitting
-Org mode is great and all, but the windows never show up in the right place. The solutions here are simple, but have the downside that the window sizing must be changed when tags/capture templates/todo items are changed. This is because the buffer size is not known at window creation time and I didn't feel like making a function to predict it
-*** todo selection
-:PROPERTIES:
-:ID:       5c61f3ce-37b7-44ad-af8f-79546536df1a
-:END:
-I only need a teeny tiny window below my current window for todo selection
-#+BEGIN_SRC emacs-lisp
-(defun nd/org-todo-window-advice (orig-fn &rest args)
-  "Advice to fix window placement in `org-fast-todo-selection'."
-  (let  ((override '("\\*Org todo\\*" nd/org-todo-position)))
-    (nd/with-advice
-        ((#'delete-other-windows :override #'ignore)
-         (#'split-window-vertically :filter-args (-partial (-const '(-4))))
-         (#'org-switch-to-buffer-other-window :override #'pop-to-buffer))
-      (unwind-protect (apply orig-fn args)))))
-
-(advice-add #'org-fast-todo-selection :around #'nd/org-todo-window-advice)
-#+END_SRC
-*** tag selection
-:PROPERTIES:
-:ID:       d4974e0b-8ee7-4522-97f9-58a8daf550ad
-:END:
-By default, the tag selection window obliterates all but the current window...how disorienting :/
-#+BEGIN_SRC emacs-lisp
-(defun nd/org-tag-window-advice (orig-fn &rest args)
-  "Advice to fix window placement in `org-fast-tags-selection'."
-  (nd/with-advice
-      ((#'delete-other-windows :override #'ignore)
-       ;; pretty sure I just got lucky here...
-       (#'split-window-vertically :override #'(lambda (&optional size)
-                                                (split-window-below (or size -10)))))
-    (unwind-protect (apply orig-fn args))))
-
-(advice-add #'org-fast-tag-selection :around #'nd/org-tag-window-advice)
-#+END_SRC
-*** capture
-:PROPERTIES:
-:ID:       db0d7970-452e-44d9-9ab0-a59939e3771d
-:END:
-Capture should show up in the bottom of any currently active buffer
-#+BEGIN_SRC emacs-lisp
-(defun nd/org-capture-position (buffer alist)
-  (let ((new (split-window (get-buffer-window) -20 'below)))
-    (set-window-buffer new buffer)
-    new))
-
-(defun nd/org-capture-window-advice (orig-fn &rest args)
-  "Advice to fix window placement in `org-capture-select-template'."
-  (let  ((override '("\\*Org Select\\*" nd/org-capture-position)))
-    (add-to-list 'display-buffer-alist override)
-    (nd/with-advice
-        ((#'org-switch-to-buffer-other-window :override #'pop-to-buffer))
-      (unwind-protect (apply orig-fn args)
-        (setq display-buffer-alist
-              (delete override display-buffer-alist))))))
-
-(advice-add #'org-mks :around #'nd/org-capture-window-advice)
 #+END_SRC
 ** exporting
 *** latex to pdf command
@@ -2540,6 +2491,12 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
                     "%^{Effort}p"
                     "attendees:\n\n"
                     "notes:%?"))
+
+          ;; because everyone needs a hill to climb
+          ("g" "goal" entry (file ,capfile)
+           ,(concat "* TODO %^{Goal title}\n"
+                    "why? %?\n"
+                    "what?"))
 
           ;; for capturing web pages with web browser
           ("p" "org-protocol" entry (file ,capfile)
@@ -3280,6 +3237,66 @@ This really means "super awesome pomodoro implementation." =Tomato-mode= sounds 
 
 ;;(setq org-tomato-timer-sound (no-littering-expand-etc-file-name
  ;;                             "you_suffer.wav"))
+#+END_SRC
+** window splitting
+Org mode is great and all, but the windows never show up in the right place. The solutions here are simple, but have the downside that the window sizing must be changed when tags/capture templates/todo items are changed. This is because the buffer size is not known at window creation time and I didn't feel like making a function to predict it
+*** todo selection
+:PROPERTIES:
+:ID:       5c61f3ce-37b7-44ad-af8f-79546536df1a
+:END:
+I only need a teeny tiny window below my current window for todo selection
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-todo-window-advice (orig-fn &rest args)
+  "Advice to fix window placement in `org-fast-todo-selection'."
+  (let  ((override '("\\*Org todo\\*" nd/org-todo-position)))
+    (nd/with-advice
+        ((#'delete-other-windows :override #'ignore)
+         (#'split-window-vertically :filter-args (-partial (-const '(-4))))
+         (#'org-switch-to-buffer-other-window :override #'pop-to-buffer))
+      (unwind-protect (apply orig-fn args)))))
+
+(advice-add #'org-fast-todo-selection :around #'nd/org-todo-window-advice)
+#+END_SRC
+*** tag selection
+:PROPERTIES:
+:ID:       d4974e0b-8ee7-4522-97f9-58a8daf550ad
+:END:
+By default, the tag selection window obliterates all but the current window...how disorienting :/
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-tag-window-advice (orig-fn &rest args)
+  "Advice to fix window placement in `org-fast-tags-selection'."
+  (nd/with-advice
+      ((#'delete-other-windows :override #'ignore)
+       ;; pretty sure I just got lucky here...
+       (#'split-window-vertically :override #'(lambda (&optional size)
+                                                (split-window-below (or size -10)))))
+    (unwind-protect (apply orig-fn args))))
+
+(advice-add #'org-fast-tag-selection :around #'nd/org-tag-window-advice)
+#+END_SRC
+*** capture
+:PROPERTIES:
+:ID:       db0d7970-452e-44d9-9ab0-a59939e3771d
+:END:
+Capture should show up in the bottom of any currently active buffer
+#+BEGIN_SRC emacs-lisp
+(defun nd/org-capture-position (buffer alist)
+  (let* ((n (length org-capture-templates))
+         (new (split-window (get-buffer-window) (- (+ 8 n)) 'below)))
+    (set-window-buffer new buffer)
+    new))
+
+(defun nd/org-capture-window-advice (orig-fn &rest args)
+  "Advice to fix window placement in `org-capture-select-template'."
+  (let  ((override '("\\*Org Select\\*" nd/org-capture-position)))
+    (add-to-list 'display-buffer-alist override)
+    (nd/with-advice
+        ((#'org-switch-to-buffer-other-window :override #'pop-to-buffer))
+      (unwind-protect (apply orig-fn args)
+        (setq display-buffer-alist
+              (delete override display-buffer-alist))))))
+
+(advice-add #'org-mks :around #'nd/org-capture-window-advice)
 #+END_SRC
 * tools
 ** printing
