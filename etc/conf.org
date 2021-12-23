@@ -2676,6 +2676,7 @@ The agenda files are limited to as few as possible to keep scanning and startup 
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-files '("~/Org"
                          "~/Org/projects"
+                         "~/Org/reference"
                          "~/Org/reference/meetings"
                          "~/Org/reference/peripheral.org"))
 #+END_SRC
@@ -3019,6 +3020,24 @@ original function being advised and ARGS are the arguments."
                 (-let (((level1 subtitle) (if is-atomic '(1 "α") '(0 "σ"))))
                   (nd/org-mapper-title level1 priority status subtitle))))))))))
 
+   ;; Goals - a view for putting my goals in one place
+   ;;
+   ;; I look at this when making my long term plan. If a goal is worth pursuing,
+   ;; I put it on my plan.
+   ("g"
+    "Goals"
+    ((todo
+      ,(nd/org-mk-match-string org-x-kw-todo)
+      ((org-agenda-overriding-header "Goals")
+       (org-agenda-files '("~/Org/reference/goals.org"))
+       ;; seems like this should be in the agenda groups, but works fine here
+       (org-agenda-sorting-strategy '(time-up scheduled-down))
+       (org-super-agenda-groups
+        '((:name "lifetime" :tag "LIFETIME")
+          (:name "10 year" :tag "TENYEAR")
+          (:name "5 year" :tag "FIVEYEAR")
+          (:name "1 year" :tag "ONEYEAR")))))))
+
    ("p"
     "Project View"
     ((tags-todo
@@ -3162,6 +3181,7 @@ original function being advised and ARGS are the arguments."
           ,(nd/org-def-super-agenda-pred "Closed: Resolved"
              (org-x-headline-is-closed-meeting-p))
           (:discard (:anything t))))))))
+
 
    ("A"
     "Archivable Tasks and Projects"
