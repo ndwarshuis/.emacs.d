@@ -215,6 +215,9 @@
 (defconst org-x-prop-days-to-live "X-DAYS_TO_LIVE"
   "Property denoting after how many days a headline will expire.")
 
+(defconst org-x-prop-goal "X-GOAL"
+  "Property denoting the goal this headline fulfills.")
+
 ;;; DRAWERS
 
 (defconst org-x-drwr-agenda "AGENDA_ITEMS"
