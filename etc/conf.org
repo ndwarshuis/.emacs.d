@@ -3233,20 +3233,27 @@ In the order of display
          (:name "Calendar" :order 1 :time-grid t)
          (:discard (:anything t)))))))
 
+(defvar nd/org-agenda-goal-task-ids nil)
+
 (defun nd/org-agenda-goals ()
   "Show the goals agenda view."
   (interactive)
+  ;; TODO this will only fire when the agenda view is first made, redo doesn't
+  ;; call it again
+  (setq nd/org-agenda-goal-task-ids (org-x-get-goal-ids))
   (nd/org-agenda-call "Goals" 'todo org-x-kw-todo
-    '((org-agenda-overriding-header "Goals")
+    `((org-agenda-overriding-header "Goals")
       (org-agenda-files
        '("~/Org/reference/goals"))
       (org-agenda-sorting-strategy
        '(time-up scheduled-down))
       (org-super-agenda-groups
-       '((:auto-category))))))
+       `(,(nd/org-def-super-agenda-pred "Childless"
+            (not (member (org-entry-get nil "ID") nd/org-agenda-goal-task-ids)))
+         (:auto-category))))))
 
 (defun nd/org-agenda-daily ()
-  "Show the daily agenda view"
+  "Show the daily agenda view."
   (interactive)
   (nd/org-agenda-call "Daily" 'agenda ""
     '((org-agenda-skip-function #'org-x-calendar-skip-function)
