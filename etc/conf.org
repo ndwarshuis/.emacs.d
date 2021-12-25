@@ -181,6 +181,15 @@ Some useful external libraries that I use all over the place
 (use-package f
   :straight t)
 #+END_SRC
+*** hash tables
+:PROPERTIES:
+:CREATED:  [2021-12-24 Fri 16:05]
+:ID:       2e1f9b7b-c565-464d-8abb-6e8608910ba3
+:END:
+#+begin_src emacs-lisp
+(use-package ht
+  :straight t)
+#+end_src
 ** internal
 :PROPERTIES:
 :ID:       d0696764-48ab-4ec6-ab42-42775dc8f793
@@ -3245,6 +3254,7 @@ In the order of display
     `((org-agenda-overriding-header "Goals")
       (org-agenda-files
        '("~/Org/reference/goals"))
+      (org-agenda-skip-function #'org-x-goal-skip-function)
       (org-agenda-sorting-strategy
        '(time-up scheduled-down))
       (org-super-agenda-groups

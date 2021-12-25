@@ -33,6 +33,7 @@
 (require 'org-ml)
 (require 'dash)
 (require 's)
+(require 'ht)
 (require 'org)
 (require 'org-x-agg)
 
@@ -319,7 +320,8 @@ the current time."
   "Open PATH and execute BODY."
   (declare (indent 1))
   `(with-current-buffer (find-file-noselect ,path)
-    ,@body))
+     (save-excursion
+       ,@body)))
 
 (defun org-x-parse-file-subtrees (path which)
   "Return a list of headlines from file at PATH.
@@ -948,6 +950,44 @@ should be this function again)."
        
        (t (error (concat "invalid keyword detected: " keyword)))))))
 
+;; goals
+
+(defun org-x-buffer-get-goal-links (file)
+  (org-x-with-file file
+    (let ((acc))
+      (cl-flet
+          ((get-goal
+            ()
+            (-when-let (g (org-entry-get nil org-x-prop-goal))
+              (setq acc (cons g acc)))))
+        ;; TODO need to return nothing if a file has a toplevel prop drawer with
+        ;; a goal in it but no TODO headlines
+        (goto-char (point-min))
+        (get-goal)
+        (while (outline-next-heading)
+          (get-goal))
+        acc))))
+
+(defun org-x-get-goal-links ()
+  (-mapcat #'org-x-buffer-get-goal-links (org-files-list)))
+
+(defun org-x-get-goal-ids ()
+  (--map (cadr (s-match "^\\[\\[id:\\(.*\\)\\]\\[.*\\]\\]$" it))
+         (org-x-get-goal-links)))
+
+(defmacro org-x-id-get-ids-with (form)
+  ""
+  `(--filter (let ((it (cdr it))) ,form) (ht->alist org-id-locations)))
+
+(defun org-x-id-get-goal-ids ()
+  (let ((goals-file (f-canonical (f-expand "~/Org/reference/goals.org"))))
+    (->> (org-x-id-get-ids-with (equal (f-canonical (f-expand it)) goals-file))
+         (-map #'car))))
+
+(defun org-x-get-leaf-goals ()
+  ""
+  ())
+
 ;; iterators
 
 (defun org-x--clone-get-iterator-project-status (kw)
@@ -1088,6 +1128,15 @@ function will simply return the point of the next headline."
   "Skip function for calendar view."
   (org-x-skip-headings-with-tags
    (list org-x-tag-no-agenda org-x-tag-maybe org-x-tag-refile)))
+
+(defun org-x-goal-skip-function ()
+  "Skip function for goals view.
+This is similar to the task skip function (only show TODO leaf
+nodes of the outline)."
+  (org-with-wide-buffer
+    (let ((keyword (org-get-todo-state)))
+      (when (org-x-headline-is-project-p keyword)
+        (org-x-skip-heading)))))
 
 (defun org-x-task-skip-function ()
   "Skip function for task view."
