@@ -952,14 +952,23 @@ should be this function again)."
 
 ;; goals
 
-(defun org-x-buffer-get-goal-links (file)
+(defvar org-x-agenda-goal-task-ids nil)
+(defvar org-x-agenda-goal-endpoint-ids nil)
+(defvar org-x-agenda-lifetime-ids nil)
+
+(defun org-x-link-get-id (s)
+  (cadr (s-match "^\\[\\[id:\\(.*\\)\\]\\[.*\\]\\]$" s)))
+
+(defun org-x-buffer-get-goal-ids (file)
   (org-x-with-file file
     (let ((acc))
       (cl-flet
           ((get-goal
             ()
             (-when-let (g (org-entry-get nil org-x-prop-goal))
-              (setq acc (cons g acc)))))
+              (-if-let (i (org-x-link-get-id g))
+                  (setq acc (cons i acc))
+                (message "WARNING: invalid id found: %s" g)))))
         ;; TODO need to return nothing if a file has a toplevel prop drawer with
         ;; a goal in it but no TODO headlines
         (goto-char (point-min))
@@ -968,25 +977,24 @@ should be this function again)."
           (get-goal))
         acc))))
 
-(defun org-x-get-goal-links ()
-  (-mapcat #'org-x-buffer-get-goal-links (org-files-list)))
+(defun org-x-get-ids-in-file (file)
+  (cl-flet
+      ((full-path
+        (p)
+        (f-canonical (f-expand p))))
+    (let ((f (full-path file)))
+      (->> (ht-to-alist org-id-locations)
+           (--filter (equal f (full-path (cdr it))))
+           (-map #'car)))))
 
-(defun org-x-get-goal-ids ()
-  (--map (cadr (s-match "^\\[\\[id:\\(.*\\)\\]\\[.*\\]\\]$" it))
-         (org-x-get-goal-links)))
-
-(defmacro org-x-id-get-ids-with (form)
-  ""
-  `(--filter (let ((it (cdr it))) ,form) (ht->alist org-id-locations)))
-
-(defun org-x-id-get-goal-ids ()
-  (let ((goals-file (f-canonical (f-expand "~/Org/reference/goals.org"))))
-    (->> (org-x-id-get-ids-with (equal (f-canonical (f-expand it)) goals-file))
-         (-map #'car))))
-
-(defun org-x-get-leaf-goals ()
-  ""
-  ())
+(defun org-x-update-goal-link-ids ()
+  (org-id-update-id-locations)
+  (setq org-x-agenda-goal-task-ids
+        (-mapcat #'org-x-buffer-get-goal-ids (org-files-list))
+        org-x-agenda-goal-endpoint-ids
+        (org-x-buffer-get-goal-ids "~/Org/reference/goals/endpoint.org")
+        org-x-agenda-lifetime-ids
+        (org-x-get-ids-in-file "~/Org/reference/goals/lifetime.org.org")))
 
 ;; iterators
 
