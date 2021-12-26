@@ -4908,7 +4908,7 @@ The function keys are nice because they are almost (not always) free in every mo
   ("p" #'nd/org-agenda-projects)
   ("i" #'nd/org-agenda-incubator)
   ("I" #'nd/org-agenda-iterators)
-  ("I" #'nd/org-agenda-periodical)
+  ("P" #'nd/org-agenda-periodical)
   ("a" #'nd/org-agenda-archive)
   ("m" #'nd/org-agenda-meetings)
   ("e" #'nd/org-agenda-errors))
