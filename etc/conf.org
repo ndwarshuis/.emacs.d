@@ -2689,7 +2689,13 @@ The agenda files are limited to as few as possible to keep scanning and startup 
                          "~/Org/projects"
                          "~/Org/reference/goals"
                          "~/Org/reference/meetings"
-                         "~/Org/reference/peripheral.org"))
+                         "~/Org/reference/peripheral.org")
+      org-x-daily-planner-file "metablox.org"
+      org-x-action-files (list "general.org" "projects/*.org")
+      org-x-incubator-files (list "incubator.org")
+      org-x-capture-file "capture.org"
+      org-x-endpoint-goal-file "reference/goals/endpoint.org"
+      org-x-lifetime-goal-file "reference/goals/lifetime.org")
 #+END_SRC
 **** appearence
 ***** sticky agendas
@@ -3227,9 +3233,11 @@ In the order of display
 4. habits"
   (interactive)
   (nd/org-agenda-call "Timeblock" 'agenda ""
-    '((org-agenda-skip-function #'org-x-calendar-skip-function)
+    `((org-agenda-skip-function #'org-x-calendar-skip-function)
       (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
       (org-agenda-include-diary t)
+      (org-agenda-files ',(cons (org-x-get-daily-plan-file)
+                                (org-x-get-action-files)))
       (org-super-agenda-groups
        `(,(nd/org-def-super-agenda-pred "Morning routine"
             (org-x-headline-has-property org-x-prop-routine
@@ -3291,7 +3299,8 @@ In the order of display
       (org-x-update-goal-link-ids)
       (nd/org-agenda-call "Goals" 'todo org-x-kw-todo
         `((org-agenda-overriding-header "Goals")
-          (org-agenda-files '("~/Org/reference/goals"))
+          (org-agenda-files ',(list (org-x-get-endpoint-goal-file)
+                                    (org-x-get-lifetime-goal-file)))
           (org-agenda-sorting-strategy '(time-up scheduled-down))
           (org-super-agenda-groups ',gs))))))
 
@@ -3302,6 +3311,7 @@ In the order of display
     '((org-agenda-skip-function #'org-x-calendar-skip-function)
       (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
       (org-agenda-include-diary t)
+      (org-agenda-files ',(org-x-get-action-and-incubator-files))
       (org-super-agenda-groups
        `((:name "Habits" :order 1 :habit t)
          (:discard (:time-grid t))
@@ -3332,8 +3342,6 @@ tasks that are inert (which I may move to the incubator during a
 review phase)"
   (interactive)
   (let ((match (nd/org-mk-match-string
-                - org-x-tag-no-agenda
-                - org-x-tag-refile
                 - org-x-tag-incubated
                 / org-x-kw-todo
                 | org-x-kw-next
@@ -3345,6 +3353,7 @@ review phase)"
         (org-agenda-skip-function #'org-x-task-skip-function)
         (org-agenda-todo-ignore-with-date t)
         (org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-agenda-files ',(org-x-get-action-and-incubator-files))
         (org-super-agenda-groups
          ',(nd/org-def-super-agenda-automap
              (let* ((is-atomic (org-x-headline-is-atomic-task-p))
@@ -3360,14 +3369,12 @@ review phase)"
 (defun nd/org-agenda-projects ()
   "Show the projects agenda view."
   (interactive)
-  (let ((match (nd/org-mk-match-string
-                - org-x-tag-no-agenda
-                - org-x-tag-refile
-                - org-x-tag-incubated)))
-  (nd/org-agenda-call "Projects" 'tags-todo match
+  (let ((match (nd/org-mk-match-string - org-x-tag-incubated)))
+    (nd/org-agenda-call "Projects" 'tags-todo match
       `((org-agenda-overriding-header "Projects")
         (org-agenda-skip-function #'org-x-project-skip-function)
         (org-agenda-sorting-strategy '(category-keep))
+        (org-agenda-files ',(org-x-get-action-and-incubator-files))
         (org-super-agenda-groups
          ',(nd/org-def-super-agenda-automap
              (let* ((status (org-x-headline-get-project-status))
@@ -3380,15 +3387,12 @@ review phase)"
 (defun nd/org-agenda-incubator ()
   "Show the incubator agenda view."
   (interactive)
-  (let ((match
-         (nd/org-mk-match-string
-          - org-x-tag-no-agenda
-          - org-x-tag-refile
-          + org-x-tag-incubated)))
+  (let ((match (nd/org-mk-match-string + org-x-tag-incubated)))
     (nd/org-agenda-call "Incubator" 'tags-todo match
-      '((org-agenda-overriding-header "Incubator")
+      `((org-agenda-overriding-header "Incubator")
         (org-agenda-skip-function #'org-x-incubator-skip-function)
         (org-agenda-sorting-strategy '(category-keep))
+        (org-agenda-files ',(org-x-get-action-and-incubator-files))
         (org-super-agenda-groups
          `((:name "Past Deadlines" :deadline past)
            (:name "Future Deadlines" :deadline future)
@@ -3407,58 +3411,53 @@ review phase)"
 (defun nd/org-agenda-periodical ()
   "Show the periodical agenda view."
   (interactive)
-  (let ((match (nd/org-mk-match-string - org-x-tag-no-agenda
-                                       - org-x-tag-refile)))
-    (nd/org-agenda-call "Periodicals" 'tags match
-      `((org-agenda-overriding-header "Periodical Status")
-        (org-agenda-skip-function #'org-x-periodical-skip-function)
-        (org-agenda-sorting-strategy '(category-keep))
-        (org-super-agenda-groups
-         ',(nd/org-def-super-agenda-automap
-             (cl-case (org-x-headline-get-periodical-status)
-               (:uninit "0. Uninitialized")
-               (:unscheduled "0. Unscheduled")
-               (:empt "1. Empty")
-               (:actv "2. Active")
-               (t "3. Other"))))))))
+  (nd/org-agenda-call "Periodicals" 'search "*"
+    `((org-agenda-overriding-header "Periodical Status")
+      (org-agenda-skip-function #'org-x-periodical-skip-function)
+      (org-agenda-sorting-strategy '(category-keep))
+      (org-agenda-files ',(org-x-get-action-files))
+      (org-super-agenda-groups
+       ',(nd/org-def-super-agenda-automap
+           (cl-case (org-x-headline-get-periodical-status)
+             (:uninit "0. Uninitialized")
+             (:unscheduled "0. Unscheduled")
+             (:empt "1. Empty")
+             (:actv "2. Active")
+             (t "3. Other")))))))
 
 (defun nd/org-agenda-iterators ()
   "Show the iterator agenda view."
   (interactive)
-  (let ((match (nd/org-mk-match-string - org-x-tag-no-agenda
-                                       - org-x-tag-refile)))
-    (nd/org-agenda-call "Iterators" 'tags match
-      `((org-agenda-overriding-header "Iterator Status")
-        (org-agenda-skip-function #'org-x-iterator-skip-function)
-        (org-agenda-sorting-strategy '(category-keep))
-        (org-super-agenda-groups
-         ',(nd/org-def-super-agenda-automap
-             (cl-case (org-x-headline-get-iterator-status)
-               (:uninit "0. Uninitialized")
-               (:project-error "0. Project Error")
-               (:unscheduled "0. Unscheduled")
-               (:empt "1. Empty")
-               (:actv "2. Active")
-               (t "3. Other"))))))))
+  (nd/org-agenda-call "Iterators" 'search "*"
+    `((org-agenda-overriding-header "Iterator Status")
+      (org-agenda-skip-function #'org-x-iterator-skip-function)
+      (org-agenda-sorting-strategy '(category-keep))
+      (org-agenda-files ',(org-x-get-action-files))
+      (org-super-agenda-groups
+       ',(nd/org-def-super-agenda-automap
+           (cl-case (org-x-headline-get-iterator-status)
+             (:uninit "0. Uninitialized")
+             (:project-error "0. Project Error")
+             (:unscheduled "0. Unscheduled")
+             (:empt "1. Empty")
+             (:actv "2. Active")
+             (t "3. Other")))))))
 
 (defun nd/org-agenda-refile ()
   "Show the refile agenda view."
   (interactive)
-  (let ((match (nd/org-mk-match-string - org-x-tag-no-agenda
-                                       - org-x-tag-refile)))
-    (nd/org-agenda-call "Refile" 'tags org-x-tag-refile
-      '((org-agenda-overriding-header "Tasks to Refile")))))
+  (nd/org-agenda-call "Refile" 'search "*"
+    `((org-agenda-overriding-header "Tasks to Refile")
+      (org-agenda-files '(,(org-x-get-capture-file))))))
    
 (defun nd/org-agenda-errors ()
   "Show the critical errors agenda view."
   (interactive)
-  (let ((match (nd/org-mk-match-string
-                - org-x-tag-no-agenda
-                - org-x-tag-refile
-                - org-x-tag-incubated)))
+  (let ((match (nd/org-mk-match-string - org-x-tag-incubated)))
     (nd/org-agenda-call "Errors" 'tags match
-      '((org-agenda-overriding-header "Critical Errors")
+      `((org-agenda-overriding-header "Critical Errors")
         (org-agenda-skip-function #'org-x-error-skip-function)
+        (org-agenda-files ',(org-x-get-action-files))
         (org-super-agenda-groups
          `(,(nd/org-def-super-agenda-pred "Discontinuous Projects"
               (org-x-headline-is-discontinous-project-task-p))
@@ -3477,59 +3476,56 @@ review phase)"
               (org-x-headline-is-open-meeting-without-effort-p))
            (:discard (:anything t))))))))
 
-(defun nd/org-agenda-meetings ()
-  "Show the meetings agenda view."
-  (interactive)
-  (let ((match (nd/org-mk-match-string
-                - org-x-tag-refile
-                + org-x-tag-meeting)))
-    (nd/org-agenda-call "Meetings" 'tags-todo match
-      '((org-agenda-overriding-header "Meetings")
-        ;; seems like this should be in the agenda groups, but works fine here
-        (org-agenda-skip-function
-         (lambda ()
-           (-when-let (ts (org-x--headline-get-property-epoch-time "SCHEDULED"))
-             (when (< ts (- (float-time) 10368000))
-               (org-x-skip-heading)))))
-        (org-agenda-sorting-strategy '(time-up scheduled-down))
-        (org-super-agenda-groups
-         `(,(nd/org-def-super-agenda-pred "Open: Unscheduled Meetings"
-              (org-x-headline-is-open-unscheduled-meeting-p))
-           ,(nd/org-def-super-agenda-pred "Open: Invalid States"
-              (org-x-headline-is-open-meeting-with-invalid-keyword-p))
-           ,(nd/org-def-super-agenda-pred "Open: Needs Agenda Items"
-              (org-x-headline-is-open-meeting-without-agenda-p))
-           ,(nd/org-def-super-agenda-pred "Open: Missing Location"
-              (org-x-headline-is-open-meeting-without-location-p))
-           ,(nd/org-def-super-agenda-pred "Open: Scheduled"
-              (org-x-headline-is-open-meeting-p))
-           ,(nd/org-def-super-agenda-pred "Closed: Unresolved Agenda"
-              (org-x-headline-is-closed-meeting-with-unresolved-agenda-p))
-           ,(nd/org-def-super-agenda-pred "Closed: Needs Action Items"
-              (org-x-headline-is-closed-meeting-without-action-items-p))
-           ,(nd/org-def-super-agenda-pred "Closed: Resolved"
-              (org-x-headline-is-closed-meeting-p))
-           (:discard (:anything t))))))))
+;; (defun nd/org-agenda-meetings ()
+;;   "Show the meetings agenda view."
+;;   (interactive)
+;;   (let ((match (nd/org-mk-match-string
+;;                 - org-x-tag-refile
+;;                 + org-x-tag-meeting)))
+;;     (nd/org-agenda-call "Meetings" 'tags-todo match
+;;       '((org-agenda-overriding-header "Meetings")
+;;         ;; seems like this should be in the agenda groups, but works fine here
+;;         (org-agenda-skip-function
+;;          (lambda ()
+;;            (-when-let (ts (org-x--headline-get-property-epoch-time "SCHEDULED"))
+;;              (when (< ts (- (float-time) 10368000))
+;;                (org-x-skip-heading)))))
+;;         (org-agenda-sorting-strategy '(time-up scheduled-down))
+;;         (org-super-agenda-groups
+;;          `(,(nd/org-def-super-agenda-pred "Open: Unscheduled Meetings"
+;;               (org-x-headline-is-open-unscheduled-meeting-p))
+;;            ,(nd/org-def-super-agenda-pred "Open: Invalid States"
+;;               (org-x-headline-is-open-meeting-with-invalid-keyword-p))
+;;            ,(nd/org-def-super-agenda-pred "Open: Needs Agenda Items"
+;;               (org-x-headline-is-open-meeting-without-agenda-p))
+;;            ,(nd/org-def-super-agenda-pred "Open: Missing Location"
+;;               (org-x-headline-is-open-meeting-without-location-p))
+;;            ,(nd/org-def-super-agenda-pred "Open: Scheduled"
+;;               (org-x-headline-is-open-meeting-p))
+;;            ,(nd/org-def-super-agenda-pred "Closed: Unresolved Agenda"
+;;               (org-x-headline-is-closed-meeting-with-unresolved-agenda-p))
+;;            ,(nd/org-def-super-agenda-pred "Closed: Needs Action Items"
+;;               (org-x-headline-is-closed-meeting-without-action-items-p))
+;;            ,(nd/org-def-super-agenda-pred "Closed: Resolved"
+;;               (org-x-headline-is-closed-meeting-p))
+;;            (:discard (:anything t))))))))
 
 (defun nd/org-agenda-archive ()
   "Show the archive agenda view."
   (interactive)
-  (let ((match (nd/org-mk-match-string
-                - org-x-tag-no-agenda
-                - org-x-tag-refile
-                - org-x-tag-no-archive)))
-    (nd/org-agenda-call "Archive" 'tags-todo match
-      '((org-agenda-overriding-header "Archive")
-        (org-agenda-skip-function #'org-x-archive-skip-function)
-        (org-agenda-sorting-strategy '(category-keep))
-        (org-super-agenda-groups
-         `(,(nd/org-def-super-agenda-pred "Atomic Tasks"
-              (org-x-headline-is-atomic-task-p))
-           ,(nd/org-def-super-agenda-pred "Toplevel Projects"
-              (org-x-headline-is-toplevel-project-p))
-           ,(nd/org-def-super-agenda-pred "Projects"
-              (org-x-headline-is-project-p))
-           (:name "Appointments" :anything)))))))
+  (nd/org-agenda-call "Archive" 'search "*"
+    `((org-agenda-overriding-header "Archive")
+      (org-agenda-skip-function #'org-x-archive-skip-function)
+      (org-agenda-sorting-strategy '(category-keep))
+      (org-agenda-files ',(org-x-get-action-files))
+      (org-super-agenda-groups
+       `(,(nd/org-def-super-agenda-pred "Atomic Tasks"
+            (org-x-headline-is-atomic-task-p))
+         ,(nd/org-def-super-agenda-pred "Toplevel Projects"
+            (org-x-headline-is-toplevel-project-p))
+         ,(nd/org-def-super-agenda-pred "Projects"
+            (org-x-headline-is-project-p))
+         (:name "Appointments" :anything))))))
 #+END_SRC
 ** tracking and analytics
 :PROPERTIES:
@@ -4910,7 +4906,7 @@ The function keys are nice because they are almost (not always) free in every mo
   ("I" #'nd/org-agenda-iterators)
   ("P" #'nd/org-agenda-periodical)
   ("a" #'nd/org-agenda-archive)
-  ("m" #'nd/org-agenda-meetings)
+  ;; ("m" #'nd/org-agenda-meetings)
   ("e" #'nd/org-agenda-errors))
 
 (global-set-key (kbd "<f2>") 'org-capture)

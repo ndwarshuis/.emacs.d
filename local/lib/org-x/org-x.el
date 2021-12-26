@@ -246,6 +246,32 @@
   (f-join org-directory "metablox.org")
   "The file to which metablocks will be written.")
 
+;; files and directories (all relative to `org-directory')
+
+(defvar org-x-action-files nil
+  "List of relative paths or globs that hold actions (not incubated).")
+
+(defvar org-x-incubator-files nil
+  "List of relative paths or globs that hold incubated actions.")
+
+(defvar org-x-reference-files nil
+  "List of relative paths or globs that hold referenced headlines.")
+
+(defvar org-x-capture-file nil
+  "Path to capture file.")
+
+(defvar org-x-endpoint-goal-file nil
+  "Path to endpoint goal file.")
+
+(defvar org-x-lifetime-goal-file nil
+  "Path to lifetime goal file.")
+
+(defvar org-x-daily-planner-file nil
+  "Path to daily plan file.")
+
+(defvar org-x-meeting-archive-file nil
+  "Path to meeting archive file.")
+
 ;;; INTERNAL CONSTANTS
   
 ;; TODO ;unscheduled should trump all
@@ -334,6 +360,76 @@ WHICH is passed to the one argument of `org-ml-parse-subtrees'."
 WHICH is passed to the one argument of `org-ml-parse-headlines'."
   (org-x-with-file path
     (org-ml-parse-headlines which)))
+
+;;; ORG FILE LOCATIONS
+
+(defun org-x--abs-org-path (path)
+  "Return PATH as an absolute path string.
+PATH is a assumed to be a path relative to `org-directory'.
+If PATH is not relative, return nil and print a warning."
+  (if (f-relative-p path)
+      (f-canonical (f-join org-directory path))
+    (message "WARNING: %s is not a relative path" path)))
+
+(defun org-x--valid-org-file-p (path)
+  "Return t if PATH points to a valid org file.
+Valid means that it exists and ends in '.org'."
+  (cond
+   ((not (f-file-p path))
+    (message "WARNING: %s does not exist; ignoring" path)
+    nil)
+   ((not (s-matches-p ".*\\.org" path))
+    (message "WARNING: %s does not end with '.org'; ignoring" path)
+    nil)
+   (t
+    t)))
+
+(defun org-x--expand-path-list (globs)
+  "Return GLOBS as expanded list of paths.
+GLOBS is a list of strings to be consumed by `f-glob'. Only
+expand files that end in '.org' and that exist are returned. All
+members of GLOBS should be relative to `org-directory'."
+  (->> (-map #'org-x--abs-org-path globs)
+       (-non-nil)
+       (-mapcat #'f-glob)
+       (-filter #'org-x--valid-org-file-p)
+       (-uniq)))
+
+(defun org-x--expand-path (path)
+  "Return PATH as an expanded path.
+PATH must be relative to `org-directory' and end in '.org'."
+  (-when-let (a (org-x--abs-org-path path))
+    (when (org-x--valid-org-file-p a)
+      a)))
+
+(defun org-x-get-endpoint-goal-file ()
+  "Return the absolute path of `org-x-endpoint-goal-file'."
+  (org-x--expand-path org-x-endpoint-goal-file))
+
+(defun org-x-get-lifetime-goal-file ()
+  "Return the absolute path of `org-x-lifetime-goal-file'."
+  (org-x--expand-path org-x-lifetime-goal-file))
+
+(defun org-x-get-capture-file ()
+  "Return the absolute path of `org-x-capture-file'."
+  (org-x--expand-path org-x-capture-file))
+
+(defun org-x-get-action-files ()
+  "Return the absolute path of `org-x-action-files'."
+  (org-x--expand-path-list org-x-action-files))
+
+(defun org-x-get-daily-plan-file ()
+  "Return the absolute path of `org-x-action-files'."
+  (org-x--expand-path org-x-daily-planner-file))
+
+(defun org-x-get-incubator-files ()
+  "Return the absolute path of `org-x-incubator-files'."
+  (org-x--expand-path-list org-x-incubator-files))
+
+(defun org-x-get-action-and-incubator-files ()
+  "Return combined list of paths for incubator and action files."
+  (append (org-x-get-action-files)
+          (org-x-get-incubator-files)))
 
 ;;; STATEFUL BUFFER HEADLINE FUNCTIONS
 
@@ -992,9 +1088,9 @@ should be this function again)."
   (setq org-x-agenda-goal-task-ids
         (-mapcat #'org-x-buffer-get-goal-ids (org-files-list))
         org-x-agenda-goal-endpoint-ids
-        (org-x-buffer-get-goal-ids "~/Org/reference/goals/endpoint.org")
+        (org-x-buffer-get-goal-ids (org-x-get-endpoint-goal-file))
         org-x-agenda-lifetime-ids
-        (org-x-get-ids-in-file "~/Org/reference/goals/lifetime.org")))
+        (org-x-get-ids-in-file (org-x-get-lifetime-goal-file))))
 
 (defun org-x-buffer-get-id-headlines (file)
   (cl-flet
@@ -1033,8 +1129,8 @@ Assumes point is on a valid headline or org mode file."
         (let ((f (f-base path)))
           (->> (org-x-buffer-get-id-headlines path)
                (--map (mk-entry path f it))))))
-    (-let* ((col (append (get-headlines "~/Org/reference/goals/lifetime.org")
-                         (get-headlines "~/Org/reference/goals/endpoint.org")))
+    (-let* ((col (append (get-headlines (org-x-get-lifetime-goal-file))
+                         (get-headlines (org-x-get-endpoint-goal-file))))
             (res (completing-read "Goal to link: " col nil t))
             ((&plist :title :path :id :point) (alist-get res col nil nil #'equal))
             (target-id (if id id
