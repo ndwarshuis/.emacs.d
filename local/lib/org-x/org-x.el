@@ -994,7 +994,55 @@ should be this function again)."
         org-x-agenda-goal-endpoint-ids
         (org-x-buffer-get-goal-ids "~/Org/reference/goals/endpoint.org")
         org-x-agenda-lifetime-ids
-        (org-x-get-ids-in-file "~/Org/reference/goals/lifetime.org.org")))
+        (org-x-get-ids-in-file "~/Org/reference/goals/lifetime.org")))
+
+(defun org-x-buffer-get-id-headlines (file)
+  (cl-flet
+      ((is-leaf
+        (headline)
+        (and (org-ml-get-property :todo-keyword headline)
+             (->> (org-ml-headline-get-subheadlines headline)
+                  (--none? (org-ml-get-property :todo-keyword it))))))
+    (org-x-with-file file
+      (->> (org-ml-parse-headlines 'all)
+           (-filter #'is-leaf)))))
+
+(defun org-x-set-goal-link-property (id title)
+  "Set the goal link property of the current headline to ID/TITLE.
+Assumes point is on a valid headline or org mode file."
+  (let ((link (org-ml-to-trimmed-string (org-ml-build-link id :type "id" title))))
+    (org-set-property org-x-prop-goal link)))
+
+(defun org-x-set-goal-link ()
+  (interactive)
+  ;; TODO also add a sanity check for if we are in a goals file or not
+  (ignore-errors
+    (org-back-to-heading t))
+  (print 'hi)
+  (cl-flet*
+      ((mk-entry
+        (path base hl)
+        (let ((title (org-ml-get-property :raw-value hl)))
+          (list (format "%-10s | %s" base title)
+                :title title
+                :path path
+                :id (org-ml-headline-get-node-property "ID" hl)
+                :point (org-ml-get-property :begin hl))))
+       (get-headlines
+        (path)
+        (let ((f (f-base path)))
+          (->> (org-x-buffer-get-id-headlines path)
+               (--map (mk-entry path f it))))))
+    (-let* ((col (append (get-headlines "~/Org/reference/goals/lifetime.org")
+                         (get-headlines "~/Org/reference/goals/endpoint.org")))
+            (res (completing-read "Goal to link: " col nil t))
+            ((&plist :title :path :id :point) (alist-get res col nil nil #'equal))
+            (target-id (if id id
+                         (org-x-with-file path
+                           (goto-char point)
+                           (message "ID not present. Creating.")
+                           (org-id-get-create)))))
+      (org-x-set-goal-link-property target-id title))))
 
 ;; iterators
 
