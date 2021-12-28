@@ -1793,13 +1793,31 @@ Org has several extensions in the form of loadable modules. =org-protocol= is us
 (require 'org-habit)
 (require 'org-clock)
 #+END_SRC
-*** directory
+*** files
 :PROPERTIES:
 :ID:       69bfcaa5-db1d-4507-8397-7dee3cb902f5
 :END:
-I keep all my org files in one place.
+Firstly, I keep all my Org files in one place.
+
+Secondly, I made my own variable (all the =org-x-= symbols below) to group my org files together by purpose. In general this makes it much easier to keep track of them, and it forces me to stay organized with my org files rather than dump headlines whereever I feel like it at any given moment.
+
+Additionally, using specialized file variables makes it much easier and faster to manage agenda views (see much further below). Rather than set =org-agenda=files= globally, I scope this variable dynamically for each agenda view, which makes each view much faster to display. It also is much easier to draw sharp lines between different groups; rather than use file-level tags and/or properties (what I used to do) I can simply exclude certain files if I don't want to see a certain type of content.
 #+BEGIN_SRC emacs-lisp
-(setq org-directory "~/Org")
+(setq org-directory "~/Org"
+
+      org-x-action-files (list "general.org" "projects/*.org")
+      org-x-incubator-files (list "incubator.org")
+      org-x-capture-file "capture.org"
+      org-x-reference-files (list "reference/idea.org" "reference/questions.org")
+      org-x-endpoint-goal-file "reference/goals/endpoint.org"
+      org-x-lifetime-goal-file "reference/goals/lifetime.org"
+      org-x-daily-planner-file "metablox.org"
+
+      org-refile-targets '((org-x-get-action-files :maxlevel . 9)
+                           (org-x-get-incubator-files :maxlevel . 9)
+                           (org-x-get-endpoint-goal-file :maxlevel . 9)
+                           (org-x-get-lifetime-goal-file :maxlevel . 9)
+                           (org-x-get-reference-files :maxlevel . 9)))
 #+END_SRC
 *** autosave
 :PROPERTIES:
@@ -2565,11 +2583,7 @@ Add the creation time upon completing a capture.
 :END:
 Refile (like capture) should be fast, and I search all org file simultaneously using =ivy= (setting =org-outline-path-complete-in-steps= to =nil= makes search happen for entire trees at once and not just the current level). Refiling is easiest to do from a block agenda view (see below) where headings can be moved in bulk.
 #+BEGIN_SRC emacs-lisp
-(setq org-refile-targets '((nil :maxlevel . 9)
-                           ("~/Org/reference/idea.org" :maxlevel . 9)
-                           ("~/Org/reference/questions.org" :maxlevel . 9)
-                           (org-agenda-files :maxlevel . 9))
-      org-refile-use-outline-path 'file
+(setq org-refile-use-outline-path 'file
       org-outline-path-complete-in-steps nil
       org-refile-allow-creating-parent-nodes 'confirm
       org-indirect-buffer-display 'current-window)
@@ -2679,24 +2693,6 @@ Override the standard headline insertion function to add a timestamp for the tim
 :PROPERTIES:
 :ID:       73c154c8-e13e-4e90-8a1d-77c3be067502
 :END:
-**** targets
-:PROPERTIES:
-:ID:       5807d294-b7a6-47d7-a3a2-913a4bac4f3d
-:END:
-The agenda files are limited to as few as possible to keep scanning and startup reasonably fast.
-#+BEGIN_SRC emacs-lisp
-(setq org-agenda-files '("~/Org"
-                         "~/Org/projects"
-                         "~/Org/reference/goals"
-                         "~/Org/reference/meetings"
-                         "~/Org/reference/peripheral.org")
-      org-x-daily-planner-file "metablox.org"
-      org-x-action-files (list "general.org" "projects/*.org")
-      org-x-incubator-files (list "incubator.org")
-      org-x-capture-file "capture.org"
-      org-x-endpoint-goal-file "reference/goals/endpoint.org"
-      org-x-lifetime-goal-file "reference/goals/lifetime.org")
-#+END_SRC
 **** appearence
 ***** sticky agendas
 :PROPERTIES:
@@ -3308,7 +3304,7 @@ In the order of display
   "Show the daily agenda view."
   (interactive)
   (nd/org-agenda-call "Daily" 'agenda ""
-    '((org-agenda-skip-function #'org-x-calendar-skip-function)
+    `((org-agenda-skip-function #'org-x-calendar-skip-function)
       (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
       (org-agenda-include-diary t)
       (org-agenda-files ',(org-x-get-action-and-incubator-files))

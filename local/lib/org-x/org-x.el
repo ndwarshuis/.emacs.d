@@ -426,6 +426,10 @@ PATH must be relative to `org-directory' and end in '.org'."
   "Return the absolute path of `org-x-incubator-files'."
   (org-x--expand-path-list org-x-incubator-files))
 
+(defun org-x-get-reference-files ()
+  "Return the absolute path of `org-x-reference-files'."
+  (org-x--expand-path-list org-x-reference-files))
+
 (defun org-x-get-action-and-incubator-files ()
   "Return combined list of paths for incubator and action files."
   (append (org-x-get-action-files)
