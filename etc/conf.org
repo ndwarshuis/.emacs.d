@@ -2940,18 +2940,28 @@ original function being advised and ARGS are the arguments."
     (:active . 3)
     (:inert . 4)))
 
+(defun org-x-agenda-run-series-advice (fun name settings)
+  (-if-let (org-agenda-files (->> (nth 1 settings)
+                                  (alist-get 'org-agenda-files)
+                                  (car)
+                                  (eval)))
+      (funcall fun name settings)
+    (funcall fun name settings)))
+
+(advice-add #'org-agenda-run-series :around #'org-x-agenda-run-series-advice)
+
 (defun nd/org-agenda-call (name type match files settings)
   (declare (indent 4))
   (-let* (((bname hname) (pcase name
                            (`(,b ,h) (list b h))
                            ((and s (pred stringp)) (list s s))
                            (e (error "Invalid agenda name spec: %s" e))))
-          (s `((org-agenda-files ',files)
-               (org-agenda-overriding-header ,hname)
+          (s `((org-agenda-overriding-header ,hname)
                ,@settings)))
     (catch 'exit
-      (let ((org-agenda-buffer-name (format "*Agenda: %s" bname)))
-        (org-agenda-run-series name `(((,type ,match ,s))))))))
+      (let ((org-agenda-buffer-name (format "*Agenda: %s*" bname)))
+        (org-agenda-run-series name `(((,type ,match ,s))
+                                      ((org-agenda-files ',files))))))))
 
 (defun nd/org-agenda-call-agenda (name files settings)
   (declare (indent 2))
