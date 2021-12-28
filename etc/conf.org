@@ -2940,284 +2940,26 @@ original function being advised and ARGS are the arguments."
     (:active . 3)
     (:inert . 4)))
 
-;; (setq
-;;  org-agenda-custom-commands
-;;  ;; Timeblock planner - for showing what I need to do in a given day
-;;  ;;
-;;  ;; In the order of display
-;;  ;; 1. morning tasks/habits (to do immediately after waking)
-;;  ;; 2. daily calendar (for thing that begin today at a specific time)
-;;  ;; 3. evening tasks/habits (to do immediately before sleeping)
-;;  ;; 4. habits
-;;  `(("b"
-;;     "Timeblock View"
-;;     ((agenda
-;;       ""
-;;       ((org-agenda-skip-function #'org-x-calendar-skip-function)
-;;        (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
-;;        (org-agenda-include-diary t)
-;;        (org-super-agenda-groups
-;;         `(,(nd/org-def-super-agenda-pred "Morning routine"
-;;              (org-x-headline-has-property org-x-prop-routine
-;;                                           org-x-prop-routine-morning)
-;;              :order 0)
-;;           ,(nd/org-def-super-agenda-pred "Evening routine"
-;;              (org-x-headline-has-property org-x-prop-routine
-;;                                           org-x-prop-routine-evening)
-;;              :order 3)
-;;           (:name "Calendar" :order 1 :time-grid t)
-;;           (:discard (:anything t))))))))
-
-;;    ;; Deadline/scheduled task view
-;;    ;;
-;;    ;; Display deadlines and scheduled tasks for the day/future. Used to
-;;    ;; create a timeblock plan for any given day
-;;    ("a"
-;;     "Agenda View"
-;;     ((agenda
-;;       ""
-;;       ((org-agenda-skip-function #'org-x-calendar-skip-function)
-;;        (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
-;;        (org-agenda-include-diary t)
-;;        (org-super-agenda-groups
-;;         `(
-;;           (:name "Habits" :order 1 :habit t)
-;;           (:discard (:time-grid t))
-;;           (:discard (:pred ,(nd/org-mk-super-agenda-pred
-;;                              '((or (org-x-headline-has-property
-;;                                     org-x-prop-routine
-;;                                     org-x-prop-routine-evening)
-;;                                    (org-x-headline-has-property
-;;                                     org-x-prop-routine
-;;                                     org-x-prop-routine-morning))))))
-;;           ,(nd/org-def-super-agenda-pred "Deadlined Projects"
-;;              (progn
-;;                ;; TODO IDK why this is needed, but the point starts on the
-;;                ;; deadline timestamp and then the project test fails
-;;                (org-back-to-heading t)
-;;                (and (org-x-headline-is-deadlined-p)
-;;                     (org-x-headline-is-project-p)))
-;;              :order 7)
-;;           (:name "Deadlined Tasks" :order 5 :deadline t)
-;;           (:name "Scheduled" :order 4 :scheduled t)))))))
-
-;;    ;; Tasks - a view for all individual, non-repeated actions I need to do
-;;    ;;
-;;    ;; Distinguish between atomic and project tasks, as well as tasks that
-;;    ;; are inert (which I may move to the incubator during a review phase)
-;;    ("t"
-;;     "Task View"
-;;     ((tags-todo
-;;       ,(nd/org-mk-match-string
-;;         - org-x-tag-no-agenda
-;;         - org-x-tag-refile
-;;         - org-x-tag-incubated
-;;         / org-x-kw-todo
-;;         | org-x-kw-next
-;;         | org-x-kw-wait
-;;         | org-x-kw-hold
-;;         | org-x-kw-canc)
-;;       ((org-agenda-overriding-header "Tasks")
-;;        (org-agenda-skip-function #'org-x-task-skip-function)
-;;        (org-agenda-todo-ignore-with-date t)
-;;        (org-agenda-sorting-strategy '(user-defined-up category-keep))
-;;        (org-super-agenda-groups
-;;         ',(nd/org-def-super-agenda-automap
-;;             (let* ((is-atomic (org-x-headline-is-atomic-task-p))
-;;                    ;; lump inert and active non-atomic tasks together
-;;                    (status (--> (org-x-headline-get-task-status)
-;;                              (if (and (not is-atomic) (eq it :inert))
-;;                                  :active it)))
-;;                    (priority (alist-get status nd/org-headline-task-status-priorities)))
-;;               (unless (< priority 0)
-;;                 (-let (((level1 subtitle) (if is-atomic '(1 "α") '(0 "σ"))))
-;;                   (nd/org-mapper-title level1 priority status subtitle))))))))))
-
-;;    ;; Goals - a view for putting my goals in one place
-;;    ;;
-;;    ;; I look at this when making my long term plan. If a goal is worth pursuing,
-;;    ;; I put it on my plan.
-;;    ("g"
-;;     "Goals"
-;;     ((todo
-;;       ,(nd/org-mk-match-string org-x-kw-todo)
-;;       ((org-agenda-overriding-header "Goals")
-;;        (org-agenda-files '("~/Org/reference/goals"))
-;;        ;; seems like this should be in the agenda groups, but works fine here
-;;        (org-agenda-sorting-strategy '(time-up scheduled-down))
-;;        (org-super-agenda-groups
-;;         '((:auto-category)))))))
-
-;;    ("p"
-;;     "Project View"
-;;     ((tags-todo
-;;       ,(nd/org-mk-match-string
-;;         - org-x-tag-no-agenda
-;;         - org-x-tag-refile
-;;         - org-x-tag-incubated)
-;;       ((org-agenda-overriding-header "Projects")
-;;        (org-agenda-skip-function #'org-x-project-skip-function)
-;;        (org-agenda-sorting-strategy '(category-keep))
-;;        (org-super-agenda-groups
-;;         ',(nd/org-def-super-agenda-automap
-;;             (let* ((status (org-x-headline-get-project-status))
-;;                    (priority (alist-get status nd/org-x-project-status-priorities)))
-;;               (unless (< priority 0)
-;;                 (-let* ((is-subproject (org-x-headline-has-task-parent))
-;;                         ((level1 subtitle) (if is-subproject '(1 "σ") '(0 "τ"))))
-;;                   (nd/org-mapper-title level1 priority status subtitle))))))))))
-   
-;;    ("i"
-;;     "Incubator View"
-;;     ((tags
-;;       ,(nd/org-mk-match-string
-;;         - org-x-tag-no-agenda
-;;         - org-x-tag-refile
-;;         + org-x-tag-incubated)
-;;       ((org-agenda-overriding-header "Incubator")
-;;        (org-agenda-skip-function #'org-x-incubator-skip-function)
-;;        (org-agenda-sorting-strategy '(category-keep))
-;;        (org-super-agenda-groups
-;;         `((:name "Past Deadlines" :deadline past)
-;;           (:name "Future Deadlines" :deadline future)
-;;           ,(nd/org-def-super-agenda-pred "Stale Appointments"
-;;              (org-x-headline-is-stale-p))
-;;           ,(nd/org-def-super-agenda-pred "Future Appointments"
-;;              (not (org-x-headline-is-todoitem-p)))
-;;           ,(nd/org-def-super-agenda-pred "Tasks"
-;;              (org-x-headline-is-task-p))
-;;           ,(nd/org-def-super-agenda-pred "Toplevel Projects"
-;;              (org-x-headline-is-toplevel-project-p))
-;;           ,(nd/org-def-super-agenda-pred "Projects"
-;;              (org-x-headline-is-project-p))
-;;           (:discard (:anything t))))))))
-   
-;;    ("P"
-;;     "Periodical View"
-;;     ((tags
-;;       ,(nd/org-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
-;;       ((org-agenda-overriding-header "Periodical Status")
-;;        (org-agenda-skip-function #'org-x-periodical-skip-function)
-;;        (org-agenda-sorting-strategy '(category-keep))
-;;        (org-super-agenda-groups
-;;         ',(nd/org-def-super-agenda-automap
-;;             (cl-case (org-x-headline-get-periodical-status)
-;;               (:uninit "0. Uninitialized")
-;;               (:unscheduled "0. Unscheduled")
-;;               (:empt "1. Empty")
-;;               (:actv "2. Active")
-;;               (t "3. Other"))))))))
-
-;;    ("I"
-;;     "Iterator View"
-;;     ((tags
-;;       ,(nd/org-mk-match-string - org-x-tag-no-agenda - org-x-tag-refile)
-;;       ((org-agenda-overriding-header "Iterator Status")
-;;        (org-agenda-skip-function #'org-x-iterator-skip-function)
-;;        (org-agenda-sorting-strategy '(category-keep))
-;;        (org-super-agenda-groups
-;;         ',(nd/org-def-super-agenda-automap
-;;             (cl-case (org-x-headline-get-iterator-status)
-;;               (:uninit "0. Uninitialized")
-;;               (:project-error "0. Project Error")
-;;               (:unscheduled "0. Unscheduled")
-;;               (:empt "1. Empty")
-;;               (:actv "2. Active")
-;;               (t "3. Other"))))))))
-
-;;    ("r" "Refile"
-;;     ((tags ,org-x-tag-refile ((org-agenda-overriding-header "Tasks to Refile"))
-;;            (org-tags-match-list-sublevels nil))))
-   
-;;    ("f" "Flagged"
-;;     ((tags ,org-x-tag-flagged ((org-agenda-overriding-header "Flagged Tasks")))))
-   
-;;    ("e"
-;;     "Critical Errors"
-;;     ((tags
-;;       ,(nd/org-mk-match-string
-;;         - org-x-tag-no-agenda
-;;         - org-x-tag-refile
-;;         - org-x-tag-incubated)
-;;       ((org-agenda-overriding-header "Critical Errors")
-;;        (org-agenda-skip-function #'org-x-error-skip-function)
-;;        (org-super-agenda-groups
-;;         `(,(nd/org-def-super-agenda-pred "Discontinuous Projects"
-;;              (org-x-headline-is-discontinous-project-task-p))
-;;           ;; TODO this is redundant, only thing this checks is project headers
-;;           ,(nd/org-def-super-agenda-pred "Done Unclosed"
-;;              (org-x-headline-is-done-unclosed-task-p))
-;;           ,(nd/org-def-super-agenda-pred "Undone Closed"
-;;              (org-x-headline-is-undone-closed-task-p))
-;;           ,(nd/org-def-super-agenda-pred "Missing Creation Timestamp"
-;;              (org-x-headline-is-task-without-creation-timestamp-p))
-;;           ,(nd/org-def-super-agenda-pred "Missing Archive Target (iterators)"
-;;              (org-x-headline-is-iterator-without-archive-target-p))
-;;           ,(nd/org-def-super-agenda-pred "Future Creation Timestamp"
-;;              (org-x-headline-is-task-with-future-creation-timestamp-p))
-;;           ,(nd/org-def-super-agenda-pred "Meeting without Effort"
-;;              (org-x-headline-is-open-meeting-without-effort-p))
-;;           (:discard (:anything t))))))))
-
-;;    ("m"
-;;     "Meetings"
-;;     ((tags-todo
-;;       ,(nd/org-mk-match-string
-;;         - org-x-tag-refile
-;;         + org-x-tag-meeting)
-;;       ((org-agenda-overriding-header "Meetings")
-;;        ;; seems like this should be in the agenda groups, but works fine here
-;;        (org-agenda-skip-function
-;;         (lambda ()
-;;           (-when-let (ts (org-x--headline-get-property-epoch-time "SCHEDULED"))
-;;               (when (< ts (- (float-time) 10368000))
-;;                 (org-x-skip-heading)))))
-;;        (org-agenda-sorting-strategy '(time-up scheduled-down))
-;;        (org-super-agenda-groups
-;;         `(,(nd/org-def-super-agenda-pred "Open: Unscheduled Meetings"
-;;              (org-x-headline-is-open-unscheduled-meeting-p))
-;;           ,(nd/org-def-super-agenda-pred "Open: Invalid States"
-;;              (org-x-headline-is-open-meeting-with-invalid-keyword-p))
-;;           ,(nd/org-def-super-agenda-pred "Open: Needs Agenda Items"
-;;              (org-x-headline-is-open-meeting-without-agenda-p))
-;;           ,(nd/org-def-super-agenda-pred "Open: Missing Location"
-;;              (org-x-headline-is-open-meeting-without-location-p))
-;;           ,(nd/org-def-super-agenda-pred "Open: Scheduled"
-;;              (org-x-headline-is-open-meeting-p))
-;;           ,(nd/org-def-super-agenda-pred "Closed: Unresolved Agenda"
-;;              (org-x-headline-is-closed-meeting-with-unresolved-agenda-p))
-;;           ,(nd/org-def-super-agenda-pred "Closed: Needs Action Items"
-;;              (org-x-headline-is-closed-meeting-without-action-items-p))
-;;           ,(nd/org-def-super-agenda-pred "Closed: Resolved"
-;;              (org-x-headline-is-closed-meeting-p))
-;;           (:discard (:anything t))))))))
-
-
-;;    ("A"
-;;     "Archivable Tasks and Projects"
-;;     ((tags
-;;       ,(nd/org-mk-match-string
-;;         - org-x-tag-no-agenda
-;;         - org-x-tag-refile
-;;         - org-x-tag-no-archive)
-;;       ((org-agenda-overriding-header "Archive")
-;;        (org-agenda-skip-function #'org-x-archive-skip-function)
-;;        (org-agenda-sorting-strategy '(category-keep))
-;;        (org-super-agenda-groups
-;;         `(,(nd/org-def-super-agenda-pred "Atomic Tasks"
-;;              (org-x-headline-is-atomic-task-p))
-;;           ,(nd/org-def-super-agenda-pred "Toplevel Projects"
-;;              (org-x-headline-is-toplevel-project-p))
-;;           ,(nd/org-def-super-agenda-pred "Projects"
-;;              (org-x-headline-is-project-p))
-;;           (:name "Appointments" :anything)))))))))
-
-(defun nd/org-agenda-call (name type match settings)
-  (declare (indent 3))
-  (let ((bname (format "*Agenda: %s*" name)))
+(defun nd/org-agenda-call (name type match files settings)
+  (declare (indent 4))
+  (-let* (((bname hname) (pcase name
+                           (`(,b ,h) (list b h))
+                           ((and s (pred stringp)) (list s s))
+                           (e (error "Invalid agenda name spec: %s" e))))
+          (s `((org-agenda-files ',files)
+               (org-agenda-overriding-header ,hname)
+               ,@settings)))
     (catch 'exit
-      (let ((org-agenda-buffer-name bname))
-        (org-agenda-run-series name `(((,type ,match ,settings))))))))
+      (let ((org-agenda-buffer-name (format "*Agenda: %s" bname)))
+        (org-agenda-run-series name `(((,type ,match ,s))))))))
+
+(defun nd/org-agenda-call-agenda (name files settings)
+  (declare (indent 2))
+  (nd/org-agenda-call name 'agenda "" files settings))
+
+(defun nd/org-agenda-call-headlines (name files settings)
+  (declare (indent 2))
+  (nd/org-agenda-call name 'search "*" files settings))
 
 (defun nd/org-agenda-timeblock ()
   "Show the timeblock agenda view.
@@ -3228,23 +2970,22 @@ In the order of display
 3. evening tasks/habits (to do immediately before sleeping)
 4. habits"
   (interactive)
-  (nd/org-agenda-call "Timeblock" 'agenda ""
-    `((org-agenda-skip-function #'org-x-calendar-skip-function)
-      (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
-      (org-agenda-include-diary t)
-      (org-agenda-files ',(cons (org-x-get-daily-plan-file)
-                                (org-x-get-action-files)))
-      (org-super-agenda-groups
-       `(,(nd/org-def-super-agenda-pred "Morning routine"
-            (org-x-headline-has-property org-x-prop-routine
-                                         org-x-prop-routine-morning)
-            :order 0)
-         ,(nd/org-def-super-agenda-pred "Evening routine"
-            (org-x-headline-has-property org-x-prop-routine
-                                         org-x-prop-routine-evening)
-            :order 3)
-         (:name "Calendar" :order 1 :time-grid t)
-         (:discard (:anything t)))))))
+  (let ((files (cons (org-x-get-daily-plan-file) (org-x-get-action-files))))
+    (nd/org-agenda-call-agenda "Timeblock" files
+      `((org-agenda-skip-function #'org-x-calendar-skip-function)
+        (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
+        (org-agenda-include-diary t)
+        (org-super-agenda-groups
+         `(,(nd/org-def-super-agenda-pred "Morning routine"
+              (org-x-headline-has-property org-x-prop-routine
+                                           org-x-prop-routine-morning)
+              :order 0)
+           ,(nd/org-def-super-agenda-pred "Evening routine"
+              (org-x-headline-has-property org-x-prop-routine
+                                           org-x-prop-routine-evening)
+              :order 3)
+           (:name "Calendar" :order 1 :time-grid t)
+           (:discard (:anything t))))))))
 
 (defun nd/org-agenda-goals ()
   "Show the goals agenda view."
@@ -3291,23 +3032,21 @@ In the order of display
               (:order 2 ,@(mk-childless "endpoint" 'org-x-agenda-goal-task-ids))
               (:order 3 ,@(mk-parentless "endpoint" 'org-x-agenda-lifetime-ids))
               (:order 4 ,@(mk-leaf "lifetime"))
-              (:order 5 ,@(mk-leaf "endpoint")))))
+              (:order 5 ,@(mk-leaf "endpoint"))))
+           (files (list (org-x-get-endpoint-goal-file)
+                        (org-x-get-lifetime-goal-file))))
       (org-x-update-goal-link-ids)
-      (nd/org-agenda-call "Goals" 'todo org-x-kw-todo
-        `((org-agenda-overriding-header "Goals")
-          (org-agenda-files ',(list (org-x-get-endpoint-goal-file)
-                                    (org-x-get-lifetime-goal-file)))
-          (org-agenda-sorting-strategy '(time-up scheduled-down))
+      (nd/org-agenda-call "Goals" 'todo org-x-kw-todo files
+        `((org-agenda-sorting-strategy '(time-up scheduled-down))
           (org-super-agenda-groups ',gs))))))
 
 (defun nd/org-agenda-daily ()
   "Show the daily agenda view."
   (interactive)
-  (nd/org-agenda-call "Daily" 'agenda ""
+  (nd/org-agenda-call-agenda "Daily" (org-x-get-action-and-incubator-files)
     `((org-agenda-skip-function #'org-x-calendar-skip-function)
       (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
       (org-agenda-include-diary t)
-      (org-agenda-files ',(org-x-get-action-and-incubator-files))
       (org-super-agenda-groups
        `((:name "Habits" :order 1 :habit t)
          (:discard (:time-grid t))
@@ -3329,7 +3068,6 @@ In the order of display
          (:name "Deadlined Tasks" :order 5 :deadline t)
          (:name "Scheduled" :order 4 :scheduled t))))))
 
-
 (defun nd/org-agenda-tasks ()
   "Show the tasks agenda view.
 
@@ -3343,13 +3081,12 @@ review phase)"
                 | org-x-kw-next
                 | org-x-kw-wait
                 | org-x-kw-hold
-                | org-x-kw-canc)))
-    (nd/org-agenda-call "Tasks" 'tags-todo match
-      `((org-agenda-overriding-header "Tasks")
-        (org-agenda-skip-function #'org-x-task-skip-function)
+                | org-x-kw-canc))
+        (files (org-x-get-action-and-incubator-files)))
+    (nd/org-agenda-call "Tasks" 'tags-todo match files
+      `((org-agenda-skip-function #'org-x-task-skip-function)
         (org-agenda-todo-ignore-with-date t)
         (org-agenda-sorting-strategy '(user-defined-up category-keep))
-        (org-agenda-files ',(org-x-get-action-and-incubator-files))
         (org-super-agenda-groups
          ',(nd/org-def-super-agenda-automap
              (let* ((is-atomic (org-x-headline-is-atomic-task-p))
@@ -3365,12 +3102,11 @@ review phase)"
 (defun nd/org-agenda-projects ()
   "Show the projects agenda view."
   (interactive)
-  (let ((match (nd/org-mk-match-string - org-x-tag-incubated)))
-    (nd/org-agenda-call "Projects" 'tags-todo match
-      `((org-agenda-overriding-header "Projects")
-        (org-agenda-skip-function #'org-x-project-skip-function)
+  (let ((match (nd/org-mk-match-string - org-x-tag-incubated))
+        (files (org-x-get-action-and-incubator-files)))
+    (nd/org-agenda-call "Projects" 'tags-todo match files
+      `((org-agenda-skip-function #'org-x-project-skip-function)
         (org-agenda-sorting-strategy '(category-keep))
-        (org-agenda-files ',(org-x-get-action-and-incubator-files))
         (org-super-agenda-groups
          ',(nd/org-def-super-agenda-automap
              (let* ((status (org-x-headline-get-project-status))
@@ -3383,12 +3119,11 @@ review phase)"
 (defun nd/org-agenda-incubator ()
   "Show the incubator agenda view."
   (interactive)
-  (let ((match (nd/org-mk-match-string + org-x-tag-incubated)))
+  (let ((match (nd/org-mk-match-string + org-x-tag-incubated))
+        (files (org-x-get-action-and-incubator-files)))
     (nd/org-agenda-call "Incubator" 'tags-todo match
-      `((org-agenda-overriding-header "Incubator")
-        (org-agenda-skip-function #'org-x-incubator-skip-function)
+      `((org-agenda-skip-function #'org-x-incubator-skip-function)
         (org-agenda-sorting-strategy '(category-keep))
-        (org-agenda-files ',(org-x-get-action-and-incubator-files))
         (org-super-agenda-groups
          `((:name "Past Deadlines" :deadline past)
            (:name "Future Deadlines" :deadline future)
@@ -3407,11 +3142,10 @@ review phase)"
 (defun nd/org-agenda-periodical ()
   "Show the periodical agenda view."
   (interactive)
-  (nd/org-agenda-call "Periodicals" 'search "*"
-    `((org-agenda-overriding-header "Periodical Status")
-      (org-agenda-skip-function #'org-x-periodical-skip-function)
+  (let ((files (org-x-get-action-files)))
+  (nd/org-agenda-call-headlines '("Periodicals" "Periodical Status") files
+    `((org-agenda-skip-function #'org-x-periodical-skip-function)
       (org-agenda-sorting-strategy '(category-keep))
-      (org-agenda-files ',(org-x-get-action-files))
       (org-super-agenda-groups
        ',(nd/org-def-super-agenda-automap
            (cl-case (org-x-headline-get-periodical-status)
@@ -3419,16 +3153,15 @@ review phase)"
              (:unscheduled "0. Unscheduled")
              (:empt "1. Empty")
              (:actv "2. Active")
-             (t "3. Other")))))))
+             (t "3. Other"))))))))
 
 (defun nd/org-agenda-iterators ()
   "Show the iterator agenda view."
   (interactive)
-  (nd/org-agenda-call "Iterators" 'search "*"
+  (nd/org-agenda-call-headlines "Iterators" (org-x-get-action-files)
     `((org-agenda-overriding-header "Iterator Status")
       (org-agenda-skip-function #'org-x-iterator-skip-function)
       (org-agenda-sorting-strategy '(category-keep))
-      (org-agenda-files ',(org-x-get-action-files))
       (org-super-agenda-groups
        ',(nd/org-def-super-agenda-automap
            (cl-case (org-x-headline-get-iterator-status)
@@ -3442,18 +3175,16 @@ review phase)"
 (defun nd/org-agenda-refile ()
   "Show the refile agenda view."
   (interactive)
-  (nd/org-agenda-call "Refile" 'search "*"
-    `((org-agenda-overriding-header "Tasks to Refile")
-      (org-agenda-files '(,(org-x-get-capture-file))))))
+  (nd/org-agenda-call-headlines '("Refile" "Tasks to Refile")
+      `(,(org-x-get-capture-file))
+    nil))
    
 (defun nd/org-agenda-errors ()
   "Show the critical errors agenda view."
   (interactive)
   (let ((match (nd/org-mk-match-string - org-x-tag-incubated)))
-    (nd/org-agenda-call "Errors" 'tags match
-      `((org-agenda-overriding-header "Critical Errors")
-        (org-agenda-skip-function #'org-x-error-skip-function)
-        (org-agenda-files ',(org-x-get-action-files))
+    (nd/org-agenda-call "Errors" 'tags match (org-x-get-action-files)
+      `((org-agenda-skip-function #'org-x-error-skip-function)
         (org-super-agenda-groups
          `(,(nd/org-def-super-agenda-pred "Discontinuous Projects"
               (org-x-headline-is-discontinous-project-task-p))
@@ -3509,11 +3240,9 @@ review phase)"
 (defun nd/org-agenda-archive ()
   "Show the archive agenda view."
   (interactive)
-  (nd/org-agenda-call "Archive" 'search "*"
-    `((org-agenda-overriding-header "Archive")
-      (org-agenda-skip-function #'org-x-archive-skip-function)
+  (nd/org-agenda-call-headlines "Archive" (org-x-get-action-files)
+    `((org-agenda-skip-function #'org-x-archive-skip-function)
       (org-agenda-sorting-strategy '(category-keep))
-      (org-agenda-files ',(org-x-get-action-files))
       (org-super-agenda-groups
        `(,(nd/org-def-super-agenda-pred "Atomic Tasks"
             (org-x-headline-is-atomic-task-p))
