@@ -3040,6 +3040,29 @@ In the order of display
         `((org-agenda-sorting-strategy '(time-up scheduled-down))
           (org-super-agenda-groups ',gs))))))
 
+(defun nd/org-agenda-goal-groups ()
+  (interactive)
+  (let ((match (nd/org-mk-match-string
+                - org-x-tag-incubated
+                / org-x-kw-todo
+                | org-x-kw-next
+                | org-x-kw-wait
+                | org-x-kw-hold
+                | org-x-kw-canc))
+        (files (org-x-get-action-and-incubator-files)))
+    (nd/org-agenda-call "Goal Groups" 'tags-todo match (org-x-get-action-files)
+      `((org-agenda-sorting-strategy '(time-up scheduled-down))
+        (org-agenda-skip-function #'org-x-task-skip-function)
+        (org-super-agenda-groups
+         ',(nd/org-def-super-agenda-automap
+             (let ((is-ind (org-x-headline-is-atomic-task-p))
+                   (goal-status (-if-let ((f . h) (org-x-resolve-goal-id))
+                                    (format "%s | %s"
+                                            (s-capitalize (f-base f))
+                                            (org-ml-get-property :raw-value h))
+                                  "No Goal")))
+               (format "%s | %s" (if is-ind "Indep." "Project") goal-status))))))))
+
 (defun nd/org-agenda-daily ()
   "Show the daily agenda view."
   (interactive)

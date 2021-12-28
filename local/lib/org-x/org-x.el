@@ -1056,6 +1056,20 @@ should be this function again)."
 (defvar org-x-agenda-goal-endpoint-ids nil)
 (defvar org-x-agenda-lifetime-ids nil)
 
+(defun org-x-get-goal-link-id (&optional inherit)
+  (-when-let (g (org-entry-get nil org-x-prop-goal inherit))
+      (-if-let (i (org-x-link-get-id g))
+          i
+        (message "WARNING: invalid id found: %s" i))))
+
+(defun org-x-resolve-goal-id ()
+  (-when-let (i (org-x-get-goal-link-id t))
+    (-when-let ((f . p) (org-id-find i))
+      (org-x-with-file f
+        (save-excursion
+          (goto-char p)
+          (cons f (org-ml-parse-this-headline)))))))
+
 (defun org-x-link-get-id (s)
   (cadr (s-match "^\\[\\[id:\\(.*\\)\\]\\[.*\\]\\]$" s)))
 
@@ -1065,10 +1079,8 @@ should be this function again)."
       (cl-flet
           ((get-goal
             ()
-            (-when-let (g (org-entry-get nil org-x-prop-goal))
-              (-if-let (i (org-x-link-get-id g))
-                  (setq acc (cons i acc))
-                (message "WARNING: invalid id found: %s" g)))))
+            (-when-let (i (org-x-get-goal-link-id))
+              (setq acc (cons i acc)))))
         ;; TODO need to return nothing if a file has a toplevel prop drawer with
         ;; a goal in it but no TODO headlines
         (goto-char (point-min))
@@ -1087,8 +1099,18 @@ should be this function again)."
            (--filter (equal f (full-path (cdr it))))
            (-map #'car)))))
 
+;; TODO this is necessary since this (rather unintuitively) scans the agenda
+;; files, so I need to supply my own files since these are not set
+(defun org-x-update-id-locations ()
+  (interactive)
+  (let ((files (append (org-x-get-action-and-incubator-files)
+                       (org-x-get-reference-files)
+                       (list (org-x-get-endpoint-goal-file)
+                             (org-x-get-lifetime-goal-file)))))
+    (call-interactively #'org-id-update-id-locations files)))
+
 (defun org-x-update-goal-link-ids ()
-  (org-id-update-id-locations)
+  (org-x-update-id-locations)
   (setq org-x-agenda-goal-task-ids
         (-mapcat #'org-x-buffer-get-goal-ids (org-files-list))
         org-x-agenda-goal-endpoint-ids
@@ -1118,7 +1140,6 @@ Assumes point is on a valid headline or org mode file."
   ;; TODO also add a sanity check for if we are in a goals file or not
   (ignore-errors
     (org-back-to-heading t))
-  (print 'hi)
   (cl-flet*
       ((mk-entry
         (path base hl)
