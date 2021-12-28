@@ -1107,7 +1107,7 @@ should be this function again)."
                        (org-x-get-reference-files)
                        (list (org-x-get-endpoint-goal-file)
                              (org-x-get-lifetime-goal-file)))))
-    (call-interactively #'org-id-update-id-locations files)))
+    (org-id-update-id-locations files)))
 
 (defun org-x-update-goal-link-ids ()
   (org-x-update-id-locations)
