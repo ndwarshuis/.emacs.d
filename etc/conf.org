@@ -2950,26 +2950,25 @@ original function being advised and ARGS are the arguments."
 
 (advice-add #'org-agenda-run-series :around #'org-x-agenda-run-series-advice)
 
-(defun nd/org-agenda-call (name type match files settings)
-  (declare (indent 4))
-  (-let* (((bname hname) (pcase name
-                           (`(,b ,h) (list b h))
-                           ((and s (pred stringp)) (list s s))
-                           (e (error "Invalid agenda name spec: %s" e))))
-          (s `((org-agenda-overriding-header ,hname)
-               ,@settings)))
-    (catch 'exit
-      (let ((org-agenda-buffer-name (format "*Agenda: %s*" bname)))
-        (org-agenda-run-series name `(((,type ,match ,s))
-                                      ((org-agenda-files ',files))))))))
-
-(defun nd/org-agenda-call-agenda (name files settings)
+(defun nd/org-agenda-run-series (name files cmds)
   (declare (indent 2))
-  (nd/org-agenda-call name 'agenda "" files settings))
+  (catch 'exit
+    (let ((org-agenda-buffer-name (format "*Agenda: %s*" name)))
+      (org-agenda-run-series name `((,@cmds) ((org-agenda-files ',files)))))))
 
-(defun nd/org-agenda-call-headlines (name files settings)
-  (declare (indent 2))
-  (nd/org-agenda-call name 'search "*" files settings))
+(defun nd/org-agenda-call (buffer-name header-name type match files settings)
+  (declare (indent 5))
+  (let* ((n (or header-name buffer-name))
+         (s `((org-agenda-overriding-header ,n) ,@settings)))
+    (nd/org-agenda-run-series buffer-name files `((,type ,match ,s)))))
+
+(defun nd/org-agenda-call-agenda (buffer-name header-name files settings)
+  (declare (indent 3))
+  (nd/org-agenda-call buffer-name header-name 'agenda "" files settings))
+
+(defun nd/org-agenda-call-headlines (buffer-name header-name files settings)
+  (declare (indent 3))
+  (nd/org-agenda-call buffer-name header-name 'search "*" files settings))
 
 (defun nd/org-agenda-timeblock ()
   "Show the timeblock agenda view.
@@ -2981,7 +2980,7 @@ In the order of display
 4. habits"
   (interactive)
   (let ((files (cons (org-x-get-daily-plan-file) (org-x-get-action-files))))
-    (nd/org-agenda-call-agenda "Timeblock" files
+    (nd/org-agenda-call-agenda "Timeblock" nil files
       `((org-agenda-skip-function #'org-x-calendar-skip-function)
         (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
         (org-agenda-include-diary t)
@@ -3046,37 +3045,60 @@ In the order of display
            (files (list (org-x-get-endpoint-goal-file)
                         (org-x-get-lifetime-goal-file))))
       (org-x-update-goal-link-ids)
-      (nd/org-agenda-call "Goals" 'todo org-x-kw-todo files
+      (nd/org-agenda-call "Goals" nil 'todo org-x-kw-todo files
         `((org-agenda-sorting-strategy '(time-up scheduled-down))
           (org-super-agenda-groups ',gs))))))
 
+;; TODO this is slow and the code isn't pretty to look at, perhaps break into
+;; several agenda views, or at least refactor the common bits
 (defun nd/org-agenda-goal-groups ()
   (interactive)
-  (let ((match (nd/org-mk-match-string
-                - org-x-tag-incubated
-                / org-x-kw-todo
-                | org-x-kw-next
-                | org-x-kw-wait
-                | org-x-kw-hold
-                | org-x-kw-canc))
+  (let ((task-match (nd/org-mk-match-string
+                     - org-x-tag-incubated
+                     / org-x-kw-todo
+                     | org-x-kw-next
+                     | org-x-kw-wait
+                     | org-x-kw-hold
+                     | org-x-kw-canc))
+        (proj-match (nd/org-mk-match-string - org-x-tag-incubated))
         (files (org-x-get-action-and-incubator-files)))
-    (nd/org-agenda-call "Goal Groups" 'tags-todo match (org-x-get-action-files)
-      `((org-agenda-sorting-strategy '(time-up scheduled-down))
-        (org-agenda-skip-function #'org-x-task-skip-function)
-        (org-super-agenda-groups
-         ',(nd/org-def-super-agenda-automap
-             (let ((is-ind (org-x-headline-is-atomic-task-p))
-                   (goal-status (-if-let ((f . h) (org-x-resolve-goal-id))
-                                    (format "%s | %s"
-                                            (s-capitalize (f-base f))
-                                            (org-ml-get-property :raw-value h))
-                                  "No Goal")))
-               (format "%s | %s" (if is-ind "Indep." "Project") goal-status))))))))
+    (nd/org-agenda-run-series "Goal Groups" (org-x-get-action-files)
+      `((tags-todo
+         ,task-match
+         ((org-agenda-overriding-header "Tasks")
+          (org-agenda-sorting-strategy '(time-up scheduled-down))
+          (org-agenda-skip-function #'org-x-task-skip-function)
+          (org-super-agenda-groups
+           ',(nd/org-def-super-agenda-automap
+               (let ((is-ind (org-x-headline-is-atomic-task-p))
+                     (goal-status (-if-let ((f . h) (org-x-resolve-goal-id))
+                                      (format "%s | %s"
+                                              (s-capitalize (f-base f))
+                                              (org-ml-get-property :raw-value h))
+                                    "No Goal")))
+                 (format "%s | %s" (if is-ind "Indep." "Project") goal-status))))))
+        (tags-todo
+         ,proj-match
+         ((org-agenda-overriding-header "Projects")
+          (org-agenda-skip-function #'org-x-project-skip-function)
+          (org-agenda-sorting-strategy '(category-keep))
+          (org-super-agenda-groups
+           ',(nd/org-def-super-agenda-automap
+               (let* ((status (org-x-headline-get-project-status))
+                      (priority (alist-get status nd/org-x-project-status-priorities)))
+                 (unless (< priority 0)
+                   (let ((is-sub (org-x-headline-has-task-parent))
+                         (goal-status (-if-let ((f . h) (org-x-resolve-goal-id))
+                                          (format "%s | %s"
+                                                  (s-capitalize (f-base f))
+                                                  (org-ml-get-property :raw-value h))
+                                        "No Goal")))
+                     (format "%s | %s" (if is-sub "Subproject" "Project") goal-status))))))))))))
 
 (defun nd/org-agenda-daily ()
   "Show the daily agenda view."
   (interactive)
-  (nd/org-agenda-call-agenda "Daily" (org-x-get-action-and-incubator-files)
+  (nd/org-agenda-call-agenda "Daily" nil (org-x-get-action-and-incubator-files)
     `((org-agenda-skip-function #'org-x-calendar-skip-function)
       (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
       (org-agenda-include-diary t)
@@ -3116,7 +3138,7 @@ review phase)"
                 | org-x-kw-hold
                 | org-x-kw-canc))
         (files (org-x-get-action-and-incubator-files)))
-    (nd/org-agenda-call "Tasks" 'tags-todo match files
+    (nd/org-agenda-call "Tasks" nil 'tags-todo match files
       `((org-agenda-skip-function #'org-x-task-skip-function)
         (org-agenda-todo-ignore-with-date t)
         (org-agenda-sorting-strategy '(user-defined-up category-keep))
@@ -3137,7 +3159,7 @@ review phase)"
   (interactive)
   (let ((match (nd/org-mk-match-string - org-x-tag-incubated))
         (files (org-x-get-action-and-incubator-files)))
-    (nd/org-agenda-call "Projects" 'tags-todo match files
+    (nd/org-agenda-call "Projects" nil 'tags-todo match files
       `((org-agenda-skip-function #'org-x-project-skip-function)
         (org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
@@ -3154,7 +3176,7 @@ review phase)"
   (interactive)
   (let ((match (nd/org-mk-match-string + org-x-tag-incubated))
         (files (org-x-get-action-and-incubator-files)))
-    (nd/org-agenda-call "Incubator" 'tags-todo match
+    (nd/org-agenda-call "Incubator" nil 'tags-todo match
       `((org-agenda-skip-function #'org-x-incubator-skip-function)
         (org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
@@ -3176,7 +3198,7 @@ review phase)"
   "Show the periodical agenda view."
   (interactive)
   (let ((files (org-x-get-action-files)))
-  (nd/org-agenda-call-headlines '("Periodicals" "Periodical Status") files
+  (nd/org-agenda-call-headlines "Periodicals" "Periodical Status" files
     `((org-agenda-skip-function #'org-x-periodical-skip-function)
       (org-agenda-sorting-strategy '(category-keep))
       (org-super-agenda-groups
@@ -3191,24 +3213,24 @@ review phase)"
 (defun nd/org-agenda-iterators ()
   "Show the iterator agenda view."
   (interactive)
-  (nd/org-agenda-call-headlines "Iterators" (org-x-get-action-files)
-    `((org-agenda-overriding-header "Iterator Status")
-      (org-agenda-skip-function #'org-x-iterator-skip-function)
-      (org-agenda-sorting-strategy '(category-keep))
-      (org-super-agenda-groups
-       ',(nd/org-def-super-agenda-automap
-           (cl-case (org-x-headline-get-iterator-status)
-             (:uninit "0. Uninitialized")
-             (:project-error "0. Project Error")
-             (:unscheduled "0. Unscheduled")
-             (:empt "1. Empty")
-             (:actv "2. Active")
-             (t "3. Other")))))))
+  (let ((files (org-x-get-action-files)))
+    (nd/org-agenda-call-headlines "Iterators" "Iterator Status" files
+      `((org-agenda-skip-function #'org-x-iterator-skip-function)
+        (org-agenda-sorting-strategy '(category-keep))
+        (org-super-agenda-groups
+         ',(nd/org-def-super-agenda-automap
+             (cl-case (org-x-headline-get-iterator-status)
+               (:uninit "0. Uninitialized")
+               (:project-error "0. Project Error")
+               (:unscheduled "0. Unscheduled")
+               (:empt "1. Empty")
+               (:actv "2. Active")
+               (t "3. Other"))))))))
 
 (defun nd/org-agenda-refile ()
   "Show the refile agenda view."
   (interactive)
-  (nd/org-agenda-call-headlines '("Refile" "Tasks to Refile")
+  (nd/org-agenda-call-headlines "Refile" "Tasks to Refile"
       `(,(org-x-get-capture-file))
     nil))
    
@@ -3216,7 +3238,7 @@ review phase)"
   "Show the critical errors agenda view."
   (interactive)
   (let ((match (nd/org-mk-match-string - org-x-tag-incubated)))
-    (nd/org-agenda-call "Errors" 'tags match (org-x-get-action-files)
+    (nd/org-agenda-call "Errors" nil 'tags match (org-x-get-action-files)
       `((org-agenda-skip-function #'org-x-error-skip-function)
         (org-super-agenda-groups
          `(,(nd/org-def-super-agenda-pred "Discontinuous Projects"
@@ -3273,7 +3295,7 @@ review phase)"
 (defun nd/org-agenda-archive ()
   "Show the archive agenda view."
   (interactive)
-  (nd/org-agenda-call-headlines "Archive" (org-x-get-action-files)
+  (nd/org-agenda-call-headlines "Archive" nil (org-x-get-action-files)
     `((org-agenda-skip-function #'org-x-archive-skip-function)
       (org-agenda-sorting-strategy '(category-keep))
       (org-super-agenda-groups
