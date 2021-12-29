@@ -1799,7 +1799,7 @@ Org has several extensions in the form of loadable modules. =org-protocol= is us
 :END:
 Firstly, I keep all my Org files in one place.
 
-Secondly, I made my own variable (all the =org-x-= symbols below) to group my org files together by purpose. In general this makes it much easier to keep track of them, and it forces me to stay organized with my org files rather than dump headlines whereever I feel like it at any given moment.
+Secondly, I made my own variables (all the =org-x-= symbols below) to group my org files together by purpose. In general this makes it much easier to keep track of them, and it forces me to stay organized with my org files rather than dump headlines wherever I wish at any given moment.
 
 Additionally, using specialized file variables makes it much easier and faster to manage agenda views (see much further below). Rather than set =org-agenda=files= globally, I scope this variable dynamically for each agenda view, which makes each view much faster to display. It also is much easier to draw sharp lines between different groups; rather than use file-level tags and/or properties (what I used to do) I can simply exclude certain files if I don't want to see a certain type of content.
 #+BEGIN_SRC emacs-lisp
@@ -1811,7 +1811,8 @@ Additionally, using specialized file variables makes it much easier and faster t
       org-x-reference-files (list "reference/idea.org" "reference/questions.org")
       org-x-endpoint-goal-file "reference/goals/endpoint.org"
       org-x-lifetime-goal-file "reference/goals/lifetime.org"
-      org-x-daily-planner-file "metablox.org"
+      org-x-daily-plan-file "plans/daily.org"
+      org-x-quarterly-plan-file "plans/quarterly.org"
 
       org-refile-targets '((org-x-get-action-files :maxlevel . 9)
                            (org-x-get-incubator-files :maxlevel . 9)
@@ -3046,7 +3047,7 @@ In the order of display
                         (org-x-get-lifetime-goal-file))))
       (org-x-update-goal-link-ids)
       (nd/org-agenda-call "Goals" nil 'todo org-x-kw-todo files
-        `((org-agenda-sorting-strategy '(time-up scheduled-down))
+        `((org-agenda-sorting-strategy '(priority-down time-up))
           (org-super-agenda-groups ',gs))))))
 
 ;; TODO this is slow and the code isn't pretty to look at, perhaps break into

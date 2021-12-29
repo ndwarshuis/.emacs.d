@@ -219,6 +219,9 @@
 (defconst org-x-prop-goal "X-GOAL"
   "Property denoting the goal this headline fulfills.")
 
+(defconst org-x-prop-allocate "X-ALLOCATE"
+  "Property the property denoting intended time allocation.")
+
 ;;; DRAWERS
 
 (defconst org-x-drwr-agenda "AGENDA_ITEMS"
@@ -226,6 +229,9 @@
 
 (defconst org-x-drwr-action "ACTION_ITEMS"
   "Drawer to hold action items in meetings.")
+
+(defconst org-x-drwr-action "X_CATEGORIES"
+  "Drawer to hold ranked categories for a quarterly plan.")
 
 ;;; PUBLIC VARS
 
@@ -263,10 +269,16 @@
 (defvar org-x-endpoint-goal-file nil
   "Path to endpoint goal file.")
 
+(defvar org-x-quarterly-plan-file nil
+  "Path to quarterly plan file.")
+
+(defvar org-x-weekly-plan-file nil
+  "Path to weekly plan file.")
+
 (defvar org-x-lifetime-goal-file nil
   "Path to lifetime goal file.")
 
-(defvar org-x-daily-planner-file nil
+(defvar org-x-daily-plan-file nil
   "Path to daily plan file.")
 
 (defvar org-x-meeting-archive-file nil
@@ -419,8 +431,16 @@ PATH must be relative to `org-directory' and end in '.org'."
   (org-x--expand-path-list org-x-action-files))
 
 (defun org-x-get-daily-plan-file ()
-  "Return the absolute path of `org-x-action-files'."
-  (org-x--expand-path org-x-daily-planner-file))
+  "Return the absolute path of `org-x-daily-plan-file'."
+  (org-x--expand-path org-x-daily-plan-file))
+
+(defun org-x-get-weekly-plan-file ()
+  "Return the absolute path of `org-x-weekly-plan-file'."
+  (org-x--expand-path org-x-weekly-plan-file))
+
+(defun org-x-get-quarterly-plan-file ()
+  "Return the absolute path of `org-x-quarterly-plan-file'."
+  (org-x--expand-path org-x-quarterly-plan-file))
 
 (defun org-x-get-incubator-files ()
   "Return the absolute path of `org-x-incubator-files'."
