@@ -230,7 +230,7 @@
 (defconst org-x-drwr-action "ACTION_ITEMS"
   "Drawer to hold action items in meetings.")
 
-(defconst org-x-drwr-action "X_CATEGORIES"
+(defconst org-x-drwr-categories "X_CATEGORIES"
   "Drawer to hold ranked categories for a quarterly plan.")
 
 ;;; PUBLIC VARS
@@ -1078,13 +1078,18 @@ should be this function again)."
           i
         (message "WARNING: invalid id found: %s" i))))
 
+(defmacro org-x-with-id-target (id form)
+  (declare (indent 1))
+  `(-when-let ((it-file . it-point) (org-id-find id))
+     (org-x-with-file it-file
+       (save-excursion
+         (goto-char it-point)
+         ,form))))
+
 (defun org-x-resolve-goal-id ()
   (-when-let (i (org-x-get-goal-link-id t))
-    (-when-let ((f . p) (org-id-find i))
-      (org-x-with-file f
-        (save-excursion
-          (goto-char p)
-          (cons f (org-ml-parse-this-headline)))))))
+    (org-x-with-id-target i
+      (cons it-file (org-ml-parse-this-headline)))))
 
 (defun org-x-link-get-id (s)
   (cadr (s-match "^\\[\\[id:\\(.*\\)\\]\\[.*\\]\\]$" s)))
@@ -1147,9 +1152,9 @@ should be this function again)."
 
 (defun org-x-get-goal-link-property ()
   "Get the goal link under current headline."
-  (->> (org-entry-get (point) org-x-prop-goal)
-       (s-split ";")
-       (--map (->> (s-trim it) (org-ml-from-string 'link)))))
+  (-some->> (org-entry-get (point) org-x-prop-goal)
+    (s-split ";")
+    (--map (->> (s-trim it) (org-ml-from-string 'link)))))
 
 (defun org-x-set-goal-link-property (ids)
   "Set the goal link property of the current headline to IDS.
@@ -1226,6 +1231,80 @@ Assumes point is on a valid headline or org mode file."
                              (message "ID not present. Creating.")
                              (org-id-get-create)))))
           (org-x-add-goal-link target-id title))))))
+
+(defun org-x-get-quarterly-plan (quarter year)
+  (unless (member quarter '(1 2 3 4))
+    (error "Quarter must be an integer of 1, 2, 3 or 4"))
+  (cl-flet
+      ((is-in-this-quarter
+        (quarter year headline)
+        (-when-let (hl-ts (-some->> (org-ml-headline-get-planning headline)
+                            (org-ml-get-property :scheduled)))
+          (let ((hl-qt (1+ (/ (1- (org-ml-get-property :month-start hl-ts)) 3)))
+                (hl-yr (org-ml-get-property :year-start hl-ts)))
+            (and (= hl-yr year) (= hl-qt quarter))))))
+    (org-x-with-file (org-x-get-quarterly-plan-file)
+      (->> (org-ml-parse-subtrees 'all)
+           ;; ASSUME all quarterly plans are level 2 headlines
+           (-mapcat #'org-ml-headline-get-subheadlines)
+           (--find (is-in-this-quarter quarter year it))))))
+
+(defun org-x-get-current-quarterly-plan ()
+  (-let* (((_ _ _ _ month year) (decode-time (current-time)))
+          (quarter (1+ (/ (1- month) 3))))
+    (org-x-get-quarterly-plan quarter year)))
+
+(defconst org-x-life-categories (-sort #'string< (list org-x-tag-environmental
+                                                       org-x-tag-financial
+                                                       org-x-tag-intellectual
+                                                       org-x-tag-metaphysical
+                                                       org-x-tag-physical
+                                                       org-x-tag-professional
+                                                       org-x-tag-recreational
+                                                       org-x-tag-social))
+  "All life categories (actually a list of the tags that represent them).")
+
+(defun org-x-qt-plan-check-categories (cats)
+  (equal (-sort #'string< cats) org-x-life-categories))
+
+(defun org-x-qt-plan-get-categories (headline)
+  (-when-let (cs (->> (org-ml-headline-get-contents (org-x-logbook-config) headline)
+                      (--find (org-x--is-drawer-with-name org-x-drwr-categories it))
+                      (org-ml-match '(plain-list item paragraph))
+                      (--map (->> (org-ml-get-children it)
+                                  (-map #'org-ml-to-string)
+                                  (s-join "")
+                                  (s-trim)
+                                  (format "_%s")))))
+    (if (org-x-qt-plan-check-categories cs)
+        (--map-indexed (cons it (1+ it-index)) (reverse cs))
+      (error "Categories do not match `org-x-life-categories': got %s" cs))))
+
+(defvar org-x--quarter-life-categories nil
+  "Categories for the currently selected quarter.")
+
+(defun org-x-qt-plan-set-current-categegories ()
+  (->> (org-x-get-current-quarterly-plan)
+       (org-x-qt-plan-get-categories)
+       (setq org-x--quarter-life-categories)))
+
+(defun org-x-endpoint-goal-get-score ()
+  (unless org-x--quarter-life-categories
+    (error "`org-x--quarter-life-categories' is not set"))
+  (cl-flet
+      ((get-link-score
+        (link)
+        (let ((id (org-ml-get-property :path link)))
+          (org-x-with-id-target id
+            (let* ((p (aref (org-entry-get nil "PRIORITY") 0))
+                   (c (--find (s-prefix-p "_" it) (org-get-tags)))
+                   (priority-score (if (= org-priority-highest p) 1 -1))
+                   (cat-score (alist-get c org-x--quarter-life-categories
+                                         nil nil #'equal)))
+              (* cat-score priority-score))))))
+    (-some->> (org-x-get-goal-link-property)
+      (-map #'get-link-score)
+      (-sum))))
 
 ;; iterators
 
