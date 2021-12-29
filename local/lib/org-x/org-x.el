@@ -248,10 +248,6 @@
   org-x-iterator-active-future-offset
   "Periodicals must have at least one heading this far in the future to be active.")
 
-(defconst org-x-metablox-file
-  (f-join org-directory "metablox.org")
-  "The file to which metablocks will be written.")
-
 ;; files and directories (all relative to `org-directory')
 
 (defvar org-x-action-files nil
@@ -1568,7 +1564,7 @@ ARG and INTERACTIVE are passed to `org-store-link'."
           (org-ml-timestamp-get-start-time)
           (org-ml-time-to-unixtime)
           (< (float-time)))))
-    (->> (org-x-parse-file-headlines org-x-metablox-file 'all)
+    (->> (org-x-parse-file-headlines org-x-daily-plan-file 'all)
          (--filter (null (org-ml-headline-get-subheadlines it)))
          (-filter #'is-future)
          (-map #'org-ml-remove-parents))))
@@ -1598,7 +1594,7 @@ ARG and INTERACTIVE are passed to `org-store-link'."
                        ;; ASSUME there will be one paragraph at the end holding
                        ;; the timestamp
                        (para (car (org-ml-match '(:last section paragraph) target))))
-                  (org-x-with-file org-x-metablox-file
+                  (org-x-with-file org-x-daily-plan-file
                     (org-ml~update* nil
                       (org-ml-map-children* (-snoc it link) it)
                       para))

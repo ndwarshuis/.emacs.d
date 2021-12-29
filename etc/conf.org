@@ -2536,7 +2536,7 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
                     "#+END_QUOTE")
            :immediate-finish t)
 
-          ("M" "metablock" entry (file+olp+datetree ,org-x-metablox-file)
+          ("M" "metablock" entry (file+olp+datetree ,org-x-daily-plan-file)
            ,(concat "* %^{Metablock Title}\n"
                     "%^t\n"
                     "%^{Effort}p"
