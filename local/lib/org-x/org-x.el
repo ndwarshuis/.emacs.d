@@ -1149,11 +1149,37 @@ should be this function again)."
       (->> (org-ml-parse-headlines 'all)
            (-filter #'is-leaf)))))
 
-(defun org-x-set-goal-link-property (id title)
-  "Set the goal link property of the current headline to ID/TITLE.
+(defun org-x-get-goal-link-property ()
+  "Get the goal link under current headline."
+  (->> (org-entry-get (point) org-x-prop-goal)
+       (s-split ";")
+       (--map (->> (s-trim it) (org-ml-from-string 'link)))))
+
+(defun org-x-set-goal-link-property (ids)
+  "Set the goal link property of the current headline to IDS.
 Assumes point is on a valid headline or org mode file."
-  (let ((link (org-ml-to-trimmed-string (org-ml-build-link id :type "id" title))))
-    (org-set-property org-x-prop-goal link)))
+  (->> (-map #'org-ml-to-trimmed-string ids)
+       (s-join "; ")
+       (org-set-property org-x-prop-goal)))
+
+(defmacro org-x-map-goal-link-property (form)
+  (declare (indent 0))
+  `(let ((it (org-x-get-goal-link-property)))
+     (org-x-set-goal-link-property ,form)))
+
+(defun org-x-add-goal-link (id title)
+  "Add goal link with ID and TITLE if not under the current headline."
+  (org-x-map-goal-link-property
+    (let ((cur-ids (--map (org-ml-get-property :path it) it)))
+      (if (member id cur-ids) it
+        (-> (org-ml-build-link id :type "id" title)
+            (org-ml-to-trimmed-string)
+            (cons it))))))
+
+(defun org-x-remove-goal-link (id)
+  "Remove goal link with ID if under the current headline."
+  (org-x-map-goal-link-property
+    (--remove (equal id (org-ml-get-property :path it)) it)))
 
 (defun org-x-set-goal-link ()
   (interactive)
@@ -1162,28 +1188,48 @@ Assumes point is on a valid headline or org mode file."
     (org-back-to-heading t))
   (cl-flet*
       ((mk-entry
-        (path base hl)
-        (let ((title (org-ml-get-property :raw-value hl)))
-          (list (format "%-10s | %s" base title)
+        (cur-ids path base hl)
+        (let* ((title (org-ml-get-property :raw-value hl))
+               (id (org-ml-headline-get-node-property "ID" hl))
+               (is-present (and id (member id cur-ids) t)))
+          (list (format "%s%-10s | %s" (if is-present "*" " ") base title)
                 :title title
                 :path path
-                :id (org-ml-headline-get-node-property "ID" hl)
-                :point (org-ml-get-property :begin hl))))
+                :id id
+                :point (org-ml-get-property :begin hl)
+                :is-present is-present)))
        (get-headlines
-        (path)
+        (cur-ids path)
         (let ((f (f-base path)))
           (->> (org-x-buffer-get-id-headlines path)
-               (--map (mk-entry path f it))))))
-    (-let* ((col (append (get-headlines (org-x-get-lifetime-goal-file))
-                         (get-headlines (org-x-get-endpoint-goal-file))))
+               (--map (mk-entry cur-ids path f it)))))
+       (compare-headlines
+        (a b)
+        (-let (((&plist :title ta :is-present pa) (cdr a))
+               ((&plist :title tb :is-present pb) (cdr b)))
+          (or (and pa (not pb)) (and pa pb (string< ta tb)))))
+       (get-all-headlines
+        (cur-ids)
+        (let ((hs
+               (append (get-headlines cur-ids (org-x-get-endpoint-goal-file))
+                       (get-headlines cur-ids (org-x-get-lifetime-goal-file)))))
+          (-sort #'compare-headlines hs))))
+    (-let* ((cur-ids (->> (org-x-get-goal-link-property)
+                          (--map (org-ml-get-property :path it))))
+            (col (get-all-headlines cur-ids))
             (res (completing-read "Goal to link: " col nil t))
-            ((&plist :title :path :id :point) (alist-get res col nil nil #'equal))
-            (target-id (if id id
-                         (org-x-with-file path
-                           (goto-char point)
-                           (message "ID not present. Creating.")
-                           (org-id-get-create)))))
-      (org-x-set-goal-link-property target-id title))))
+            ((&plist :title :path :id :point :is-present)
+             (alist-get res col nil nil #'equal)))
+      (if is-present
+          (progn
+            (org-x-remove-goal-link id)
+            (message "removed id for '%s'" title))
+        (let ((target-id (if id id
+                           (org-x-with-file path
+                             (goto-char point)
+                             (message "ID not present. Creating.")
+                             (org-id-get-create)))))
+          (org-x-add-goal-link target-id title))))))
 
 ;; iterators
 
