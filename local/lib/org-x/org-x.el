@@ -1284,6 +1284,11 @@ Assumes point is on a valid headline or org mode file."
           (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
             (org-ml-insert end (build-yr-headline quarter year children))))))))
 
+(defmacro org-x-map-quarterly-plan (quarter year form)
+  (declare (indent 2))
+  (let ((it (org-x-get-quarterly-plan quarter year)))
+    (org-x-set-quarterly-plan quarter year (,form))))
+
 (defun org-x-get-current-quarterly-plan ()
   (-let* (((_ _ _ _ month year) (decode-time (current-time)))
           (quarter (1+ (/ (1- month) 3))))
