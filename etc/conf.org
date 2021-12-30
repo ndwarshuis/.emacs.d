@@ -3055,13 +3055,27 @@ In the order of display
   (interactive)
   (let ((f (list (org-x-get-endpoint-goal-file))))
     (org-x-update-goal-link-ids)
-    (nd/org-agenda-call "Ranked Goals" nil 'todo org-x-kw-todo f
+    (nd/org-agenda-call "Ranked EPGs" nil 'todo org-x-kw-todo f
       `((org-agenda-sorting-strategy '(priority-down time-up))
         (org-super-agenda-groups
          ',(nd/org-def-super-agenda-automap
              (-if-let (score (org-x-endpoint-goal-get-score))
                  (format "Score: %s" score)
                "No Score")))))))
+
+(defun nd/org-agenda-ranked-lifetime-goals ()
+  "Show the ranked endpoint goals agenda view."
+  (interactive)
+  (let ((f (list (org-x-get-lifetime-goal-file))))
+    (org-x-update-goal-link-ids)
+    (nd/org-agenda-call "Ranked LTGs" nil 'todo org-x-kw-todo f
+      `((org-agenda-sorting-strategy '(priority-down time-up))
+        (org-super-agenda-groups
+         ',(nd/org-def-super-agenda-automap
+             ;; TODO not DRY
+             (-when-let (c (org-x-headline-get-category-tag))
+               (let ((n (alist-get c org-x--quarter-life-categories nil nil #'equal)))
+                 (format "%s. %s" n  (or (-some->> c (s-chop-prefix "_")) "NA"))))))))))
 
 ;; TODO this is slow and the code isn't pretty to look at, perhaps break into
 ;; several agenda views, or at least refactor the common bits

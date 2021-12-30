@@ -1288,6 +1288,19 @@ Assumes point is on a valid headline or org mode file."
        (org-x-qt-plan-get-categories)
        (setq org-x--quarter-life-categories)))
 
+(defun org-x-headline-get-category-tag ()
+  (--find (s-prefix-p "_" it) (org-get-tags)))
+
+(defun org-x-get-category-score ()
+  (-when-let (c (org-x-headline-get-category-tag))
+    (alist-get c org-x--quarter-life-categories nil nil #'equal)))
+
+(defun org-x-lifetime-goal-get-score ()
+  (let* ((p (aref (org-entry-get nil "PRIORITY") 0))
+         (priority-score (if (= org-priority-highest p) 1 -1)))
+    (-when-let (cat-score (org-x-get-category-score))
+      (* cat-score priority-score))))
+
 (defun org-x-endpoint-goal-get-score ()
   (unless org-x--quarter-life-categories
     (error "`org-x--quarter-life-categories' is not set"))
@@ -1296,12 +1309,7 @@ Assumes point is on a valid headline or org mode file."
         (link)
         (let ((id (org-ml-get-property :path link)))
           (org-x-with-id-target id
-            (let* ((p (aref (org-entry-get nil "PRIORITY") 0))
-                   (c (--find (s-prefix-p "_" it) (org-get-tags)))
-                   (priority-score (if (= org-priority-highest p) 1 -1))
-                   (cat-score (alist-get c org-x--quarter-life-categories
-                                         nil nil #'equal)))
-              (* cat-score priority-score))))))
+            (org-x-lifetime-goal-get-score)))))
     (-some->> (org-x-get-goal-link-property)
       (-map #'get-link-score)
       (-sum))))
