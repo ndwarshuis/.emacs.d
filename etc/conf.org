@@ -2396,14 +2396,14 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
         
         ;; life categories, used for gtd priorities
         (:startgroup)
-        (,org-x-tag-environmental . ?E)
-        (,org-x-tag-financial . ?F)
-        (,org-x-tag-intellectual . ?I)
-        (,org-x-tag-metaphysical . ?M)
-        (,org-x-tag-physical . ?H)
-        (,org-x-tag-professional . ?P)
-        (,org-x-tag-recreational . ?R)
-        (,org-x-tag-social . ?S)
+        (,(org-x-life-category-tag 'env) . ?E)
+        (,(org-x-life-category-tag 'fin) . ?F)
+        (,(org-x-life-category-tag 'int) . ?I)
+        (,(org-x-life-category-tag 'met) . ?M)
+        (,(org-x-life-category-tag 'phy) . ?H)
+        (,(org-x-life-category-tag 'pro) . ?P)
+        (,(org-x-life-category-tag 'rec) . ?R)
+        (,(org-x-life-category-tag 'soc) . ?S)
         (:endgroup)))
 #+END_SRC
 **** colors

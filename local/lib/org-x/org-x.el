@@ -133,37 +133,37 @@
   (org-x-prepend-char org-x-tag-misc-prefix "meeting")
   "Tag denoting a meeting.")
 
-(defconst org-x-tag-environmental
-  (org-x-prepend-char org-x-tag-category-prefix "env")
-  "Tag denoting an environmental life category.")
+;; (defconst org-x-tag-environmental
+;;   (org-x-prepend-char org-x-tag-category-prefix "env")
+;;   "Tag denoting an environmental life category.")
 
-(defconst org-x-tag-financial
-  (org-x-prepend-char org-x-tag-category-prefix "fin")
-  "Tag denoting a financial life category.")
+;; (defconst org-x-tag-financial
+;;   (org-x-prepend-char org-x-tag-category-prefix "fin")
+;;   "Tag denoting a financial life category.")
 
-(defconst org-x-tag-intellectual
-  (org-x-prepend-char org-x-tag-category-prefix "int")
-  "Tag denoting an intellectual life category.")
+;; (defconst org-x-tag-intellectual
+;;   (org-x-prepend-char org-x-tag-category-prefix "int")
+;;   "Tag denoting an intellectual life category.")
 
-(defconst org-x-tag-metaphysical
-  (org-x-prepend-char org-x-tag-category-prefix "met")
-  "Tag denoting an metaphysical life category.")
+;; (defconst org-x-tag-metaphysical
+;;   (org-x-prepend-char org-x-tag-category-prefix "met")
+;;   "Tag denoting an metaphysical life category.")
 
-(defconst org-x-tag-physical
-  (org-x-prepend-char org-x-tag-category-prefix "phy")
-  "Tag denoting an physical life category.")
+;; (defconst org-x-tag-physical
+;;   (org-x-prepend-char org-x-tag-category-prefix "phy")
+;;   "Tag denoting an physical life category.")
 
-(defconst org-x-tag-professional
-  (org-x-prepend-char org-x-tag-category-prefix "pro")
-  "Tag denoting a professional life category.")
+;; (defconst org-x-tag-professional
+;;   (org-x-prepend-char org-x-tag-category-prefix "pro")
+;;   "Tag denoting a professional life category.")
 
-(defconst org-x-tag-recreational
-  (org-x-prepend-char org-x-tag-category-prefix "rec")
-  "Tag denoting a recreational life category.")
+;; (defconst org-x-tag-recreational
+;;   (org-x-prepend-char org-x-tag-category-prefix "rec")
+;;   "Tag denoting a recreational life category.")
 
-(defconst org-x-tag-social
-  (org-x-prepend-char org-x-tag-category-prefix "soc")
-  "Tag denoting a social life category.")
+;; (defconst org-x-tag-social
+;;   (org-x-prepend-char org-x-tag-category-prefix "soc")
+;;   "Tag denoting a social life category.")
 
 (defconst org-x-tag-no-agenda "NA"
   "Tag denoting a headlines that shouldn't go in the agenda.")
@@ -173,6 +173,27 @@
 
 (defconst org-x-tag-refile "REFILE"
   "Tag denoting a headlines that are to be refiled.")
+
+(defconst org-x-life-categories
+  (->> (list "environmental"
+             "financial"
+             "intellectual"
+             "metaphysical"
+             "physical"
+             "professional"
+             "recreational"
+             "social")
+       (--map (let* ((abbr (substring it 0 3))
+                     (key (intern abbr))
+                     (tag (org-x-prepend-char org-x-tag-category-prefix abbr)))
+                (list key :tag tag :desc it))))
+  "Alist of life categories.
+The car of each member is a symbol representing the category, the
+cdr is a plist which has entries for :tag and :desc which are the
+org tag and a long name respectively for the category.")
+
+(defun org-x-life-category-tag (category-sym)
+  (plist-get (alist-get category-sym org-x-life-categories) :tag))
 
 ;;; PROPERTIES
 
