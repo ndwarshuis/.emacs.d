@@ -1232,22 +1232,57 @@ Assumes point is on a valid headline or org mode file."
                              (org-id-get-create)))))
           (org-x-add-goal-link target-id title))))))
 
+(defun org-x-qt-headline-get-year (headline)
+  (let ((rt (org-ml-get-property :raw-value headline)))
+    (if (s-matches-p "[0-9]\\{4\\}" rt) (string-to-number rt)
+      (error "Invalid year headline in quarterly plan: %s" rt))))
+
+(defun org-x-qt-headline-get-quarter (headline)
+  (let ((rt (org-ml-get-property :raw-value headline)))
+    (-if-let ((_ qt) (s-match "Q\\([0-9]\\)" rt)) (string-to-number qt)
+      (error "Invalid quarter headline in quarterly plan: %s" rt))))
+
+(defun org-x-qt-headline-find-year (year headlines)
+  (--find (= year (org-x-qt-headline-get-year it)) headlines))
+
+(defun org-x-qt-headline-find-quarter (quarter headlines)
+  (--find (= quarter (org-x-qt-headline-get-quarter it)) headlines))
+
 (defun org-x-get-quarterly-plan (quarter year)
   (unless (member quarter '(1 2 3 4))
     (error "Quarter must be an integer of 1, 2, 3 or 4"))
-  (cl-flet
-      ((is-in-this-quarter
-        (quarter year headline)
-        (-when-let (hl-ts (-some->> (org-ml-headline-get-planning headline)
-                            (org-ml-get-property :scheduled)))
-          (let ((hl-qt (1+ (/ (1- (org-ml-get-property :month-start hl-ts)) 3)))
-                (hl-yr (org-ml-get-property :year-start hl-ts)))
-            (and (= hl-yr year) (= hl-qt quarter))))))
+  (org-x-with-file (org-x-get-quarterly-plan-file)
+    (->> (org-ml-parse-subtrees 'all)
+         (--find (= year (org-x-qt-headline-get-year it)))
+         (org-ml-headline-get-subheadlines)
+         (--find (= quarter (org-x-qt-headline-get-quarter it)))
+         (org-ml-get-children))))
+
+(defun org-x-set-quarterly-plan (quarter year children)
+  (unless (member quarter '(1 2 3 4))
+    (error "Quarter must be an integer of 1, 2, 3 or 4"))
+  (cl-flet*
+      ((build-qt-headline
+        (quarter children)
+        (apply #'org-ml-build-headline
+               :title (list (format "Q%s" quarter))
+               :level 2
+               children))
+       (build-yr-headline
+        (quarter year children)
+        (org-ml-build-headline! :title-text (number-to-string year)
+                                (build-qt-headline quarter children))))
     (org-x-with-file (org-x-get-quarterly-plan-file)
-      (->> (org-ml-parse-subtrees 'all)
-           ;; ASSUME all quarterly plans are level 2 headlines
-           (-mapcat #'org-ml-headline-get-subheadlines)
-           (--find (is-in-this-quarter quarter year it))))))
+      (let ((sts (org-ml-parse-subtrees 'all)))
+        (-if-let (st-yr (org-x-qt-headline-find-year year sts))
+            (-if-let (st-qt (->> (org-ml-headline-get-subheadlines st-yr)
+                                 (org-x-qt-headline-find-quarter quarter)))
+                (org-ml-update* (org-ml-set-children children it) st-qt)
+              (org-ml-update*
+                (-snoc it (build-qt-headline quarter children))
+                st-yr))
+          (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
+            (org-ml-insert end (build-yr-headline quarter year children))))))))
 
 (defun org-x-get-current-quarterly-plan ()
   (-let* (((_ _ _ _ month year) (decode-time (current-time)))
@@ -1267,8 +1302,8 @@ Assumes point is on a valid headline or org mode file."
 (defun org-x-qt-plan-check-categories (cats)
   (equal (-sort #'string< cats) org-x-life-categories))
 
-(defun org-x-qt-plan-get-categories (headline)
-  (-when-let (cs (->> (org-ml-headline-get-contents (org-x-logbook-config) headline)
+(defun org-x-qt-plan-get-categories (children)
+  (-when-let (cs (->> children
                       (--find (org-x--is-drawer-with-name org-x-drwr-categories it))
                       (org-ml-match '(plain-list item paragraph))
                       (--map (->> (org-ml-get-children it)
