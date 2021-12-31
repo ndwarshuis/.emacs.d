@@ -35,6 +35,7 @@
 (require 's)
 (require 'ht)
 (require 'org)
+(require 'org-id)
 (require 'org-x-agg)
 
 ;;; TODO KEYWORDS
@@ -461,7 +462,7 @@ PATH must be relative to `org-directory' and end in '.org'."
   "Return the absolute path of `org-x-weekly-plan-file'."
   (org-x--expand-path org-x-weekly-plan-file))
 
-(defun org-x-get-quarterly-plan-file ()
+(defun org-x-qtp-get-file ()
   "Return the absolute path of `org-x-quarterly-plan-file'."
   (org-x--expand-path org-x-quarterly-plan-file))
 
@@ -1107,7 +1108,7 @@ should be this function again)."
 
 (defmacro org-x-with-id-target (id form)
   (declare (indent 1))
-  `(-when-let ((it-file . it-point) (org-id-find id))
+  `(-when-let ((it-file . it-point) (org-id-find ,id))
      (org-x-with-file it-file
        (save-excursion
          (goto-char it-point)
@@ -1248,7 +1249,7 @@ Assumes point is on a valid headline or org mode file."
     (alist-get res col nil nil #'equal)))
 
 ;; TODO use the current rankings by default if desired
-(defun org-x-choose-category (default)
+(defun org-x-choose-category ()
   (intern (completing-read "Category: " org-x-life-categories nil t)))
 
 (defun org-x-set-goal-link ()
@@ -1278,7 +1279,7 @@ Assumes point is on a valid headline or org mode file."
 
 (defun org-x-get-category-score ()
   (-when-let (c (org-x-headline-get-category-tag))
-    (alist-get c org-x--quarter-life-categories nil nil #'equal)))
+    (alist-get c org-x--qtp-weighted-categories nil nil #'equal)))
 
 (defun org-x-lifetime-goal-get-score ()
   (let* ((p (aref (org-entry-get nil "PRIORITY") 0))
@@ -1287,8 +1288,8 @@ Assumes point is on a valid headline or org mode file."
       (* cat-score priority-score))))
 
 (defun org-x-endpoint-goal-get-score ()
-  (unless org-x--quarter-life-categories
-    (error "`org-x--quarter-life-categories' is not set"))
+  (unless org-x--qtp-weighted-categories
+    (error "`org-x--qtp-weighted-categories' is not set"))
   (cl-flet
       ((get-link-score
         (link)
@@ -1299,7 +1300,59 @@ Assumes point is on a valid headline or org mode file."
       (-map #'get-link-score)
       (-sum))))
 
-;; quarterly plan (QTP)
+;;; QUARTERLY PLANNING (QTP)
+
+;; qtp state
+;;
+;; define a data structure to hold a "quarter" (which is just a year and a digit
+;; from 1-4)
+
+(defvar org-x--current-quarter nil
+  "The currently selected quarter as a list like (YEAR QTR).")
+
+(defun org-x-qtp-is-valid-quarter-p (quarter)
+  "Return t if QUARTER is a valid quarter data structure.
+Valid means it is a list like (YEAR QUARTER) where YEAR is an
+integer 1970 or greater and QUARTER is an integer 1-4."
+  (pcase quarter
+    (`(,(and (pred integerp) (pred (lambda (x) (<= 1970 x)))) ,(or 1 2 3 4)) t)
+    (_ nil)))
+
+(defun org-x-qtp-validate-quarter (quarter)
+  "Raise error if QUARTER is invalid."
+  (unless (org-x-qtp-is-valid-quarter-p quarter)
+    (error "Invalid quarter: %s" quarter)))
+
+(defun org-x-qtp-time-to-quarter (time)
+  "Return quarter for TIME.
+TIME is anything consumed by `decode-time' (eg an integer for the
+epoch time or a list of integers as returned by `current-time')."
+  (-let* (((_ _ _ _ month year) (decode-time time))
+          (quarter (1+ (/ (1- month) 3))))
+    (list year quarter)))
+
+(defun org-x-qtp-read-current-quarter ()
+  "Return the current quarter."
+  (org-x-qtp-time-to-quarter (float-time)))
+
+(defun org-x-qtp-set-quarter (&optional quarter)
+  (when quarter
+    (org-x-qtp-validate-quarter quarter))
+  (setq org-x--current-quarter (or quarter (org-x-qtp-read-current-quarter))))
+
+;; quarter plan buffer
+;;
+;; ASSUME the plan buffer has the following structure
+;; - level 1: year
+;; - level 2: quarter (eg "Q1")
+;; - level 3: categories
+;; - level 4: specific goals under each category
+;;
+;; there is also a drawer under level 3 for holding the weighted category
+;; rankings for quarter
+;;
+;; define a data structure that holds the category rankings/weights and the
+;; goals as a plist with :categories and :goals keys
 
 (defun org-x--qtp-headline-get-year (headline)
   (let ((rt (org-ml-get-property :raw-value headline)))
@@ -1317,6 +1370,15 @@ Assumes point is on a valid headline or org mode file."
 (defun org-x--qtp-headline-find-quarter (quarter headlines)
   (--find (= quarter (org-x--qtp-headline-get-quarter it)) headlines))
 
+(defun org-x-qtp-drawer-to-categories (drawer)
+  (->> (org-ml-get-children drawer)
+       (org-ml-match '(plain-list item paragraph))
+       (--map (->> (org-ml-get-children it)
+                   (-map #'org-ml-to-string)
+                   (s-join "")
+                   (s-trim)
+                   (intern)))))
+
 (defun org-x--qtp-from-children (children)
   ;; ignore properties, planning, etc
   (-let* (((sec goals) (if (org-ml-is-type 'section (car children))
@@ -1324,8 +1386,7 @@ Assumes point is on a valid headline or org mode file."
                          `(nil ,children)))
           (cats (-some->> sec
                   (--find (org-x--is-drawer-with-name org-x-drwr-categories it))
-                  (org-ml-get-children)
-                  (org-x-qt-plan-drawer-to-categories))))
+                  (org-x-qtp-drawer-to-categories))))
     (list :categories cats :goals goals)))
 
 (defun org-x--qtp-to-children (qt-plan)
@@ -1340,88 +1401,110 @@ Assumes point is on a valid headline or org mode file."
                  (org-ml-build-section))))
     (if sec (cons sec goals) goals)))
 
-(defun org-x-get-quarterly-plan (quarter year)
-  (unless (member quarter '(1 2 3 4))
-    (error "Quarter must be an integer of 1, 2, 3 or 4"))
-  (org-x-with-file (org-x-get-quarterly-plan-file)
-    (->> (org-ml-parse-subtrees 'all)
-         (--find (= year (org-x--qtp-headline-get-year it)))
-         (org-ml-headline-get-subheadlines)
-         (--find (= quarter (org-x--qtp-headline-get-quarter it)))
-         (org-ml-get-children)
-         (org-x--qtp-from-children))))
+(defun org-x-qtp-get (quarter)
+  (org-x-with-file (org-x-qtp-get-file)
+    (-let (((year qnum) quarter))
+      (->> (org-ml-parse-subtrees 'all)
+           (org-x--qtp-headline-find-year year)
+           (org-ml-headline-get-subheadlines)
+           (org-x--qtp-headline-find-quarter qnum)
+           (org-ml-get-children)
+           (org-x--qtp-from-children)))))
 
-(defun org-x-set-quarterly-plan (quarter year qt-plan)
-  (unless (member quarter '(1 2 3 4))
-    (error "Quarter must be an integer of 1, 2, 3 or 4"))
+(defun org-x-qtp-set (quarter qt-plan)
   (cl-flet*
       ((build-qt-headline
         (quarter children)
         (let ((title (list (format "Q%s" quarter))))
           (apply #'org-ml-build-headline :title title :level 2 children)))
        (build-yr-headline
-        (quarter year children)
-        (->> (build-qt-headline quarter children)
+        (year qnum children)
+        (->> (build-qt-headline qnum children)
              (org-ml-build-headline! :title-text (number-to-string year)))))
-    (org-x-with-file (org-x-get-quarterly-plan-file)
-      (-let* ((sts (org-ml-parse-subtrees 'all))
+    (org-x-with-file (org-x-qtp-get-file)
+      (-let* (((year qnum) quarter)
+              (sts (org-ml-parse-subtrees 'all))
               (children (org-x--qtp-to-children qt-plan)))
         (-if-let (st-yr (org-x--qtp-headline-find-year year sts))
             (-if-let (st-qt (->> (org-ml-headline-get-subheadlines st-yr)
-                                 (org-x--qtp-headline-find-quarter quarter)))
+                                 (org-x--qtp-headline-find-quarter qnum)))
                 (org-ml-update* (org-ml-set-children children it) st-qt)
               (org-ml-update*
-                (-snoc it (build-qt-headline quarter children))
+                (-snoc it (build-qt-headline qnum children))
                 st-yr))
           (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
-            (org-ml-insert end (build-yr-headline quarter year children))))))))
+            (org-ml-insert end (build-yr-headline year qnum children))))))))
 
-(defmacro org-x-qtp-map (quarter year form)
+;; TODO some of these repeated args will be eval'd more than once
+
+;; TODO this is basically the same pattern as what I have in org-ml (which in
+;; turn is basically the same as 'deriving (Functor)' in Haskell)
+
+(defmacro org-x-qtp-map (quarter form)
+  (declare (indent 1))
+  `(let ((it (org-x-qtp-get ,quarter)))
+     (org-x-qtp-set ,quarter ,form)))
+
+(defun org-x--qtp-get-key (key quarter)
+  (plist-get (org-x-qtp-get quarter) key))
+
+(defun org-x--qtp-set-key (key quarter xs)
+  (plist-put (org-x-qtp-get quarter) key xs))
+
+(defun org-x-qtp-get-categories (quarter)
+  (org-x--qtp-get-key :categories quarter))
+
+(defun org-x-qtp-get-goals (quarter)
+  (org-x--qtp-get-key :goals quarter))
+
+(defun org-x-qtp-set-categories (quarter categories)
+  (org-x--qtp-set-key quarter :categories categories))
+
+(defun org-x-qtp-set-goals (quarter goals)
+  (org-x--qtp-set-key quarter :goals goals))
+
+(defmacro org-x-qtp-map-categories (quarter form)
+  `(let ((it (org-x-qtp-get-categories ,quarter)))
+     (org-x-qtp-set-categories ,quarter ,form)))
+
+(defmacro org-x-qtp-map-goals (quarter form)
+  `(let ((it (org-x-qtp-get-goals ,quarter)))
+     (org-x-qtp-set-goals ,quarter ,form)))
+
+(defun org-x-qtp-get-goal-category (quarter category)
+  (let ((title (org-x-life-category-desc category)))
+    (-some->> (org-x-qtp-get-goals quarter)
+      (--find (equal (org-ml-get-property :raw-value it) title))
+      (org-ml-headline-get-subheadlines))))
+
+(defun org-x-qtp-set-goal-category (quarter category goals)
+  (cl-flet
+      ((sort-goal-cats
+        (headlines)
+        (--sort (string< (org-ml-get-property :raw-value it)
+                         (org-ml-get-property :raw-value other))
+                headlines)))
+    (let ((title (org-x-life-category-desc category)))
+      (org-x-qtp-map-goals quarter
+          (-if-let (i (--find-index
+                       (equal (org-ml-get-property :raw-value it) title)
+                       it))
+              (let ((new (org-ml-headline-set-subheadlines goals (nth i it))))
+                (sort-goal-cats (-replace-at i new it)))
+            (let ((h (apply #'org-ml-build-headline!
+                            :level 3
+                            :title-text title
+                            :tags `(,(org-x-life-category-tag ,category))
+                            goals)))
+              (sort-goal-cats (cons h it))))))))
+
+(defmacro org-x-qtp-map-goal-category (quarter category form)
   (declare (indent 2))
-  `(let ((it (org-x-get-quarterly-plan ,quarter ,year)))
-     (org-x-set-quarterly-plan ,quarter ,year ,form)))
+  `(let ((it (org-x-qtp-get-goal-category ,quarter ,category)))
+     (org-x-qtp-set-goal-category ,quarter ,category ,form)))
 
-(defmacro org-x--qtp-map-key (key quarter year form)
-  `(org-x-qtp-map ,quarter ,year
-     (plist-put it ,key (let ((it (plist-get it ,key))) ,form))))
-
-(defmacro org-x-qtp-map-categories (quarter year form)
-  (declare (indent 2))
-  `(org-x--qtp-map-key :categories ,quarter ,year ,form))
-
-(defmacro org-x-qtp-map-goals (quarter year form)
-  (declare (indent 2))
-  `(org-x--qtp-map-key :goals ,quarter ,year ,form))
-
-(defmacro org-x-qtp-map-goal-category (quarter year category form)
-  (declare (indent 3))
-  `(cl-flet
-       ((sort-goal-cats
-         (headlines)
-         (--sort (string< (org-ml-get-property :raw-value it)
-                          (org-ml-get-property :raw-value other))
-                 headlines)))
-     (let ((title (org-x-life-category-desc ,category)))
-       (org-x-qtp-map-goals ,quarter ,year
-         (-if-let (i (--find-index
-                      (equal (org-ml-get-property :raw-value it) title)
-                      it))
-             (let ((new (org-ml-headline-map-subheadlines* ,form (nth i it))))
-               (print it)
-               (print (org-ml-to-string (nth i it)))
-               (print (org-ml-to-string new))
-               (print (-map #'org-ml-to-string (let ((it nil)) ,form)))
-               (sort-goal-cats (-replace-at i new it)))
-           (let ((h (apply #'org-ml-build-headline!
-                           :level 3
-                           :title-text title
-                           :tags `(,(org-x-life-category-tag ,category))
-                           (let ((it nil)) ,form))))
-             (sort-goal-cats (cons h it))))))))
-
-(defun org-x-qtp-add-goal-headline (quarter year category headline)
-  (org-x-qtp-map-goal-category quarter year category
-    (cons headline it)))
+(defun org-x-qtp-add-goal-headline (quarter category headline)
+  (org-x-qtp-map-goal-category quarter category (cons headline it)))
 
 (defun org-x-qtp-build-goal-headline (ids title)
   (let ((p (->> ids
@@ -1434,14 +1517,14 @@ Assumes point is on a valid headline or org mode file."
 
 ;; TODO this accepts a list of ids but not sure if this is the best way to use
 ;; this functionality
-(defun org-x-qtp-add-goal-id (quarter year category ids title)
+(defun org-x-qtp-add-goal-id (quarter category ids title)
   (->> (org-x-qtp-build-goal-headline ids title)
-       (org-x-qtp-add-goal-headline quarter year category)))
+       (org-x-qtp-add-goal-headline quarter category)))
 
-(defun org-x-qt-plan-add-goal-prompt (quarter year)
+(defun org-x-qt-plan-add-goal-prompt (quarter)
   (-let* ((files (list (org-x-get-endpoint-goal-file)
                        (org-x-get-lifetime-goal-file)))
-          (cat (org-x-choose-category nil))
+          (cat (org-x-choose-category))
           ;; TODO get ids already present
           ((&plist :title :path :id :point)
            (org-x-choose-goal t nil files)))
@@ -1450,44 +1533,18 @@ Assumes point is on a valid headline or org mode file."
                          (goto-char point)
                          (message "ID not present. Creating.")
                          (org-id-get-create)))))
-      (org-x-qtp-add-goal-id quarter year cat (list target-id) title))))
+      (org-x-qtp-add-goal-id quarter cat (list target-id) title))))
 
-(defun org-x-qtp-get-current ()
-  (-let* (((_ _ _ _ month year) (decode-time (current-time)))
-          (quarter (1+ (/ (1- month) 3))))
-    (org-x-get-quarterly-plan quarter year)))
+(defun org-x-qtp-check-categories (cats)
+  (seq-set-equal-p cats (-map #'car org-x-life-categories)))
 
-(defun org-x-qt-plan-check-categories (cats)
-  (equal (-sort #'string< cats) org-x-life-categories))
-
-(defun org-x-qt-plan-drawer-to-categories (children)
-  (->> (org-ml-match '(plain-list item paragraph) children)
-       (--map (->> (org-ml-get-children it)
-                   (-map #'org-ml-to-string)
-                   (s-join "")
-                   (s-trim)
-                   (intern)))))
-
-(defun org-x-qt-plan-get-categories (children)
-  (-when-let (cs (->> children
-                      (--find (org-x--is-drawer-with-name org-x-drwr-categories it))
-                      (org-ml-match '(plain-list item paragraph))
-                      (--map (->> (org-ml-get-children it)
-                                  (-map #'org-ml-to-string)
-                                  (s-join "")
-                                  (s-trim)
-                                  (format "_%s")))))
-    (if (org-x-qt-plan-check-categories cs)
-        (--map-indexed (cons it (1+ it-index)) (reverse cs))
-      (error "Categories do not match `org-x-life-categories': got %s" cs))))
-
-(defvar org-x--quarter-life-categories nil
+(defvar org-x--qtp-weighted-categories nil
   "Categories for the currently selected quarter.")
 
-(defun org-x-qt-plan-set-current-categegories ()
-  (->> (org-x-qtp-get-current)
-       (org-x-qt-plan-get-categories)
-       (setq org-x--quarter-life-categories)))
+(defun org-x-qtp-set-categegories (&optional quarter)
+  (->> (or quarter (org-x-qtp-read-current-quarter))
+       (org-x-qtp-get-categories)
+       (setq org-x--qtp-weighted-categories)))
 
 ;; iterators
 
