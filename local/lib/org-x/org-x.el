@@ -1113,6 +1113,11 @@ should be this function again)."
          (goto-char it-point)
          ,form))))
 
+(defun org-x-goal-build-link (id)
+  (org-x-with-id-target id
+    (let ((desc (org-get-heading t t t t)))
+      (org-ml-build-link id :type "id" desc))))
+
 (defun org-x-resolve-goal-id ()
   (-when-let (i (org-x-get-goal-link-id t))
     (org-x-with-id-target i
@@ -1209,7 +1214,7 @@ Assumes point is on a valid headline or org mode file."
   (org-x-map-goal-link-property
     (--remove (equal id (org-ml-get-property :path it)) it)))
 
-(defun org-x-get-goal-entries (cur-ids files)
+(defun org-x-get-goal-entries (keep-present? cur-ids files)
   (cl-flet*
       ((mk-entry
         (cur-ids path base hl)
@@ -1232,11 +1237,13 @@ Assumes point is on a valid headline or org mode file."
         (-let (((&plist :title ta :is-present pa) (cdr a))
                ((&plist :title tb :is-present pb) (cdr b)))
           (or (and pa (not pb)) (and pa pb (string< ta tb))))))
-    (->> (--mapcat (get-headlines cur-ids it) files)
-         (-sort #'compare-headlines))))
+    (let ((col (->> (--mapcat (get-headlines cur-ids it) files)
+                    (-sort #'compare-headlines))))
+      (if keep-present? col
+        (--filter (not (plist-get (cdr it) :is-present)) col)))))
 
-(defun org-x-choose-goal (cur-ids files)
-  (let* ((col (org-x-get-goal-entries cur-ids files))
+(defun org-x-choose-goal (keep-present? cur-ids files)
+  (let* ((col (org-x-get-goal-entries keep-present? cur-ids files))
          (res (completing-read "Goal: " col nil t)))
     (alist-get res col nil nil #'equal)))
 
@@ -1254,7 +1261,7 @@ Assumes point is on a valid headline or org mode file."
           (files (list (org-x-get-endpoint-goal-file)
                        (org-x-get-lifetime-goal-file)))
           ((&plist :title :path :id :point :is-present)
-           (org-x-choose-goal cur-ids files)))
+           (org-x-choose-goal t cur-ids files)))
     (if is-present
         (progn
           (org-x-remove-goal-link id)
@@ -1387,7 +1394,7 @@ Assumes point is on a valid headline or org mode file."
   `(org-x--qtp-map-key :goals ,quarter ,year ,form))
 
 (defmacro org-x-qtp-map-goal-category (quarter year category form)
-  (declare (indent 2))
+  (declare (indent 3))
   `(cl-flet
        ((sort-goal-cats
          (headlines)
@@ -1399,15 +1406,51 @@ Assumes point is on a valid headline or org mode file."
          (-if-let (i (--find-index
                       (equal (org-ml-get-property :raw-value it) title)
                       it))
-             (->> it
-                  (-replace-at i (org-ml-headline-map-subheadlines* ,form (nth i it)))
-                  (sort-goal-cats))
+             (let ((new (org-ml-headline-map-subheadlines* ,form (nth i it))))
+               (print it)
+               (print (org-ml-to-string (nth i it)))
+               (print (org-ml-to-string new))
+               (print (-map #'org-ml-to-string (let ((it nil)) ,form)))
+               (sort-goal-cats (-replace-at i new it)))
            (let ((h (apply #'org-ml-build-headline!
                            :level 3
                            :title-text title
                            :tags `(,(org-x-life-category-tag ,category))
                            (let ((it nil)) ,form))))
              (sort-goal-cats (cons h it))))))))
+
+(defun org-x-qtp-add-goal-headline (quarter year category headline)
+  (org-x-qtp-map-goal-category quarter year category
+    (cons headline it)))
+
+(defun org-x-qtp-build-goal-headline (ids title)
+  (let ((p (->> ids
+                (--map (org-ml-to-trimmed-string (org-x-goal-build-link it)))
+                (s-join ";"))))
+    (->> (org-ml-build-headline! :level 4
+                                 :title-text title
+                                 :todo-keyword org-x-kw-todo)
+         (org-ml-headline-set-node-property org-x-prop-goal p))))
+
+;; TODO this accepts a list of ids but not sure if this is the best way to use
+;; this functionality
+(defun org-x-qtp-add-goal-id (quarter year category ids title)
+  (->> (org-x-qtp-build-goal-headline ids title)
+       (org-x-qtp-add-goal-headline quarter year category)))
+
+(defun org-x-qt-plan-add-goal-prompt (quarter year)
+  (-let* ((files (list (org-x-get-endpoint-goal-file)
+                       (org-x-get-lifetime-goal-file)))
+          (cat (org-x-choose-category nil))
+          ;; TODO get ids already present
+          ((&plist :title :path :id :point)
+           (org-x-choose-goal t nil files)))
+    (let ((target-id (if id id
+                       (org-x-with-file path
+                         (goto-char point)
+                         (message "ID not present. Creating.")
+                         (org-id-get-create)))))
+      (org-x-qtp-add-goal-id quarter year cat (list target-id) title))))
 
 (defun org-x-qtp-get-current ()
   (-let* (((_ _ _ _ month year) (decode-time (current-time)))
@@ -1445,27 +1488,6 @@ Assumes point is on a valid headline or org mode file."
   (->> (org-x-qtp-get-current)
        (org-x-qt-plan-get-categories)
        (setq org-x--quarter-life-categories)))
-
-(defun org-x-qt-plan-add-goal (category id headline)
-  (org-ml-headline-map-subheadlines*
-    ()
-    headline))
-
-(defun org-x-qt-plan-add-goal-prompt (headline)
-  (-let ((files (list (org-x-get-endpoint-goal-file)
-                      (org-x-get-lifetime-goal-file)))
-         ;; TODO get ids already present
-         ((&plist :title :path :id :point :is-present)
-          (org-x-choose-goal nil files)))
-    (if is-present
-        (message "already present: '%s'" title)
-      (let ((cat (org-x-choose-category nil))
-            (target-id (if id id
-                         (org-x-with-file path
-                           (goto-char point)
-                           (message "ID not present. Creating.")
-                           (org-id-get-create)))))
-        (org-x-add-goal-link target-id title)))))
 
 ;; iterators
 
