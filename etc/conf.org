@@ -3204,7 +3204,7 @@ review phase)"
   (interactive)
   (let ((match (nd/org-mk-match-string + org-x-tag-incubated))
         (files (org-x-get-action-and-incubator-files)))
-    (nd/org-agenda-call "Incubator" nil 'tags-todo match
+    (nd/org-agenda-call "Incubator" nil 'tags-todo match files
       `((org-agenda-skip-function #'org-x-incubator-skip-function)
         (org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
