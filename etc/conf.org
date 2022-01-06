@@ -106,20 +106,20 @@ This is code that is used generally throughout the emacs config
 :END:
 #+begin_src emacs-lisp
 (defvar nd/required-exes '()
-  "Running list of executables required to run various configuations.
-The list is like (TYPE PACKAGE) where TYPE is a keyword and
-PACKAGE is string for the package name that should be
-installed. TYPE is one of :pacman, :aur, :stack, or :ignore")
+  "Running list of executables required to run various configuations.")
 
-(defun nd/require-bin (bin &optional pkg-type pkg-name)
+(defun nd/require-bin (bin-or-path &optional pkg-type pkg-name)
   "Indicate that a binary executable is required.
-BIN is a string indicating the executable name. PKG-TYPE
-indicates how BIN must be installed (see `nd/required-exes' for
-available types). PKG-NAME indicates the package name to install
-which provides BIN, which defaults to BIN if not given."
+BIN-OR-PATH is a string indicating the executable name or path to
+the executable. PKG-TYPE indicates how BIN-ON-PATH must be
+installed (see `nd/required-exes' for available types). PKG-NAME
+indicates the package name to install which provides BIN-OR-PATH,
+which defaults to BIN-OR-PATH if not given."
   (let* ((pt (or pkg-type :pacman))
-         (pn (or pkg-name bin))
-         (new (list :binary bin
+         (name (f-base bin-or-path))
+         (pn (or pkg-name name))
+         (new (list name
+                    :full-path (executable-find bin-or-path)
                     :pkg-type pt
                     :pkg-name pn)))
     (setq nd/required-exes (cons new nd/required-exes))))
@@ -127,9 +127,9 @@ which provides BIN, which defaults to BIN if not given."
 (defmacro nd/if-bin (bin then &rest else)
   "Execute THEN if BIN exists, otherwise do ELSE."
   (declare (indent 1))
-  (unless (member bin (--map (plist-get it :binary) nd/required-exes))
-    (message "WARNING: executable '%s' must be required" bin))
-  `(if (executable-find ,bin) ,then ,@else))
+  (if-let (x (alist-get bin nd/required-exes nil nil #'equal))
+      `(if ,(plist-get x :full-path) ,then ,@else)
+    (message "WARNING: executable '%s' must be required" bin)))
 
 (defmacro nd/when-bin (bin &rest body)
   "Execute BODY if the program BIN exists."
@@ -140,7 +140,7 @@ which provides BIN, which defaults to BIN if not given."
 (defun nd/verify-required-packages ()
   "Verify `nd/required-exes'.
 All binaries should be specified once."
-  (->> (--map (plist-get it :binary) nd/required-exes)
+  (->> (-map #'car nd/required-exes)
        (-uniq)
        (length)
        (equal (length nd/required-exes))))
@@ -150,7 +150,7 @@ All binaries should be specified once."
 KEYS is a list of keywords that indicate the :pkg-type of
 dependencies to return."
   (->> nd/required-exes
-       (--filter (memq (plist-get it :pkg-type) keys))
+       (--filter (memq (plist-get (cdr it) :pkg-type) keys))
        (--map (plist-get it :pkg-name))
        (-uniq)))
 #+end_src
@@ -898,6 +898,34 @@ Elisp can use vanilla company with no plugins
     :straight t
     :hook ((cider-mode . company-mode))))
 #+end_src
+*** Conda
+:PROPERTIES:
+:ID:       0294d429-2bfa-4e38-aed0-55942b87d7cc
+:END:
+Conda is a package manager and virtual environment manager. I use it for python and R. It needs to be set up before any of the languages that use it are set up, which is why it is in its own section here.
+
+Note when I write "conda," I really mean "mamba," which is basically the same thing but faster.
+
+Also, this seems to have no relation to the =anaconda.el= package for python.
+#+begin_src emacs-lisp
+(defconst nd/conda-home
+  (-> (xdg-data-home)
+      (f-join "mambaforge")
+      (f-canonical))
+  "Path to conda (which really means mamba) installation.")
+
+(nd/require-bin (f-join nd/conda-home "bin" "conda"))
+
+(nd/when-bin "conda"
+  (use-package conda
+    :straight t
+    :config
+    (setq
+     conda-anaconda-home nd/conda-home
+     ;; this should reflect what is in condarc (which does not appear to be read
+     ;; by this package)
+     conda-env-home-directory (f-join (xdg-data-home) "conda"))))
+#+end_src
 *** ESS (Emacs Speaks Statistics)
 :PROPERTIES:
 :ID:       7e1017a8-8780-403e-9222-9cb097380c57
@@ -920,7 +948,6 @@ End rant.
 
 Oh yes, and to get linting to work, also install r-lintr in the conda environment. In general it seems better and less risky to install things from =conda= rather than from within an R session.
 #+begin_src emacs-lisp
-(nd/require-bin "conda")
 (nd/when-bin "conda"
   (use-package ess
     :straight t
@@ -1087,24 +1114,6 @@ Note this also requires all external packages to be installed in each environeme
   ;; strange errors when activating a symlinked env
   (advice-add #'pyenv-mode-full-path :filter-return #'file-truename))
 #+END_SRC
-**** conda
-:PROPERTIES:
-:ID:       0294d429-2bfa-4e38-aed0-55942b87d7cc
-:END:
-Conda is a package manager and virtual environment manager. It handles much more than just python-related things, a fact I will conveniently ignore because I don't know where I would put this otherwise.
-
-Also, this seems to have no relation to the =anaconda.el= package installed above.
-#+begin_src emacs-lisp
-(use-package conda
-  :straight t
-  :config
-  (setq
-   ;; assume conda is installed system-wide
-   conda-anaconda-home "/usr"
-   ;; this should reflect what is in condarc (which does not appear to be read
-   ;; by this package)
-   conda-env-home-directory (expand-file-name "~/.local/share/conda/")))
-#+end_src
 *** Snakemake
 :PROPERTIES:
 :ID:       0d8c4a61-5657-4972-89ce-cabb336b1319
@@ -4541,30 +4550,31 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 :END:
 They removed the underscore-inserts-arrow feature. Bring it back.
 #+BEGIN_SRC emacs-lisp
-(define-key ess-r-mode-map "_" #'ess-insert-assign)
-(define-key inferior-ess-r-mode-map "_" #'ess-insert-assign)
+(nd/when-bin "conda"
+  (define-key ess-r-mode-map "_" #'ess-insert-assign)
+  (define-key inferior-ess-r-mode-map "_" #'ess-insert-assign)
 
-(nd/hydra-standard-int
- ess-r-mode-map
- (:send-line . ess-eval-line)
- (:send-line-step . ess-eval-line-and-step)
- (:send-line-follow . ess-eval-line-and-go)
- (:send-group . ess-eval-paragraph)
- (:send-group-step . ess-eval-paragraph-and-step)
- (:send-group-follow . ess-eval-paragraph-and-go)
- (:send-region . ess-eval-region)
- (:send-region-step . ess-eval-region-and-step)
- (:send-region-follow . ess-eval-region-and-go)
- (:send-buffer . ess-eval-buffer)
- (:send-buffer-follow . ess-eval-buffer-and-go)
- ;; TODO add process kill commands
- (:shell-start . ess-switch-to-inferior-or-script-buffer))
+  (nd/hydra-standard-int
+      ess-r-mode-map
+    (:send-line . ess-eval-line)
+    (:send-line-step . ess-eval-line-and-step)
+    (:send-line-follow . ess-eval-line-and-go)
+    (:send-group . ess-eval-paragraph)
+    (:send-group-step . ess-eval-paragraph-and-step)
+    (:send-group-follow . ess-eval-paragraph-and-go)
+    (:send-region . ess-eval-region)
+    (:send-region-step . ess-eval-region-and-step)
+    (:send-region-follow . ess-eval-region-and-go)
+    (:send-buffer . ess-eval-buffer)
+    (:send-buffer-follow . ess-eval-buffer-and-go)
+    ;; TODO add process kill commands
+    (:shell-start . ess-switch-to-inferior-or-script-buffer))
 
-(nd/hydra-standard-nav
- ess-r-mode-map
- (:def-at . xref-find-definitions)
- (:def-at-new-win . xref-find-definitions-other-window)
- (:doc-at . ess-display-help-on-object))
+  (nd/hydra-standard-nav
+      ess-r-mode-map
+    (:def-at . xref-find-definitions)
+    (:def-at-new-win . xref-find-definitions-other-window)
+    (:doc-at . ess-display-help-on-object)))
 #+END_SRC
 *** elisp
 :PROPERTIES:
