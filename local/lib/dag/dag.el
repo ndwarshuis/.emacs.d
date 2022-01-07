@@ -1,0 +1,438 @@
+;;; dag.el --- Functions for directed acyclic graphs -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2021  Nathan Dwarshuis
+
+;; Author: Nathan Dwarshuis <natedwarshuis@gmail.com>
+;; Keywords: tools
+;; Package-Requires: ((emacs "27.2") (dash "2.18"))
+;; Version: 0.0.1
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; DAGs and stuff
+
+;;; Code:
+
+(require 'ht)
+(require 'dash)
+
+(defun dag--ht-create (what)
+  "Create a hash table.
+
+Hash table will always be created with the `equal' test.
+
+The type of WHAT will determine how the hash table is build:
+- number: allocate a certain size
+- nul: allocate an empty hash table
+- anything else: assume its an alist and allocate with that"
+  (cond
+   ((null what) (ht-create #'equal))
+   ((numberp what) (make-hash-table :size what :test #'equal))
+   (t (ht<-alist what #'equal))))
+
+(defun dag--plist-cons (plist prop x)
+  (plist-put plist prop (cons x (plist-get plist prop))))
+
+(defun dag--plist-remove (plist prop x)
+  (plist-put plist prop (remove x (plist-get plist prop))))
+
+(defun dag--adjlist-remove-edge (which key edge adjlist)
+  (ht-set adjlist key (dag--plist-remove (ht-get adjlist key) which edge)))
+
+(defun dag--adjlist-add-edge (which key edge adjlist)
+  (ht-set adjlist key (dag--plist-cons (ht-get adjlist key) which edge)))
+
+(defun dag--adjlist-remove-child-edge (key edge adjlist)
+  (dag--adjlist-remove-edge :children key edge adjlist))
+
+(defun dag--adjlist-remove-parent-edge (key edge adjlist)
+  (dag--adjlist-remove-edge :parents key edge adjlist))
+
+(defun dag--adjlist-add-parent-edge (key edge adjlist)
+  (dag--adjlist-add-edge :parents key edge adjlist))
+
+(defun dag--adjlist-add-child-edge (key edge adjlist)
+  (dag--adjlist-add-edge :children key edge adjlist))
+
+(defun dag--ht-cons (h k x)
+  (ht-set h k (cons x (ht-get h k))))
+
+(defun dag--ht-remove (h k x)
+  (ht-set h k (remove x (ht-get h k))))
+
+(defun dag--adjlist-get-relationships (key adjlist)
+  (ht-get adjlist key))
+
+(defun dag--relationship-get-children (rel)
+  (plist-get rel :children))
+
+(defun dag--relationship-get-parents (rel)
+  (plist-get rel :parents))
+
+(defun dag--adjlist-get-children (key adjlist)
+  (->> (ht-get adjlist key)
+       (dag--relationship-get-children)))
+
+(defun dag--adjlist-get-parents (key adjlist)
+  (->> (ht-get adjlist key)
+       (dag--relationship-get-parents)))
+
+(defun dag--new-relationship (p c)
+  (list :parents p :children c))
+
+(defmacro dag--each-key (h &rest body)
+  (declare (indent 1))
+  `(--each (ht-keys ,h) ,@body))
+
+(defun dag--get-topological-order (adjlist)
+  ;; this is just Kahn's algorithm
+  (let ((parent-degrees (dag--ht-create (ht-size adjlist)))
+        (node-queue)
+        (ordered-nodes)
+        (cur-node)
+        (cur-degree))
+    ;; TODO is there a way to do this without making a new hash table?
+    ;; Get parent degrees and init the node queue with root nodes (those with
+    ;; parent degree of zero)
+    (dag--each-key adjlist
+      (setq cur-degree (length (dag--adjlist-get-parents it adjlist)))
+      (ht-set parent-degrees it cur-degree)
+      (when (= 0 cur-degree)
+        (!cons it node-queue)))
+    ;; Traverse down the DAG starting at the root node(s). When encountering a
+    ;; child, reduce the parent degrees of that child by one an add it to the
+    ;; end of the node queue. Continue until the node queue is empty.
+    (while node-queue
+      (setq cur-node (car node-queue))
+      (!cdr node-queue)
+      (!cons cur-node ordered-nodes)
+      (--each (dag--adjlist-get-children cur-node adjlist)
+        (setq cur-degree (1- (ht-get parent-degrees it)))
+        (ht-set parent-degrees it cur-degree)
+        (when (= 0 cur-degree)
+          (setq node-queue (-snoc node-queue it)))))
+    ;; If all parent degrees have been reduced to 0, then return order as this
+    ;; is a valid DAG. NOTE: if the DAG is invalid the parent degrees don't tell
+    ;; us which nodes have cycles.
+    (when (--all-p (= 0 it) (ht-values parent-degrees))
+      (nreverse ordered-nodes))))
+
+(defun dag--get-floating (adjlist)
+  ;; Find 'floating nodes', which are nodes that have no children or parents
+  ;; (this will happen if the original alist has node keys that aren't
+  ;; referenced by any parents).
+  ;;
+  ;; O(N)
+  (let ((acc (dag--ht-create nil))
+        cur)
+    (dag--each-key adjlist
+      (setq cur (ht-get adjlist it))
+      (unless (or (plist-get cur :children) (plist-get cur :parents))
+        (ht-remove adjlist it)
+        (ht-set acc it t)))
+    (list adjlist acc)))
+
+(defun dag--alist-to-ht (parent-adjlist)
+  (let ((h (dag--ht-create parent-adjlist))
+        (broken-edges (dag--ht-create nil))
+        (parents)
+        (relations)
+        (parent-relations)
+        (cur))
+    ;; Convert alist to initial hash table by making each value a plist with
+    ;; parent and child connections
+    ;;
+    ;; O(N)
+    (while parent-adjlist
+      (setq cur (car parent-adjlist))
+      (ht-set h (car cur) (dag--new-relationship (cdr cur) nil))
+      (!cdr parent-adjlist))
+    ;; Add child relationships: For each node key, get the parent relation keys,
+    ;; and for each of these, lookup the key in the hash table and add the
+    ;; parent relation key to the child relation keys of the lookup key. If this
+    ;; fails (eg a node is linked to a parent that doesn't exist) remove this
+    ;; key from the parent relations list and add the node key and parent key to
+    ;; a list of 'broken' parent edges.
+    ;;
+    ;; O(E+N)
+    (--each (ht-keys h)
+      (setq relations (ht-get h it)
+            parents (plist-get relations :parents))
+      (while parents
+        (setq cur (car parents)
+              parents (!cdr parents)
+              parent-relations (ht-get h cur))
+        (if parent-relations
+            (dag--plist-cons parent-relations :children it)
+          (dag--ht-cons broken-edges it cur)
+          (dag--plist-remove relations :parents cur))))
+    (list h broken-edges)))
+
+(defun dag--longest-paths (adjlist suborder)
+  (let ((distances (dag--ht-create (ht-size adjlist)))
+        ;; Flip the order so we climb up the topological order from the deepest
+        ;; nodes first
+        ;; NOTE Need to use reverse here an not nreverse so the original list
+        ;; isn't modified by side effect
+        (rsuborder (reverse suborder))
+        cur cur-distance child-distance)
+    ;; initialize distances (all except first to 0)
+    (ht-set distances (car rsuborder) 0)
+    (--each (cdr rsuborder) (ht-set distances it nil))
+    ;; walk up the parent edges and add one to each distance 
+    (while rsuborder
+      (setq cur (car rsuborder))
+      (--each (dag--adjlist-get-parents cur adjlist)
+        (when (setq cur-distance (ht-get distances cur))
+          (setq child-distance (ht-get distances it))
+          (when (or (null child-distance) (< child-distance (1+ cur-distance)))
+            (ht-set distances it (1+ cur-distance)))))
+      (!cdr rsuborder))
+    distances))
+
+(defun dag--transitive-reduction (adjlist order)
+  (let (extra-edges cur distances cur-distance)
+    (while order
+      (setq distances (dag--longest-paths adjlist order)
+            cur (car order))
+      (dag--each-key distances
+        (setq cur-distance (ht-get distances it))
+        (when (and cur-distance (< 1 cur-distance))
+          (!cons (cons cur it) extra-edges)))
+      (setq order (cdr order)))
+    extra-edges))
+
+(defun dag--create (adjlist broken-edges)
+  (-let (((a f) (dag--get-floating adjlist)))
+    (list :adjlist a
+          :broken-edges broken-edges
+          :floating-nodes f
+          :order (dag--get-topological-order adjlist))))
+
+(defun dag--prune-broken-edges (broken-edges)
+  (dag--each-key broken-edges
+    (unless (ht-get broken-edges it)
+      (ht-remove broken-edges it)))
+  broken-edges)
+
+(defun dag--adjlist-remove-nodes (to-remove adjlist broken-edges)
+  (let (r r-rel child-rel)
+    (while to-remove
+      ;; If the node to be removed is in the adjacency list, get a list of its
+      ;; parents, remove the node from the child list of each parent, then
+      ;; delete the node itself.
+      (when (setq r (car to-remove)
+                  r-rel (ht-get adjlist r))
+        (--each (plist-get r-rel :parents)
+          (dag--adjlist-remove-child-edge it r adjlist))
+        ;; If a child edge refers to a node that is not about to be removed,
+        ;; remove the parent edge from the the child and add it to broken edges.
+        ;; Otherwise do nothing because the child will be removed later anyways.
+        (--each (plist-get r-rel :children)
+          (when (and (setq child-rel (ht-get adjlist it))
+                     (not (member it to-remove)))
+            (ht-set adjlist it (dag--plist-remove child-rel :parents r))
+            (dag--ht-cons broken-edges it r)))
+        (ht-remove adjlist r))
+      ;; Remove all broken edges assigned to this node regardless of its
+      ;; presence in the adjacency list
+      (ht-remove broken-edges r)
+      (!cdr to-remove)))
+  (list adjlist broken-edges))
+
+(defmacro dag--intersection-difference (xs ys &optional zs)
+  "Calculate the intersection and difference of XS and YS.
+XS will contain all its members that are also in YS, and YS will
+retain all its values that are not in XS. Both are modified in
+place.
+
+If ZS is given, additionally store the difference of YS and XS in
+ZS."
+  (let ((found-form (if zs `(if found (!cons i ,xs) (!cons i ,zs))
+                      `(when found (!cons i ,xs)))))
+    `(let (i j tmp-xs tmp-ys found)
+       (setq tmp-xs ,xs
+             ,xs nil)
+       (while tmp-xs
+         (setq i (car tmp-xs)
+               tmp-ys ,ys
+               ,ys nil
+               found nil)
+         (while tmp-ys
+           (if (eq i (setq j (car tmp-ys)))
+               (setq ,ys (append ,ys (cdr tmp-ys))
+                     tmp-ys nil
+                     found t)
+             (!cons j ,ys)
+             (!cdr tmp-ys)))
+         ,found-form
+         (!cdr tmp-xs)))))
+
+(defun dag--mend-edge (adjlist broken edge)
+  (let ((keys (ht-keys broken))
+        found i j tmp1 tmp2)
+    (while (and (not found) keys)
+      (setq i (car keys)
+            tmp1 (ht-get broken i)
+            tmp2 nil)
+      ;; remove something without scanning a list twice (isn't this basically a
+      ;; zipper being used in a really weird way?)
+      (while tmp1
+        (if (not (equal edge (setq j (car tmp1))))
+            (!cons j tmp2)
+          (ht-set broken i (append tmp2 (cdr tmp1)))
+          (setq found i))
+        (!cdr tmp1))
+      (!cdr keys))
+    (when found
+      (dag--adjlist-add-parent-edge found edge adjlist)
+      (dag--adjlist-add-child-edge edge found adjlist))))
+
+(defun dag--adjlist-insert-nodes (to-insert adjlist broken-ht)
+  (let (i i-key i-rel edges-to-add parent-edges broken-edges edges-to-remove
+          parent-rel)
+    (while to-insert
+      (setq i (car to-insert)
+            i-key (car i)
+            edges-to-add (cdr i))
+      ;; Add new node:
+      ;;
+      ;; If the node does not exist, add an empty relationship (it will be
+      ;; filled in the next loop). If the node is a parent in the broken-hashes
+      ;; table, transfer it to the adjacency list.
+      (if (not (setq i-rel (ht-get adjlist i-key)))
+          (progn
+            (ht-set adjlist i-key (dag--new-relationship nil nil))
+            (dag--mend-edge adjlist broken-ht i-key))
+        ;; If the node does exist, get the edges that shouldn't be changed
+        ;; (added & current), the edges that are to be added (added - current)
+        ;; and the edges that are to be remove (current - added) (note 'added'
+        ;; and 'current' are treated as sets with the appropriate notation). Set
+        ;; the new parent slot to the edges that aren't to be changed, remove
+        ;; the child references in all parent nodes, and keep the edges to be
+        ;; added for later.
+        (setq parent-edges (plist-get i-rel :parents))
+        (dag--intersection-difference parent-edges edges-to-add edges-to-remove)
+        (ht-set adjlist i-key (plist-put i-rel :parents parent-edges))
+        (--each edges-to-remove
+          (dag--adjlist-remove-child-edge it i-key adjlist))
+        ;; Similar to above, get the edges to be added and the nodes that are to
+        ;; remain, and set the broken edges hash table to the latter.
+        (setq broken-edges (ht-get broken-ht i-key))
+        (dag--intersection-difference broken-edges edges-to-add)
+        (ht-set broken-ht i-key broken-edges))
+      ;; Add new node to the child list of newly linked parents. This needs to
+      ;; be done separately from above since we don't know if the new edges are
+      ;; broken or not
+      (--each edges-to-add
+        (if (not (setq parent-rel (ht-get adjlist it)))
+            (dag--ht-cons broken-ht i-key it)
+          (ht-set adjlist it (dag--plist-cons parent-rel :children i-key))
+          (dag--adjlist-add-parent-edge i-key it adjlist)))
+      (!cdr to-insert))
+    (list adjlist (dag--prune-broken-edges broken-ht))))
+
+(defun dag-alist-to-dag (parent-adjlist)
+  "Convert PARENT-ADJLIST to a DAG.
+
+PARENT-ADJLIST is an alist where each member represents a
+node in which the car is a identifying the node and the cdr is a
+list of other keys representing edges to the parents of the car.
+The set of all car keys must be equivalent to the set of all cdr
+keys.
+
+Return a DAG object."
+  (->> (dag--alist-to-ht parent-adjlist)
+       (apply #'dag--create)))
+
+(defun dag-remove-nodes (to-remove dag)
+  (-let (((&plist :adjlist a :broken-edges b) dag))
+    (->> (dag--adjlist-remove-nodes to-remove a b)
+         (apply #'dag--create))))
+
+(defun dag-insert-nodes (to-insert dag)
+  (-let (((&plist :adjlist a :broken-edges b) dag))
+    (->> (dag--adjlist-insert-nodes to-insert a b)
+         (apply #'dag--create))))
+
+(defun dag-edit-nodes (to-remove to-insert dag)
+  (-let (((&plist :adjlist a :broken-edges b) dag))
+    (->> (dag--adjlist-remove-nodes to-remove a b)
+         (apply #'dag--adjlist-insert-nodes to-insert)
+         (apply #'dag--create))))
+
+(defun dag-get-adjacency-list (dag)
+  (plist-get dag :adjlist))
+
+(defun dag-get-broken-edges (dag)
+  (plist-get dag :broken-edges))
+
+(defun dag-get-floating-nodes (dag)
+  (plist-get dag :floating-nodes))
+
+(defun dag-get-topological-order (dag)
+  (plist-get dag :order))
+
+(defalias 'dag-get-all-nodes 'dag-get-topological-order)
+
+(defun dag-get-length (dag)
+  (length (dag-get-topological-order dag)))
+
+(defun dag-is-valid-p (dag)
+  (< 0 (dag-get-length dag)))
+
+(defun dag-get-relationships (key dag)
+  (->> (dag-get-adjacency-list dag)
+       (dag--adjlist-get-relationships key)))
+
+(defun dag-get-parents (key dag)
+  (->> (dag-get-relationships key dag)
+       (dag--relationship-get-parents)))
+
+(defun dag-get-children (key dag)
+  (->> (dag-get-relationships key dag)
+       (dag--relationship-get-children)))
+
+(defmacro dag-get-nodes-where (dag form)
+  (declare (indent 1))
+  `(let ((it-adjlist (dag-get-adjacency-list ,dag))
+         acc)
+     (dag--each-key it-adjlist
+       (when ,form (!cons it acc)))
+     acc))
+
+(defun dag-get-leaf-nodes (dag)
+  (dag-get-nodes-where dag
+    (not (dag--adjlist-get-children it it-adjlist))))
+
+(defun dag-get-root-nodes (dag)
+  (dag-get-nodes-where dag
+    (not (dag--adjlist-get-parents it it-adjlist))))
+
+(defun dag-get-extra-nodes (dag)
+  (-let (((&plist :adjlist :order) dag))
+    (dag--transitive-reduction adjlist order)))
+
+;; (defun dag-remove-node (key dag)
+;;   (-let* (((&plist :nodes :order) dag))
+;;     (-when-let (rel (ht-get nodes key))
+;;       (plist-put dag :order (remove key order))
+;;       (ht-remove nodes key)
+;;       (--each (plist-get rel :children)
+;;         (dag-remove-node it dag)))))
+
+(provide 'dag)
+;;; dag.el ends here
