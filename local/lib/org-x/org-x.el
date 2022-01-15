@@ -37,6 +37,7 @@
 (require 'org)
 (require 'org-id)
 (require 'org-x-agg)
+(require 'org-x-dag)
 
 ;;; TODO KEYWORDS
 
@@ -81,6 +82,10 @@
 
 (defconst org-x-tag-category-prefix ?_
   "Prefix character denoting life category tag.")
+
+(defconst org-x-exclusive-prefixes (list org-x-tag-category-prefix
+                                         org-x-tag-location-prefix)
+  "Tag prefixes which denote mutually exclusive groups.")
 
 (defconst org-x-tag-errand
   (org-x-prepend-char org-x-tag-location-prefix "errand")
@@ -1106,13 +1111,13 @@ should be this function again)."
           i
         (message "WARNING: invalid id found: %s" i))))
 
-(defmacro org-x-with-id-target (id form)
+(defmacro org-x-with-id-target (id &rest body)
   (declare (indent 1))
   `(-when-let ((it-file . it-point) (org-id-find ,id))
      (org-x-with-file it-file
        (save-excursion
          (goto-char it-point)
-         ,form))))
+         ,@body))))
 
 (defun org-x-goal-build-link (id)
   (org-x-with-id-target id

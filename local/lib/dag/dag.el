@@ -73,22 +73,22 @@ The type of WHAT will determine how the hash table is build:
 (defun dag--ht-remove (h k x)
   (ht-set h k (remove x (ht-get h k))))
 
-(defun dag--adjlist-get-relationships (key adjlist)
+(defun dag--adjlist-get-relations (key adjlist)
   (ht-get adjlist key))
 
-(defun dag--relationship-get-children (rel)
+(defun dag-relation-get-children (rel)
   (plist-get rel :children))
 
-(defun dag--relationship-get-parents (rel)
+(defun dag-relation-get-parents (rel)
   (plist-get rel :parents))
 
 (defun dag--adjlist-get-children (key adjlist)
   (->> (ht-get adjlist key)
-       (dag--relationship-get-children)))
+       (dag-relation-get-children)))
 
 (defun dag--adjlist-get-parents (key adjlist)
   (->> (ht-get adjlist key)
-       (dag--relationship-get-parents)))
+       (dag-relation-get-parents)))
 
 (defun dag--new-relationship (p c)
   (list :parents p :children c))
@@ -168,7 +168,7 @@ The type of WHAT will determine how the hash table is build:
     ;; a list of 'broken' parent edges.
     ;;
     ;; O(E+N)
-    (--each (ht-keys h)
+    (dag--each-key h
       (setq relations (ht-get h it)
             parents (plist-get relations :parents))
       (while parents
@@ -394,32 +394,45 @@ Return a DAG object."
 (defun dag-is-valid-p (dag)
   (< 0 (dag-get-length dag)))
 
+(defun dag-get-node (key dag)
+  (-some-> (dag-get-adjacency-list dag)
+    (ht-get key)))
+
 (defun dag-get-relationships (key dag)
   (->> (dag-get-adjacency-list dag)
-       (dag--adjlist-get-relationships key)))
+       (dag--adjlist-get-relations key)))
 
 (defun dag-get-parents (key dag)
   (->> (dag-get-relationships key dag)
-       (dag--relationship-get-parents)))
+       (dag-relation-get-parents)))
 
 (defun dag-get-children (key dag)
   (->> (dag-get-relationships key dag)
-       (dag--relationship-get-children)))
+       (dag-relation-get-children)))
 
-(defmacro dag-get-nodes-where (dag form)
+(defmacro dag-get-nodes-and-edges-where (dag form)
   (declare (indent 1))
   `(let ((it-adjlist (dag-get-adjacency-list ,dag))
+         acc it-rel)
+     (dag--each-key it-adjlist
+       (setq it-rel (ht-get it-adjlist it))
+       (when ,form (!cons (cons it it-rel) acc)))
+     acc))
+
+(defmacro dag-get-floating-nodes-where (dag form)
+  (declare (indent 1))
+  `(let ((it-adjlist (dag-get-floating-nodes ,dag))
          acc)
      (dag--each-key it-adjlist
        (when ,form (!cons it acc)))
      acc))
 
 (defun dag-get-leaf-nodes (dag)
-  (dag-get-nodes-where dag
+  (dag-get-nodes-and-edges-where dag
     (not (dag--adjlist-get-children it it-adjlist))))
 
 (defun dag-get-root-nodes (dag)
-  (dag-get-nodes-where dag
+  (dag-get-nodes-and-edges-where dag
     (not (dag--adjlist-get-parents it it-adjlist))))
 
 (defun dag-get-extra-nodes (dag)
