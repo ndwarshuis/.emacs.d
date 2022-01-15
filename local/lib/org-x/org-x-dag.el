@@ -353,14 +353,17 @@ If FORCE is non-nil, sync no matter what."
   (declare (indent 2))
   ;; NOTE if this is a standalone task it will return itself
   (-if-let (cs (org-x-dag-node-get-headline-children dag key))
-      (--mapcat (org-x-dag-project-node-get-task-nodes dag it) cs)
+      ;; TODO don't hardcode this
+      (->> (--remove (member (plist-get it :todo) (list org-x-kw-canc org-x-kw-hold)) cs)
+           (--mapcat (org-x-dag-project-node-get-task-nodes dag it)))
     (list key)))
 
-(defun org-x-dag-get-project-task-nodes (dag)
+(defun org-x-dag-get-project-task-nodes (fun dag)
   "Return project task nodes of DAG."
   (-let (((&plist :adjlist) dag))
     (->> (org-x-dag-get-toplevel-project-nodes dag)
          (-map #'car)
+         (-remove fun)
          (--mapcat (org-x-dag-project-node-get-task-nodes dag it)))))
 
 (defun org-x-dag-project-node-get-subproject-nodes (dag key)
@@ -489,10 +492,19 @@ encountered will be returned."
             'type (concat "tagsmatch" ts-type)
             'help-echo help-echo))))
 
+(defun org-x-dag-key-is-iterator (key)
+  (org-x-with-file (org-x-dag-key-get-file key)
+    (->> (org-entry-get (org-x-dag-key-get-point key) org-x-prop-parent-type)
+         (equal org-x-prop-parent-type-iterator))))
+
 (defun org-x-dag-scan-tasks ()
   (let* ((dag org-x-dag))
-    (->> (org-x-dag-get-project-task-nodes dag)
+    (->> (org-x-dag-get-project-task-nodes #'org-x-dag-key-is-iterator dag)
          (append (org-x-dag-get-standalone-task-nodes dag))
+         ;; TODO don't hardcode this
+         (--remove (org-x-with-file (org-x-dag-key-get-file it)
+                     (or (org-entry-get (org-x-dag-key-get-point it) "SCHEDULED")
+                         (org-entry-get (org-x-dag-key-get-point it) "DEADLINE"))))
          (--group-by (org-x-dag-key-get-file it))
          (--mapcat
           (-let (((path . keys) it))
@@ -501,6 +513,7 @@ encountered will be returned."
                (let ((tags (->> (org-x-dag-get-inherited-tags org-file-tags dag it)
                                 (append (plist-get it :tags))
                                 (org-x-dag-collapse-tags))))
+                 ;; filter out incubators
                  (unless (member org-x-tag-incubated tags)
                    (goto-char (org-x-dag-key-get-point it))
                    (org-x-dag-format-tag-node tags it)))
