@@ -130,17 +130,20 @@ The type of WHAT will determine how the hash table is build:
     (when (--all-p (= 0 it) (ht-values parent-degrees))
       (nreverse ordered-nodes))))
 
-(defun dag--get-floating (adjlist)
+(defun dag--get-floating (adjlist init)
   ;; Find 'floating nodes', which are nodes that have no children or parents
   ;; (this will happen if the original alist has node keys that aren't
   ;; referenced by any parents).
   ;;
   ;; O(N)
-  (let ((acc (dag--ht-create nil))
+  (let ((acc (or init (dag--ht-create nil)))
         cur)
     (dag--each-key adjlist
       (setq cur (ht-get adjlist it))
-      (unless (or (plist-get cur :children) (plist-get cur :parents))
+      ;; If adjlist key has parents and/or children, remove it from the floating
+      ;; if present, otherwise add it to floating and remove it from adjlist
+      (if (or (plist-get cur :children) (plist-get cur :parents))
+          (ht-remove acc it)
         (ht-remove adjlist it)
         (ht-set acc it t)))
     (list adjlist acc)))
@@ -215,8 +218,8 @@ The type of WHAT will determine how the hash table is build:
       (setq order (cdr order)))
     extra-edges))
 
-(defun dag--create (adjlist broken-edges)
-  (-let (((a f) (dag--get-floating adjlist)))
+(defun dag--create (adjlist broken-edges floating)
+  (-let (((a f) (dag--get-floating adjlist floating)))
     (list :adjlist a
           :broken-edges broken-edges
           :floating-nodes f
@@ -228,16 +231,18 @@ The type of WHAT will determine how the hash table is build:
       (ht-remove broken-edges it)))
   broken-edges)
 
-(defun dag--adjlist-remove-nodes (to-remove adjlist broken-edges)
+(defun dag--adjlist-remove-nodes (to-remove adjlist broken-edges floating)
   (let (r r-rel child-rel)
     (while to-remove
       ;; If the node to be removed is in the adjacency list, get a list of its
       ;; parents, remove the node from the child list of each parent, then
-      ;; delete the node itself.
-      (when (setq r (car to-remove)
-                  r-rel (ht-get adjlist r))
+      ;; delete the node itself. Otherwise try to delete if from floating nodes.
+      (setq r (car to-remove))
+      (if (not (setq r-rel (ht-get adjlist r)))
+          (ht-remove floating r)
         (--each (plist-get r-rel :parents)
-          (dag--adjlist-remove-child-edge it r adjlist))
+          (when (and (not (member it to-remove)) (ht-contains-p adjlist it))
+            (dag--adjlist-remove-child-edge it r adjlist)))
         ;; If a child edge refers to a node that is not about to be removed,
         ;; remove the parent edge from the the child and add it to broken edges.
         ;; Otherwise do nothing because the child will be removed later anyways.
@@ -251,7 +256,7 @@ The type of WHAT will determine how the hash table is build:
       ;; presence in the adjacency list
       (ht-remove broken-edges r)
       (!cdr to-remove)))
-  (list adjlist broken-edges))
+  (list adjlist broken-edges floating))
 
 (defmacro dag--intersection-difference (xs ys &optional zs)
   "Calculate the intersection and difference of XS and YS.
@@ -355,24 +360,24 @@ The set of all car keys must be equivalent to the set of all cdr
 keys.
 
 Return a DAG object."
-  (->> (dag--alist-to-ht parent-adjlist)
-       (apply #'dag--create)))
+  (-let (((a b) (dag--alist-to-ht parent-adjlist)))
+    (dag--create a b nil)))
 
 (defun dag-remove-nodes (to-remove dag)
-  (-let (((&plist :adjlist a :broken-edges b) dag))
-    (->> (dag--adjlist-remove-nodes to-remove a b)
+  (-let (((&plist :adjlist a :broken-edges b :floating-nodes f) dag))
+    (->> (dag--adjlist-remove-nodes to-remove a b f)
          (apply #'dag--create))))
 
 (defun dag-insert-nodes (to-insert dag)
-  (-let (((&plist :adjlist a :broken-edges b) dag))
-    (->> (dag--adjlist-insert-nodes to-insert a b)
-         (apply #'dag--create))))
+  (-let* (((&plist :adjlist a :broken-edges b :floating-nodes f) dag)
+          ((a* b*) (dag--adjlist-insert-nodes to-insert a b)))
+    (dag--create a* b* f)))
 
 (defun dag-edit-nodes (to-remove to-insert dag)
-  (-let (((&plist :adjlist a :broken-edges b) dag))
-    (->> (dag--adjlist-remove-nodes to-remove a b)
-         (apply #'dag--adjlist-insert-nodes to-insert)
-         (apply #'dag--create))))
+  (-let* (((&plist :adjlist a :broken-edges b :floating-nodes f) dag)
+          ((a* b* f*) (dag--adjlist-remove-nodes to-remove a b f))
+          ((a** b**) (dag--adjlist-insert-nodes to-insert a* b*)))
+    (dag--create a** b** f*)))
 
 (defun dag-get-adjacency-list (dag)
   (plist-get dag :adjlist))
