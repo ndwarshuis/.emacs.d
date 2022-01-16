@@ -328,6 +328,55 @@
     nil
     (c a e d)))
 
+(ert-deftest dag-test-edit-remove ()
+  (dag-test-alist-edit-is-valid-p ((a)
+                                   (b a)
+                                   (c a)
+                                   (d b c)
+                                   (e b c))
+      (e)
+      nil
+    ((a :children (b c) :parents nil)
+     (b :children (d) :parents (a))
+     (c :children (d) :parents (a))
+     (d :children nil :parents (b c)))
+    nil
+    nil
+    (a c b d)))
+
+(ert-deftest dag-test-edit-insert ()
+  (dag-test-alist-edit-is-valid-p ((a)
+                                     (b a)
+                                     (c a))
+      nil
+      ((d c b)
+       (e c b))
+    ((a :children (b c) :parents nil)
+     (b :children (d e) :parents (a))
+     (c :children (d e) :parents (a))
+     (d :children nil :parents (b c))
+     (e :children nil :parents (b c)))
+    nil
+    nil
+    (a c b e d)))
+
+(ert-deftest dag-test-edit-null ()
+  (dag-test-alist-edit-is-valid-p ((a)
+                                   (b a)
+                                   (c a)
+                                   (d b c)
+                                   (e b c))
+      nil
+      nil
+    ((a :children (b c) :parents nil)
+     (b :children (e d) :parents (a))
+     (c :children (e d) :parents (a))
+     (d :children nil :parents (b c))
+     (e :children nil :parents (b c)))
+    nil
+    nil
+    (a c b e d)))
+
 ;; TODO add test for transitive reduction
 
 (provide 'dag-test)
