@@ -47,11 +47,6 @@ representing the headlines's ID property or a cons cell
 like (FILE POS) representing the staring position in file/buffer
 of the headline (aka a \"pseudo-marker\").")
 
-;; TODO might be better if I make one giant variable to hold these things, the
-;; dag, and whatever else I decide should be cached to death
-(defvar org-x-dag-node-tags-table nil)
-(defvar org-x-dag-file-tags-table nil)
-
 (defvar org-x-dag-sync-state nil
   "An alist representing the sync state of the DAG.
 
@@ -83,6 +78,9 @@ that file as it currently sits on disk.")
 
 (defun org-x-dag-get-files ()
   "Return a list of all files to be used in the DAG."
+  ;; (list "/mnt/data/Org/projects/router.org"
+  ;;       "/mnt/data/Org/projects/omnimacs.org"
+  ;;       ))
   `(,(org-x-get-lifetime-goal-file)
     ,(org-x-get-endpoint-goal-file)
     ,@(org-x-get-action-files)))
@@ -118,18 +116,17 @@ The returned value will be a list like (TO-REMOVE TO-INSERT
 TO-UPDATE) which will contain the file paths the should be
 removed from, added to, or edited within the DAG respectively."
   (cl-flet
-      ((states-to-files
-        (states)
-        (-map #'car states)))
-    (-let* (((exist noexist)
-             (--separate (f-exists-p (car it)) org-x-dag-sync-state))
-            (to-remove (states-to-files noexist))
-            (to-insert (->> (states-to-files exist)
-                            (-difference (org-x-dag-get-files))))
-            (to-update (->> exist
-                            (--filter (-let (((file . md5) it))
-                                        (org-x-dag-file-is-dirty file md5)))
-                            (states-to-files))))
+      ((lookup-md5
+        (path)
+        (alist-get path org-x-dag-sync-state nil nil #'equal)))
+    (-let* ((existing-files (org-x-dag-get-files))
+            (state-files (-map #'car org-x-dag-sync-state))
+            (to-remove (-difference state-files existing-files))
+            (to-insert (-difference existing-files state-files))
+            (to-update
+             (->> (-intersection existing-files state-files)
+                  (--filter (org-x-dag-file-is-dirty it (lookup-md5 it))))))
+      ;; (print (list to-remove to-insert to-update))
       (list to-remove to-insert to-update))))
 
 ;; TODO this assumes the `org-id-locations' is synced
@@ -235,38 +232,20 @@ valid keyword or none of its parents have valid keywords."
   ;;     (error "Invalid key: %s" key)))))
 
 (defun org-x-dag-get-nodes-in-files (dag files)
-  (dag-get-nodes-and-edges-where org-x-dag
-    (org-x-dag-files-contains-key-p it files)))
+  (let ((x (->> (dag-get-nodes-and-edges-where org-x-dag
+                  (org-x-dag-files-contains-key-p it files))
+                (-map #'car)))
+        (y (dag-get-floating-nodes-where org-x-dag
+             (org-x-dag-files-contains-key-p it files))))
+    ;; (print (list x y))
+    ;; (print x)
+    ;; (print (list (length x) (length y) (length (-intersection x y))))
+    (append x y)))
 
-(defun org-x-dag-build-tag-tables (nodes &optional node-tags file-tags)
-  "Create hash tables for the tags from NODES.
-
-Two tables will be returned, one for the local tags of each node,
-and one for the file tags for each file represented by NODES."
-  (let ((node-tags (or node-tags (ht-create #'equal)))
-        (file-tags (or file-tags (ht-create #'equal))))
-    (-> (-group-by #'org-x-dag-key-get-file nodes)
-        (--each (-let (((path . nodes) it))
-                  (org-x-with-file path
-                    (ht-set file-tags path org-file-tags)
-                    (--each nodes
-                      (goto-char (org-x-dag-key-get-point it))
-                      (ht-set node-tags it (org-get-tags nil t)))))))
-    (list node-tags file-tags)))
-
-(defun org-x-dag-tags-table-remove (nodes node-tags file-tags)
-  (--each nodes
-    (ht-remove node-tags it)
-    (ht-remove file-tags it))
-  (list node-tags file-tags))
-
-(defun org-x-dag-tags-table-update (to-remove to-insert)
-  (-setq (org-x-dag-node-tags-table org-x-dag-file-tags-table)
-    (->> (org-x-dag-tags-table-remove to-remove
-                                      org-x-dag-node-tags-table
-                                      org-x-dag-file-tags-table)
-         (apply #'org-x-dag-build-tag-tables to-insert))))
-
+;; TODO there is a HUGE DIFFERENCE between a 'key' (the things in the hash table
+;; the look things up) and a 'node' (which is a cons cell, the car of which is a
+;; 'key' and the cdr of which is a 'relation'). These names suck, but the point
+;; is we need to distinguish between them otherwise really strange things happen
 (defun org-x-dag-update (to-remove to-insert to-update)
   "Update the DAG given files to add and remove.
 
@@ -276,14 +255,12 @@ from, add to, and update with the DAG."
          (nodes-to-insert (-mapcat #'org-x-dag-get-file-nodes files-to-insert)))
     (if org-x-dag
         (let* ((files-to-remove (append to-update to-remove))
-               (nodes-to-remove (org-x-dag-get-nodes-in-files
-                                 org-x-dag files-to-remove)))
-          (setq org-x-dag (dag-edit-nodes nodes-to-remove
-                                          nodes-to-insert
-                                          org-x-dag))
-          (org-x-dag-tags-table-update (-map #'car nodes-to-remove)
-                                       (-map #'car nodes-to-insert)))
-      (org-x-dag-tags-table-update nil (-map #'car nodes-to-insert))
+               (keys-to-remove (->> (org-x-dag-get-nodes-in-files
+                                     org-x-dag files-to-remove))))
+          (when (or keys-to-remove nodes-to-insert)
+            (setq org-x-dag (dag-edit-nodes keys-to-remove
+                                            nodes-to-insert
+                                            org-x-dag))))
       (setq org-x-dag (dag-alist-to-dag nodes-to-insert)))))
 
 (defun org-x-dag-sync (&optional force)
@@ -455,27 +432,23 @@ encountered will be returned."
     'org-complex-heading-regexp org-complex-heading-regexp
     'mouse-face 'default))
 
-;; TODO this doesn't even use the tags cache...hmmm
-(defun org-x-dag-format-tag-node (tags key)
-  (-let* ((category (org-get-category))
+(defun org-x-dag-format-tag-node (category tags key)
+  ;; ASSUME I don't use subtree-level categories
+  (-let* (;; (category (org-get-category))
           (head (org-get-heading))
           (level (-> (plist-get key :level)
                      (make-string ?s)))
-          ;; (tags (-> (plist-get key :tags)
-          ;;           (append parent-tags)
-          ;;           (org-x-dag-collapse-tags)))
           ;; no idea what this does...
           (help-echo (format "mouse-2 or RET jump to Org file %S"
                              (abbreviate-file-name
                               (or (buffer-file-name (buffer-base-buffer))
                                   (buffer-name (buffer-base-buffer))))))
           (marker (org-agenda-new-marker))
-          (priority (org-get-priority head))
-          (todo-state (plist-get key :todo))
           ;; no idea what this function actually does
-          ((ts . ts-type) (org-agenda-entry-get-agenda-timestamp (point))))
-    (-> (org-agenda-format-item "" head level category tags)
-        (org-x-dag-add-default-props)
+          ((ts . ts-type) (org-agenda-entry-get-agenda-timestamp (point)))
+          (item (org-agenda-format-item "" head level category tags))
+          (priority (org-get-priority item)))
+    (-> (org-x-dag-add-default-props item)
         (org-add-props nil
             ;; face
             'face 'default
@@ -485,7 +458,7 @@ encountered will be returned."
             'org-hd-marker marker
             'org-marker marker
             ;; headline stuff
-            'todo-state todo-state
+            'todo-state (plist-get key :todo)
             'priority priority
             'ts-date ts
             ;; misc
@@ -497,29 +470,96 @@ encountered will be returned."
     (->> (org-entry-get (org-x-dag-key-get-point key) org-x-prop-parent-type)
          (equal org-x-prop-parent-type-iterator))))
 
+;; (defmacro org-x-dag-do-file-nodes (path keys form)
+;;   (declare (indent 2))
+;;   `(let ((acc))
+;;     (org-x-with-file ,path
+;;       ;; ;; TODO tbh this could just be the file basename since that's all
+;;       ;; ;; I ever use
+;;       ;; (let ((it-category (org-get-category)))
+;;       (--each keys
+;;         (goto-char (org-x-dag-key-get-point it))
+;;         ,form))
+;;     (nreverse acc)))
+
+(defun org-x-headline-has-timestamp (re want-time)
+  (let ((end (save-excursion (outline-next-heading))))
+    (-when-let (p (save-excursion (re-search-forward re end t)))
+      (if want-time (org-2ft (match-string 1)) p))))
+
+(defun org-x-headline-is-deadlined (want-time)
+  (org-x-headline-has-timestamp org-deadline-time-regexp want-time))
+
+(defun org-x-headline-is-scheduled (want-time)
+  (org-x-headline-has-timestamp org-scheduled-time-regexp want-time))
+
+(defun org-x-headline-is-closed (want-time)
+  (org-x-headline-has-timestamp org-closed-time-regexp want-time))
+
+(defconst org-x-headline-task-status-priorities
+  '((:archivable . -1)
+    (:complete . -1)
+    (:expired . 0)
+    (:done-unclosed . 0)
+    (:undone-closed . 0)
+    (:active . 1)
+    (:inert . 2)))
+
+(defun org-x-headline-get-task-status-0 (kw)
+  (if (member kw org-x-done-keywords)
+      (-if-let (c (org-x-headline-is-closed t))
+          (if (< (- (float-time) c) (* 60 60 24 org-x-archive-delay))
+              :archivable
+            :complete)
+        :done-unclosed)
+    (cond
+     ((org-x-headline-is-expired-p) :expired)
+     ((org-x-headline-is-inert-p) :inert)
+     ((org-x-headline-is-closed nil) :undone-closed)
+     (t :active))))
+
+;; TODO making this an imperative-style loop doesn't speed it up 'that-much'
 (defun org-x-dag-scan-tasks ()
-  (let* ((dag org-x-dag))
-    (->> (org-x-dag-get-project-task-nodes #'org-x-dag-key-is-iterator dag)
-         (append (org-x-dag-get-standalone-task-nodes dag))
-         ;; TODO don't hardcode this
-         (--remove (org-x-with-file (org-x-dag-key-get-file it)
-                     (or (org-entry-get (org-x-dag-key-get-point it) "SCHEDULED")
-                         (org-entry-get (org-x-dag-key-get-point it) "DEADLINE"))))
-         (--group-by (org-x-dag-key-get-file it))
-         (--mapcat
-          (-let (((path . keys) it))
-            (org-x-with-file path
-              (--map
-               (let ((tags (->> (org-x-dag-get-inherited-tags org-file-tags dag it)
-                                (append (plist-get it :tags))
-                                (org-x-dag-collapse-tags))))
-                 ;; filter out incubators
-                 (unless (member org-x-tag-incubated tags)
-                   (goto-char (org-x-dag-key-get-point it))
-                   (org-x-dag-format-tag-node tags it)))
-               keys))))
-         (-non-nil))))
-                     
+  (let* ((dag org-x-dag)
+         (sats (->> (org-x-dag-get-standalone-task-nodes dag)
+                    (--map (cons it :is-standalone))))
+         (pts (->> (org-x-dag-get-project-task-nodes #'org-x-dag-key-is-iterator dag)
+                   (--map (list it))))
+         (grouped (->> (append sats pts)
+                       (--group-by (org-x-dag-key-get-file (car it)))))
+         acc path key-cells category key tags is-standalone)
+    (--each grouped
+      ;; (-let (((path . key-cells) it))
+      (-setq (path . key-cells) it)
+      ;; TODO this won't add the file to `org-agenda-new-buffers'
+      (org-x-with-file path
+        ;; TODO tbh this could just be the file basename since that's all
+        ;; I ever use
+        (setq category (org-get-category))
+        ;; (let ((category (org-get-category)))
+        (--each key-cells
+          (-setq (key . is-standalone) it)
+          (setq tags (->> (org-x-dag-get-inherited-tags org-file-tags dag key)
+                          (append (plist-get key :tags))
+                          (org-x-dag-collapse-tags)))
+          ;; (-let* (((key . is-standalone) it)
+                  ;; (tags (->> (org-x-dag-get-inherited-tags org-file-tags dag key)
+                  ;;            (append (plist-get key :tags))
+                  ;;            (org-x-dag-collapse-tags))))
+            ;; filter out incubators
+          (goto-char (plist-get key :point))
+          (unless (or (member org-x-tag-incubated tags)
+                      (org-x-headline-is-scheduled nil)
+                      (org-x-headline-is-deadlined nil))
+            (let* ((s (org-x-headline-get-task-status-0 (plist-get key :todo)))
+                   (p (alist-get s org-x-headline-task-status-priorities)))
+              (unless (= p -1)
+                (setq acc (-> (org-x-dag-format-tag-node category tags key)
+                              (org-add-props nil
+                                  'x-is-standalone is-standalone
+                                  'x-status s)
+                              (cons acc)))))))))
+    acc))
 
 (defun org-x-dag-scan-tags ()
   (let* ((dag org-x-dag)
@@ -578,6 +618,7 @@ encountered will be returned."
       (org-tags-view '(4) "TODO"))))
 
 (defun org-x-dag-show-nodes (get-nodes)
+  (org-x-dag-sync)
   (let* ((org-tags-match-list-sublevels org-tags-match-list-sublevels)
          (completion-ignore-case t)
          rtnall files file pos matcher
