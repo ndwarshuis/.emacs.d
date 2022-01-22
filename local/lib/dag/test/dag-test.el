@@ -256,7 +256,7 @@
      (e :children nil :parents (b c)))
     nil
     nil
-    (a c b e d)))
+    (a c b d e)))
 
 (ert-deftest dag-test-insert-overwrite ()
   (dag-test-alist-insert-is-valid-p ((a)
@@ -358,7 +358,7 @@
      (e :children nil :parents (b c)))
     nil
     nil
-    (a c b e d)))
+    (a c b d e)))
 
 (ert-deftest dag-test-edit-null ()
   (dag-test-alist-edit-is-valid-p ((a)
@@ -376,6 +376,24 @@
     nil
     nil
     (a c b e d)))
+
+(ert-deftest dag-test-edit-cancel ()
+  (dag-test-alist-edit-is-valid-p ((a)
+                                   (b a)
+                                   (c a)
+                                   (d b c)
+                                   (e b c))
+      (b d)
+      ((b a)
+       (d b c))
+    ((a :children (b c) :parents nil)
+     (b :children (e d) :parents (a))
+     (c :children (e d) :parents (a))
+     (d :children nil :parents (b c))
+     (e :children nil :parents (b c)))
+    nil
+    nil
+    (a b c d e)))
 
 ;; TODO add test for transitive reduction
 
