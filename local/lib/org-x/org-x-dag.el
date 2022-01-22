@@ -32,7 +32,14 @@
 
 ;; variables to store state
 
-(defvar org-x-dag nil
+(defun org-x-dag-create (d m f)
+  (list :dag d :id->meta m :file->ids f))
+
+(defun org-x-dag-empty ()
+  (org-x-dag-create (dag-empty) (ht-create #'equal) (ht-create #'equal)))
+
+(defvar org-x-dag (org-x-dag-empty)
+                        
   "The org-x DAG.
 
 Each node in this DAG represents a headline with the following
@@ -55,24 +62,35 @@ that file as it currently sits on disk.")
 
 ;; functions to construct nodes within state
 
-(defun org-x-dag-build-key (file point level todo tags toplevelp id)
+;; (defun org-x-dag-build-key (file point level todo tags toplevelp id)
+(defun org-x-dag-build-key (file point level todo tags toplevelp)
   (list :file file
         :point point
         :level level
         :todo todo
         :tags tags
-        :toplevelp toplevelp
-        :id id))
+        :toplevelp toplevelp))
+        ;; :id id))
   ;; (if id (list :id file point id) (list :pm file point)))
+
+(defun org-x-dag-build-meta (file point level todo tags toplevelp)
+  (list :file file
+        :point point
+        :level level
+        :todo todo
+        :tags tags
+        :toplevelp toplevelp))
 
 (defun org-x-dag-key-get-file (key)
   "Return file for KEY."
-  (plist-get key :file))
+  (org-x-dag-id-lookup-prop key :file))
+  ;; (plist-get key :file))
   ;; (nth 1 key))
 
 (defun org-x-dag-key-get-point (key)
   "Return point for KEY."
-  (plist-get key :point))
+  (org-x-dag-id-lookup-prop key :point))
+  ;; (plist-get key :point))
   ;; (nth 2 key))
 
 ;;; DAG SYNCHRONIZATION/CONSTRUCTION
@@ -88,12 +106,13 @@ that file as it currently sits on disk.")
 
 (defun org-x-dag-get-md5 (path)
   "Get the md5 checksum of PATH."
-  (with-temp-buffer
-    (let ((rc (call-process "md5sum" nil (current-buffer) nil path)))
-      (if (/= 0 rc) (error "Could not get md5 of %s" path)
-        (->> (buffer-string)
-             (s-match "^\\([0-9a-z]+\\)")
-             (cadr))))))
+  (org-x-with-file path (buffer-hash)))
+  ;; (with-temp-buffer
+  ;;   (let ((rc (call-process "md5sum" nil (current-buffer) nil path)))
+  ;;     (if (/= 0 rc) (error "Could not get md5 of %s" path)
+  ;;       (->> (buffer-string)
+  ;;            (s-match "^\\([0-9a-z]+\\)")
+  ;;            (cadr))))))
 
 (defun org-x-dag-md5-matches-p (path md5)
   "Return t if the md5 of PATH on disk `equal's MD5."
@@ -101,8 +120,10 @@ that file as it currently sits on disk.")
 
 (defun org-x-dag-file-is-dirty (file md5)
   "Return t if FILE with MD5 has been recently changed."
-  (or (org-x-with-file file (buffer-modified-p))
-      (not (org-x-dag-md5-matches-p file md5))))
+  (org-x-with-file file
+    (let ((new-md5 (buffer-hash)))
+      (unless (equal new-md5 md5)
+        new-md5))))
 
 (defun org-x-dag-set-sync-state ()
   "Set the sync state to reflect the current files on disk."
@@ -123,12 +144,47 @@ removed from, added to, or edited within the DAG respectively."
     (-let* ((existing-files (org-x-dag-get-files))
             (state-files (-map #'car org-x-dag-sync-state))
             (to-remove (-difference state-files existing-files))
-            (to-insert (-difference existing-files state-files))
-            (to-update
-             (->> (-intersection existing-files state-files)
-                  (--filter (org-x-dag-file-is-dirty it (lookup-md5 it))))))
-      ;; (print (list to-remove to-insert to-update))
-      (list to-remove to-insert to-update))))
+            ((&alist 'to-insert 'to-update 'no-change)
+             (->> (--map (cons it (org-x-dag-get-md5 it)) existing-files)
+                  (--group-by (-let* (((path . new-md5) it)
+                                      (old-md5 (lookup-md5 path)))
+                                (cond
+                                 ((null old-md5) 'to-insert)
+                                 ((equal old-md5 new-md5) 'no-change)
+                                 (t 'to-update)))))))
+      (list to-remove to-insert to-update no-change))))
+
+(defun org-x-dag-get-local-property (prop)
+  (car (org--property-local-values prop nil)))
+
+(defun org-x-dag-get-link-property ()
+  (-some->> (org-x-dag-get-local-property org-x-prop-goal)
+    (s-split ";")
+    (--map (->> (s-trim it)
+                (s-match "^\\[\\[id:\\(.*\\)\\]\\[.*\\]\\]$")
+                (cadr)))))
+
+;; (defun org-x-dag-link-buffer-nodes (id-cache raw)
+;;   (let (this this-key these-links these-parents this-link link-target broken acc)
+;;     (while raw
+;;       (setq this (car raw)
+;;             this-key (plist-get this :key)
+;;             these-links (plist-get this :links)
+;;             these-parents (plist-get this :parents))
+;;       (while these-links
+;;         (setq this-link (car these-links))
+;;         (if (setq link-target (ht-get id-cache this-link))
+;;             (!cons link-target these-parents)
+;;           (!cons (list :key this-key :link this-link) broken))
+;;         (!cdr these-links))
+;;       (!cons (cons this-key these-parents) acc)
+;;       (!cdr raw))
+;;     ;; TODO this warning message won't be all the helpful seeing as the keys
+;;     ;; are actually semi-obscure plists with extra information and such
+;;     (--each broken
+;;       (-let (((&plist :key :link) it))
+;;         (message "WARNING: broken link for key %S: %s" key link)))
+;;     acc))
 
 ;; TODO this assumes the `org-id-locations' is synced
 (defun org-x-dag-get-buffer-nodes (file kws)
@@ -138,10 +194,14 @@ A node will only be returned if the headline to which it points
 has a valid (meaning in KWS) keyword and either its parent has a
 valid keyword or none of its parents have valid keywords."
   (let ((more t)
+        ;; (id-cache (ht-create #'equal))
         cur-path this-point this-key this-level this-todo has-todo this-parent
-        tags toplevelp acc)
+        tags toplevelp this-file-links acc acc-meta)
     ;; TODO add org-mode sanity check
     (goto-char (point-min))
+    ;; If not on a headline, check for a property drawer with links in it
+    (unless (= ?* (following-char))
+      (setq this-file-links (org-x-dag-get-link-property)))
     ;; move forward until on a headline
     (while (and (not (= ?* (following-char))) (= 0 (forward-line 1))))
     ;; Build alist; Keep track of how 'deep' we are in a given org-tree using a
@@ -173,7 +233,8 @@ valid keyword or none of its parents have valid keywords."
               toplevelp (not (nth 1 this-parent)))
         ;; Add the current headline to accumulator if it has a keyword, but only
         ;; if its parent has a keyword or none of its parents have keywords
-        (when (and has-todo (or (not toplevelp) (--none-p (nth 1 it) cur-path)))
+        (when (and has-todo (or (not toplevelp) (--none-p (nth 1 it) cur-path))
+                   (setq this-key (org-x-dag-get-local-property "ID")))
           ;; If parent is not a todo and we want tag inheritance, store all tags
           ;; above this headline (sans file-tags which we can get later easily)
           (setq tags (if (and toplevelp org-use-tag-inheritance)
@@ -181,24 +242,19 @@ valid keyword or none of its parents have valid keywords."
                               (--mapcat (nth 2 it))
                               (append this-tags))
                        this-tags)
-                this-key (org-x-dag-build-key file
-                                              this-point
-                                              this-level
-                                              (substring-no-properties this-todo)
-                                              tags
-                                              toplevelp
-                                              (car (org--property-local-values "ID" nil))))
-                                              ;; (org-entry-get nil "ID")))
-          ;; TODO also get a list of link parent targets and add them to the
-          ;; parent list
+                this-meta (org-x-dag-build-meta file
+                                                this-point
+                                                this-level
+                                                (substring-no-properties this-todo)
+                                                tags
+                                                toplevelp))
+          (!cons (cons this-key this-meta) acc-meta)
           (!cons (cons this-key (-some-> (nth 1 this-parent) (list))) acc))
         ;; Add current headline to stack
-        ;; (when (and (s-contains-p "general" file) (not (nth 1 this-parent)))
-        ;;   (print (--map (nth 2 it) cur-path)))
-          ;; (print (list cur-path this-tags)))
         (!cons (list this-level this-key this-tags) cur-path))
       (setq more (= 0 (forward-line 1))))
-    (nreverse acc)))
+    ;; TODO reverse these to make things make sense later?
+    (list acc acc-meta)))
 
 (defun org-x-dag-get-file-nodes (file)
   "Return all nodes in FILE in one pass."
@@ -240,10 +296,35 @@ valid keyword or none of its parents have valid keywords."
                 (-map #'car)))
         (y (dag-get-floating-nodes-where org-x-dag
              (org-x-dag-files-contains-key-p it files))))
-    ;; (print (list x y))
-    ;; (print x)
-    ;; (print (list (length x) (length y) (length (-intersection x y))))
     (append x y)))
+
+(defun org-x-dag-get-data-to-insert (files)
+  ;; TODO could also make another data structure to link each id to a file
+  ;; since this is a very common lookup operation
+  (cl-flet
+      ((append-results
+        (acc file)
+        (-let* (((acc-ids acc-meta acc-filemaps) acc)
+                ((ids metas) (org-x-dag-get-file-nodes file))
+                (filemap (cons file (-map #'car ids))))
+          (list (append ids acc-ids)
+                (append metas acc-meta)
+                (cons filemap acc-filemaps)))))
+    (-reduce-from #'append-results nil files)))
+
+(defun org-x-dag-update-ht (to-remove to-insert ht)
+  (--each to-remove
+    (ht-remove ht it))
+  (--each to-insert
+    (ht-set ht (car it) (cdr it)))
+  ht)
+
+(defun org-x-dag-get-ids-in-files (files)
+  (let ((filemap (plist-get org-x-dag :file->ids)))
+    (--mapcat (ht-get filemap it) files)))
+
+(defun org-x-dag->adjacency-list ()
+  (-> (plist-get org-x-dag :dag) (dag-get-adjacency-list)))
 
 ;; TODO there is a HUGE DIFFERENCE between a 'key' (the things in the hash table
 ;; the look things up) and a 'node' (which is a cons cell, the car of which is a
@@ -254,17 +335,21 @@ valid keyword or none of its parents have valid keywords."
 
 TO-REMOVE, TO-INSERT, and TO-UPDATE are lists of files to remove
 from, add to, and update with the DAG."
-  (let* ((files-to-insert (append to-update to-insert))
-         (nodes-to-insert (-mapcat #'org-x-dag-get-file-nodes files-to-insert)))
-    (if org-x-dag
-        (let* ((files-to-remove (append to-update to-remove))
-               (keys-to-remove (->> (org-x-dag-get-nodes-in-files
-                                     org-x-dag files-to-remove))))
-          (when (or keys-to-remove nodes-to-insert)
-            (setq org-x-dag (dag-edit-nodes keys-to-remove
-                                            nodes-to-insert
-                                            org-x-dag))))
-      (setq org-x-dag (dag-alist-to-dag nodes-to-insert)))))
+  (-let* (((&plist :dag :id->meta :file->ids) org-x-dag)
+          (files2rem (append to-update to-remove))
+          (files2ins (append to-update to-insert))
+          (ids2rem (org-x-dag-get-ids-in-files files2rem))
+          ((ids2ins meta2ins fms2ins) (org-x-dag-get-data-to-insert files2ins)))
+    (org-x-dag-update-ht ids2rem meta2ins id->meta)
+    (org-x-dag-update-ht files2rem fms2ins file->ids)
+    (->> (if (dag-is-empty-p dag) (dag-alist-to-dag ids2ins)
+           (dag-edit-nodes ids2rem ids2ins dag))
+         (plist-put org-x-dag :dag))))
+
+(defun org-x-dag-id-lookup-prop (id prop)
+  (-> (plist-get org-x-dag :id->meta)
+      (ht-get id)
+      (plist-get prop)))
 
 (defun org-x-dag-sync (&optional force)
   "Sync the DAG with files from `org-x-dag-get-files'.
@@ -272,10 +357,11 @@ from, add to, and update with the DAG."
 If FORCE is non-nil, sync no matter what."
   (when force
     (setq org-x-dag-sync-state nil
-          org-x-dag nil))
-  (-let (((to-remove to-insert to-update) (org-x-dag-get-sync-state)))
-    (org-x-dag-update to-remove to-insert to-update)
-    (org-x-dag-set-sync-state)
+          org-x-dag (org-x-dag-empty)))
+  ;; TODO verify integrity somewhere in here
+  (-let (((to-remove to-insert to-update no-change) (org-x-dag-get-sync-state)))
+    (org-x-dag-update to-remove (-map #'car to-insert) (-map #'car to-update))
+    (setq org-x-dag-sync-state (append to-insert to-update no-change))
     nil))
 
 ;;; DAG -> HEADLINE RETRIEVAL
@@ -297,6 +383,24 @@ If FORCE is non-nil, sync no matter what."
 ;; (defun org-x-dag-key-has-child-headlines-p (key dag)
 ;;   (org-x-dag-relation-has-child-headlines-p key (dag-get-relationships key dag)))
 
+(defun org-x-dag-partition-task-nodes (files)
+  (->> (org-x-dag-get-ids-in-files files)
+       (--separate (org-x-dag-id-lookup-prop it :toplevelp))))
+  ;; (-let (((from-adjlist-proj from-adjlist-task)
+  ;;         (->> (dag-get-nodes-and-edges-where dag
+  ;;                (and (org-x-dag-files-contains-key-p it files)
+  ;;                     (plist-get it :toplevelp)))
+  ;;              (--separate (org-x-dag-relation-has-child-headlines-p (car it) (cdr it))))))
+  ;;   (list (-map #'car from-adjlist-task) (-map #'car from-adjlist-proj))))
+
+(defun org-x-dag-partition-all-task-nodes (files dag)
+  (-let (((from-adjlist-proj from-adjlist-task)
+          (org-x-dag-partition-task-nodes files dag))
+         (from-floating
+          (dag-get-floating-nodes-where dag
+            (org-x-dag-files-contains-key-p it files))))
+    (list (append from-adjlist-task from-floating) from-adjlist-proj)))
+
 (defun org-x-dag-get-standalone-task-nodes (dag)
   "Return the standalone task nodes of DAG."
   (let* ((action-files (org-x-get-action-files))
@@ -310,19 +414,20 @@ If FORCE is non-nil, sync no matter what."
             (org-x-dag-files-contains-key-p it action-files))))
     (append (-map #'car from-adjlist) from-floating)))
 
-(defun org-x-dag-get-toplevel-project-nodes (dag)
+(defun org-x-dag-get-toplevel-project-nodes ()
   "Return the toplevel project nodes of DAG."
   (let ((action-files (org-x-get-action-files)))
-    (dag-get-nodes-and-edges-where dag
+    (dag-get-nodes-and-edges-where (plist-get org-x-dag :dag)
       (and (org-x-dag-files-contains-key-p it action-files)
-           (plist-get it :toplevelp)
+           (org-x-dag-id-lookup-prop it :toplevelp)
+           ;; (plist-get it :toplevelp)
            (org-x-dag-relation-has-child-headlines-p it it-rel)))))
 
 ;;; DAG -> HEADLINE RETRIEVAL (CHILD/PARENT)
 
 (defun org-x-dag-filter-children (dag key fun)
   (declare (indent 2))
-  (-filter fun (dag-get-children key dag)))
+  (-filter fun (dag-get-children key (plist-get org-x-dag :dag))))
 
 (defun org-x-dag-separate-children (dag key fun)
   (declare (indent 2))
@@ -339,14 +444,14 @@ If FORCE is non-nil, sync no matter what."
   ;; NOTE if this is a standalone task it will return itself
   (-if-let (cs (org-x-dag-node-get-headline-children dag key))
       ;; TODO don't hardcode this
-      (->> (--remove (member (plist-get it :todo) (list org-x-kw-canc org-x-kw-hold)) cs)
+      (->> (--remove (member (org-x-dag-id-lookup-prop it :todo) (list org-x-kw-canc org-x-kw-hold)) cs)
            (--mapcat (org-x-dag-project-node-get-task-nodes dag it)))
     (list key)))
 
 (defun org-x-dag-get-project-task-nodes (fun dag)
   "Return project task nodes of DAG."
   (-let (((&plist :adjlist) dag))
-    (->> (org-x-dag-get-toplevel-project-nodes dag)
+    (->> (org-x-dag-get-toplevel-project-nodes)
          (-map #'car)
          (-remove fun)
          (--mapcat (org-x-dag-project-node-get-task-nodes dag it)))))
@@ -444,7 +549,7 @@ encountered will be returned."
   ;; ASSUME I don't use subtree-level categories
   (-let* (;; (category (org-get-category))
           (head (org-get-heading))
-          (level (-> (plist-get key :level)
+          (level (-> (org-x-dag-id-lookup-prop key :level)
                      (make-string ?s)))
           ;; no idea what this does...
           (help-echo (format "mouse-2 or RET jump to Org file %S"
@@ -466,7 +571,7 @@ encountered will be returned."
             'org-hd-marker marker
             'org-marker marker
             ;; headline stuff
-            'todo-state (plist-get key :todo)
+            'todo-state (org-x-dag-id-lookup-prop key :todo)
             'priority priority
             'ts-date ts
             ;; misc
@@ -539,42 +644,46 @@ encountered will be returned."
      ((org-x-headline-is-closed nil) :undone-closed)
      (t :active))))
 
-(defmacro org-x--descend-into-project (dag key children statuscode-tree get-task-status callback-form)
-  ;; define "breaker-status" as the last of the allowed-statuscodes
-  ;; when this is encountered the loop is broken because we are done
-  ;; (the last entry trumps all others)
-  (declare (indent 3))
-  (let* ((allowed-statuscodes (-map #'car statuscode-tree))
-         (trans-tbl (->> statuscode-tree
-                         (--map (-let (((a . bs) it)) (--map (cons it a) bs)))
-                         (-flatten-n 1)))
-         (breaker-status (-last-item allowed-statuscodes))
-         (initial-status (car allowed-statuscodes)))
-    `(save-excursion
-       (let ((project-status ,initial-status)
-             (this-child nil)
-             (it-kw nil)
-             (new-status nil))
-         ;; loop through tasks one level down until breaker-status found
-         (while (and children (not (eq project-status ,breaker-status)))
-           (setq this-child (car children)
-                 it-kw (plist-get this-child :todo))
-           ;; If project returns an allowed status then use that. Otherwise look
-           ;; up the value in the translation table and return error if not
-           ;; found.
-           (-if-let (cs (org-x-dag-node-get-headline-children dag this-child))
-               (unless (member (setq new-status
-                                     (funcall ,callback-form
-                                              ,dag this-child cs))
-                               ',allowed-statuscodes)
-                 (setq new-status (alist-get new-status ',trans-tbl)))
-             (goto-char (org-x-dag-key-get-point this-child))
-             (setq new-status (nth ,get-task-status ',allowed-statuscodes)))
-           (when (org-x--compare-statuscodes ',allowed-statuscodes
-                   new-status > project-status)
-             (setq project-status new-status))
-           (!cdr children))
-         project-status))))
+;; (defmacro org-x--descend-into-project (dag key children statuscode-tree get-task-status callback-form)
+;;   ;; define "breaker-status" as the last of the allowed-statuscodes
+;;   ;; when this is encountered the loop is broken because we are done
+;;   ;; (the last entry trumps all others)
+;;   (declare (indent 3))
+;;   (let* ((allowed-statuscodes (-map #'car statuscode-tree))
+;;          (trans-tbl (->> statuscode-tree
+;;                          (--map (-let (((a . bs) it)) (--map (cons it a) bs)))
+;;                          (-flatten-n 1)))
+;;          (breaker-status (-last-item allowed-statuscodes))
+;;          (initial-status (car allowed-statuscodes)))
+;;     `(save-excursion
+;;        (let ((project-status ,initial-status)
+;;              (this-child nil)
+;;              (it-kw nil)
+;;              (new-status nil))
+;;          ;; loop through tasks one level down until breaker-status found
+;;          (while (and children (not (eq project-status ,breaker-status)))
+;;            (setq this-child (car children)
+;;                  it-kw (plist-get this-child :todo))
+;;            ;; If project returns an allowed status then use that. Otherwise look
+;;            ;; up the value in the translation table and return error if not
+;;            ;; found.
+;;            (-if-let (cs (org-x-dag-node-get-headline-children dag this-child))
+;;                (unless (member (setq new-status
+;;                                      (funcall ,callback-form
+;;                                               ,dag this-child cs))
+;;                                ',allowed-statuscodes)
+;;                  (setq new-status (alist-get new-status ',trans-tbl)))
+;;              (goto-char (org-x-dag-key-get-point this-child))
+;;              (setq new-status (nth ,get-task-status ',allowed-statuscodes)))
+;;            (when (org-x--compare-statuscodes ',allowed-statuscodes
+;;                    new-status > project-status)
+;;              (setq project-status new-status))
+;;            (!cdr children))
+;;          project-status))))
+
+(defun org-x-dag-get-max-index (ys xs)
+  "Return the member of XS that has the highest index in YS."
+  (--max-by (> (-elem-index it ys) (-elem-index other ys)) xs))
 
 (defmacro org-x-dag-descend-into-project (dag keys parent-tags codetree
                                               task-form callback)
@@ -587,7 +696,7 @@ encountered will be returned."
          ((get-project-or-task-status
            (key)
            (-if-let (children (org-x-dag-node-get-headline-children ,dag key))
-               (let* ((tags (-> (plist-get key :tags)
+               (let* ((tags (-> (org-x-dag-id-lookup-prop key :tags)
                                 (append ,parent-tags)
                                 (org-x-dag-collapse-tags)))
                       (child-results (funcall ,callback ,dag key tags children))
@@ -598,21 +707,20 @@ encountered will be returned."
                                        top-status
                                      (alist-get top-status ',trans-tbl))))
                  (cons top-status* child-results))
-             (let ((it-kw (plist-get key :todo)))
-               (goto-char (org-x-dag-key-get-point key))
-               (-> ,task-form
-                   (nth ',allowed-codes)
-                   (list))))))
+             (let ((it-kw (org-x-dag-id-lookup-prop key :todo)))
+               (org-x-dag-with-key key
+                 (-> ,task-form
+                     (nth ',allowed-codes)
+                     (list)))))))
        (let* ((results (-map #'get-project-or-task-status ,keys))
               (status (->> (-map #'car results)
-                           (--max-by (> (-elem-index it ',allowed-codes)
-                                        (-elem-index other ',allowed-codes))))))
+                           (org-x-dag-get-max-index ',allowed-codes))))
          (cons status (-mapcat #'cdr results))))))
 
 (defun org-x-dag-headline-get-project-status (dag key tags children)
   ;; ASSUME children will always be at least 1 long
   (goto-char (org-x-dag-key-get-point key))
-  (let ((keyword (plist-get key :todo)))
+  (let ((keyword (org-x-dag-id-lookup-prop key :todo)))
     (-let (((status . child-results)
             (cond
              ((org-x-headline-is-scheduled nil)
@@ -659,6 +767,62 @@ encountered will be returned."
              (t (error "Invalid keyword detected: %s" keyword)))))
       (cons (list :key key :status status :tags tags) child-results))))
 
+(defun org-x-dag-headline-get-iterator-project-status (dag key children)
+  (org-x-dag-with-key key
+    (let* ((kw (org-x-dag-id-lookup-prop key :todo))
+           (status
+            (cond
+             ((or (member kw org-x--project-invalid-todostates)
+                  (org-x-headline-is-scheduled nil))
+              (list :project-error))
+             ((equal kw org-x-kw-canc)
+              (list :empt))
+             ;; TODO this is a bit awkward since I don't care about the child statuses
+             ;; and I don't care about tags
+             ((equal kw org-x-kw-done)
+              (org-x-dag-descend-into-project dag children nil
+                ((:empt)
+                 (:project-error :unscheduled :actv))
+                (if (member it-kw org-x-done-keywords) 0 1)
+                #'org-x-dag-headline-get-iterator-project-status))
+             ((equal kw org-x-kw-todo)
+              (org-x-dag-descend-into-project dag children nil
+                ((:unscheduled :project-error)
+                 (:empt)
+                 (:actv))
+                (let ((ts (org-x-headline-is-scheduled t)))
+                  (cond
+                   ((not ts) 0)
+                   ((> org-x-iterator-active-future-offset (- ts (float-time))) 1)
+                   (t 2)))
+                #'org-x-dag-headline-get-iterator-project-status))
+             (t (error "Invalid keyword detected: %s" kw)))))
+      status)))
+
+(defun org-x-dag-headline-get-iterator-task-status (key)
+  (org-x-dag-with-key key
+    (let ((kw (org-x-dag-id-lookup-prop key :todo)))
+      (if (member kw org-x-done-keywords) :empt
+        (-if-let (ts (or (org-x-headline-is-scheduled t)
+                         (org-x-headline-is-deadlined t)))
+            (if (< org-x-iterator-active-future-offset (- ts (float-time)))
+                :actv
+              :empt)
+          :unscheduled)))))
+
+(defun org-x-dag-headline-get-iterator-status (dag key)
+  (cl-flet
+      ((get-status
+        (key)
+        (-if-let (children (org-x-dag-node-get-headline-children dag key))
+            (->> children
+                 (org-x-dag-headline-get-iterator-project-status dag key)
+                 (car))
+          (org-x-dag-headline-get-iterator-task-status key))))
+    (->> (org-x-dag-node-get-headline-children dag key)
+         (-map #'get-status)
+         (org-x-dag-get-max-index org-x--iter-statuscodes))))
+
 (defmacro org-x-dag-with-keys-in-files (keys form)
   (declare (indent 1))
   `(->> (-group-by #'org-x-dag-key-get-file ,keys)
@@ -682,15 +846,15 @@ encountered will be returned."
             (org-x-dag-with-key key
               (-> (org-x-dag-format-tag-node cat tags key)
                   (org-add-props nil
-                      'x-toplevelp (plist-get key :toplevelp)
+                      'x-toplevelp (org-x-dag-id-lookup-prop key :toplevelp)
                       'x-status status
                       'x-priority priority)))))))
-    (let ((keys (->> (org-x-dag-get-toplevel-project-nodes org-x-dag)
+    (let ((keys (->> (org-x-dag-get-toplevel-project-nodes)
                      (-map #'car))))
       (org-x-dag-with-keys-in-files keys
         (org-x-dag-with-key it
           (let ((cat (org-get-category))
-                (tags (-> (plist-get it :tags)
+                (tags (-> (org-x-dag-id-lookup-prop it :tags)
                           (append org-file-tags)
                           (org-x-dag-collapse-tags))))
             ;; TODO don't hardcode these things
@@ -704,10 +868,37 @@ encountered will be returned."
                    (org-x-dag-headline-get-project-status org-x-dag it tags)
                    (--map (format-result cat it))))))))))
 
+(defun org-x-dag-scan-iterators ()
+  (cl-flet*
+      ((format-result
+        (tags cat key)
+        (-let* ((status (org-x-dag-headline-get-iterator-status (plist-get org-x-dag :dag) key)))
+          (org-x-dag-with-key key
+            (-> (org-x-dag-format-tag-node cat tags key)
+                (org-add-props nil
+                    'x-status status))))))
+    (let ((keys (->> (org-x-dag-get-toplevel-project-nodes)
+                     (-map #'car))))
+      (org-x-dag-with-keys-in-files keys
+        (org-x-dag-with-key it
+          (let ((cat (org-get-category))
+                (tags (-> (org-x-dag-id-lookup-prop it :tags)
+                          (append org-file-tags)
+                          (org-x-dag-collapse-tags))))
+            ;; TODO don't hardcode these things
+            (when (and (not (member org-x-tag-incubated tags))
+                       (save-excursion
+                         (-> org-x-prop-parent-type
+                             (org--property-local-values nil)
+                             (car)
+                             (equal org-x-prop-parent-type-iterator))))
+              (list (format-result tags cat it)))))))))
+
+
 ;; TODO making this an imperative-style loop doesn't speed it up 'that-much'
 (defun org-x-dag-scan-tasks ()
   (let* ((dag org-x-dag)
-         (sats (->> (org-x-dag-get-standalone-task-nodes dag)
+         (sats (->> (org-x-dag-get-standalone-task-nodes (plist-get org-x-dag :dag))
                     (--map (cons it :is-standalone))))
          (pts (->> (org-x-dag-get-project-task-nodes #'org-x-dag-key-is-iterator dag)
                    (--map (list it))))
@@ -725,26 +916,27 @@ encountered will be returned."
         ;; (let ((category (org-get-category)))
         (--each key-cells
           (-setq (key . is-standalone) it)
-          (setq tags (->> (org-x-dag-get-inherited-tags org-file-tags dag key)
-                          (append (plist-get key :tags))
+          (setq tags (->> (org-x-dag-get-inherited-tags org-file-tags (plist-get org-x-dag :dag) key)
+                          (append (org-x-dag-id-lookup-prop key :tags))
                           (org-x-dag-collapse-tags)))
           ;; (-let* (((key . is-standalone) it)
-                  ;; (tags (->> (org-x-dag-get-inherited-tags org-file-tags dag key)
-                  ;;            (append (plist-get key :tags))
-                  ;;            (org-x-dag-collapse-tags))))
-            ;; filter out incubators
-          (goto-char (plist-get key :point))
-          (unless (or (member org-x-tag-incubated tags)
-                      (org-x-headline-is-scheduled nil)
-                      (org-x-headline-is-deadlined nil))
-            (let* ((s (org-x-headline-get-task-status-0 (plist-get key :todo)))
-                   (p (alist-get s org-x-headline-task-status-priorities)))
-              (unless (= p -1)
-                (setq acc (-> (org-x-dag-format-tag-node category tags key)
-                              (org-add-props nil
-                                  'x-is-standalone is-standalone
-                                  'x-status s)
-                              (cons acc)))))))))
+          ;; (tags (->> (org-x-dag-get-inherited-tags org-file-tags dag key)
+          ;;            (append (plist-get key :tags))
+          ;;            (org-x-dag-collapse-tags))))
+          ;; filter out incubators
+          (org-x-dag-with-key key
+            ;; (goto-char (plist-get key :point))
+            (unless (or (member org-x-tag-incubated tags)
+                        (org-x-headline-is-scheduled nil)
+                        (org-x-headline-is-deadlined nil))
+              (let* ((s (org-x-headline-get-task-status-0 (org-x-dag-id-lookup-prop key :todo)))
+                     (p (alist-get s org-x-headline-task-status-priorities)))
+                (unless (= p -1)
+                  (setq acc (-> (org-x-dag-format-tag-node category tags key)
+                                (org-add-props nil
+                                    'x-is-standalone is-standalone
+                                    'x-status s)
+                                (cons acc))))))))))
     acc))
 
 ;; (defun org-x-dag-scan-tags ()
@@ -768,7 +960,7 @@ encountered will be returned."
           (-if-let (parent (->> (dag-get-parents k dag)
                                 (--first (equal (org-x-dag-key-get-file it)
                                                 this-file))))
-              (->> (plist-get parent :tags)
+              (->> (org-x-dag-id-lookup-prop parent :tags)
                    (append tags)
                    (ascend parent))
             tags)))
