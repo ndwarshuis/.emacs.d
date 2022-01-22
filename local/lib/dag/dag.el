@@ -372,6 +372,10 @@ Return a DAG object."
   (-let (((a b) (dag--alist-to-ht parent-adjlist)))
     (dag--create a b nil)))
 
+(defun dag-empty ()
+  "Return an empty DAG."
+  (dag--create (dag--ht-create nil) (dag--ht-create nil) nil))
+
 (defun dag-remove-nodes (to-remove dag)
   (-let (((&plist :adjlist a :broken-edges b :floating-nodes f) dag))
     (->> (dag--adjlist-remove-nodes to-remove a b f)
@@ -410,6 +414,11 @@ Return a DAG object."
 (defun dag-is-valid-p (dag)
   (< 0 (dag-get-length dag)))
 
+(defun dag-is-empty-p (dag)
+  (= 0
+     (ht-size (dag-get-adjacency-list dag))
+     (ht-size (dag-get-floating-nodes dag))))
+  
 (defun dag-get-node (key dag)
   (-some-> (dag-get-adjacency-list dag)
     (ht-get key)))
