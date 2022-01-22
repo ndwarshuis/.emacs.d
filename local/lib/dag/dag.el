@@ -219,6 +219,8 @@ The type of WHAT will determine how the hash table is build:
     extra-edges))
 
 (defun dag--create (adjlist broken-edges floating)
+  ;; TODO this floating this is probably not necessary; it automatically makes
+  ;; any algorithm using this function at least O(N)
   (-let (((a f) (dag--get-floating adjlist floating)))
     (list :adjlist a
           :broken-edges broken-edges
@@ -308,7 +310,7 @@ ZS."
 
 (defun dag--adjlist-insert-nodes (to-insert adjlist broken-ht)
   (let (i i-key i-rel edges-to-add parent-edges broken-edges edges-to-remove
-          parent-rel)
+          parent-rel to-insert*)
     (while to-insert
       (setq i (car to-insert)
             i-key (car i)
@@ -338,16 +340,23 @@ ZS."
         ;; remain, and set the broken edges hash table to the latter.
         (setq broken-edges (ht-get broken-ht i-key))
         (dag--intersection-difference broken-edges edges-to-add)
-        (ht-set broken-ht i-key broken-edges))
+        (ht-set broken-ht i-key broken-edges)
+        (!cons (cons i-key edges-to-add) to-insert*)
+        (!cdr to-insert)))
+    ;; Add edges in a separate loop since we need all the inserted nodes to be
+    ;; present before testing if an edge is broken
+    (while to-insert*
+      (setq i (car to-insert*)
+            i-key (car i))
       ;; Add new node to the child list of newly linked parents. This needs to
       ;; be done separately from above since we don't know if the new edges are
       ;; broken or not
-      (--each edges-to-add
+      (--each (cdr i)
         (if (not (setq parent-rel (ht-get adjlist it)))
             (dag--ht-cons broken-ht i-key it)
           (ht-set adjlist it (dag--plist-cons parent-rel :children i-key))
           (dag--adjlist-add-parent-edge i-key it adjlist)))
-      (!cdr to-insert))
+      (!cdr to-insert*))
     (list adjlist (dag--prune-broken-edges broken-ht))))
 
 (defun dag-alist-to-dag (parent-adjlist)
@@ -374,10 +383,12 @@ Return a DAG object."
     (dag--create a* b* f)))
 
 (defun dag-edit-nodes (to-remove to-insert dag)
-  (-let* (((&plist :adjlist a :broken-edges b :floating-nodes f) dag)
-          ((a* b* f*) (dag--adjlist-remove-nodes to-remove a b f))
-          ((a** b**) (dag--adjlist-insert-nodes to-insert a* b*)))
-    (dag--create a** b** f*)))
+  (if (not (or to-remove to-insert)) dag
+    (-let* ((to-remove* (-difference to-remove (-map #'car to-insert)))
+            ((&plist :adjlist a :broken-edges b :floating-nodes f) dag)
+            ((a* b* f*) (dag--adjlist-remove-nodes to-remove a b f))
+            ((a** b**) (dag--adjlist-insert-nodes to-insert a* b*)))
+      (dag--create a** b** f*))))
 
 (defun dag-get-adjacency-list (dag)
   (plist-get dag :adjlist))
