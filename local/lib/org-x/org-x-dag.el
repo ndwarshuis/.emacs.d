@@ -585,9 +585,8 @@ encountered will be returned."
             'help-echo help-echo))))
 
 (defun org-x-dag-key-is-iterator (key)
-  (org-x-with-file (org-x-dag-key-get-file key)
-    (->> (org-entry-get (org-x-dag-key-get-point key) org-x-prop-parent-type)
-         (equal org-x-prop-parent-type-iterator))))
+  (->> (org-entry-get (org-x-dag-id-lookup-prop key :point) org-x-prop-parent-type)
+       (equal org-x-prop-parent-type-iterator)))
 
 ;; (defmacro org-x-dag-do-file-nodes (path keys form)
 ;;   (declare (indent 2))
@@ -1010,6 +1009,38 @@ encountered will be returned."
              (not (member (org-x-dag-id-lookup-prop it :todo) org-x-done-keywords)))
       (let ((category (org-get-category)))
         (list (format-key category it))))))
+
+(defun org-x-dag-scan-archived ()
+  (cl-flet
+      ((format-key
+        (category key)
+        (let ((tags (->> (org-x-dag-get-inherited-tags org-file-tags
+                                                       (plist-get org-x-dag :dag)
+                                                       key)
+                         (append (org-x-dag-id-lookup-prop key :tags))
+                         (org-x-dag-collapse-tags))))
+          (unless (member org-x-tag-incubated tags)
+            (org-x-dag-with-key key
+              (-let (((is-archivable is-project)
+                      (-if-let (children (org-x-dag-id->headline-children key))
+                          (-> (org-x-dag-headline-get-project-status org-x-dag key tags children)
+                              (alist-get org-x-project-status-priorities)
+                              (eq :archivable)
+                              (list t))
+                        (-> (org-x-headline-get-task-status-0 (org-x-dag-id-lookup-prop key :todo))
+                            (alist-get org-x-headline-task-status-priorities)
+                            (eq :archivable)
+                            (list t)))))
+                (when is-archivable
+                  (-> (org-x-dag-format-tag-node category tags key)
+                      (org-add-props nil
+                          'x-project-p is-project)))))))))
+    (org-x-dag-with-files (org-x-get-action-files)
+        (org-x-dag-id->is-toplevel-p it)
+      (let ((category (org-get-category)))
+        (if (org-x-dag-key-is-iterator it)
+            (--map (format-key category it) (org-x-dag-id->headline-children it))
+          (list (format-key category it)))))))
 
 (defun org-x-dag-get-inherited-tags (init dag key)
   (let* ((this-file (org-x-dag-key-get-file key)))
