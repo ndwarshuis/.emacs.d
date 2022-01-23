@@ -830,6 +830,21 @@ encountered will be returned."
                     (--mapcat ,form (cdr it))))
         (-non-nil)))
 
+(defmacro org-x-dag-with-files (files pre-form form)
+  (declare (indent 2))
+  (let* ((lookup-form '(ht-get file->ids it-file))
+         (pre-form* (if pre-form
+                        `(--filter ,pre-form ,lookup-form)
+                      lookup-form)))
+    `(-let (((&plist :file->ids) org-x-dag))
+       (cl-flet
+           ((proc-file
+             (it-file)
+             (-when-let (keys ,pre-form*)
+               (org-x-with-file it-file
+                 (--mapcat ,form keys)))))
+         (-non-nil (-mapcat #'proc-file ,files))))))
+
 (defmacro org-x-dag-with-key (key &rest body)
   (declare (indent 1))
   `(progn
@@ -894,50 +909,61 @@ encountered will be returned."
                              (equal org-x-prop-parent-type-iterator))))
               (list (format-result tags cat it)))))))))
 
+;; TODO sloppy nonDRY hack
+(defun org-x-dag-id->headline-children (id)
+  (org-x-dag-node-get-headline-children (plist-get org-x-dag :dag) id))
 
-;; TODO making this an imperative-style loop doesn't speed it up 'that-much'
+(defun org-x-dag-get-task-nodes (id)
+  (declare (indent 2))
+  (cl-labels
+      ((descend
+        (children)
+        ;; TODO don't hardcode this
+        (->> (--remove (member (org-x-dag-id-lookup-prop it :todo)
+                               (list org-x-kw-canc org-x-kw-hold))
+                       children)
+             (--mapcat (-if-let (cs (org-x-dag-id->headline-children it))
+                           (descend cs)
+                         (list it))))))
+    (-some-> (org-x-dag-id->headline-children id)
+      (descend))))
+
+(defun org-x-dag-id->is-floating-p (id)
+  (-> (plist-get org-x-dag :dag)
+      (dag-get-floating-nodes)
+      (ht-get id)))
+
+(defun org-x-dag-id->is-toplevel-p (id)
+  (or (org-x-dag-id-lookup-prop id :toplevelp)
+      (org-x-dag-id->is-floating-p id)))
+
 (defun org-x-dag-scan-tasks ()
-  (let* ((dag org-x-dag)
-         (sats (->> (org-x-dag-get-standalone-task-nodes (plist-get org-x-dag :dag))
-                    (--map (cons it :is-standalone))))
-         (pts (->> (org-x-dag-get-project-task-nodes #'org-x-dag-key-is-iterator dag)
-                   (--map (list it))))
-         (grouped (->> (append sats pts)
-                       (--group-by (org-x-dag-key-get-file (car it)))))
-         acc path key-cells category key tags is-standalone)
-    (--each grouped
-      ;; (-let (((path . key-cells) it))
-      (-setq (path . key-cells) it)
-      ;; TODO this won't add the file to `org-agenda-new-buffers'
-      (org-x-with-file path
-        ;; TODO tbh this could just be the file basename since that's all
-        ;; I ever use
-        (setq category (org-get-category))
-        ;; (let ((category (org-get-category)))
-        (--each key-cells
-          (-setq (key . is-standalone) it)
-          (setq tags (->> (org-x-dag-get-inherited-tags org-file-tags (plist-get org-x-dag :dag) key)
-                          (append (org-x-dag-id-lookup-prop key :tags))
-                          (org-x-dag-collapse-tags)))
-          ;; (-let* (((key . is-standalone) it)
-          ;; (tags (->> (org-x-dag-get-inherited-tags org-file-tags dag key)
-          ;;            (append (plist-get key :tags))
-          ;;            (org-x-dag-collapse-tags))))
+  (cl-flet
+      ((format-key
+        (category is-standalone key)
+        (let ((tags (->> (org-x-dag-get-inherited-tags org-file-tags
+                                                       (plist-get org-x-dag :dag)
+                                                       key)
+                         (append (org-x-dag-id-lookup-prop key :tags))
+                         (org-x-dag-collapse-tags))))
           ;; filter out incubators
           (org-x-dag-with-key key
-            ;; (goto-char (plist-get key :point))
             (unless (or (member org-x-tag-incubated tags)
                         (org-x-headline-is-scheduled nil)
                         (org-x-headline-is-deadlined nil))
               (let* ((s (org-x-headline-get-task-status-0 (org-x-dag-id-lookup-prop key :todo)))
                      (p (alist-get s org-x-headline-task-status-priorities)))
                 (unless (= p -1)
-                  (setq acc (-> (org-x-dag-format-tag-node category tags key)
-                                (org-add-props nil
-                                    'x-is-standalone is-standalone
-                                    'x-status s)
-                                (cons acc))))))))))
-    acc))
+                  (-> (org-x-dag-format-tag-node category tags key)
+                      (org-add-props nil
+                          'x-is-standalone is-standalone
+                          'x-status s)))))))))
+    (org-x-dag-with-files (org-x-get-action-files)
+        (org-x-dag-id->is-toplevel-p it)
+      (let ((category (org-get-category)))
+        (-if-let (project-tasks (org-x-dag-get-task-nodes it))
+            (--map (format-key category nil it) project-tasks)
+          (list (format-key category t it)))))))
 
 ;; (defun org-x-dag-scan-tags ()
 ;;   (let* ((dag org-x-dag)
