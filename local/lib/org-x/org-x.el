@@ -2083,7 +2083,7 @@ This includes unchecking all checkboxes, marking keywords as
           (org-ml-headline-map-planning*
             (-some->> it (org-ml-planning-set-timestamp! :closed nil)))
           ;; remove ID property
-          (org-ml-headline-set-node-property "ID" nil)
+          (org-ml-headline-set-node-property "ID" (org-id-new))
           ;; clear item checkboxes
           (org-ml-match-map* '(section :any * item)
             (org-ml-set-property :checkbox 'off it))

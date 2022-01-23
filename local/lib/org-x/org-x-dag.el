@@ -102,7 +102,7 @@ that file as it currently sits on disk.")
   ;;       ))
   `(,(org-x-get-lifetime-goal-file)
     ,(org-x-get-endpoint-goal-file)
-    ,@(org-x-get-action-files)))
+    ,@(org-x-get-action-and-incubator-files)))
 
 (defun org-x-dag-get-md5 (path)
   "Get the md5 checksum of PATH."
@@ -214,44 +214,50 @@ valid keyword or none of its parents have valid keywords."
       (when (= ?* (following-char))
         (setq this-point (point)
               this-key nil)
+        ;; TODO this might be optimizable
         ;; Get tags (must be done from the first column)
         (setq this-tags (org--get-local-tags))
-        ;; Get the level
+        ;; Get the level if the following char is a space (if it isn't this is
+        ;; actually a bolded object that starts on the first column like
+        ;; '*blabla*'
         (while (= ?* (following-char)) (forward-char 1))
-        (setq this-level (current-column))
-        ;; Check if the headline has a keyword
-        (forward-char 1)
-        (while (not (memq (following-char) '(?  ?\n))) (forward-char 1))
-        (setq this-todo (-> (+ 1 this-point this-level)
-                            (buffer-substring (+ this-point (current-column))))
-              has-todo (member this-todo kws))
-        ;; Adjust the stack so that the top headline is the parent of the
-        ;; current headline
-        (while (and cur-path (<= this-level (nth 0 (car cur-path))))
-          (!cdr cur-path))
-        (setq this-parent (car cur-path)
-              toplevelp (not (nth 1 this-parent)))
-        ;; Add the current headline to accumulator if it has a keyword, but only
-        ;; if its parent has a keyword or none of its parents have keywords
-        (when (and has-todo (or (not toplevelp) (--none-p (nth 1 it) cur-path))
-                   (setq this-key (org-x-dag-get-local-property "ID")))
-          ;; If parent is not a todo and we want tag inheritance, store all tags
-          ;; above this headline (sans file-tags which we can get later easily)
-          (setq tags (if (and toplevelp org-use-tag-inheritance)
-                         (->> cur-path
-                              (--mapcat (nth 2 it))
-                              (append this-tags))
-                       this-tags)
-                this-meta (org-x-dag-build-meta file
-                                                this-point
-                                                this-level
-                                                (substring-no-properties this-todo)
-                                                tags
-                                                toplevelp))
-          (!cons (cons this-key this-meta) acc-meta)
-          (!cons (cons this-key (-some-> (nth 1 this-parent) (list))) acc))
-        ;; Add current headline to stack
-        (!cons (list this-level this-key this-tags) cur-path))
+        (when (= 32 (following-char))
+          (setq this-level (current-column))
+          ;; Check if the headline has a keyword
+          (forward-char 1)
+          (while (not (memq (following-char) '(?  ?\n))) (forward-char 1))
+          (setq this-todo (-> (+ 1 this-point this-level)
+                              (buffer-substring (+ this-point (current-column))))
+                has-todo (member this-todo kws))
+          ;; Adjust the stack so that the top headline is the parent of the
+          ;; current headline
+          (while (and cur-path (<= this-level (nth 0 (car cur-path))))
+            (!cdr cur-path))
+          (setq this-parent (car cur-path)
+                toplevelp (not (nth 1 this-parent)))
+          ;; Add the current headline to accumulator if it has a keyword, but only
+          ;; if its parent has a keyword or none of its parents have keywords
+          (when (and has-todo (or (not toplevelp) (--none-p (nth 1 it) cur-path))
+                     (setq this-key (org-x-dag-get-local-property "ID")))
+            ;; If parent is not a todo and we want tag inheritance, store all tags
+            ;; above this headline (sans file-tags which we can get later easily)
+            (setq tags (if (and toplevelp org-use-tag-inheritance)
+                           (->> cur-path
+                                (--mapcat (nth 2 it))
+                                (append this-tags))
+                         this-tags)
+                  this-meta (org-x-dag-build-meta file
+                                                  this-point
+                                                  this-level
+                                                  (substring-no-properties this-todo)
+                                                  tags
+                                                  toplevelp))
+            (!cons (cons this-key this-meta) acc-meta)
+            (!cons (cons this-key (append (list (nth 1 this-parent))
+                                          (org-x-dag-get-link-property)))
+                   acc))
+          ;; Add current headline to stack
+          (!cons (list this-level this-key this-tags) cur-path)))
       (setq more (= 0 (forward-line 1))))
     ;; TODO reverse these to make things make sense later?
     (list acc acc-meta)))
@@ -960,23 +966,50 @@ encountered will be returned."
                           'x-status s)))))))))
     (org-x-dag-with-files (org-x-get-action-files)
         (org-x-dag-id->is-toplevel-p it)
+      ;; TODO this is firing for each key, probably not necessary but whatever,
+      ;; not that slow
       (let ((category (org-get-category)))
         (-if-let (project-tasks (org-x-dag-get-task-nodes it))
             (--map (format-key category nil it) project-tasks)
           (list (format-key category t it)))))))
 
-;; (defun org-x-dag-scan-tags ()
-;;   (let* ((dag org-x-dag)
-;;          (nodes (org-x-dag-get-toplevel-project-nodes dag)))
-;;     (->> (--group-by (org-x-dag-key-get-file (car it)) nodes)
-;;          (--mapcat
-;;           (-let (((path . nodes) it))
-;;             (org-x-with-file path
-;;               (->> (-map #'car nodes)
-;;                    (--mapcat
-;;                     (progn
-;;                       (goto-char (org-x-dag-key-get-point it))
-;;                       (org-x-dag-format-tag-node dag (org-get-tags (point)) it))))))))))
+;; (defun org-x-dag-partition-children (ids)
+;;   (cl-labels
+;;       ((descend
+;;         (acc children)
+;;         (-let (((projects tasks) acc))
+;;           (->> (--remove (member (org-x-dag-id-lookup-prop it :todo)
+;;                                  (list org-x-kw-canc org-x-kw-hold))
+;;                          children)
+;;                (--mapcat (-if-let (cs (org-x-dag-id->headline-children it))
+;;                              (descend `((it ,@projects) (,@tasks)) cs)
+;;                            `((,@projects) (it ,@tasks))))))))
+;;     (-reduce-from #'descend nil ids)))
+
+(defun org-x-dag-scan-incubated ()
+  (cl-flet
+      ((format-key
+        (category key)
+        (let ((tags (->> (org-x-dag-get-inherited-tags org-file-tags
+                                                       (plist-get org-x-dag :dag)
+                                                       key)
+                         (append (org-x-dag-id-lookup-prop key :tags))
+                         (org-x-dag-collapse-tags))))
+          (when (member org-x-tag-incubated tags)
+            (org-x-dag-with-key key
+              (let* ((sch (org-x-headline-is-scheduled t))
+                     (dead (org-x-headline-is-deadlined t))
+                     (is-project (org-x-dag-id->headline-children key)))
+                (-> (org-x-dag-format-tag-node category tags key)
+                    (org-add-props nil
+                        'x-project-p is-project
+                        'x-scheduled sch
+                        'x-deadlined dead))))))))
+    (org-x-dag-with-files (org-x-get-action-and-incubator-files)
+        (and (org-x-dag-id->is-toplevel-p it)
+             (not (member (org-x-dag-id-lookup-prop it :todo) org-x-done-keywords)))
+      (let ((category (org-get-category)))
+        (list (format-key category it))))))
 
 (defun org-x-dag-get-inherited-tags (init dag key)
   (let* ((this-file (org-x-dag-key-get-file key)))
