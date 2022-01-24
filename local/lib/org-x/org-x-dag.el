@@ -119,23 +119,6 @@ that file as it currently sits on disk.")
       ;; TODO pretty sure this will never be used
       (org-x-dag-id->is-floating-p id)))
 
-(defun org-x-dag-collapse-tags (tags)
-  "Return TAGS with duplicates removed.
-
-In the case of mutually exclusive tags, only the first tag
-encountered will be returned."
-  (-let (((x non-x) (--separate (memq (elt it 0) org-x-exclusive-prefixes) tags)))
-    (->> (--group-by (elt it 0) x)
-         (--map (car (cdr it)) )
-         (append (-uniq non-x))
-         ;; this removes the 'inherited' property on some of the tags, which
-         ;; makes the agenda look cleaner (to me) since there are no
-         ;; double-colons to separate inherited from non-inherited
-         ;;
-         ;; NOTE: this appears to have no effect on `org-agenda-tags' (eg the
-         ;; inherited tags still show up in the menu properly)
-         (-map #'substring-no-properties))))
-
 (defun org-x-dag-id->tags (inherit? init id)
   (cl-labels
       ((ascend
@@ -150,9 +133,9 @@ encountered will be returned."
           tags)))
     ;; likewise, init tags have the lowest precedence (the likely use case for
     ;; this argument is for file tags)
-    (org-x-dag-collapse-tags (append (org-x-dag-id->local-tags id)
-                                     (and inherit? (ascend id nil))
-                                     init))))
+    (let ((local-tags (org-x-dag-id->local-tags id))
+          (parent-tags (and inherit? (ascend id nil))))
+      (append local-tags parent-tags init))))
 
 (defun org-x-dag-id->headline-children (id)
   (->> (plist-get org-x-dag :dag)
@@ -347,6 +330,40 @@ If FORCE is non-nil, sync no matter what."
 
 ;; NODE FORMATTING
 
+(defconst org-x-dag-tag-prefix-order (list org-x-tag-misc-prefix
+                                           org-x-tag-resource-prefix
+                                           org-x-tag-location-prefix
+                                           org-x-tag-category-prefix)
+  "Order in which tags should appear in the agenda buffer (from right to left.")
+
+(defun org-x-dag-collapse-tags (tags)
+  "Return TAGS with duplicates removed.
+
+In the case of mutually exclusive tags, only the first tag
+encountered will be returned."
+  (-let (((x non-x) (--separate (memq (elt it 0) org-x-exclusive-prefixes) tags)))
+    (->> (--group-by (elt it 0) x)
+         (--map (car (cdr it)) )
+         (append (-uniq non-x))
+         ;; this removes the 'inherited' property on some of the tags, which
+         ;; makes the agenda look cleaner (to me) since there are no
+         ;; double-colons to separate inherited from non-inherited
+         ;;
+         ;; NOTE: this appears to have no effect on `org-agenda-tags' (eg the
+         ;; inherited tags still show up in the menu properly)
+         (-map #'substring-no-properties))))
+
+(defun org-x-dag-sort-tags (tags)
+  (cl-flet
+      ((get-ranking
+        (tag)
+        (-if-let (i (-elem-index (elt tag 0) org-x-dag-tag-prefix-order))
+            (1+ i)
+          0)))
+    (->> (--map (cons it (get-ranking it)) tags)
+         (--sort (< (cdr it) (cdr other)))
+         (-map #'car))))
+
 (defun org-x-dag-add-default-props (item)
   (org-add-props item nil
     'org-not-done-regexp org-not-done-regexp
@@ -357,6 +374,9 @@ If FORCE is non-nil, sync no matter what."
 (defun org-x-dag-format-tag-node (category tags key)
   ;; ASSUME I don't use subtree-level categories
   (-let* (;; (category (org-get-category))
+          (tags* (->> tags
+                      (org-x-dag-collapse-tags)
+                      (org-x-dag-sort-tags)))
           (head (org-get-heading))
           (level (-> (org-x-dag-id->metaprop key :level)
                      (make-string ?s)))
@@ -368,7 +388,7 @@ If FORCE is non-nil, sync no matter what."
           (marker (org-agenda-new-marker))
           ;; no idea what this function actually does
           ((ts . ts-type) (org-agenda-entry-get-agenda-timestamp (point)))
-          (item (org-agenda-format-item "" head level category tags))
+          (item (org-agenda-format-item "" head level category tags*))
           (priority (org-get-priority item)))
     (-> (org-x-dag-add-default-props item)
         (org-add-props nil
@@ -463,7 +483,7 @@ If FORCE is non-nil, sync no matter what."
          ((get-project-or-task-status
            (key)
            (-if-let (children (org-x-dag-id->headline-children key))
-               (let* ((tags (org-x-dag-id->tags nil parent-tags key))
+               (let* ((tags (org-x-dag-id->tags nil ,parent-tags key))
                       (child-results (funcall ,callback key tags children))
                       ;; ASSUME the car of the results will be the toplevel
                       ;; key/status pair for this (sub)project
@@ -610,7 +630,11 @@ If FORCE is non-nil, sync no matter what."
              (it-file)
              (-when-let (keys ,pre-form*)
                (org-x-with-file it-file
-                 (--mapcat ,form keys)))))
+                 ;; NOTE there are other ways in org to get the category; the
+                 ;; only one I ever cared about was the filename. Very simple,
+                 ;; category = filename. Done
+                 (let ((it-category (f-base it-file)))
+                   (--mapcat ,form keys))))))
          (-non-nil (-mapcat #'proc-file ,files))))))
 
 (defun org-x-dag-scan-projects ()
@@ -627,9 +651,8 @@ If FORCE is non-nil, sync no matter what."
                       'x-status status
                       'x-priority priority))))))
        (format-key
-        (key)
-        (let ((cat (org-get-category))
-              (tags (org-x-dag-id->tags t org-file-tags key)))
+        (cat key)
+        (let ((tags (org-x-dag-id->tags t org-file-tags key)))
           ;; TODO don't hardcode these things
           (org-x-dag-with-key key
             (unless (or (member org-x-tag-incubated tags)
@@ -640,7 +663,7 @@ If FORCE is non-nil, sync no matter what."
     (org-x-dag-with-files (org-x-get-action-files)
         (and (org-x-dag-id->is-toplevel-p it)
              (not (org-x-dag-id->is-done-p it)))
-      (format-key it))))
+      (format-key it-category it))))
 
 (defun org-x-dag-scan-iterators ()
   (cl-flet*
@@ -655,10 +678,9 @@ If FORCE is non-nil, sync no matter what."
         (org-x-dag-id->is-toplevel-p it)
       (let ((tags (org-x-dag-id->tags t org-file-tags it)))
         (unless (member org-x-tag-incubated tags)
-          (let ((cat (org-get-category)))
-            (org-x-dag-with-key it
-              (when (org-x-dag-headline-is-iterator-p)
-                (list (format-result tags cat it))))))))))
+          (org-x-dag-with-key it
+            (when (org-x-dag-headline-is-iterator-p)
+              (list (format-result tags it-category it)))))))))
   
 (defun org-x-dag-get-task-nodes (id)
   (declare (indent 2))
@@ -694,12 +716,9 @@ If FORCE is non-nil, sync no matter what."
                           'x-status s)))))))))
     (org-x-dag-with-files (org-x-get-action-files)
         (org-x-dag-id->is-toplevel-p it)
-      ;; TODO this is firing for each key, probably not necessary but whatever,
-      ;; not that slow
-      (let ((category (org-get-category)))
-        (-if-let (project-tasks (org-x-dag-get-task-nodes it))
-            (--map (format-key category nil it) project-tasks)
-          (list (format-key category t it)))))))
+      (-if-let (project-tasks (org-x-dag-get-task-nodes it))
+          (--map (format-key it-category nil it) project-tasks)
+        (list (format-key it-category t it))))))
 
 (defun org-x-dag-scan-incubated ()
   (cl-flet
@@ -719,8 +738,7 @@ If FORCE is non-nil, sync no matter what."
     (org-x-dag-with-files (org-x-get-action-and-incubator-files)
         (and (org-x-dag-id->is-toplevel-p it)
              (not (org-x-dag-id->is-done-p it)))
-      (let ((category (org-get-category)))
-        (list (format-key category it))))))
+      (list (format-key it-category it)))))
 
 (defun org-x-dag-scan-archived ()
   (cl-flet
