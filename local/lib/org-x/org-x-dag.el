@@ -137,9 +137,16 @@ that file as it currently sits on disk.")
           (parent-tags (and inherit? (ascend id nil))))
       (append local-tags parent-tags init))))
 
-(defun org-x-dag-id->headline-children (id)
+(defun org-x-dag-id->parents (id)
   (->> (plist-get org-x-dag :dag)
-       (dag-get-children id)
+       (dag-get-parents id)))
+
+(defun org-x-dag-id->children (id)
+  (->> (plist-get org-x-dag :dag)
+       (dag-get-children id)))
+
+(defun org-x-dag-id->headline-children (id)
+  (->> (org-x-dag-id->children id)
        (--filter (equal (org-x-dag-id->metaprop it :buffer-parent) id))))
 
 (defun org-x-dag-files->ids (files)
@@ -455,6 +462,14 @@ encountered will be returned."
 (defun org-x-dag-time-is-archivable-p (epochtime)
   (< (- (float-time) epochtime) (* 60 60 24 org-x-archive-delay)))
 
+;;; STATUS DETERMINATION
+
+(defmacro org-x-dag-with-key (key &rest body)
+  (declare (indent 1))
+  `(progn
+     (goto-char (org-x-dag-id->point ,key))
+     ,@body))
+
 (defun org-x-headline-get-task-status-0 (kw)
   (if (member kw org-x-done-keywords)
       (-if-let (c (org-x-dag-headline-is-closed-p t))
@@ -608,12 +623,6 @@ encountered will be returned."
          (-map #'get-status)
          (org-x-dag-get-max-index org-x--iter-statuscodes))))
 
-(defmacro org-x-dag-with-key (key &rest body)
-  (declare (indent 1))
-  `(progn
-     (goto-char (org-x-dag-id->point ,key))
-     ,@body))
-
 ;;; SCANNERS
 ;;
 ;; Not sure what to call these, they convert the DAG to a list of agenda strings
@@ -763,11 +772,63 @@ encountered will be returned."
                           'x-project-p is-project)))))))))
     (org-x-dag-with-files (org-x-get-action-files)
         (org-x-dag-id->is-toplevel-p it)
-      (let ((category (org-get-category)))
+      (org-x-dag-with-key it
+        (if (org-x-dag-headline-is-iterator-p)
+            (--map (format-key category it) (org-x-dag-id->headline-children it))
+          (list (format-key it-category it)))))))
+
+(defun org-x-dag-scan-ltgs ()
+  (let ((child-files (append (list (org-x-get-lifetime-goal-file)
+                                   (org-x-get-endpoint-goal-file))
+                             (org-x-get-action-files))))
+    (cl-flet
+        ((format-id
+          (category id)
+          (let ((toplevelp (org-x-dag-id->is-toplevel-p id))
+                (has-children (->> (org-x-dag-id->children id)
+                                   (--any-p (member (org-x-dag-id->file it)
+                                                    child-files))))
+                (tags (org-x-dag-id->tags t nil id)))
+            (-> (org-x-dag-format-tag-node category tags id)
+                (org-add-props nil
+                    'x-goal-status (list :type 'ltg
+                                         :childlessp (not has-children)
+                                         :toplevelp toplevelp
+                                         :parentlessp nil))))))
+      (org-x-dag-with-files (list (org-x-get-lifetime-goal-file))
+          nil
         (org-x-dag-with-key it
-          (if (org-x-dag-headline-is-iterator-p)
-              (--map (format-key category it) (org-x-dag-id->headline-children it))
-            (list (format-key category it))))))))
+          (list (format-id it-category it)))))))
+
+(defun org-x-dag-scan-epgs ()
+  (let ((child-files (cons (org-x-get-endpoint-goal-file)
+                           (org-x-get-action-files)))
+        (parent-files (list (org-x-get-endpoint-goal-file)
+                            (org-x-get-lifetime-goal-file))))
+    (cl-flet
+        ((format-id
+          (category id)
+          (let ((toplevelp (org-x-dag-id->is-toplevel-p id))
+                (has-children (->> (org-x-dag-id->children id)
+                                   (--any-p (member (org-x-dag-id->file it)
+                                                    child-files))))
+                (has-parents (->> (org-x-dag-id->parents id)
+                                  (--any-p (member (org-x-dag-id->file it)
+                                                   parent-files))))
+                (tags (org-x-dag-id->tags t nil id)))
+            (-> (org-x-dag-format-tag-node category tags id)
+                (org-add-props nil
+                    'x-goal-status (list :type 'epg
+                                         :childlessp (not has-children)
+                                         :toplevelp toplevelp
+                                         :parentlessp (not has-parents)))))))
+      (org-x-dag-with-files (list (org-x-get-endpoint-goal-file))
+          nil
+        (org-x-dag-with-key it
+          (list (format-id it-category it)))))))
+
+(defun org-x-dag-scan-goals ()
+  (append (org-x-dag-scan-ltgs) (org-x-dag-scan-epgs)))
 
 ;;; AGENDA VIEWS
 
