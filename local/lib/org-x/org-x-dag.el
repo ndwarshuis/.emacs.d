@@ -419,6 +419,11 @@ encountered will be returned."
 ;; The following are predicates that require the point to be above the
 ;; headline in question
 
+(defun org-x-headline-has-timestamp (re want-time)
+  (let ((end (save-excursion (outline-next-heading))))
+    (-when-let (p (save-excursion (re-search-forward re end t)))
+      (if want-time (org-2ft (match-string 1)) p))))
+
 (defun org-x-dag-headline-is-deadlined-p (want-time)
   (org-x-headline-has-timestamp org-deadline-time-regexp want-time))
 
@@ -428,14 +433,15 @@ encountered will be returned."
 (defun org-x-dag-headline-is-closed-p (want-time)
   (org-x-headline-has-timestamp org-closed-time-regexp want-time))
 
-(defun org-x-dag-headline-is-iterator-p ()
-  (->> (org-x-dag-get-local-property org-x-prop-parent-type)
-       (equal org-x-prop-parent-type-iterator)))
+(defun org-x-dag-is-created-p (want-time)
+  (save-excursion
+    (-when-let (ts (org-x-dag-get-local-property org-x-prop-created))
+      (if want-time (org-2ft ts) t))))
 
-(defun org-x-headline-has-timestamp (re want-time)
-  (let ((end (save-excursion (outline-next-heading))))
-    (-when-let (p (save-excursion (re-search-forward re end t)))
-      (if want-time (org-2ft (match-string 1)) p))))
+(defun org-x-dag-headline-is-iterator-p ()
+  (save-excursion
+    (->> (org-x-dag-get-local-property org-x-prop-parent-type)
+         (equal org-x-prop-parent-type-iterator))))
 
 (defconst org-x-headline-task-status-priorities
   '((:archivable . -1)
@@ -829,6 +835,27 @@ encountered will be returned."
 
 (defun org-x-dag-scan-goals ()
   (append (org-x-dag-scan-ltgs) (org-x-dag-scan-epgs)))
+
+(defun org-x-dag-scan-errors ()
+  (cl-flet
+      ((format-id
+        (category id)
+        (org-x-dag-with-key id
+          (-when-let (error-type
+                      (if (org-x-dag-headline-is-iterator-p)
+                          (unless (org-x-dag-get-local-property "ARCHIVE")
+                            :missing-archive)
+                        (-if-let (created (org-x-dag-is-created-p t))
+                            (when (<= (float-time) created)
+                              :future-created)
+                          :missing-created)))
+            (-> (org-x-dag-format-tag-node category nil id)
+                (org-add-props nil
+                    'x-error error-type))))))
+    (org-x-dag-with-files (org-x-dag-get-files)
+        (not (org-x-dag-id->is-done-p it))
+      (org-x-dag-with-key it
+        (list (format-id it-category it))))))
 
 ;;; AGENDA VIEWS
 
