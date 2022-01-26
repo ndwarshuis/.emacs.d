@@ -371,27 +371,40 @@ encountered will be returned."
          (--sort (< (cdr it) (cdr other)))
          (-map #'car))))
 
+(defun org-x-dag-prepare-tags (tags)
+  (->> (org-x-dag-collapse-tags tags)
+       (org-x-dag-sort-tags)))
+
 (defun org-x-dag-add-default-props (item)
   (org-add-props item nil
+    'help-echo (org-x-dag-help-echo)
     'org-not-done-regexp org-not-done-regexp
     'org-todo-regexp org-todo-regexp
     'org-complex-heading-regexp org-complex-heading-regexp
     'mouse-face 'highlight))
 
+(defun org-x-dag-id->formatted-level (id)
+  (-> (org-x-dag-id->metaprop id :level)
+      (org-reduced-level)
+      (make-string ?\s)))
+
+(defun org-x-dag-help-echo ()
+  (->> (or (buffer-file-name (buffer-base-buffer))
+           (buffer-name (buffer-base-buffer)))
+       (abbreviate-file-name)
+       (format "mouse-2 or RET jump to Org file %S")))
+
+(defun org-x-dag-headlines-get-regexp (re)
+  (let ((end (save-excursion (outline-next-heading))))
+    (-when-let (p (save-excursion (re-search-forward re end t)))
+      (list (1- (match-beginning 1)) (match-string 1)))))
+
 (defun org-x-dag-format-tag-node (category tags key)
   ;; ASSUME I don't use subtree-level categories
   (-let* (;; (category (org-get-category))
-          (tags* (->> tags
-                      (org-x-dag-collapse-tags)
-                      (org-x-dag-sort-tags)))
+          (tags* (org-x-dag-prepare-tags tags))
           (head (org-get-heading))
-          (level (-> (org-x-dag-id->metaprop key :level)
-                     (make-string ?s)))
-          ;; no idea what this does...
-          (help-echo (format "mouse-2 or RET jump to Org file %S"
-                             (abbreviate-file-name
-                              (or (buffer-file-name (buffer-base-buffer))
-                                  (buffer-name (buffer-base-buffer))))))
+          (level (org-x-dag-id->formatted-level key))
           (marker (org-agenda-new-marker))
           ;; no idea what this function actually does
           ((ts . ts-type) (org-agenda-entry-get-agenda-timestamp (point)))
@@ -411,8 +424,103 @@ encountered will be returned."
             'priority priority
             'ts-date ts
             ;; misc
-            'type (concat "tagsmatch" ts-type)
-            'help-echo help-echo))))
+            'type (concat "tagsmatch" ts-type)))))
+
+;; (defun org-x-dag-format-timestamp-node (date category tags id)
+;;   (let* ((help-echo
+;;           (format "mouse-2 or RET jump to Org file %s"
+;;                   (abbreviate-file-name buffer-file-name)))
+;;          (extra)
+;;          (head)
+;;          (level)
+;;          (tags)
+;;          (timestamp)
+;;          ;; idk if this matters, nothing we care about here will be a habit
+;;          (habitp)
+;;          (ts-marker)
+;;          (hd-marker (org-agenda-new-marker))
+;;          (item (org-agenda-format-item extra head level category tags timestamp
+;;                                        org-ts-regexp habitp))
+;;          ;; TODO why am I getting the priority after sending the headline
+;;          ;; through some crazy formatting function?
+;;          (priority (org-get-priority item)))
+;;     (-> (org-x-dag-add-default-props item)
+;;         (org-add-props nil
+;;             ;; face
+;;             'face 'org-agenda-calendar-event
+;;             'done-face 'org-agenda-done
+;;             ;; marker
+;;             'org-hd-marker hd-marker
+;;             'org-marker ts-marker
+;;             ;; headline stuff
+;;             'todo-state (org-x-dag-id->todo id)
+;;             'priority priority
+;;             'date date
+;;             'ts-date ts
+;;             ;; this appears to be either obsolete or such an obscure feature
+;;             ;; that I would never care about it
+;;             ;; 'warntime warntime
+;;             ;; misc
+;;             'type "timestamp"
+;;             'help-echo help-echo))))
+
+;; TODO it might make sense to make this also parse deadline
+(defun org-x-dag-format-scheduled-node (date category tags id)
+  (-let* (((pos ts-match) (org-x-dag-headlines-get-regexp org-scheduled-time-regexp))
+          (current (calendar-absolute-from-gregorian date))
+          (schedule (org-time-string-to-absolute ts-match))
+          (diff (- current schedule))
+          (pastschedp (< diff 0))
+          (futureschedp (> diff 0))
+          ;; TODO wtf does this actually do?
+          (repeat (if (<= current today) schedule
+                    (org-time-string-to-absolute s current 'future (current-buffer) pos)))
+          (habitp (and (fboundp 'org-is-habit-p) (org-is-habit-p)))
+          ;; hopefully this is right...
+          (time (unless (and (not habitp) (/= current schedule) (/= current repeat))
+                 (-if-let (m (s-match " \\([012]?[0-9]:[0-9][0-9]\\)" ts-match))
+                     (concat m " ")
+                   'time)))
+          (today (org-today))
+          (todayp (org-agenda-today-p date))
+          (head (org-get-heading))
+          (level (org-x-dag-id->formatted-level id))
+          (tags* (org-x-dag-prepare-tags tags))
+          (todo-state (org-x-dag-id->todo id))
+          (donep (member todo-state org-x-done-keywords))
+          (hd-marker (org-agenda-new-marker))
+          (ts-marker (org-agenda-new-marker pos))
+          (extra (->> (if pastschedp (format "%sd Ago" diff) "Scheduled")
+                      (format "%s: ")))
+          (item (org-agenda-format-item extra head level category tags* time
+                                        nil habitp))
+          ;; TODO why am I getting the priority after sending the headline
+          ;; through some crazy formatting function?
+          (priority (org-get-priority item))
+          (face (cond ((and (not habitp) pastschedp) 'org-scheduled-previously)
+                      ((and habitp futureschedp) 'org-agenda-done)
+                      (todayp 'org-scheduled-today)
+                      (t 'org-scheduled))))
+    (-> (org-x-dag-add-default-props item)
+        (org-add-props nil
+            ;; face
+            'face (if donep 'org-agenda-done face)
+            'undone-face face
+            'done-face 'org-agenda-done
+            ;; marker
+            'org-hd-marker hd-marker
+            'org-marker ts-marker
+            ;; headline stuff
+            'todo-state (org-x-dag-id->todo id)
+            'priority priority
+            'date (if pastschedp schedule date)
+            'ts-date schedule
+            'org-habit-p habitp
+            ;; this appears to be either obsolete or such an obscure feature
+            ;; that I would never care about it
+            ;; 'warntime warntime
+            ;; misc
+            'type (if pastschedp "past-scheduled" "scheduled")))))
 
 ;;; HEADLINE PREDICATES
 ;;
