@@ -2082,8 +2082,6 @@ This includes unchecking all checkboxes, marking keywords as
           ;; remove CLOSED planning entry
           (org-ml-headline-map-planning*
             (-some->> it (org-ml-planning-set-timestamp! :closed nil)))
-          ;; remove ID property
-          (org-ml-headline-set-node-property "ID" (org-id-new))
           ;; clear item checkboxes
           (org-ml-match-map* '(section :any * item)
             (org-ml-set-property :checkbox 'off it))
@@ -2114,9 +2112,9 @@ timestamp in the contents of the headline will be shifted."
               ;; wrap in a section here because the matcher needs a single node
               ;; and not a list
               (->> (apply #'org-ml-build-section it)
-                (org-ml-match-map* org-x--first-active-ts-pattern
-                  (org-ml-timestamp-shift offset unit it))
-                (org-ml-get-children))
+                   (org-ml-match-map* org-x--first-active-ts-pattern
+                     (org-ml-timestamp-shift offset unit it))
+                   (org-ml-get-children))
               subtree))
            ((member kw org-x-done-keywords)
             subtree)
@@ -2131,15 +2129,16 @@ timestamp in the contents of the headline will be shifted."
        (shift
         (offset unit subtree)
         (->> (shift-timestamps offset unit subtree)
-          (org-ml-headline-map-subheadlines*
-            (--map (shift offset unit it) it)))))
+             (org-ml-headline-map-subheadlines*
+               (--map (shift offset unit it) it)))))
     (shift offset unit subtree)))
 
 (defun org-x--subtree-repeat-shifted (n offset unit headline)
   "Return HEADLINE repeated and shifted by OFFSET UNITs N times."
   (->> (org-ml-clone-node-n n headline)
-    (--map-indexed (org-x--subtree-shift-timestamps
-                    (* offset (1+ it-index)) unit it))))
+       (--map-indexed (org-x--subtree-shift-timestamps
+                       (* offset (1+ it-index)) unit it))
+       (--map (org-ml-headline-set-node-property "ID" (org-id-new) it))))
 
 (defun org-x-clone-subtree-with-time-shift (n)
   "Like `org-clone-subtree-with-time-shift' except reset items and todos.
@@ -2147,11 +2146,11 @@ N is the number of clones to produce."
   (interactive "nNumber of clones to produce: ")
   (-let* ((subtree (org-ml-parse-this-subtree))
           ((offset unit) (-> (org-entry-get nil org-x-prop-time-shift 'selective)
-                           (org-x--read-shift-from-minibuffer)))
+                             (org-x--read-shift-from-minibuffer)))
           (ins (->> (org-x--reset-subtree subtree)
-                 (org-x--subtree-repeat-shifted n offset unit)
-                 (-map #'org-ml-to-string)
-                 (s-join "")))
+                    (org-x--subtree-repeat-shifted n offset unit)
+                    (-map #'org-ml-to-string)
+                    (s-join "")))
           (end (org-ml-get-property :end subtree)))
     (org-ml-insert end ins)))
 
