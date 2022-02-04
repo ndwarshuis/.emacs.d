@@ -173,7 +173,8 @@ has a valid (meaning in KWS) keyword and either its parent has a
 valid keyword or none of its parents have valid keywords."
   (let ((more t)
         cur-path this-point this-key this-level this-todo has-todo this-parent
-        tags this-file-links acc acc-meta this-parent-key)
+        this-tags this-meta all-tags this-file-links this-links acc acc-meta
+        this-parent-key)
     ;; TODO add org-mode sanity check
     (goto-char (point-min))
     ;; If not on a headline, check for a property drawer with links in it
@@ -219,20 +220,22 @@ valid keyword or none of its parents have valid keywords."
             ;; If parent is not a todo and we want tag inheritance, store all tags
             ;; above this headline (sans file-tags which we can get later easily)
             ;; (org-entry-get nil org-x-prop-parent-type)
-            (setq tags (if (and (not this-parent-key) org-use-tag-inheritance)
-                           (->> cur-path
-                                (--mapcat (nth 2 it))
-                                (append this-tags))
-                         this-tags)
+            (setq all-tags (if (and (not this-parent-key)
+                                    org-use-tag-inheritance)
+                               (->> cur-path
+                                    (--mapcat (nth 2 it))
+                                    (append this-tags))
+                             this-tags)
+                  this-links (or (org-x-dag-get-link-property)
+                                 (when (not this-parent-key) this-file-links))
                   this-meta (org-x-dag-build-meta file
                                                   this-point
                                                   this-level
                                                   (substring-no-properties this-todo)
-                                                  tags
+                                                  all-tags
                                                   this-parent-key))
             (!cons (cons this-key this-meta) acc-meta)
-            (!cons (cons this-key (append (list (nth 1 this-parent))
-                                          (org-x-dag-get-link-property)))
+            (!cons (cons this-key (append (list (nth 1 this-parent)) this-links))
                    acc))
           ;; Add current headline to stack
           (!cons (list this-level this-key this-tags) cur-path)))
@@ -399,6 +402,162 @@ encountered will be returned."
     (-when-let (p (save-excursion (re-search-forward re end t)))
       (list (1- (match-beginning 1)) (match-string 1)))))
 
+(defun org-x-dag-timestamp-to-absolute (ts)
+  (->> (org-ml-get-properties '(:month-start :day-start :year-start) ts)
+       (calendar-absolute-from-gregorian)))
+
+;; TODO 'modulus' only applies to the repeater
+(defun org-ml-timestamp-extract-modulus (modtype ts)
+  "Return the modulus of timestamp TS for MODTYPE."
+  (cl-flet
+      ((convert-value
+        (islongp value unit)
+        (pcase unit
+         ('year (* 12 value))
+         ('month value)
+         (_ (if islongp
+                ;; TODO make these messages not suck
+                (pcase unit
+                  ('week (* 7 value))
+                  ('day value)
+                  ((or 'hour 'minute) (message "WARNING: ..."))
+                  (_ (error)))
+              (pcase unit
+                ('week (* 7 1440 value))
+                ('day (* 1440 value))
+                ('hour (* 60 value))
+                ('minute value)
+                (_ (error)))))))
+       (convert-unit
+        (unit)
+        (if (memq unit '(year month)) 'month 'submonth)))
+    (-let* ((props (pcase modtype
+                     ('warning '(:warning-value :warning-unit :warning-type))
+                     ('repeater '(:repeater-value :repeater-unit :repeater-type))))
+            (islongp (->> (org-ml-timestamp-get-start-time ts)
+                          (org-ml-time-is-long))))
+      (-when-let ((value unit type) (org-ml-get-properties props ts))
+        (let ((v (convert-value islongp value unit))
+              (u (convert-unit unit)))
+          `(,v ,u ,type))))))
+
+(defun org-x-dag-partition-timestamp (ts)
+  (list :datetime (org-ml-timestamp-get-start-time ts)
+        :pos (org-ml-get-property :begin ts)
+        :repeater (org-ml-timestamp-extract-modulus 'repeater ts)
+        :warning (org-ml-timestamp-extract-modulus 'warning ts)))
+
+(defmacro org-x-dag-with-times (datetime0 datetime1 form)
+  ;; ASSUME all digits in this comparison are on the calendar/clock (eg day 32
+  ;; does not 'rollover' to day 1 on the next month)
+  (declare (indent 2))
+  `(if (or (and (org-ml-time-is-long ,datetime0)
+                (org-ml-time-is-long ,datetime1))
+           (not (or (org-ml-time-is-long ,datetime0)
+                    (org-ml-time-is-long ,datetime1))))
+       ,form
+     (error "Datetimes are invalid lengths: %S and %S" ,datetime0 ,datetime1)))
+
+;; TODO this function name sucks, call it datetime
+(defun org-x-dag-date< (datetime0 datetime1)
+  (org-x-dag-with-times datetime0 datetime1
+    (-when-let (next (->> (-zip-with #'cons datetime0 datetime1)
+                          (--drop-while (= (car it) (cdr it)))
+                          (car)))
+      (< (car next) (cdr next)))))
+
+(defun org-x-dag-date= (datetime0 datetime1)
+  (org-x-dag-with-times datetime0 datetime1
+    (->> (-zip-with #'cons datetime0 datetime1)
+         (--drop-while (= (car it) (cdr it)))
+         (not))))
+
+(defun org-x-dag-time-shift (datetime shift unit)
+  (cl-flet*
+      ((enc-dec-long
+        (y m d M H)
+        (-let (((_ M* H* d* m* y* _ _ _)
+                (->> (list 0 M H d m y nil nil (current-time-zone))
+                     (encode-time)
+                     (decode-time))))
+          (list y* m* d* H* M*)))
+       (enc-dec-short
+        (y m d)
+        (-take 3 (enc-dec-long y m d 0 0))))
+    (pcase datetime
+      ((or `(,y ,m ,d) `(,y ,m ,d nil nil))
+       (pcase unit
+         ('month (enc-dec-short y (+ m shift) d))
+         ('submonth (enc-dec-short y m (+ d shift)))))
+      (`(,y ,m ,d ,H ,M)
+       (pcase unit
+         ('month (enc-dec-long y (+ m shift) d H M))
+         ('submonth (enc-dec-long y m d H (+ M shift))))))))
+
+(defun org-x-dag-repeater-get-next (cur time shift shifttype reptype)
+  (pcase reptype
+    ('catch-up
+     ;; Next time is a multiple of repeater in the future relative to the base
+     ;; time; shift one interval at a time since they may not be spaced evenly
+     ;; (DST, leap year, different days in each month, etc). Think of this like
+     ;; a path function from p-chem; shifting 3 months once might be different
+     ;; than shifting by 1 month three times.
+     (let ((next time))
+       (while (org-x-dag-date< next cur)
+         (setq next (org-x-dag-time-shift next shift shifttype)))
+       next))
+    ('restart
+     ;; Next time is one repeater interval after now
+     ;;
+     ;; TODO cur needs to match the length of time
+     (org-x-dag-time-shift cur shift shifttype))
+    ('cumulate
+     ;; Next time is one repeater interval after the base timestamp
+     (org-x-dag-time-shift time shift shifttype))))
+
+(defun org-x-dag-unfold-timestamp (cur time rep future-limit)
+  ;; ASSUME pts and future-limit are both long or short timestamps
+  (pcase rep
+    (`nil
+     (unless (org-x-dag-date< future-limit time)
+       (list time)))
+    (`(,value ,unit ,reptype)
+     (->> (org-x-dag-repeater-get-next cur time value unit reptype)
+          (--unfold (let ((next (org-x-dag-time-shift it value unit)))
+                      (unless (org-x-dag-date< future-limit next)
+                        (cons next next))))
+          (cons time)))))
+
+(defun org-x-dag-date-add-time (date)
+  (-let (((_ M H) (decode-time (current-time))))
+    `(,@date ,H ,M)))
+
+(defun org-x-dag-get-scheduled-at (sel-date pts)
+  (-let* (((&plist :datetime d :repeater r) pts)
+          (islongp (org-ml-time-is-long d))
+          (future-limit (if islongp `(,@sel-date 23 59) sel-date))
+          (sel-datetime (if islongp (org-x-dag-date-add-time sel-date) sel-date)))
+    (org-x-dag-unfold-timestamp sel-datetime d r future-limit)))
+
+(defun org-x-dag-get-deadlines-at (sel-date pts)
+  (-let* (((&plist :datetime d :repeater r :warning w) pts)
+          (islongp (org-ml-time-is-long d))
+          ((warn-shift warn-shifttype)
+           (if w w
+             (let ((f (if islongp 1440 1)))
+               `(,(* f org-deadline-warning-days) submonth))))
+          (sel-datetime (if islongp (org-x-dag-date-add-time sel-date) sel-date))
+          (future-limit (org-x-dag-time-shift sel-datetime warn-shift warn-shifttype)))
+    (org-x-dag-unfold-timestamp sel-datetime d r future-limit)))
+
+(defun org-x-dag-headline-get-planning ()
+  (let ((end (save-excursion (outline-next-heading))))
+    (save-excursion
+      (when (re-search-forward org-planning-line-re end t)
+        (-let* ((pl (org-ml-parse-this-element)))
+          (->> (org-ml-get-properties '(:deadline :scheduled) pl)
+               (--map (-some-> it (org-x-dag-partition-timestamp)))))))))
+
 (defun org-x-dag-format-tag-node (category tags key)
   ;; ASSUME I don't use subtree-level categories
   (-let* (;; (category (org-get-category))
@@ -426,101 +585,95 @@ encountered will be returned."
             ;; misc
             'type (concat "tagsmatch" ts-type)))))
 
-;; (defun org-x-dag-format-timestamp-node (date category tags id)
-;;   (let* ((help-echo
-;;           (format "mouse-2 or RET jump to Org file %s"
-;;                   (abbreviate-file-name buffer-file-name)))
-;;          (extra)
-;;          (head)
-;;          (level)
-;;          (tags)
-;;          (timestamp)
-;;          ;; idk if this matters, nothing we care about here will be a habit
-;;          (habitp)
-;;          (ts-marker)
-;;          (hd-marker (org-agenda-new-marker))
-;;          (item (org-agenda-format-item extra head level category tags timestamp
-;;                                        org-ts-regexp habitp))
-;;          ;; TODO why am I getting the priority after sending the headline
-;;          ;; through some crazy formatting function?
-;;          (priority (org-get-priority item)))
-;;     (-> (org-x-dag-add-default-props item)
-;;         (org-add-props nil
-;;             ;; face
-;;             'face 'org-agenda-calendar-event
-;;             'done-face 'org-agenda-done
-;;             ;; marker
-;;             'org-hd-marker hd-marker
-;;             'org-marker ts-marker
-;;             ;; headline stuff
-;;             'todo-state (org-x-dag-id->todo id)
-;;             'priority priority
-;;             'date date
-;;             'ts-date ts
-;;             ;; this appears to be either obsolete or such an obscure feature
-;;             ;; that I would never care about it
-;;             ;; 'warntime warntime
-;;             ;; misc
-;;             'type "timestamp"
-;;             'help-echo help-echo))))
+(defun org-x-dag-date-to-gregorian (date)
+  (-let (((y m d) date))
+    `(,m ,d ,y)))
 
-;; TODO it might make sense to make this also parse deadline
-(defun org-x-dag-format-scheduled-node (date category tags id)
-  (-let* (((pos ts-match) (org-x-dag-headlines-get-regexp org-scheduled-time-regexp))
-          (current (calendar-absolute-from-gregorian date))
-          (schedule (org-time-string-to-absolute ts-match))
-          (diff (- current schedule))
-          (pastschedp (< diff 0))
-          (futureschedp (> diff 0))
-          ;; TODO wtf does this actually do?
-          (repeat (if (<= current today) schedule
-                    (org-time-string-to-absolute s current 'future (current-buffer) pos)))
-          (habitp (and (fboundp 'org-is-habit-p) (org-is-habit-p)))
-          ;; hopefully this is right...
-          (time (unless (and (not habitp) (/= current schedule) (/= current repeat))
-                 (-if-let (m (s-match " \\([012]?[0-9]:[0-9][0-9]\\)" ts-match))
-                     (concat m " ")
-                   'time)))
-          (today (org-today))
-          (todayp (org-agenda-today-p date))
-          (head (org-get-heading))
-          (level (org-x-dag-id->formatted-level id))
-          (tags* (org-x-dag-prepare-tags tags))
-          (todo-state (org-x-dag-id->todo id))
-          (donep (member todo-state org-x-done-keywords))
-          (hd-marker (org-agenda-new-marker))
-          (ts-marker (org-agenda-new-marker pos))
-          (extra (->> (if pastschedp (format "%sd Ago" diff) "Scheduled")
-                      (format "%s: ")))
-          (item (org-agenda-format-item extra head level category tags* time
-                                        nil habitp))
-          ;; TODO why am I getting the priority after sending the headline
-          ;; through some crazy formatting function?
-          (priority (org-get-priority item))
-          (face (cond ((and (not habitp) pastschedp) 'org-scheduled-previously)
-                      ((and habitp futureschedp) 'org-agenda-done)
-                      (todayp 'org-scheduled-today)
-                      (t 'org-scheduled))))
+(defun org-x-dag-time-get-clock-time (time)
+  (when (org-ml-time-is-long time) (list (nth 3 time) (nth 4 time))))
+
+(defun org-x-dag-time-partition (time)
+  (if (org-ml-time-is-long time) (-split-at 3 time) `(,(-take 3 time) nil)))
+
+(defun org-x-dag-date-diff (date0 date1)
+  ""
+  (pcase (list date0 date1)
+    (`((,y0 ,m0 ,d0) (,y1 ,m1 ,d1))
+     (- (calendar-absolute-from-gregorian `(,m0 ,d0 ,y0))
+        (calendar-absolute-from-gregorian `(,m1 ,d1 ,y1))))
+    (_ (error "Invalid date format(s): %S or %S" date0 date1))))
+
+(defun org-x-dag-format-item (id extra category tags time)
+  (let* ((tags* (org-x-dag-prepare-tags tags))
+         (head (org-get-heading))
+         (level (org-x-dag-id->formatted-level id))
+         (todo-state (org-x-dag-id->todo id))
+         (time-str (-some->> time (apply #'format "%02i:%02i ")))
+         (item (org-agenda-format-item extra head level category tags* time-str))
+         ;; TODO why am I getting the priority after sending the headline
+         ;; through some crazy formatting function?
+         (priority (org-get-priority item)))
     (-> (org-x-dag-add-default-props item)
         (org-add-props nil
-            ;; face
-            'face (if donep 'org-agenda-done face)
-            'undone-face face
-            'done-face 'org-agenda-done
-            ;; marker
-            'org-hd-marker hd-marker
-            'org-marker ts-marker
-            ;; headline stuff
-            'todo-state (org-x-dag-id->todo id)
-            'priority priority
-            'date (if pastschedp schedule date)
-            'ts-date schedule
-            'org-habit-p habitp
-            ;; this appears to be either obsolete or such an obscure feature
-            ;; that I would never care about it
-            ;; 'warntime warntime
-            ;; misc
-            'type (if pastschedp "past-scheduled" "scheduled")))))
+            'todo-state todo-state
+            'priority priority))))
+
+(defun org-x-dag-planning-props (id face pos date ts-date type)
+  (list
+   ;; face
+   'face (if (org-x-dag-id->is-done-p id) 'org-agenda-done face)
+   'undone-face face
+   'done-face 'org-agenda-done
+   ;; marker
+   'org-hd-marker (org-agenda-new-marker)
+   'org-marker (org-agenda-new-marker pos)
+   ;; headline stuff
+   'date (org-x-dag-date-to-gregorian date)
+   'ts-date (org-x-dag-date-to-gregorian ts-date)
+   'type type))
+
+(defun org-x-dag-format-scheduled-node (sel-date pos datetime category tags id)
+  (-let* (((this-date this-time) (org-x-dag-time-partition datetime))
+          (diff (org-x-dag-date-diff this-date sel-date))
+          (pastp (< diff 0))
+          (todayp (= diff 0))
+          ;; hopefully this is right...if it is this seems silly
+          (extra (-let (((today past) org-agenda-scheduled-leaders))
+                   (cond (todayp today)
+                         (pastp (format past (- diff)))
+                         (t "")))) ;; This should never actually be used
+          (face (cond (pastp 'org-scheduled-previously)
+                      (todayp 'org-scheduled-today)
+                      (t 'org-scheduled)))
+          ((date type) (if pastp `(,this-date "past-scheduled")
+                         `(,sel-date "scheduled")))
+          (props (org-x-dag-planning-props id face pos date this-date type)))
+    ;; NOTE: I don't care about habits, no need to consider them
+    (-> (org-x-dag-format-item id extra category tags this-time)
+        (org-add-props props))))
+
+(defun org-x-dag-format-deadline-node (sel-date pos datetime category tags id)
+  (-let* (((this-date this-time) (org-x-dag-time-partition datetime))
+          (diff (org-x-dag-date-diff this-date sel-date))
+          (pastp (< diff 0))
+          (futurep (< 0 diff))
+          (extra (-let* (((now future past) org-agenda-deadline-leaders))
+                   (cond
+                    (futurep (format future diff))
+                    (pastp (format past diff))
+                    (t now))))
+          ;; TODO the stock deadline formatter uses the warning time to
+          ;; determine this based on percentage; I'm lazy and don't feel like
+          ;; doing that (now) but I might in the future
+          (face (cond
+                 ((< 5 diff) 'org-upcoming-distant-deadline)
+                 ((< 1 diff) 'org-upcoming-deadline)
+                 (t 'org-warning)))
+          ((date type) (if futurep `(,sel-date "upcoming-deadline")
+                         `(,this-date "deadline")))
+          (props (org-x-dag-planning-props id face pos date this-date type)))
+    (-> (org-x-dag-format-item id extra category tags this-time)
+        (org-add-props props))))
 
 ;;; HEADLINE PREDICATES
 ;;
@@ -699,12 +852,15 @@ encountered will be returned."
                 ((:empt)
                  (:project-error :unscheduled :actv))
                 (if (member it-kw org-x-done-keywords) 0 1)
+                ;; TODO this has an argument mismatch
                 #'org-x-dag-headline-get-iterator-project-status))
              ((equal kw org-x-kw-todo)
               (org-x-dag-descend-into-project children nil
                 ((:unscheduled :project-error)
                  (:empt)
                  (:actv))
+                ;; TODO this triggers a compiler warning because I don't use
+                ;; `it-kw'
                 (let ((ts (org-x-dag-headline-is-scheduled-p t)))
                   (cond
                    ((not ts) 0)
@@ -872,7 +1028,7 @@ encountered will be returned."
             (org-x-dag-with-key key
               (-let (((is-archivable is-project)
                       (-if-let (children (org-x-dag-id->headline-children key))
-                          (-> (org-x-dag-headline-get-project-status org-x-dag key tags children)
+                          (-> (org-x-dag-headline-get-project-status key tags children)
                               (alist-get org-x-project-status-priorities)
                               (eq :archivable)
                               (list t))
@@ -888,7 +1044,8 @@ encountered will be returned."
         (org-x-dag-id->is-toplevel-p it)
       (org-x-dag-with-key it
         (if (org-x-dag-headline-is-iterator-p)
-            (--map (format-key category it) (org-x-dag-id->headline-children it))
+            (->> (org-x-dag-id->headline-children it)
+                 (--map (format-key it-category it)))
           (list (format-key it-category it)))))))
 
 (defun org-x-dag-scan-ltgs ()
@@ -965,6 +1122,35 @@ encountered will be returned."
       (org-x-dag-with-key it
         (list (format-id it-category it))))))
 
+(defun org-x-dag-scan-agenda (sel-date)
+  (cl-flet*
+      ((format-timestamps
+        (sel-date cat id pts get-datetimes-fun format-datetime-fun)
+        (-when-let (datetimes (funcall get-datetimes-fun sel-date pts))
+          (-let (((&plist :pos) pts)
+                 (tags (org-x-dag-id->tags t org-file-tags id))
+                 (donep (org-x-dag-id->is-done-p id)))
+            (->> datetimes
+                 (--remove (and donep (not (org-x-dag-date= (-take 3 it) sel-date))))
+                 (--map (funcall format-datetime-fun sel-date pos it cat tags id))))))
+       (format-id
+        (cat id)
+        (org-x-dag-with-key id
+          (-when-let (res (org-x-dag-headline-get-planning))
+            (-let (((dead sched) res))
+              (append (when dead
+                        (format-timestamps sel-date cat id dead
+                                           #'org-x-dag-get-deadlines-at
+                                           #'org-x-dag-format-deadline-node))
+                      (when sched
+                        (format-timestamps sel-date cat id sched
+                                           #'org-x-dag-get-scheduled-at
+                                           #'org-x-dag-format-scheduled-node))))))))
+    (org-x-dag-with-files (org-x-get-action-files)
+        nil
+      (org-x-dag-with-key it
+        (format-id it-category it)))))
+
 ;;; AGENDA VIEWS
 
 ;; (defun org-x-dag-show-tasks (_match)
@@ -978,9 +1164,7 @@ encountered will be returned."
 (defun org-x-dag-show-nodes (get-nodes)
   (org-x-dag-sync)
   (let* ((org-tags-match-list-sublevels org-tags-match-list-sublevels)
-         (completion-ignore-case t)
-         rtnall files file pos matcher
-         buffer)
+         (completion-ignore-case t))
     (catch 'exit
       (org-agenda-prepare (concat "DAG-TAG"))
       (org-compile-prefix-format 'tags)
