@@ -1792,14 +1792,15 @@ Include this so I can have the docs and indentation specs handy when writing tes
 :PROPERTIES:
 :ID:       d4b978f4-7002-45e8-a84c-6c7bb40c02f6
 :END:
-Org has several extensions in the form of loadable modules. =org-protocol= is used as a backend for external programs to communicate with =org-mode=. =org-habit= allows the habit todoitem which is used as a more flexible recurring task.
+Org has several extensions in the form of loadable modules. =org-protocol= is used as a backend for external programs to communicate with =org-mode=.
+
+I used to use =org-habit= which allows for repeaters that show up with colored indicators in the agenda showing how well you have 'stuck' to the habit. I found these to be too complicated to be worth it. If one doesn't care about the colored indicator (I don't) one could get the same effect with a restart deadline and a warning (eg <2112-01-01 Tue .+3d -2d>, as opposed to <2112-01-01 Tue .+2/3d> with the habit syntax). This is both easier to understand/configure and easier to program.
 #+BEGIN_SRC emacs-lisp
-(org-set-modules 'org-modules '(org-habit org-protocol))
+(org-set-modules 'org-modules '(org-protocol))
 
 ;; pull in other org files to ensure that my customizations below work on load
 (require 'org-agenda)
 (require 'org-protocol)
-(require 'org-habit)
 (require 'org-clock)
 #+END_SRC
 *** files
@@ -2237,7 +2238,7 @@ All org files are kept in one place (see =org-directory=). This is futher subdiv
 
 In order to make sorting easier and minimize work during processing, the files are further subdivided using tags at the file level and headline level that will automatically categorize tasks when they are refiled to a certain location. For example, some project may be to create a computer program, so I would set =#+FILETAGS: #laptop= because every task in this project will require a laptop. See the tags section below for more information on tags.
 **** repetition
-This deserves special attention because it comprises a significant percentage of tasks I do (and likely everyone does). I personally never liked the org's repeated task functionality. It is way too temporally rigid to be useful to me, and offers very little flexibility in mutating a task as it moves forward. Habits (which I use) are a partial fix for the first problem but do not aleviate the mutability problem.
+This deserves special attention because it comprises a significant percentage of tasks I do (and likely everyone does). I personally never liked the org's repeated task functionality. It is way too temporally rigid to be useful to me, and offers very little flexibility in mutating a task as it moves forward. Habits don't fix this problem despite appearing to be more flexible.
 
 My (somewhat convoluted) solution was to use =org-clone-subtree-with-time-shift=, which creates an easy way to make repeated tasks from some template, but also allows modification. The only problem with the vanilla implementation is that it lacks automation and agenda-block awareness (they all get treated as regular tasks which I don't want). This is partially fixed with my own =org-x-clone-subtree-with-time-shift= which automaticlly resets tasks which are cloned (eg clearing checkboxes and resetting todo state). The remainding problems I fixed by defining several properties to be applied to repeated groupings under a headline (see properties).
 
@@ -2338,19 +2339,6 @@ Aesthetically, I like all my keywords to have bold colors.
         (,org-x-kw-wait :foreground "orange" :weight bold)
         (,org-x-kw-hold :foreground "violet" :weight bold)
         (,org-x-kw-canc :foreground "deep sky blue" :weight bold)))
-#+END_SRC
-**** habits
-:PROPERTIES:
-:ID:       c02e0799-10e0-41c1-96dd-9d7ee335a408
-:END:
-Habits consider any "done" todo keyword as "complete." I have =CANC= as a done keyword, which I don't want to be displayed as "complete" in the habit tracker. Override this hardcoded behavior with advice.
-#+BEGIN_SRC emacs-lisp
-(defun nd/org-habit-parse-todo-advice (orig-fn &rest args)
-  "Advice to make the habit tracker only mark DONE habits as complete."
-  (let ((org-done-keywords `(,org-x-kw-done)))
-    (unwind-protect (apply orig-fn args))))
-
-(advice-add #'org-habit-parse-todo :around #'nd/org-habit-parse-todo-advice)
 #+END_SRC
 *** links and IDs
 :PROPERTIES:
@@ -2742,8 +2730,7 @@ Hide the various modules that may be present
   "Advice to remove extra information from agenda modeline name."
   (let ((org-agenda-include-diary nil)
         (org-agenda-include-deadlines nil)
-        (org-agenda-use-time-grid nil)
-        (org-habit-show-habits nil))
+        (org-agenda-use-time-grid nil))
     (apply orig-fn args)))
 
 (advice-add #'org-agenda-set-mode-name :around #'nd/org-agenda-trim-modeline)
@@ -2984,10 +2971,9 @@ original function being advised and ARGS are the arguments."
   "Show the timeblock agenda view.
 
 In the order of display
-1. morning tasks/habits (to do immediately after waking)
+1. morning tasks (to do immediately after waking)
 2. daily calendar (for thing that begin today at a specific time)
-3. evening tasks/habits (to do immediately before sleeping)
-4. habits"
+3. evening tasks (to do immediately before sleeping)"
   (interactive)
   (let ((files (cons (org-x-get-daily-plan-file) (org-x-get-action-files))))
     (nd/org-agenda-call-agenda "Timeblock" nil files
@@ -3140,8 +3126,7 @@ In the order of display
       (org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
       (org-agenda-include-diary t)
       (org-super-agenda-groups
-       `((:name "Habits" :order 1 :habit t)
-         (:discard (:time-grid t))
+       `((:discard (:time-grid t))
          (:discard (:pred ,(nd/org-mk-super-agenda-pred
                             '((or (org-x-headline-has-property
                                    org-x-prop-routine
