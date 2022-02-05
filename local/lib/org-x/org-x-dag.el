@@ -413,21 +413,21 @@ encountered will be returned."
       ((convert-value
         (islongp value unit)
         (pcase unit
-         ('year (* 12 value))
-         ('month value)
-         (_ (if islongp
-                ;; TODO make these messages not suck
-                (pcase unit
-                  ('week (* 7 value))
-                  ('day value)
-                  ((or 'hour 'minute) (message "WARNING: ..."))
-                  (_ (error)))
-              (pcase unit
-                ('week (* 7 1440 value))
-                ('day (* 1440 value))
-                ('hour (* 60 value))
-                ('minute value)
-                (_ (error)))))))
+          ('year (* 12 value))
+          ('month value)
+          (_ (if islongp
+                 ;; TODO make these messages not suck
+                 (pcase unit
+                   ('week (* 7 1440 value))
+                   ('day (* 1440 value))
+                   ('hour (* 60 value))
+                   ('minute value)
+                   (_ (error)))
+               (pcase unit
+                 ('week (* 7 value))
+                 ('day value)
+                 ((or 'hour 'minute) (message "WARNING: ..."))
+                 (_ (error)))))))
        (convert-unit
         (unit)
         (if (memq unit '(year month)) 'month 'submonth)))
@@ -494,7 +494,8 @@ encountered will be returned."
          ('month (enc-dec-long y (+ m shift) d H M))
          ('submonth (enc-dec-long y m d H (+ M shift))))))))
 
-(defun org-x-dag-repeater-get-next (cur time shift shifttype reptype)
+(defun org-x-dag-repeater-get-next (sel-datetime datetime shift shifttype reptype)
+  "Return the next timestamp repeater of DATETIME."
   (pcase reptype
     ('catch-up
      ;; Next time is a multiple of repeater in the future relative to the base
@@ -502,31 +503,36 @@ encountered will be returned."
      ;; (DST, leap year, different days in each month, etc). Think of this like
      ;; a path function from p-chem; shifting 3 months once might be different
      ;; than shifting by 1 month three times.
-     (let ((next time))
-       (while (org-x-dag-date< next cur)
-         (setq next (org-x-dag-time-shift next shift shifttype)))
+     (let ((next datetime)
+           (pastp t))
+       (while pastp
+         (setq next (org-x-dag-time-shift next shift shifttype)
+               pastp (org-x-dag-date< next sel-datetime)))
        next))
     ('restart
      ;; Next time is one repeater interval after now
      ;;
-     ;; TODO cur needs to match the length of time
-     (org-x-dag-time-shift cur shift shifttype))
+     ;; ASSUME cur needs to match the length of time
+     (org-x-dag-time-shift sel-datetime shift shifttype))
     ('cumulate
      ;; Next time is one repeater interval after the base timestamp
-     (org-x-dag-time-shift time shift shifttype))))
+     (org-x-dag-time-shift datetime shift shifttype))))
 
-(defun org-x-dag-unfold-timestamp (cur time rep future-limit)
+(defun org-x-dag-unfold-timestamp (cur datetime rep future-limit)
+  "Return all timestamps associated with DATETIME.
+
+If REP is nil, return a singleton list just containing DATETIME.
+If REP is non-nil, return DATETIME and all repeaters up until
+FUTURE-LIMIT in a list."
   ;; ASSUME pts and future-limit are both long or short timestamps
-  (pcase rep
-    (`nil
-     (unless (org-x-dag-date< future-limit time)
-       (list time)))
-    (`(,value ,unit ,reptype)
-     (->> (org-x-dag-repeater-get-next cur time value unit reptype)
-          (--unfold (let ((next (org-x-dag-time-shift it value unit)))
-                      (unless (org-x-dag-date< future-limit next)
-                        (cons next next))))
-          (cons time)))))
+  (unless (org-x-dag-date< future-limit datetime)
+    (pcase rep
+      (`nil `(,datetime))
+      (`(,value ,unit ,reptype)
+       (->> (org-x-dag-repeater-get-next cur datetime value unit reptype)
+            (--unfold (unless (org-x-dag-date< future-limit it)
+                        (cons it (org-x-dag-time-shift it value unit))))
+            (cons datetime))))))
 
 (defun org-x-dag-date-add-time (date)
   (-let (((_ M H) (decode-time (current-time))))
@@ -1127,29 +1133,30 @@ encountered will be returned."
       ((format-timestamps
         (sel-date cat id pts get-datetimes-fun format-datetime-fun)
         (-when-let (datetimes (funcall get-datetimes-fun sel-date pts))
-          (-let (((&plist :pos) pts)
-                 (tags (org-x-dag-id->tags t org-file-tags id))
-                 (donep (org-x-dag-id->is-done-p id)))
-            (->> datetimes
-                 (--remove (and donep (not (org-x-dag-date= (-take 3 it) sel-date))))
-                 (--map (funcall format-datetime-fun sel-date pos it cat tags id))))))
+          (let ((tags (org-x-dag-id->tags t org-file-tags id)))
+            (unless (member org-x-tag-incubated tags)
+              (-let (((&plist :pos) pts)
+                     (donep (org-x-dag-id->is-done-p id)))
+                (->> datetimes
+                     (--remove (and donep (not (org-x-dag-date= (-take 3 it) sel-date))))
+                     (--map (funcall format-datetime-fun sel-date pos it cat tags id))))))))
        (format-id
         (cat id)
         (org-x-dag-with-key id
           (-when-let (res (org-x-dag-headline-get-planning))
             (-let (((dead sched) res))
-              (append (when dead
-                        (format-timestamps sel-date cat id dead
-                                           #'org-x-dag-get-deadlines-at
-                                           #'org-x-dag-format-deadline-node))
-                      (when sched
-                        (format-timestamps sel-date cat id sched
-                                           #'org-x-dag-get-scheduled-at
-                                           #'org-x-dag-format-scheduled-node))))))))
+              (append
+               (when dead
+                 (format-timestamps sel-date cat id dead
+                                    #'org-x-dag-get-deadlines-at
+                                    #'org-x-dag-format-deadline-node))
+               (when sched
+                 (format-timestamps sel-date cat id sched
+                                    #'org-x-dag-get-scheduled-at
+                                    #'org-x-dag-format-scheduled-node))))))))
     (org-x-dag-with-files (org-x-get-action-files)
         nil
-      (org-x-dag-with-key it
-        (format-id it-category it)))))
+      (format-id it-category it))))
 
 ;;; AGENDA VIEWS
 
@@ -1186,6 +1193,50 @@ encountered will be returned."
          (point-min) (point-max)
          `(org-agenda-type tags
                            org-last-args (,get-nodes)
+                           org-redo-cmd ,org-agenda-redo-command
+                           org-series-cmd ,org-cmd))
+        (org-agenda-finalize)
+        (setq buffer-read-only t)))))
+
+;; make the signature exactly like `org-agenda-list' ...for now
+(defun org-x-dag-show-daily-nodes (&optional arg start-day span with-hour)
+  (org-x-dag-sync)
+  ;; TODO not sure if this is actually necessary
+  (when org-agenda-overriding-arguments
+    (-setq (arg start-day span) org-agenda-overriding-arguments))
+  (let* ((org-tags-match-list-sublevels org-tags-match-list-sublevels)
+         (completion-ignore-case t))
+    (catch 'exit
+      (org-agenda-prepare "DAG-DAILY")
+      (org-compile-prefix-format 'agenda)
+      (org-set-sorting-strategy 'agenda)
+      (-let* ((today (org-today))
+              (sd (or start-day today))
+              (org-agenda-redo-command `(org-x-dag-show-daily-nodes
+                                         ',arg ,start-day ',span ,with-hour))
+              ((m d y) (calendar-gregorian-from-absolute sd))
+              (rtnall (org-x-dag-scan-agenda `(,y ,m ,d))))
+        (setq-local org-starting-day sd)
+        (setq-local org-arg-loc arg)
+        ;; TODO just day (for now)
+        (setq-local org-agenda-current-span 'day)
+        (org-agenda--insert-overriding-header
+          (with-temp-buffer
+            (insert (format "Agenda for %d-%02d-%02d: \n" y m d))
+            (add-text-properties (point-min) (1- (point))
+                                 (list 'face 'org-agenda-structure))
+            (buffer-string)))
+        (org-agenda-mark-header-line (point-min))
+        ;; TODO handle time grid here somehow
+        (-some--> (org-agenda-add-time-grid-maybe rtnall 1 (= sd today))
+          (org-agenda-finalize-entries it 'agenda)
+          (insert it "\n"))
+        (goto-char (point-min))
+        (or org-agenda-multi (org-agenda-fit-window-to-buffer))
+        (add-text-properties
+         (point-min) (point-max)
+         `(org-agenda-type agenda
+                           org-last-args (,arg ,start-day ,span)
                            org-redo-cmd ,org-agenda-redo-command
                            org-series-cmd ,org-cmd))
         (org-agenda-finalize)
