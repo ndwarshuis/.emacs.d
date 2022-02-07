@@ -165,6 +165,18 @@ that file as it currently sits on disk.")
                 (s-match "^\\[\\[id:\\(.*\\)\\]\\[.*\\]\\]$")
                 (cadr)))))
 
+(defun org-x-dag-get-parent-links ()
+  (save-excursion
+    (let ((re (concat
+               "^[ \t]*:X_PARENT_LINKS:[ \t]*\n"
+               "\\(\\(?:^- .*?\n\\)*?\\)"
+               "[ \t]*:END:[ \t]*$"))
+          (end (save-excursion (outline-next-heading))))
+      (-some->> (and (re-search-forward re end t) (match-string 1))
+        (s-trim)
+        (s-split "\n")
+        (--map (cadr (s-match "id:\\([^][]\\{36\\}\\)" it)))))))
+
 (defun org-x-dag-get-buffer-nodes (file kws)
   "Return a list of nodes from FILE.
 
@@ -179,7 +191,8 @@ valid keyword or none of its parents have valid keywords."
     (goto-char (point-min))
     ;; If not on a headline, check for a property drawer with links in it
     (unless (= ?* (following-char))
-      (setq this-file-links (org-x-dag-get-link-property)))
+      ;; (setq this-file-links (org-x-dag-get-link-property)))
+      (setq this-file-links (org-x-dag-get-parent-links)))
     ;; move forward until on a headline
     (while (and (not (= ?* (following-char))) (= 0 (forward-line 1))))
     ;; Build alist; Keep track of how 'deep' we are in a given org-tree using a
@@ -226,7 +239,8 @@ valid keyword or none of its parents have valid keywords."
                                     (--mapcat (nth 2 it))
                                     (append this-tags))
                              this-tags)
-                  this-links (or (org-x-dag-get-link-property)
+                  this-links (or (org-x-dag-get-parent-links)
+                                 ;;(org-x-dag-get-link-property)
                                  (when (not this-parent-key) this-file-links))
                   this-meta (org-x-dag-build-meta file
                                                   this-point
@@ -560,6 +574,9 @@ FUTURE-LIMIT in a list."
   (let ((end (save-excursion (outline-next-heading))))
     (save-excursion
       (when (re-search-forward org-planning-line-re end t)
+        ;; TODO this is rather slow since I'm using a general org-ml parsing
+        ;; function; I'm also not even using the match results from the planning
+        ;; line re, which might be useful
         (-let* ((pl (org-ml-parse-this-element)))
           (->> (org-ml-get-properties '(:deadline :scheduled) pl)
                (--map (-some-> it (org-x-dag-partition-timestamp)))))))))
@@ -1249,6 +1266,67 @@ FUTURE-LIMIT in a list."
                            org-series-cmd ,org-cmd))
         (org-agenda-finalize)
         (setq buffer-read-only t)))))
+
+;;; PARENT LINK FUNCTONS
+
+(defconst org-x-drwr-parent-links "X_PARENT_LINKS")
+
+(defun org-x-dag-headline-get-parent-links (headline)
+  (cl-flet
+      ((parse-item
+        (item)
+        (let ((first (car (org-ml-item-get-paragraph item))))
+          (if (and (org-ml-is-type 'link first)
+                   (equal (org-ml-get-property :type first) "id"))
+              (->> (org-ml-get-children first)
+                   (-map #'org-ml-to-trimmed-string)
+                   (apply #'concat)
+                   (cons (org-ml-get-property :path first)))
+            (error "Invalid link node: %S" first)))))
+    (-when-let (first (->> headline
+                           (org-ml-headline-get-contents (org-x-logbook-config))
+                           (--find (org-x--is-drawer-with-name org-x-drwr-parent-links it))
+                           (org-ml-get-children)
+                           (car)))
+      (if (org-ml-is-type 'plain-list first)
+          (->> (org-ml-get-children first)
+               (-map #'parse-item))
+        (error "Invalid parent link drawer")))))
+
+(defun org-x-dag-headline-set-parent-links (link-pairs headline)
+  (cl-flet
+      ((from-pair
+        (pair)
+        (-let (((id . desc) pair))
+          (->> (org-ml-build-secondary-string! desc)
+               (apply #'org-ml-build-link id :type "id")
+               (org-ml-build-paragraph)
+               (org-ml-build-item)))))
+    (let ((pl (->> (-map #'from-pair link-pairs)
+                   (apply #'org-ml-build-plain-list))))
+      (org-ml-headline-map-contents* (org-x-logbook-config)
+        (-if-let (i (--find-index (org-x--is-drawer-with-name
+                                   org-x-drwr-parent-links it)
+                                  it))
+            (let ((d (nth i it)))
+              (-replace-at i (org-ml-set-children (list pl) d) it))
+          (-> (org-ml-build-drawer "X_PARENT_LINKS" pl)
+            (cons it)))
+        headline))))
+
+(defmacro org-x-dag-headline-map-parent-links* (form headline)
+  (let ((h (make-symbol "--headline")))
+    `(let* ((,h ,headline)
+            (it (org-x-dag-headline-get-parent-links ,h)))
+       (org-x-dag-headline-set-parent-links ,form ,h))))
+
+(defun org-x-dag-headline-add-parent-link (id desc headline)
+  (org-x-dag-headline-map-parent-links* (cons (cons id desc) it) headline))
+
+(defun org-x-dag-headline-remove-parent-link (id headline)
+  (org-x-dag-headline-map-parent-links*
+   (--remove-first (equal (car it) id) it)
+   headline))
 
 (provide 'org-x-dag)
 ;;; org-x-dag.el ends here
