@@ -2135,10 +2135,18 @@ timestamp in the contents of the headline will be shifted."
 
 (defun org-x--subtree-repeat-shifted (n offset unit headline)
   "Return HEADLINE repeated and shifted by OFFSET UNITs N times."
-  (->> (org-ml-clone-node-n n headline)
-       (--map-indexed (org-x--subtree-shift-timestamps
-                       (* offset (1+ it-index)) unit it))
-       (--map (org-ml-headline-set-node-property "ID" (org-id-new) it))))
+  (cl-labels
+      ((assign-id
+        (hl)
+        (->> (org-ml-headline-set-node-property "ID" (org-id-new) hl)
+             (org-ml-headline-map-subheadlines*
+               (--map-when (org-ml-get-property :todo-keyword it)
+                           (assign-id it)
+                           it)))))
+    (->> (org-ml-clone-node-n n headline)
+         (--map-indexed (org-x--subtree-shift-timestamps
+                         (* offset (1+ it-index)) unit it))
+         (-map #'assign-id))))
 
 (defun org-x-clone-subtree-with-time-shift (n)
   "Like `org-clone-subtree-with-time-shift' except reset items and todos.
