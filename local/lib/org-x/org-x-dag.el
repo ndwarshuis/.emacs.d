@@ -475,7 +475,7 @@ encountered will be returned."
 (defun org-x-dag-time-shift (datetime shift unit)
   (cl-flet*
       ((enc-dec-long
-        (y m d M H)
+        (y m d H M)
         (-let (((_ M* H* d* m* y* _ _ _)
                 (->> (list 0 M H d m y nil nil (current-time-zone))
                      (encode-time)
@@ -625,18 +625,23 @@ FUTURE-LIMIT in a list."
             'priority priority))))
 
 (defun org-x-dag-planning-props (id face pos date ts-date type)
-  (list
-   ;; face
-   'face (if (org-x-dag-id->is-done-p id) 'org-agenda-done face)
-   'undone-face face
-   'done-face 'org-agenda-done
-   ;; marker
-   'org-hd-marker (org-agenda-new-marker)
-   'org-marker (org-agenda-new-marker pos)
-   ;; headline stuff
-   'date (org-x-dag-date-to-gregorian date)
-   'ts-date (org-x-dag-date-to-gregorian ts-date)
-   'type type))
+  (cl-flet
+      ((to-abs
+        (date)
+        (->> (org-x-dag-date-to-gregorian date)
+             (calendar-absolute-from-gregorian))))
+    (list
+     ;; face
+     'face (if (org-x-dag-id->is-done-p id) 'org-agenda-done face)
+     'undone-face face
+     'done-face 'org-agenda-done
+     ;; marker
+     'org-hd-marker (org-agenda-new-marker)
+     'org-marker (org-agenda-new-marker pos)
+     ;; headline stuff
+     'date (to-abs date)
+     'ts-date (to-abs ts-date)
+     'type type)))
 
 (defun org-x-dag-format-scheduled-node (sel-date pos datetime category tags id)
   (-let* (((this-date this-time) (org-x-dag-time-partition datetime))
@@ -1131,32 +1136,36 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-scan-agenda (sel-date)
   (cl-flet*
       ((format-timestamps
-        (sel-date cat id pts get-datetimes-fun format-datetime-fun)
+        (todayp sel-date cat id pts get-datetimes-fun format-datetime-fun)
         (-when-let (datetimes (funcall get-datetimes-fun sel-date pts))
           (let ((tags (org-x-dag-id->tags t org-file-tags id)))
             (unless (member org-x-tag-incubated tags)
               (-let (((&plist :pos) pts)
                      (donep (org-x-dag-id->is-done-p id)))
-                (->> datetimes
-                     (--remove (and donep (not (org-x-dag-date= (-take 3 it) sel-date))))
-                     (--map (funcall format-datetime-fun sel-date pos it cat tags id))))))))
+                (--> datetimes
+                     (--remove (and donep (not (org-x-dag-date= (-take 3 it) sel-date))) it)
+                     (if (not todayp) (--remove (org-x-dag-date< (-take 3 it) sel-date) it) it)
+                     (--map (funcall format-datetime-fun sel-date pos it cat tags id) it)))))))
        (format-id
-        (cat id)
+        (todayp cat id)
         (org-x-dag-with-key id
           (-when-let (res (org-x-dag-headline-get-planning))
             (-let (((dead sched) res))
               (append
                (when dead
-                 (format-timestamps sel-date cat id dead
+                 (format-timestamps todayp sel-date cat id dead
                                     #'org-x-dag-get-deadlines-at
                                     #'org-x-dag-format-deadline-node))
                (when sched
-                 (format-timestamps sel-date cat id sched
+                 (format-timestamps todayp sel-date cat id sched
                                     #'org-x-dag-get-scheduled-at
                                     #'org-x-dag-format-scheduled-node))))))))
     (org-x-dag-with-files (org-x-get-action-files)
         nil
-      (format-id it-category it))))
+      (let ((todayp (->> (org-x-dag-date-to-gregorian sel-date)
+                         (calendar-absolute-from-gregorian)
+                         (= (org-today)))))
+        (format-id todayp it-category it)))))
 
 ;;; AGENDA VIEWS
 
@@ -1199,27 +1208,26 @@ FUTURE-LIMIT in a list."
         (setq buffer-read-only t)))))
 
 ;; make the signature exactly like `org-agenda-list' ...for now
-(defun org-x-dag-show-daily-nodes (&optional arg start-day span with-hour)
+(defun org-x-dag-show-daily-nodes (&optional _ start-day _ _)
   (org-x-dag-sync)
-  ;; TODO not sure if this is actually necessary
-  (when org-agenda-overriding-arguments
-    (-setq (arg start-day span) org-agenda-overriding-arguments))
-  (let* ((org-tags-match-list-sublevels org-tags-match-list-sublevels)
-         (completion-ignore-case t))
+  (-let ((completion-ignore-case t)
+         ;; TODO not sure if this if thing is actually necessary
+         ((arg start-day span with-hour) (or org-agenda-overriding-arguments
+                                     (list nil start-day 'day nil))))
     (catch 'exit
       (org-agenda-prepare "DAG-DAILY")
       (org-compile-prefix-format 'agenda)
       (org-set-sorting-strategy 'agenda)
       (-let* ((today (org-today))
               (sd (or start-day today))
-              (org-agenda-redo-command `(org-x-dag-show-daily-nodes
-                                         ',arg ,start-day ',span ,with-hour))
+              (org-agenda-redo-command
+               `(org-x-dag-show-daily-nodes 'nil ,start-day ',span ,with-hour))
               ((m d y) (calendar-gregorian-from-absolute sd))
               (rtnall (org-x-dag-scan-agenda `(,y ,m ,d))))
         (setq-local org-starting-day sd)
         (setq-local org-arg-loc arg)
         ;; TODO just day (for now)
-        (setq-local org-agenda-current-span 'day)
+        (setq-local org-agenda-current-span span)
         (org-agenda--insert-overriding-header
           (with-temp-buffer
             (insert (format "Agenda for %d-%02d-%02d: \n" y m d))
