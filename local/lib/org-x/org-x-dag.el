@@ -703,6 +703,27 @@ FUTURE-LIMIT in a list."
     (-> (org-x-dag-format-item id extra category tags this-time)
         (org-add-props props))))
 
+;;; ID FUNCTIONS
+
+;; ranking
+
+(defmacro org-x-dag-ids-rank (form ids)
+  (declare (indent 1))
+  `(->> (--map (cons it ,form) ids)
+        (--sort (> (cdr it) (cdr other)))))
+
+(defmacro org-x-dag-ids-rank-by-children (form ids)
+  (org-x-dag-ids-rank
+      (let ((it (org-x-dag-id->children it)))
+        ,form)
+    ids))
+
+(defmacro org-x-dag-ids-rank-by-parents (form ids)
+  (org-x-dag-ids-rank
+      (let ((it (org-x-dag-id->parents it)))
+        ,form)
+    ids))
+
 ;;; HEADLINE PREDICATES
 ;;
 ;; The following are predicates that require the point to be above the
