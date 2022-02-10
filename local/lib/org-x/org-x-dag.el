@@ -709,20 +709,45 @@ FUTURE-LIMIT in a list."
 
 (defmacro org-x-dag-ids-rank (form ids)
   (declare (indent 1))
-  `(->> (--map (cons it ,form) ids)
+  `(->> (--map (cons it ,form) ,ids)
         (--sort (> (cdr it) (cdr other)))))
 
 (defmacro org-x-dag-ids-rank-by-children (form ids)
-  (org-x-dag-ids-rank
-      (let ((it (org-x-dag-id->children it)))
-        ,form)
-    ids))
+  `(org-x-dag-ids-rank
+       (let ((it (org-x-dag-id->children it)))
+         ,form)
+     ,ids))
 
 (defmacro org-x-dag-ids-rank-by-parents (form ids)
-  (org-x-dag-ids-rank
-      (let ((it (org-x-dag-id->parents it)))
-        ,form)
-    ids))
+  `(org-x-dag-ids-rank
+       (let ((it (org-x-dag-id->parents it)))
+         ,form)
+     ,ids))
+
+;; reductions
+
+;; TODO this is a naive approach that will effectively expand the dag into
+;; a tree for nodes that share common children/parents. I might want to handle
+;; these special cases in a better way (example, 'summation' could count nodes
+;; multiple times, which may or may not make sense)
+(defmacro org-x-dag--id-reduce (id-getter branch-form leaf-form init id)
+  (declare (indent 1))
+  (let ((cs (make-symbol "--children")))
+    `(cl-labels
+         ((reduce
+           (acc it)
+           (-if-let (,cs (,id-getter ,id))
+               (--reduce-from (reduce acc it) ,branch-form ,cs)
+             ,leaf-form)))
+       (reduce ,init ,id))))
+
+(defmacro org-x-dag-id-reduce-down (branch-form leaf-form init id)
+  `(org-x-dag--id-reduce org-x-dag-id->children
+     ,branch-form ,leaf-form ,init ,id))
+
+(defmacro org-x-dag-id-reduce-up (branch-form leaf-form init id)
+  `(org-x-dag--id-reduce org-x-dag-id->parents
+     ,branch-form ,leaf-form ,init ,id))
 
 ;;; HEADLINE PREDICATES
 ;;
