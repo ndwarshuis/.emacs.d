@@ -153,6 +153,53 @@ that file as it currently sits on disk.")
   (let ((filemap (plist-get org-x-dag :file->ids)))
     (--mapcat (ht-get filemap it) files)))
 
+;; planning state
+
+;; TODO might be less tedious to just set the date and have functions handy
+;; to get the current quarter and week start
+(defvar org-x-dag-selected-quarter nil
+  "The current quarter to be used for planning.
+Is a list like (YEAR QUARTER).")
+
+(defvar org-x-dag-selected-week nil
+  "The current week to be used for planning.
+A date like (YEAR MONTH DAY).")
+
+(defvar org-x-dag-week-start-index 0
+  "The day considered to start a week (0 = Sunday).")
+
+(defvar org-x-dag-selected-date nil
+  "The current week to be used for planning.
+A date like (YEAR MONTH DAY).")
+
+(defun org-x-dag-gregorian-to-date (greg)
+  (-let (((m d y) greg))
+    `(,y ,m ,d)))
+
+(defun org-x-dag-set-planning-quarter-at-date (date)
+  ;; ASSUME the date is valid with no overflow digits
+  (-let (((y m _) date))
+    (setq org-x-dag-selected-quarter `(,y ,(/ m 3)))))
+
+(defun org-x-dag-date-to-week-start (date)
+  (while (not (= (calendar-day-of-week date) org-x-dag-week-start-index))
+    (setq date (->> (org-x-dag-date-to-gregorian date)
+                    (calendar-absolute-from-gregorian)
+                    (1-)
+                    (calendar-gregorian-from-absolute)
+                    (org-x-dag-gregorian-to-date))))
+  date)
+
+(defun org-x-dag-set-planning-week-at-date (date)
+  (setq org-x-dag-selected-week date))
+
+(defun org-x-dag-set-planning-date (date)
+  ;; TODO validate date?
+  (let ((week-start (org-x-dag-date-to-week-start date)))
+    (setq org-x-dag-selected-date date)
+    (setq org-x-dag-selected-week week-date)
+    (org-x-dag-set-planning-quarter-at-date week-date)))
+
 ;;; BUFFER SCANNING
 
 (defun org-x-dag-get-local-property (prop)
