@@ -137,6 +137,17 @@ that file as it currently sits on disk.")
           (parent-tags (and inherit? (ascend id nil))))
       (append local-tags parent-tags init))))
 
+(defun org-x-dag-id->link (id)
+  (org-x-dag-with-id-in-file id
+    (let ((desc (org-get-heading t t t t)))
+      (->> (org-ml-build-secondary-string! desc)
+           (apply #'org-ml-build-link id :type "id")))))
+
+(defun org-x-dag-id->link-item (id)
+  (->> (org-x-dag-id->link id)
+       (org-ml-build-paragraph)
+       (org-ml-build-item)))
+
 (defun org-x-dag-id->parents (id)
   (->> (plist-get org-x-dag :dag)
        (dag-get-parents id)))
@@ -199,6 +210,124 @@ A date like (YEAR MONTH DAY).")
     (setq org-x-dag-selected-date date)
     (setq org-x-dag-selected-week week-date)
     (org-x-dag-set-planning-quarter-at-date week-date)))
+
+;;; PLANNING
+
+(defun org-x--qtp-headline-get-year (headline)
+  (let ((rt (org-ml-get-property :raw-value headline)))
+    (if (s-matches-p "[0-9]\\{4\\}" rt) (string-to-number rt)
+      (error "Invalid year headline in quarterly plan: %s" rt))))
+
+(defun org-x--qtp-headline-get-quarter (headline)
+  (let ((rt (org-ml-get-property :raw-value headline)))
+    (-if-let ((_ qt) (s-match "Q\\([0-9]\\)" rt)) (string-to-number qt)
+      (error "Invalid quarter headline in quarterly plan: %s" rt))))
+
+(defun org-x-dag-qtp-to-children (qt-plan)
+  (-let* (((&plist :categories :goals) qt-plan)
+          ;; TODO what happens if there are no categories?
+          (sec (-some->> categories
+                 (--map-indexed (org-ml-build-item!
+                                 :bullet it-index
+                                 :paragraph (symbol-name it)))
+                 (apply #'org-ml-build-plain-list)
+                 (org-ml-build-drawer org-x-drwr-categories)
+                 (org-ml-build-section))))
+    (if sec (cons sec goals) goals)))
+
+(defun org-x-dag-qtp-from-children (children)
+  ;; ignore properties, planning, etc
+  (-let* (((sec goals) (if (org-ml-is-type 'section (car children))
+                           `(,(car children) ,(cdr children))
+                         `(nil ,children)))
+          (cats (-some->> sec
+                  (--find (org-x--is-drawer-with-name org-x-drwr-categories it))
+                  (org-x-qtp-drawer-to-categories))))
+    (list :categories cats :goals goals)))
+
+(defun org-x-dag-qtp-get (quarter)
+  (org-x-with-file (org-x-qtp-get-file)
+    (-let (((year qnum) quarter))
+      (->> (org-ml-parse-subtrees 'all)
+           (org-x--qtp-headline-find-year year)
+           (org-ml-headline-get-subheadlines)
+           (org-x--qtp-headline-find-quarter qnum)
+           (org-ml-get-children)
+           (org-x-dag-qtp-from-children)))))
+
+(defun org-x-dag-qtp-set (quarter qt-plan)
+  (cl-flet*
+      ((build-qt-headline
+        (quarter children)
+        (let ((title (list (format "Q%s" quarter))))
+          (apply #'org-ml-build-headline :title title :level 2 children)))
+       (build-yr-headline
+        (year qnum children)
+        (->> (build-qt-headline qnum children)
+             (org-ml-build-headline! :title-text (number-to-string year)))))
+    (org-x-with-file (org-x-qtp-get-file)
+      (-let* (((year qnum) quarter)
+              (sts (org-ml-parse-subtrees 'all))
+              (children (org-x-dag-qtp-to-children qt-plan)))
+        (-if-let (st-yr (org-x--qtp-headline-find-year year sts))
+            (-if-let (st-qt (->> (org-ml-headline-get-subheadlines st-yr)
+                                 (org-x--qtp-headline-find-quarter qnum)))
+                (org-ml-update* (org-ml-set-children children it) st-qt)
+              (org-ml-update*
+                (-snoc it (build-qt-headline qnum children))
+                st-yr))
+          (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
+            (org-ml-insert end (build-yr-headline year qnum children))))))))
+
+(defmacro org-x-dag-qtp-map (quarter form)
+  (declare (indent 1))
+  `(let ((it (org-x-dag-qtp-get ,quarter)))
+     (org-x-dag-qtp-set ,quarter ,form)))
+
+(defun org-x-dag-qtp-get-key (key quarter)
+  (plist-get (org-x-dag-qtp-get quarter) key))
+
+(defun org-x-dag-qtp-set-key (quarter key xs)
+  (org-x-dag-qtp-map quarter
+    (plist-put it key xs)))
+
+(defun org-x-qtp-get-categories (quarter)
+  (org-x-dag-qtp-get-key :categories quarter))
+
+(defun org-x-qtp-get-goals (quarter)
+  (org-x-dag-qtp-get-key :goals quarter))
+
+(defun org-x-qtp-set-categories (quarter categories)
+  (org-x-dag-qtp-set-key quarter :categories categories))
+
+(defun org-x-qtp-set-goals (quarter goals)
+  (org-x-dag-qtp-set-key quarter :goals goals))
+
+(defmacro org-x-qtp-map-categories (quarter form)
+  `(let ((it (org-x-qtp-get-categories ,quarter)))
+     (org-x-qtp-set-categories ,quarter ,form)))
+
+(defmacro org-x-qtp-map-goals (quarter form)
+  `(let ((it (org-x-qtp-get-goals ,quarter)))
+     (org-x-qtp-set-goals ,quarter ,form)))
+
+(defun org-x-qtp-add-goal (quarter headline)
+  (org-x-qtp-map-goals quarter (cons headline it)))
+
+(defun org-x-dag-headline-add-id (headline)
+  (org-ml-headline-set-node-property "ID" (org-id-new) headline))
+
+(defun org-x-qtp-build-goal-headline (ids title)
+  (let ((d (org-x-dag-build-parent-link-drawer ids)))
+    (->> (org-ml-build-headline! :level 3
+                                 :title-text title
+                                 :todo-keyword org-x-kw-todo
+                                 :section-children (list d))
+         (org-x-dag-headline-add-id))))
+
+(defun org-x-qtp-add-goal-ids (quarter ids title)
+  (->> (org-x-qtp-build-goal-headline ids title)
+       (org-x-qtp-add-goal quarter)))
 
 ;;; BUFFER SCANNING
 
@@ -852,11 +981,16 @@ FUTURE-LIMIT in a list."
 
 ;;; STATUS DETERMINATION
 
-(defmacro org-x-dag-with-key (key &rest body)
+(defmacro org-x-dag-with-id (key &rest body)
   (declare (indent 1))
   `(progn
      (goto-char (org-x-dag-id->point ,key))
      ,@body))
+
+(defmacro org-x-dag-with-id-in-file (id &rest body)
+  (declare (indent 1))
+  `(org-x-with-file (org-x-dag-id->file ,id)
+     (org-x-dag-with-id ,id ,@body)))
 
 (defun org-x-headline-get-task-status-0 (kw)
   (if (member kw org-x-done-keywords)
@@ -896,7 +1030,7 @@ FUTURE-LIMIT in a list."
                                      (alist-get top-status ',trans-tbl))))
                  (cons top-status* child-results))
              (let ((it-kw (org-x-dag-id->todo key)))
-               (org-x-dag-with-key key
+               (org-x-dag-with-id key
                  (-> ,task-form
                      (nth ',allowed-codes)
                      (list)))))))
@@ -907,7 +1041,7 @@ FUTURE-LIMIT in a list."
 
 (defun org-x-dag-headline-get-project-status (key tags children)
   ;; ASSUME children will always be at least 1 long
-  (org-x-dag-with-key key
+  (org-x-dag-with-id key
     (let ((keyword (org-x-dag-id->todo key)))
       (-let (((status . child-results)
               (cond
@@ -957,7 +1091,7 @@ FUTURE-LIMIT in a list."
         (cons (list :key key :status status :tags tags) child-results)))))
 
 (defun org-x-dag-headline-get-iterator-project-status (key children)
-  (org-x-dag-with-key key
+  (org-x-dag-with-id key
     (let* ((kw (org-x-dag-id->todo key))
            (status
             (cond
@@ -992,7 +1126,7 @@ FUTURE-LIMIT in a list."
       status)))
 
 (defun org-x-dag-headline-get-iterator-task-status (key)
-  (org-x-dag-with-key key
+  (org-x-dag-with-id key
     (if (org-x-dag-id->is-done-p key) :empt
       (-if-let (ts (or (org-x-dag-headline-is-scheduled-p t)
                        (org-x-dag-headline-is-deadlined-p t)))
@@ -1044,7 +1178,7 @@ FUTURE-LIMIT in a list."
         (-let* (((&plist :key :status :tags) result)
                 (priority (alist-get status org-x-project-status-priorities)))
           (when (>= priority 0)
-            (org-x-dag-with-key key
+            (org-x-dag-with-id key
               (-> (org-x-dag-format-tag-node cat tags key)
                   (org-add-props nil
                       'x-toplevelp (org-x-dag-id->is-toplevel-p key)
@@ -1054,7 +1188,7 @@ FUTURE-LIMIT in a list."
         (cat key)
         (let ((tags (org-x-dag-id->tags t org-file-tags key)))
           ;; TODO don't hardcode these things
-          (org-x-dag-with-key key
+          (org-x-dag-with-id key
             (unless (or (member org-x-tag-incubated tags)
                         (org-x-dag-headline-is-iterator-p))
               (-some->> (org-x-dag-id->headline-children key)
@@ -1070,7 +1204,7 @@ FUTURE-LIMIT in a list."
       ((format-result
         (tags cat key)
         (-let ((status (org-x-dag-headline-get-iterator-status key)))
-          (org-x-dag-with-key key
+          (org-x-dag-with-id key
             (-> (org-x-dag-format-tag-node cat tags key)
                 (org-add-props nil
                     'x-status status))))))
@@ -1078,7 +1212,7 @@ FUTURE-LIMIT in a list."
         (org-x-dag-id->is-toplevel-p it)
       (let ((tags (org-x-dag-id->tags t org-file-tags it)))
         (unless (member org-x-tag-incubated tags)
-          (org-x-dag-with-key it
+          (org-x-dag-with-id it
             (when (org-x-dag-headline-is-iterator-p)
               (list (format-result tags it-category it)))))))))
   
@@ -1103,7 +1237,7 @@ FUTURE-LIMIT in a list."
         (category is-standalone key)
         (let ((tags (org-x-dag-id->tags t org-file-tags key)))
           ;; filter out incubators
-          (org-x-dag-with-key key
+          (org-x-dag-with-id key
             (unless (or (member org-x-tag-incubated tags)
                         (org-x-dag-headline-is-scheduled-p nil)
                         (org-x-dag-headline-is-deadlined-p nil))
@@ -1126,7 +1260,7 @@ FUTURE-LIMIT in a list."
         (category key)
         (let ((tags (org-x-dag-id->tags t org-file-tags key)))
           (when (member org-x-tag-incubated tags)
-            (org-x-dag-with-key key
+            (org-x-dag-with-id key
               (let* ((sch (org-x-dag-headline-is-scheduled-p t))
                      (dead (org-x-dag-headline-is-deadlined-p t))
                      (is-project (org-x-dag-id->headline-children key)))
@@ -1146,7 +1280,7 @@ FUTURE-LIMIT in a list."
         (category key)
         (let ((tags (org-x-dag-id->tags t org-file-tags key)))
           (unless (member org-x-tag-incubated tags)
-            (org-x-dag-with-key key
+            (org-x-dag-with-id key
               (-let (((is-archivable is-project)
                       (-if-let (children (org-x-dag-id->headline-children key))
                           (-> (org-x-dag-headline-get-project-status key tags children)
@@ -1163,7 +1297,7 @@ FUTURE-LIMIT in a list."
                           'x-project-p is-project)))))))))
     (org-x-dag-with-files (org-x-get-action-files)
         (org-x-dag-id->is-toplevel-p it)
-      (org-x-dag-with-key it
+      (org-x-dag-with-id it
         (if (org-x-dag-headline-is-iterator-p)
             (->> (org-x-dag-id->headline-children it)
                  (--map (format-key it-category it)))
@@ -1189,7 +1323,7 @@ FUTURE-LIMIT in a list."
                                          :parentlessp nil))))))
       (org-x-dag-with-files (list (org-x-get-lifetime-goal-file))
           nil
-        (org-x-dag-with-key it
+        (org-x-dag-with-id it
           (list (format-id it-category it)))))))
 
 (defun org-x-dag-scan-epgs ()
@@ -1216,7 +1350,7 @@ FUTURE-LIMIT in a list."
                                          :parentlessp (not has-parents)))))))
       (org-x-dag-with-files (list (org-x-get-endpoint-goal-file))
           nil
-        (org-x-dag-with-key it
+        (org-x-dag-with-id it
           (list (format-id it-category it)))))))
 
 (defun org-x-dag-scan-goals ()
@@ -1226,7 +1360,7 @@ FUTURE-LIMIT in a list."
   (cl-flet
       ((format-id
         (category id)
-        (org-x-dag-with-key id
+        (org-x-dag-with-id id
           (-when-let (error-type
                       (if (org-x-dag-headline-is-iterator-p)
                           (unless (org-x-dag-get-local-property "ARCHIVE")
@@ -1240,7 +1374,7 @@ FUTURE-LIMIT in a list."
                     'x-error error-type))))))
     (org-x-dag-with-files (org-x-dag-get-files)
         (not (org-x-dag-id->is-done-p it))
-      (org-x-dag-with-key it
+      (org-x-dag-with-id it
         (list (format-id it-category it))))))
 
 (defun org-x-dag-scan-agenda (sel-date)
@@ -1258,7 +1392,7 @@ FUTURE-LIMIT in a list."
                      (--map (funcall format-datetime-fun sel-date pos it cat tags id) it)))))))
        (format-id
         (todayp cat id)
-        (org-x-dag-with-key id
+        (org-x-dag-with-id id
           (-when-let (res (org-x-dag-headline-get-planning))
             (-let (((dead sched) res))
               (append
@@ -1386,26 +1520,22 @@ FUTURE-LIMIT in a list."
                (-map #'parse-item))
         (error "Invalid parent link drawer")))))
 
-(defun org-x-dag-headline-set-parent-links (link-pairs headline)
-  (cl-flet
-      ((from-pair
-        (pair)
-        (-let (((id . desc) pair))
-          (->> (org-ml-build-secondary-string! desc)
-               (apply #'org-ml-build-link id :type "id")
-               (org-ml-build-paragraph)
-               (org-ml-build-item)))))
-    (let ((pl (->> (-map #'from-pair link-pairs)
-                   (apply #'org-ml-build-plain-list))))
-      (org-ml-headline-map-contents* (org-x-logbook-config)
-        (-if-let (i (--find-index (org-x--is-drawer-with-name
-                                   org-x-drwr-parent-links it)
-                                  it))
-            (let ((d (nth i it)))
-              (-replace-at i (org-ml-set-children (list pl) d) it))
-          (-> (org-ml-build-drawer "X_PARENT_LINKS" pl)
-            (cons it)))
-        headline))))
+(defun org-x-dag-build-parent-link-drawer (ids)
+  (->> (-map #'org-x-dag-id->link-item ids)
+       (apply #'org-ml-build-plain-list)
+       (org-ml-build-drawer "X_PARENT_LINKS")))
+
+(defun org-x-dag-headline-set-parent-links (ids headline)
+  (org-ml-headline-map-contents* (org-x-logbook-config)
+    (-if-let (i (--find-index (org-x--is-drawer-with-name
+                               org-x-drwr-parent-links it)
+                              it))
+        (let ((d (nth i it))
+              (pl (->> (-map #'org-x-dag-build-parent-link-item ids)
+                       (apply #'org-ml-build-plain-list))))
+          (-replace-at i (org-ml-set-children (list pl) d) it))
+      (cons (org-x-dag-build-parent-link-drawer ids) it))
+    headline))
 
 (defmacro org-x-dag-headline-map-parent-links* (form headline)
   (let ((h (make-symbol "--headline")))
