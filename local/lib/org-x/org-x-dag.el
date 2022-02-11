@@ -137,6 +137,12 @@ that file as it currently sits on disk.")
           (parent-tags (and inherit? (ascend id nil))))
       (append local-tags parent-tags init))))
 
+(defun org-x-dag-id->bucket (inherit? id)
+  (-some->> (org-x-dag-id->tags inherit? nil id)
+    (--find (= (elt it 0) org-x-tag-category-prefix))
+    (s-chop-prefix "_")
+    (intern)))
+
 (defun org-x-dag-id->link (id)
   (org-x-dag-with-id-in-file id
     (let ((desc (org-get-heading t t t t)))
@@ -160,9 +166,47 @@ that file as it currently sits on disk.")
   (->> (org-x-dag-id->children id)
        (--filter (equal (org-x-dag-id->metaprop it :buffer-parent) id))))
 
+(defun org-x-dag-id->all-headline-children (id)
+  (->> (org-x-dag-id->headline-children id)
+       (-mapcat #'org-x-dag-id->all-headline-children)
+       (cons id)))
+
 (defun org-x-dag-files->ids (files)
   (let ((filemap (plist-get org-x-dag :file->ids)))
     (--mapcat (ht-get filemap it) files)))
+
+(defun org-x-dag->epg-ids ()
+  (org-x-dag-files->ids `(,(org-x-get-endpoint-goal-file))))
+
+(defun org-x-dag->ltg-ids ()
+  (org-x-dag-files->ids `(,(org-x-get-lifetime-goal-file))))
+
+(defun org-x-dag->leaf-epg-ids ()
+  (-remove #'org-x-dag-id->headline-children (org-x-dag->epg-ids)))
+
+(defun org-x-dag->leaf-ltg-ids ()
+  (let ((epg-file (org-x-get-endpoint-goal-file)))
+    (->> (org-x-dag->ltg-ids)
+         (-remove #'org-x-dag-id->headline-children)
+         (--remove (equal (org-x-dag-id->file it) epg-file)))))
+
+(defun org-x-dag-goal-count-tasks (id)
+  (->> (org-x-dag-id->children id)
+       (-mapcat #'org-x-dag-id->all-headline-children)
+       ;; TODO this isn't very efficient, looking up children twice
+       (-remove #'org-x-dag-id->headline-children)
+       (length)))
+
+(defun org-x-dag-rank-leaf-goals (quarter ids)
+  (cl-flet
+      ((score
+        (buckets id)
+        ;; TODO what happens when I don't have a bucket?
+        (let ((idx (-elem-index (org-x-dag-id->bucket t id) (reverse buckets)))
+              (ntasks (org-x-dag-goal-count-tasks id)))
+          (list idx ntasks))))
+    (let ((bs (org-x-qtp-get-buckets quarter)))
+      (org-x-dag-ids-rank (score bs it) ids))))
 
 ;; planning state
 
@@ -291,11 +335,19 @@ A date like (YEAR MONTH DAY).")
   (org-x-dag-qtp-map quarter
     (plist-put it key xs)))
 
-(defun org-x-qtp-get-categories (quarter)
+(defun org-x-qtp-get-buckets (quarter)
   (org-x-dag-qtp-get-key :categories quarter))
 
 (defun org-x-qtp-get-goals (quarter)
   (org-x-dag-qtp-get-key :goals quarter))
+
+(defun org-x-qtp-get-goal-ids (quarter)
+  (->> (org-x-qtp-get-goals quarter)
+       (--map (org-ml-headline-get-node-property "ID" it))))
+
+(defun org-x-qtp-get-goal-parent-ids (quarter)
+  (->> (org-x-qtp-get-goals quarter)
+       (-mapcat #'org-x-dag-headline-get-parent-links)))
 
 (defun org-x-qtp-set-categories (quarter categories)
   (org-x-dag-qtp-set-key quarter :categories categories))
@@ -304,7 +356,7 @@ A date like (YEAR MONTH DAY).")
   (org-x-dag-qtp-set-key quarter :goals goals))
 
 (defmacro org-x-qtp-map-categories (quarter form)
-  `(let ((it (org-x-qtp-get-categories ,quarter)))
+  `(let ((it (org-x-qtp-get-buckets ,quarter)))
      (org-x-qtp-set-categories ,quarter ,form)))
 
 (defmacro org-x-qtp-map-goals (quarter form)
@@ -409,6 +461,8 @@ valid keyword or none of its parents have valid keywords."
             ;; If parent is not a todo and we want tag inheritance, store all tags
             ;; above this headline (sans file-tags which we can get later easily)
             ;; (org-entry-get nil org-x-prop-parent-type)
+            ;; TODO add the file tags here so I don't need to worry about them
+            ;; later
             (setq all-tags (if (and (not this-parent-key)
                                     org-use-tag-inheritance)
                                (->> cur-path
@@ -444,6 +498,7 @@ valid keyword or none of its parents have valid keywords."
   "Return a list of all files to be used in the DAG."
   `(,(org-x-get-lifetime-goal-file)
     ,(org-x-get-endpoint-goal-file)
+    ,(org-x-qtp-get-file)
     ,@(org-x-get-action-and-incubator-files)))
 
 (defun org-x-dag-get-md5 (path)
@@ -885,9 +940,16 @@ FUTURE-LIMIT in a list."
 
 (defmacro org-x-dag-ids-rank (form ids)
   (declare (indent 1))
-  `(->> (--map (cons it ,form) ,ids)
-        (--sort (> (cdr it) (cdr other)))))
-
+  `(cl-labels
+       ((compare
+         (a b)
+         (cond
+          ((not (or a b)) t)
+          ((= (car a) (car b)) (compare (cdr a) (cdr b)))
+          (t (> (car a) (car b))))))
+     (->> (--map (cons it ,form) ,ids)
+          (--sort (compare (cdr it) (cdr other))))))
+  
 (defmacro org-x-dag-ids-rank-by-children (form ids)
   `(org-x-dag-ids-rank
        (let ((it (org-x-dag-id->children it)))
@@ -1410,6 +1472,17 @@ FUTURE-LIMIT in a list."
                          (calendar-absolute-from-gregorian)
                          (= (org-today)))))
         (format-id todayp it-category it)))))
+
+(defun org-x-dag-scan-quarterly-plan ()
+  (cl-flet
+      ((format-id
+        (category id)
+        (-> (org-x-dag-format-tag-node category nil id)
+            (org-add-props nil))))
+    (org-x-dag-with-files (list (org-x-qtp-get-file))
+        nil
+      (org-x-dag-with-id it
+        (list (format-id it-category it))))))
 
 ;;; AGENDA VIEWS
 
