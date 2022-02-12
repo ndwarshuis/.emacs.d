@@ -369,15 +369,17 @@ A date like (YEAR MONTH DAY).")
 (defun org-x-dag-headline-add-id (headline)
   (org-ml-headline-set-node-property "ID" (org-id-new) headline))
 
-(defun org-x-qtp-build-goal-headline (ids title)
+(defun org-x-qtp-build-goal-headline (ids title allocation)
+  ;; ASSUME the allocation is in a valid format
   (let ((d (org-x-dag-build-parent-link-drawer ids)))
     (->> (org-ml-build-headline! :level 3
                                  :title-text title
                                  :todo-keyword org-x-kw-todo
                                  :section-children (list d))
-         (org-x-dag-headline-add-id))))
+         (org-x-dag-headline-add-id)
+         (org-ml-headline-set-node-property org-x-prop-allocate allocation))))
 
-(defun org-x-qtp-add-goal-ids (quarter ids title)
+(defun org-x-qtp-add-goal-ids (quarter ids title allocation)
   (->> (org-x-qtp-build-goal-headline ids title)
        (org-x-qtp-add-goal quarter)))
 
@@ -1623,6 +1625,63 @@ FUTURE-LIMIT in a list."
   (org-x-dag-headline-map-parent-links*
    (--remove-first (equal (car it) id) it)
    headline))
+
+;;; ALLOCATION
+
+(defun org-x-dag-quarter-to-date (quarter)
+  (-let (((y q) quarter))
+    (list y (1+ (* q 3)) 1)))
+
+(defun org-x-dag-shift-quarter (quarter n unit)
+  (-let (((y q) quarter))
+    (pcase unit
+      (`year `(,(+ n y) ,q))
+      (`quarter
+       (let* ((x (+ q n))
+              (q* (mod x 4))
+              (y* (+ y (floor (/ x 4.0)))))
+         `(,y* ,q*))))))
+
+(defun org-x-dag-quarter-diff (quarter1 quarter2)
+  (cl-flet
+      ((qt-to-abs
+        (q)
+        (->> (org-x-dag-quarter-to-date q)
+             (org-x-dag-date-to-gregorian)
+             (calendar-absolute-from-gregorian))))
+    (- (qt-to-abs quarter1) (qt-to-abs quarter2))))
+
+(pcase-defmacro regexp (capture regexp)
+  `(and x (let ,capture (s-match ,regexp x))))
+
+;; this function can also be used to check the format of an allocation during
+;; assignment
+(defun org-x-dag-allocation-fraction (quarter allocation)
+  (cl-flet
+      ((hhmm-to-mins
+        (H M)
+        (let ((H* (string-to-number H))
+              (M* (string-to-number M)))
+          (+ (* 60.0 H*) M*))))
+    (let* ((qt-days (-> (org-x-dag-shift-quarter quarter 1 'quarter)
+                        (org-x-dag-quarter-diff quarter)
+                        (float)))
+           (qt-mins (* qt-days 1440))
+           (hhmm-regexp "\\(2[0-4]\\|[0-1][0-9]\\|[0-9]\\):\\([0-6][0-9]\\)"))
+      (pcase allocation
+        ;; match 'X%' where X is a flat percent of the quarter
+        ((regexp `(,_ ,percent) "^\\([0-9]+\\)%$")
+         (/ (string-to-number percent) 100.0))
+        ;; match 'H:M' where H is hours and M is minutes (both clock digits)
+        ((regexp `(,_ ,H ,M) (format "^%s$" hhmm-regexp))
+         (/ (hhmm-to-mins H M) 1440.0))
+        ;; match 'H:M/Dd' where H/M are like above and D is number of days
+        ;; per quarter
+        ((regexp `(,_ ,H ,M ,d) (format "^%s/\\([0-9]+\\)d$" hhmm-regexp))
+         (let ((d* (string-to-number d))
+               (mins (hhmm-to-mins H M)))
+           (/ (* mins d*) qt-mins)))
+        (e (error "Invalid allocation: %s" e))))))
 
 (provide 'org-x-dag)
 ;;; org-x-dag.el ends here
