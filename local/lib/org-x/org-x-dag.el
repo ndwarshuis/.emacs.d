@@ -415,17 +415,6 @@ A date like (YEAR MONTH DAY).")
   (let ((tag (format "W%02d" weeknum)))
     (--find (org-ml-headline-has-tag tag it) headlines)))
 
-;; (defun org-x-dag-headline-find-day (daynum headlines)
-;;   (let ((tag (pcase daynum
-;;                (0 "SUN")
-;;                (1 "MON")
-;;                (2 "TUE")
-;;                (3 "WED")
-;;                (4 "THU")
-;;                (5 "FRI")
-;;                (6 "SAT"))))
-;;     (--find (org-ml-headline-has-tag tag it) headlines)))
-
 (defconst org-x-dag-weekly-tags
   '((0 . "SUN")
     (1 . "MON")
@@ -435,14 +424,15 @@ A date like (YEAR MONTH DAY).")
     (5 . "FRI")
     (6 . "SAT")))
 
+(defun org-x-dag-headline-find-day (daynum headlines)
+  (let ((tag (alist-get daynum org-x-dag-weekly-tags)))
+    (--find (org-ml-headline-has-tag tag it) headlines)))
+
 (defun org-x-dag-weekly-headlines-to-alist (headlines)
-  (->> headlines
-       (--map (-when-let (weeknum (-> (org-ml-get-property :tags (list it))
-                                      (car)
-                                      (rassoc org-x-dag-weekly-tags)
-                                      (car)))
-                (cons weeknum (org-ml-headline-get-subheadlines it))))
-       (-non-nil)))
+  (->> (-map #'car org-x-dag-weekly-tags)
+       (--map (->> (org-x-dag-headline-find-day it headlines)
+                   (org-ml-headline-get-subheadlines)
+                   (cons it)))))
 
 (defun org-x-dag-weekly-alist-to-headlines (plan)
   (--map (-let (((daynum . hls) it))
@@ -467,12 +457,12 @@ A date like (YEAR MONTH DAY).")
   (cl-flet*
       ((build-wk-headline
         (year weeknum children)
-        (-let (((_ m d) (org-x-dag-week-number-to-date year weeknum))
-               (m* (calendar-month-name m))
-               (title (format "%s %s" m* d))
-               (tag (format "W%02d" weeknum)))
-          (apply #'org-ml-build-headline
-                 :title title
+        (-let* (((_ m d) (org-x-dag-week-number-to-date year weeknum))
+                (m* (calendar-month-name m))
+                (title (format "%s %s" m* d))
+                (tag (format "W%02d" weeknum)))
+          (apply #'org-ml-build-headline!
+                 :title-text title
                  :level 2
                  :tags (list tag)
                  children)))
@@ -491,10 +481,46 @@ A date like (YEAR MONTH DAY).")
                                  (org-x-dag-headline-find-week weeknum)))
                 (org-ml-update* (org-ml-set-children children it) st-wk)
               (org-ml-update*
-                (-snoc it (build-wk-headline weeknum children))
+                (-snoc it (build-wk-headline year weeknum children))
                 st-yr))
           (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
             (org-ml-insert end (build-yr-headline year weeknum children))))))))
+
+(defmacro org-x-dag-wkp-map (week form)
+  (declare (indent 1))
+  (let ((w (make-symbol "--week")))
+    `(let* ((,w ,week)
+            (it (org-x-dag-wkp-get ,w)))
+       (org-x-dag-wkp-set ,w ,form))))
+
+(defun org-x-dag-wkp-day-get (week daynum)
+  (alist-get daynum (org-x-dag-wkp-get week)))
+
+(defun org-x-dag-wkp-day-set (week daynum headlines)
+  (org-x-dag-wkp-map week
+    (--replace-where (= daynum (car it)) (cons daynum headlines) it)))
+
+(defmacro org-x-dag-wkp-day-map (week daynum form)
+  (declare (indent 2))
+  (let ((w (make-symbol "--week"))
+        (d (make-symbol "--daynum")))
+    `(let* ((,w ,week)
+            (,d ,daynum)
+            (it (org-x-dag-wkp-day-get ,w ,d)))
+       (org-x-dag-wkp-day-set ,w ,d ,form))))
+
+(defun org-x-dag-wkp-day-add (week daynum headline)
+  (org-x-dag-wkp-day-map week daynum (cons headline it)))
+
+(defun org-x-dag-wkp-add-goal (week daynum title ids desc)
+  (let ((p (org-ml-build-paragraph! desc)))
+    (->> (org-ml-build-headline! :level 4
+                                 :title-text title
+                                 :todo-keyword org-x-kw-todo
+                                 :section-children (list p))
+         (org-x-dag-headline-add-id)
+         (org-x-dag-headline-set-parent-links ids)
+         (org-x-dag-wkp-day-add week daynum))))
 
 ;;; BUFFER SCANNING
 
