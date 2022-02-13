@@ -250,6 +250,16 @@ A date like (YEAR MONTH DAY).")
           (start-diff (if (= 0 start-daynum) 0 (- 7 start-daynum))))
     (1+ (/ (- abs start-abs start-diff) 7))))
 
+(defun org-x-dag-week-number-to-date (year weeknum)
+  (let* ((start-greg `(1 1 ,year))
+         (start-abs (calendar-absolute-from-gregorian start-greg))
+         (start-weeknum (calendar-day-of-week start-greg))
+         (start-diff (if (= 0 start-weeknum) 0 (- 7 start-weeknum))))
+    (->> (* (1- weeknum) 7)
+         (+ start-abs start-diff)
+         (calendar-gregorian-from-absolute)
+         (org-x-dag-gregorian-to-date))))
+
 (defun org-x-dag-date-to-week-start (date)
   ""
   (let ((greg (org-x-dag-date-to-gregorian date)))
@@ -405,16 +415,16 @@ A date like (YEAR MONTH DAY).")
   (let ((tag (format "W%02d" weeknum)))
     (--find (org-ml-headline-has-tag tag it) headlines)))
 
-(defun org-x-dag-headline-find-day (daynum headlines)
-  (let ((tag (pcase daynum
-               (0 "SUN")
-               (1 "MON")
-               (2 "TUE")
-               (3 "WED")
-               (4 "THU")
-               (5 "FRI")
-               (6 "SAT"))))
-    (--find (org-ml-headline-has-tag tag it) headlines)))
+;; (defun org-x-dag-headline-find-day (daynum headlines)
+;;   (let ((tag (pcase daynum
+;;                (0 "SUN")
+;;                (1 "MON")
+;;                (2 "TUE")
+;;                (3 "WED")
+;;                (4 "THU")
+;;                (5 "FRI")
+;;                (6 "SAT"))))
+;;     (--find (org-ml-headline-has-tag tag it) headlines)))
 
 (defconst org-x-dag-weekly-tags
   '((0 . "SUN")
@@ -427,12 +437,21 @@ A date like (YEAR MONTH DAY).")
 
 (defun org-x-dag-weekly-headlines-to-alist (headlines)
   (->> headlines
-       (--map (-when-let (weeknum (-> (org-ml-get-property :tags it)
+       (--map (-when-let (weeknum (-> (org-ml-get-property :tags (list it))
                                       (car)
                                       (rassoc org-x-dag-weekly-tags)
                                       (car)))
                 (cons weeknum (org-ml-headline-get-subheadlines it))))
        (-non-nil)))
+
+(defun org-x-dag-weekly-alist-to-headlines (plan)
+  (--map (-let (((daynum . hls) it))
+           (apply #'org-ml-build-headline!
+                  :tags (list (alist-get daynum org-x-dag-weekly-tags))
+                  :level 3
+                  :title-text (elt calendar-day-name-array daynum)
+                  hls))
+         plan))
 
 (defun org-x-dag-wkp-get (week)
   (org-x-with-file (org-x-get-weekly-plan-file)
@@ -443,6 +462,39 @@ A date like (YEAR MONTH DAY).")
            (org-x-dag-headline-find-week weeknum)
            (org-ml-headline-get-subheadlines)
            (org-x-dag-weekly-headlines-to-alist)))))
+
+(defun org-x-dag-wkp-set (week plan)
+  (cl-flet*
+      ((build-wk-headline
+        (year weeknum children)
+        (-let (((_ m d) (org-x-dag-week-number-to-date year weeknum))
+               (m* (calendar-month-name m))
+               (title (format "%s %s" m* d))
+               (tag (format "W%02d" weeknum)))
+          (apply #'org-ml-build-headline
+                 :title title
+                 :level 2
+                 :tags (list tag)
+                 children)))
+       (build-yr-headline
+        (year weeknum children)
+        (let ((title (number-to-string year))
+              (tag (format "Y%d" year)))
+          (->> (build-wk-headline year weeknum children)
+               (org-ml-build-headline! :title-text title :tag (list tag))))))
+    (org-x-with-file (org-x-get-weekly-plan-file)
+      (-let* (((year weeknum) week)
+              (sts (org-ml-parse-subtrees 'all))
+              (children (org-x-dag-weekly-alist-to-headlines plan)))
+        (-if-let (st-yr (org-x-dag-headline-find-year year sts))
+            (-if-let (st-wk (->> (org-ml-headline-get-subheadlines st-yr)
+                                 (org-x-dag-headline-find-week weeknum)))
+                (org-ml-update* (org-ml-set-children children it) st-wk)
+              (org-ml-update*
+                (-snoc it (build-wk-headline weeknum children))
+                st-yr))
+          (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
+            (org-ml-insert end (build-yr-headline year weeknum children))))))))
 
 ;;; BUFFER SCANNING
 
