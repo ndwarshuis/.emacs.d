@@ -236,14 +236,28 @@ A date like (YEAR MONTH DAY).")
   (-let (((y m _) date))
     (setq org-x-dag-selected-quarter `(,y ,(/ m 3)))))
 
+(defun org-x-dag-date-to-week-number (date)
+  (-let* (((y m d) date)
+          (greg (org-x-dag-date-to-gregorian date))
+          (abs (calendar-absolute-from-gregorian greg))
+          (daynum (calendar-day-of-week greg))
+          ;; Catch the special case where the first few days of January might
+          ;; belong to the previous year
+          (start-year (if (and (= 1 m) (< d (1+ daynum))) (1- y)))
+          (start-greg `(1 1 ,start-year))
+          (start-daynum (calendar-day-of-week start-greg))
+          (start-abs (calendar-absolute-from-gregorian start-greg))
+          (start-diff (if (= 0 start-daynum) 0 (- 7 start-daynum))))
+    (1+ (/ (- abs start-abs start-diff) 7))))
+
 (defun org-x-dag-date-to-week-start (date)
-  (while (not (= (calendar-day-of-week date) org-x-dag-week-start-index))
-    (setq date (->> (org-x-dag-date-to-gregorian date)
-                    (calendar-absolute-from-gregorian)
-                    (1-)
-                    (calendar-gregorian-from-absolute)
-                    (org-x-dag-gregorian-to-date))))
-  date)
+  ""
+  (let ((greg (org-x-dag-date-to-gregorian date)))
+    (while (not (= (calendar-day-of-week greg) org-x-dag-week-start-index))
+      (setq greg (->> (calendar-absolute-from-gregorian greg)
+                      (1-)
+                      (calendar-gregorian-from-absolute))))
+    (org-x-dag-gregorian-to-date greg)))
 
 (defun org-x-dag-set-planning-week-at-date (date)
   (setq org-x-dag-selected-week date))
@@ -382,6 +396,53 @@ A date like (YEAR MONTH DAY).")
 (defun org-x-qtp-add-goal-ids (quarter ids title allocation)
   (->> (org-x-qtp-build-goal-headline ids title)
        (org-x-qtp-add-goal quarter)))
+
+(defun org-x-dag-headline-find-year (year headlines)
+  (let ((tag (format "Y%d" (mod year 2000))))
+    (--find (org-ml-headline-has-tag tag it) headlines)))
+
+(defun org-x-dag-headline-find-week (weeknum headlines)
+  (let ((tag (format "W%02d" weeknum)))
+    (--find (org-ml-headline-has-tag tag it) headlines)))
+
+(defun org-x-dag-headline-find-day (daynum headlines)
+  (let ((tag (pcase daynum
+               (0 "SUN")
+               (1 "MON")
+               (2 "TUE")
+               (3 "WED")
+               (4 "THU")
+               (5 "FRI")
+               (6 "SAT"))))
+    (--find (org-ml-headline-has-tag tag it) headlines)))
+
+(defconst org-x-dag-weekly-tags
+  '((0 . "SUN")
+    (1 . "MON")
+    (2 . "TUE")
+    (3 . "WED")
+    (4 . "THU")
+    (5 . "FRI")
+    (6 . "SAT")))
+
+(defun org-x-dag-weekly-headlines-to-alist (headlines)
+  (->> headlines
+       (--map (-when-let (weeknum (-> (org-ml-get-property :tags it)
+                                      (car)
+                                      (rassoc org-x-dag-weekly-tags)
+                                      (car)))
+                (cons weeknum (org-ml-headline-get-subheadlines it))))
+       (-non-nil)))
+
+(defun org-x-dag-wkp-get (week)
+  (org-x-with-file (org-x-get-weekly-plan-file)
+    (-let (((year weeknum) week))
+      (->> (org-ml-parse-subtrees 'all)
+           (org-x-dag-headline-find-year year)
+           (org-ml-headline-get-subheadlines)
+           (org-x-dag-headline-find-week weeknum)
+           (org-ml-headline-get-subheadlines)
+           (org-x-dag-weekly-headlines-to-alist)))))
 
 ;;; BUFFER SCANNING
 
