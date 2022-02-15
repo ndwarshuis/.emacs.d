@@ -281,15 +281,134 @@ A date like (YEAR MONTH DAY).")
 
 ;;; PLANNING
 
-(defun org-x--qtp-headline-get-year (headline)
-  (let ((rt (org-ml-get-property :raw-value headline)))
-    (if (s-matches-p "[0-9]\\{4\\}" rt) (string-to-number rt)
-      (error "Invalid year headline in quarterly plan: %s" rt))))
+;; planning buffer tags
+;;
+;; use tags to encode date/time information in the buffer since it is really
+;; easy to look up tags in the DAG
 
-(defun org-x--qtp-headline-get-quarter (headline)
-  (let ((rt (org-ml-get-property :raw-value headline)))
-    (-if-let ((_ qt) (s-match "Q\\([0-9]\\)" rt)) (string-to-number qt)
-      (error "Invalid quarter headline in quarterly plan: %s" rt))))
+(defconst org-x-dag-weekly-tags
+  '((0 . "SUN")
+    (1 . "MON")
+    (2 . "TUE")
+    (3 . "WED")
+    (4 . "THU")
+    (5 . "FRI")
+    (6 . "SAT")))
+
+(defun org-x-dag-format-year-tag (year)
+  (format "Y%d" (mod year 2000)))
+
+(defun org-x-dag-format-quarter-tag (quarter)
+  (format "Q%d" quarter))
+
+(defun org-x-dag-format-month-tag (month)
+  (format "M%02d" month))
+
+(defun org-x-dag-format-week-tag (week)
+  (format "W%02d" week))
+
+(defun org-x-dag-format-day-of-week-tag (daynum)
+  (alist-get daynum org-x-dag-week-start-index))
+
+(defun org-x-dag-format-day-tag (day)
+  (format "D%02d" day))
+
+;; headline lookup
+
+(defun org-x-dag-headlines-find-tag (tag headlines)
+  (--find (org-ml-headline-has-tag tag it) headlines))
+
+(defun org-x-dag-headlines-find-year (year headlines)
+  (-> (org-x-dag-format-year-tag year)
+      (org-x-dag-headlines-find-tag headlines)))
+
+(defun org-x-dag-headlines-find-quarter (quarter headlines)
+  (-> (org-x-dag-format-quarter-tag quarter)
+      (org-x-dag-headlines-find-tag headlines)))
+
+(defun org-x-dag-headlines-find-week (weeknum headlines)
+  (-> (org-x-dag-format-week-tag weeknum)
+      (org-x-dag-headlines-find-tag headlines)))
+
+(defun org-x-dag-headlines-find-day-of-week (daynum headlines)
+  (-> (org-x-dag-format-day-of-week-tag daynum)
+      (org-x-dag-headlines-find-tag headlines)))
+
+(defun org-x-dag-headlines-find-month (month headlines)
+  (-> (org-x-dag-format-month-tag month)
+      (org-x-dag-headlines-find-tag headlines)))
+
+(defun org-x-dag-headlines-find-day (day headlines)
+  (-> (org-x-dag-format-day-tag day)
+      (org-x-dag-headlines-find-tag headlines)))
+
+;; headline builders
+
+(defun org-x-dag-build-planning-headline (title tag level subheadlines)
+  (apply #'org-ml-build-headline!
+         :title-text title
+         :tag (list tag)
+         :level level
+         subheadlines))
+
+(defun org-x-dag-build-year-headline (year subheadlines)
+  (let ((title (number-to-string year))
+        (tag (org-x-dag-format-year-tag year)))
+    (org-x-dag-build-planning-headline tag title 1 subheadlines)))
+
+(defun org-x-dag-build-quarter-headline (quarter subheadlines)
+  (let ((title (format "Quarter %d" quarter))
+        (tag (org-x-dag-format-quarter-tag quarter)))
+    (org-x-dag-build-planning-headline title tag 2 subheadlines)))
+
+(defun org-x-dag-build-week-headline (year weeknum subheadlines)
+  (-let* (((_ m d) (org-x-dag-week-number-to-date year weeknum))
+          (m* (calendar-month-name m))
+          (title (format "%s %s" m* d))
+          (tag (org-x-dag-format-week-tag weeknum)))
+    (org-x-dag-build-planning-headline title tag 2 subheadlines)))
+
+(defun org-x-dag-build-month-headline (month subheadlines)
+  (let ((title (calendar-month-name month))
+        (tag (org-x-dag-format-month-tag month)))
+    (org-x-dag-build-planning-headline title tag 2 subheadlines)))
+
+(defun org-x-dag-build-day-headline (date subheadlines)
+  (let ((title (format "%d-%02d-%02d" y m d))
+        (tag (org-x-dag-format-day-tag d)))
+    (org-x-dag-build-planning-headline title tag 3 subheadlines)))
+
+(defun org-x-dag-build-day-of-week-headline (daynum subheadlines)
+  (let ((title (elt calendar-day-name-array daynum))
+        (tag (alist-get daynum org-x-dag-weekly-tags)))
+    (org-x-dag-build-planning-headline title tag 3 subheadlines)))
+
+;; id headline builders
+
+(defun org-x-dag-build-planning-id-headline (title level paragraph ids)
+  (let ((sec (-some-> paragraph
+               (org-ml-build-paragraph!)
+               (list))))
+    (->> (org-ml-build-headline! :title-text title
+                                 :level level
+                                 :todo-keyword org-x-kw-todo
+                                 :section-children sec)
+         (org-x-dag-headline-add-id)
+         (org-x-dag-headline-set-parent-links ids))))
+
+(defun org-x-dag-build-qtp-headline (title paragraph ids allocation)
+  (->> (org-x-dag-build-planning-id-headline title 3 paragraph ids)
+       (org-ml-headline-set-node-property org-x-prop-allocate allocation)))
+
+(defun org-x-dag-build-wkp-headline (title paragraph ids)
+  (org-x-dag-build-planning-id-headline title 4 paragraph ids))
+
+(defun org-x-dag-build-dlp-headline (title paragraph ids datetime)
+  (let ((pl (org-ml-build-planning! :scheduled datetime)))
+    (->> (org-x-dag-build-planning-id-headline title 4 paragraph ids)
+         (org-ml-headline-set-planning pl))))
+
+;; buffer manipulation
 
 (defun org-x-dag-qtp-to-children (qt-plan)
   (-let* (((&plist :categories :goals) qt-plan)
@@ -317,32 +436,29 @@ A date like (YEAR MONTH DAY).")
   (org-x-with-file (org-x-qtp-get-file)
     (-let (((year qnum) quarter))
       (->> (org-ml-parse-subtrees 'all)
-           (org-x--qtp-headline-find-year year)
+           (org-x-dag-headlines-find-year year)
            (org-ml-headline-get-subheadlines)
-           (org-x--qtp-headline-find-quarter qnum)
+           (org-x-dag-headlines-find-quarter qnum)
            (org-ml-get-children)
            (org-x-dag-qtp-from-children)))))
 
 (defun org-x-dag-qtp-set (quarter qt-plan)
-  (cl-flet*
-      ((build-qt-headline
-        (quarter children)
-        (let ((title (list (format "Q%s" quarter))))
-          (apply #'org-ml-build-headline :title title :level 2 children)))
-       (build-yr-headline
+  (cl-flet
+      ((build-yr-headline
         (year qnum children)
-        (->> (build-qt-headline qnum children)
-             (org-ml-build-headline! :title-text (number-to-string year)))))
+        (->> (org-x-dag-build-quarter-headline qnum children)
+             (list)
+             (org-x-dag-build-year-headline year))))
     (org-x-with-file (org-x-qtp-get-file)
       (-let* (((year qnum) quarter)
               (sts (org-ml-parse-subtrees 'all))
               (children (org-x-dag-qtp-to-children qt-plan)))
-        (-if-let (st-yr (org-x--qtp-headline-find-year year sts))
+        (-if-let (st-yr (org-x-dag-headlines-find-year year sts))
             (-if-let (st-qt (->> (org-ml-headline-get-subheadlines st-yr)
-                                 (org-x--qtp-headline-find-quarter qnum)))
+                                 (org-x-dag-headlines-find-quarter qnum)))
                 (org-ml-update* (org-ml-set-children children it) st-qt)
               (org-ml-update*
-                (-snoc it (build-qt-headline qnum children))
+                (-snoc it (org-x-dag-build-quarter-headline qnum children))
                 st-yr))
           (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
             (org-ml-insert end (build-yr-headline year qnum children))))))))
@@ -393,47 +509,9 @@ A date like (YEAR MONTH DAY).")
 (defun org-x-dag-headline-add-id (headline)
   (org-ml-headline-set-node-property "ID" (org-id-new) headline))
 
-(defun org-x-qtp-build-goal-headline (ids title allocation)
-  ;; ASSUME the allocation is in a valid format
-  (let ((d (org-x-dag-build-parent-link-drawer ids)))
-    (->> (org-ml-build-headline! :level 3
-                                 :title-text title
-                                 :todo-keyword org-x-kw-todo
-                                 :section-children (list d))
-         (org-x-dag-headline-add-id)
-         (org-ml-headline-set-node-property org-x-prop-allocate allocation))))
-
 (defun org-x-qtp-add-goal-ids (quarter ids title allocation)
-  (->> (org-x-qtp-build-goal-headline ids title)
+  (->> (org-x-dag-build-qtp-headline title nil ids allocation)
        (org-x-qtp-add-goal quarter)))
-
-(defun org-x-dag-headlines-find-tag (tag headlines)
-  (--find (org-ml-headline-has-tag tag it) headlines))
-
-(defun org-x-dag-headlines-find-year (year headlines)
-  (org-x-dag-headlines-find-tag (format "Y%d" (mod year 2000)) headlines))
-
-(defun org-x-dag-headlines-find-week (weeknum headlines)
-  (org-x-dag-headlines-find-tag (format "W%02d" weeknum) headlines))
-
-(defconst org-x-dag-weekly-tags
-  '((0 . "SUN")
-    (1 . "MON")
-    (2 . "TUE")
-    (3 . "WED")
-    (4 . "THU")
-    (5 . "FRI")
-    (6 . "SAT")))
-
-(defun org-x-dag-headlines-find-day-of-week (daynum headlines)
-  (-> (alist-get daynum org-x-dag-weekly-tags)
-      (org-x-dag-headlines-find-tag headlines)))
-
-(defun org-x-dag-headlines-find-month (month headlines)
-  (org-x-dag-headlines-find-tag (format "M%02d" month) headlines))
-
-(defun org-x-dag-headlines-find-day (day headlines)
-  (org-x-dag-headlines-find-tag (format "D%02d" day) headlines))
 
 (defun org-x-dag-weekly-headlines-to-alist (headlines)
   (->> (-map #'car org-x-dag-weekly-tags)
@@ -443,11 +521,7 @@ A date like (YEAR MONTH DAY).")
 
 (defun org-x-dag-weekly-alist-to-headlines (plan)
   (--map (-let (((daynum . hls) it))
-           (apply #'org-ml-build-headline!
-                  :tags (list (alist-get daynum org-x-dag-weekly-tags))
-                  :level 3
-                  :title-text (elt calendar-day-name-array daynum)
-                  hls))
+           (org-x-dag-build-day-of-week-headline daynum hls))
          plan))
 
 (defun org-x-dag-wkp-get (week)
@@ -462,23 +536,11 @@ A date like (YEAR MONTH DAY).")
 
 (defun org-x-dag-wkp-set (week plan)
   (cl-flet*
-      ((build-wk-headline
+      ((build-yr-headline
         (year weeknum children)
-        (-let* (((_ m d) (org-x-dag-week-number-to-date year weeknum))
-                (m* (calendar-month-name m))
-                (title (format "%s %s" m* d))
-                (tag (format "W%02d" weeknum)))
-          (apply #'org-ml-build-headline!
-                 :title-text title
-                 :level 2
-                 :tags (list tag)
-                 children)))
-       (build-yr-headline
-        (year weeknum children)
-        (let ((title (number-to-string year))
-              (tag (format "Y%d" year)))
-          (->> (build-wk-headline year weeknum children)
-               (org-ml-build-headline! :title-text title :tag (list tag))))))
+        (->> (org-x-dag-build-week-headline year weeknum children)
+             (list)
+             (org-x-dag-build-year-headline year))))
     (org-x-with-file (org-x-get-weekly-plan-file)
       (-let* (((year weeknum) week)
               (sts (org-ml-parse-subtrees 'all))
@@ -488,7 +550,7 @@ A date like (YEAR MONTH DAY).")
                                  (org-x-dag-headlines-find-week weeknum)))
                 (org-ml-update* (org-ml-set-children children it) st-wk)
               (org-ml-update*
-                (-snoc it (build-wk-headline year weeknum children))
+                (-snoc it (org-x-dag-build-week-headline year weeknum children))
                 st-yr))
           (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
             (org-ml-insert end (build-yr-headline year weeknum children))))))))
@@ -520,14 +582,8 @@ A date like (YEAR MONTH DAY).")
   (org-x-dag-wkp-day-map week daynum (cons headline it)))
 
 (defun org-x-dag-wkp-add-goal (week daynum title ids desc)
-  (let ((p (org-ml-build-paragraph! desc)))
-    (->> (org-ml-build-headline! :level 4
-                                 :title-text title
-                                 :todo-keyword org-x-kw-todo
-                                 :section-children (list p))
-         (org-x-dag-headline-add-id)
-         (org-x-dag-headline-set-parent-links ids)
-         (org-x-dag-wkp-day-add week daynum))))
+  (->> (org-x-dag-build-wkp-headline title desc ids)
+       (org-x-dag-wkp-day-add week daynum)))
 
 ;; TODO not DRY
 (defun org-x-dag-dlp-get (date)
@@ -542,32 +598,18 @@ A date like (YEAR MONTH DAY).")
 
 (defun org-x-dag-dlp-set (date headlines)
   (cl-flet*
-      ((build-day-headline
+      ((build-mo-headline
         (date headlines)
-        (-let* (((y m d) date)
-                (title (format "%d-%02d-%02d" y m d))
-                (tag (format "D%02d" d)))
-          (apply #'org-ml-build-headline!
-                 :title-text title
-                 :tags (list tag)
-                 :level 3
-                 headlines)))
-       (build-mo-headline
-        (date headlines)
-        (-let* (((_ m _) date)
-                (title (calendar-month-name m))
-                (tag (format "M%02d" m)))
-          (->> (build-day-headline date headlines)
-               (org-ml-build-headline! :title-text title
-                                       :level 2
-                                       :tags (list tag)))))
+        (-let (((_ m _) date))
+          (->> (org-x-dag-build-day-headline date headlines)
+               (list)
+               (org-x-dag-build-month-headline m))))
        (build-yr-headline
         (date headlines)
-        (-let* (((y _ _) date)
-                (title (number-to-string y))
-                (tag (format "Y%d" y)))
+        (-let* (((y _ _) date))
           (->> (build-mo-headline date headlines)
-               (org-ml-build-headline! :title-text title :tags (list tag))))))
+               (list)
+               (org-x-dag-build-year-headline y)))))
     (org-x-with-file (org-x-get-daily-plan-file)
       (-let (((y m d) date)
              (sts (org-ml-parse-subtrees 'all)))
@@ -578,7 +620,7 @@ A date like (YEAR MONTH DAY).")
                                       (org-x-dag-headlines-find-day d)))
                     (org-ml-update* (org-ml-set-children headlines it) st-day)
                   (org-ml-update*
-                    (-snoc it (build-day-headline date headlines))
+                    (-snoc it (org-x-dag-build-day-headline date headlines))
                     st-mo))
               (org-ml-update*
                 (-snoc it (build-mo-headline date headlines))
@@ -598,13 +640,24 @@ A date like (YEAR MONTH DAY).")
 
 (defun org-x-dag-dlp-add-task (date title ids time)
   (let ((datetime `(,@date ,@time)))
-    (->> (org-ml-build-headline! :level 4
-                                 :title-text title
-                                 :planning `(:scheduled ,datetime)
-                                 :todo-keyword org-x-kw-todo)
-         (org-x-dag-headline-add-id)
-         (org-x-dag-headline-set-parent-links ids)
+    (->> (org-x-dag-build-dlp-headline title nil ids datetime)
          (org-x-dag-dlp-add date))))
+
+(defun org-x-dag-date->dlp-ids (date)
+  (-let* (((y m d) date)
+          (target-tags (list (org-x-dag-format-year-tag y)
+                             (org-x-dag-format-month-tag m)
+                             (org-x-dag-format-day-tag d))))
+    (->> (list (org-x-get-daily-plan-file))
+         (org-x-dag-files->ids)
+         (--filter (let ((ts (org-x-dag-id->tags t nil it)))
+                     (seq-set-equal-p ts target-tags #'equal))))))
+
+(defun org-x-dag-date->dlp-action-ids (date)
+  (let ((dlp-ids (org-x-dag-date->dlp-ids date)))
+    (->> (org-x-get-action-and-incubator-files)
+         (org-x-dag-files->ids)
+         (--filter (-intersection (org-x-dag-id->children it) dlp-ids)))))
 
 ;;; BUFFER SCANNING
 
@@ -724,6 +777,8 @@ valid keyword or none of its parents have valid keywords."
   `(,(org-x-get-lifetime-goal-file)
     ,(org-x-get-endpoint-goal-file)
     ,(org-x-qtp-get-file)
+    ,(org-x-get-weekly-plan-file)
+    ,(org-x-get-daily-plan-file)
     ,@(org-x-get-action-and-incubator-files)))
 
 (defun org-x-dag-get-md5 (path)
