@@ -28,15 +28,165 @@
 (require 'dag)
 (require 'ht)
 
+;;; DATE/TIME FUNCTIONS
+
+;; current state
+
+(defun org-x-dag-current-datetime ()
+  (->> (current-time)
+       (decode-time)
+       (-drop 1)
+       (-take 5)
+       (reverse)))
+
+(defun org-x-dag-current-date ()
+  (-take 3 (org-x-dag-current-datetime)))
+
+(defun org-x-dag-current-time ()
+  (-drop 3 (org-x-dag-current-datetime)))
+
+(defun org-x-dag-date-at-current-time (date)
+  `(,@date ,@(org-x-dag-current-time)))
+
+;; calendar interface
+
+(defun org-x-dag-gregorian-to-date (greg)
+  (-let (((m d y) greg))
+    `(,y ,m ,d)))
+
+(defun org-x-dag-date-to-gregorian (date)
+  (-let (((y m d) date))
+    `(,m ,d ,y)))
+
+(defun org-x-dag-date-to-absolute (date)
+  (->> (org-x-dag-date-to-gregorian date)
+       (calendar-absolute-from-gregorian)))
+
+(defun org-x-dag-absolute-to-date (abs)
+  (->> (calendar-gregorian-from-absolute abs)
+       (org-x-dag-gregorian-to-date)))
+
+;; datetime operations
+
+(defun org-x-dag-datetime< (datetime0 datetime1)
+  (org-x-dag-with-times datetime0 datetime1
+    (-when-let (next (->> (-zip-with #'cons datetime0 datetime1)
+                          (--drop-while (= (car it) (cdr it)))
+                          (car)))
+      (< (car next) (cdr next)))))
+
+(defun org-x-dag-datetime= (datetime0 datetime1)
+  (org-x-dag-with-times datetime0 datetime1
+    (->> (-zip-with #'cons datetime0 datetime1)
+         (--drop-while (= (car it) (cdr it)))
+         (not))))
+
+(defun org-x-dag-datetime-split (datetime)
+  ;; TODO this function doesn't guarantee that a short timestamp is properly
+  ;; formatted
+  (if (org-ml-time-is-long datetime)
+      (-split-at 3 datetime)
+    `(,(-take 3 datetime) nil)))
+
+(defun org-x-dag-datetime-shift (datetime shift unit)
+  (cl-flet*
+      ((enc-dec-long
+        (y m d H M)
+        (-let (((_ M* H* d* m* y* _ _ _)
+                (->> (list 0 M H d m y nil nil (current-time-zone))
+                     (encode-time)
+                     (decode-time))))
+          (list y* m* d* H* M*)))
+       (enc-dec-short
+        (y m d)
+        (-take 3 (enc-dec-long y m d 0 0))))
+    (pcase datetime
+      ((or `(,y ,m ,d) `(,y ,m ,d nil nil))
+       (pcase unit
+         ('month (enc-dec-short y (+ m shift) d))
+         ('submonth (enc-dec-short y m (+ d shift)))))
+      (`(,y ,m ,d ,H ,M)
+       (pcase unit
+         ('month (enc-dec-long y (+ m shift) d H M))
+         ('submonth (enc-dec-long y m d H (+ M shift))))))))
+
+(defun org-x-dag-date-diff (date0 date1)
+  ""
+  (pcase (list date0 date1)
+    (`((,y0 ,m0 ,d0) (,y1 ,m1 ,d1))
+     (- (calendar-absolute-from-gregorian `(,m0 ,d0 ,y0))
+        (calendar-absolute-from-gregorian `(,m1 ,d1 ,y1))))
+    (_ (error "Invalid date format(s): %S or %S" date0 date1))))
+
+;; date <-> week
+
+(defun org-x-dag-date-to-week-number (date)
+  (-let* (((y m d) date)
+          (greg (org-x-dag-date-to-gregorian date))
+          (abs (calendar-absolute-from-gregorian greg))
+          (daynum (calendar-day-of-week greg))
+          ;; Catch the special case where the first few days of January might
+          ;; belong to the previous year
+          (start-year (if (and (= 1 m) (< d (1+ daynum))) (1- y)))
+          (start-greg `(1 1 ,start-year))
+          (start-daynum (calendar-day-of-week start-greg))
+          (start-abs (calendar-absolute-from-gregorian start-greg))
+          (start-diff (if (= 0 start-daynum) 0 (- 7 start-daynum))))
+    (1+ (/ (- abs start-abs start-diff) 7))))
+
+(defun org-x-dag-week-number-to-date (year weeknum)
+  (let* ((start-greg `(1 1 ,year))
+         (start-abs (calendar-absolute-from-gregorian start-greg))
+         (start-weeknum (calendar-day-of-week start-greg))
+         (start-diff (if (= 0 start-weeknum) 0 (- 7 start-weeknum))))
+    (->> (* (1- weeknum) 7)
+         (+ start-abs start-diff)
+         (org-x-dag-absolute-to-date))))
+
+(defun org-x-dag-date-to-week-start (date)
+  ""
+  (let* ((greg (org-x-dag-date-to-gregorian date))
+         (daynum (calendar-day-of-week greg)))
+    (-> (calendar-absolute-from-gregorian greg)
+        (- daynum)
+        (org-x-dag-absolute-to-date))))
+
+;; date <-> quarter
+
+(defun org-x-dag-quarter-to-date (quarter)
+  (-let (((y q) quarter))
+    (list y (1+ (* q 3)) 1)))
+
+(defun org-x-dag-shift-quarter (quarter n unit)
+  (-let (((y q) quarter))
+    (pcase unit
+      (`year `(,(+ n y) ,q))
+      (`quarter
+       (let* ((x (+ q n))
+              (q* (mod x 4))
+              (y* (+ y (floor (/ x 4.0)))))
+         `(,y* ,q*))))))
+
+(defun org-x-dag-quarter-diff (quarter1 quarter2)
+  (cl-flet
+      ((qt-to-abs
+        (q)
+        (->> (org-x-dag-quarter-to-date q)
+             (org-x-dag-date-to-absolute))))
+    (- (qt-to-abs quarter1) (qt-to-abs quarter2))))
+
 ;;; GLOBAL STATE
 
 ;; variables to store state
 
-(defun org-x-dag-create (d m f)
-  (list :dag d :id->meta m :file->ids f))
+(defun org-x-dag-create (d m f c)
+  (list :dag d :id->meta m :file->ids f :current-date c))
 
 (defun org-x-dag-empty ()
-  (org-x-dag-create (dag-empty) (ht-create #'equal) (ht-create #'equal)))
+  (org-x-dag-create (dag-empty)
+                    (ht-create #'equal)
+                    (ht-create #'equal)
+                    (org-x-dag-current-date)))
 
 (defvar org-x-dag (org-x-dag-empty)
                         
@@ -220,64 +370,12 @@ Is a list like (YEAR QUARTER).")
   "The current week to be used for planning.
 A date like (YEAR MONTH DAY).")
 
-(defvar org-x-dag-week-start-index 0
-  "The day considered to start a week (0 = Sunday).")
+;; (defvar org-x-dag-week-start-index 0
+;;   "The day considered to start a week (0 = Sunday).")
 
 (defvar org-x-dag-selected-date nil
   "The current week to be used for planning.
 A date like (YEAR MONTH DAY).")
-
-(defun org-x-dag-gregorian-to-date (greg)
-  (-let (((m d y) greg))
-    `(,y ,m ,d)))
-
-(defun org-x-dag-set-planning-quarter-at-date (date)
-  ;; ASSUME the date is valid with no overflow digits
-  (-let (((y m _) date))
-    (setq org-x-dag-selected-quarter `(,y ,(/ m 3)))))
-
-(defun org-x-dag-date-to-week-number (date)
-  (-let* (((y m d) date)
-          (greg (org-x-dag-date-to-gregorian date))
-          (abs (calendar-absolute-from-gregorian greg))
-          (daynum (calendar-day-of-week greg))
-          ;; Catch the special case where the first few days of January might
-          ;; belong to the previous year
-          (start-year (if (and (= 1 m) (< d (1+ daynum))) (1- y)))
-          (start-greg `(1 1 ,start-year))
-          (start-daynum (calendar-day-of-week start-greg))
-          (start-abs (calendar-absolute-from-gregorian start-greg))
-          (start-diff (if (= 0 start-daynum) 0 (- 7 start-daynum))))
-    (1+ (/ (- abs start-abs start-diff) 7))))
-
-(defun org-x-dag-week-number-to-date (year weeknum)
-  (let* ((start-greg `(1 1 ,year))
-         (start-abs (calendar-absolute-from-gregorian start-greg))
-         (start-weeknum (calendar-day-of-week start-greg))
-         (start-diff (if (= 0 start-weeknum) 0 (- 7 start-weeknum))))
-    (->> (* (1- weeknum) 7)
-         (+ start-abs start-diff)
-         (calendar-gregorian-from-absolute)
-         (org-x-dag-gregorian-to-date))))
-
-(defun org-x-dag-date-to-week-start (date)
-  ""
-  (let ((greg (org-x-dag-date-to-gregorian date)))
-    (while (not (= (calendar-day-of-week greg) org-x-dag-week-start-index))
-      (setq greg (->> (calendar-absolute-from-gregorian greg)
-                      (1-)
-                      (calendar-gregorian-from-absolute))))
-    (org-x-dag-gregorian-to-date greg)))
-
-(defun org-x-dag-set-planning-week-at-date (date)
-  (setq org-x-dag-selected-week date))
-
-(defun org-x-dag-set-planning-date (date)
-  ;; TODO validate date?
-  (let ((week-start (org-x-dag-date-to-week-start date)))
-    (setq org-x-dag-selected-date date)
-    (setq org-x-dag-selected-week week-date)
-    (org-x-dag-set-planning-quarter-at-date week-date)))
 
 ;;; PLANNING
 
@@ -308,7 +406,7 @@ A date like (YEAR MONTH DAY).")
   (format "W%02d" week))
 
 (defun org-x-dag-format-day-of-week-tag (daynum)
-  (alist-get daynum org-x-dag-week-start-index))
+  (alist-get daynum org-x-dag-weekly-tags))
 
 (defun org-x-dag-format-day-tag (day)
   (format "D%02d" day))
@@ -983,42 +1081,6 @@ encountered will be returned."
        ,form
      (error "Datetimes are invalid lengths: %S and %S" ,datetime0 ,datetime1)))
 
-;; TODO this function name sucks, call it datetime
-(defun org-x-dag-date< (datetime0 datetime1)
-  (org-x-dag-with-times datetime0 datetime1
-    (-when-let (next (->> (-zip-with #'cons datetime0 datetime1)
-                          (--drop-while (= (car it) (cdr it)))
-                          (car)))
-      (< (car next) (cdr next)))))
-
-(defun org-x-dag-date= (datetime0 datetime1)
-  (org-x-dag-with-times datetime0 datetime1
-    (->> (-zip-with #'cons datetime0 datetime1)
-         (--drop-while (= (car it) (cdr it)))
-         (not))))
-
-(defun org-x-dag-time-shift (datetime shift unit)
-  (cl-flet*
-      ((enc-dec-long
-        (y m d H M)
-        (-let (((_ M* H* d* m* y* _ _ _)
-                (->> (list 0 M H d m y nil nil (current-time-zone))
-                     (encode-time)
-                     (decode-time))))
-          (list y* m* d* H* M*)))
-       (enc-dec-short
-        (y m d)
-        (-take 3 (enc-dec-long y m d 0 0))))
-    (pcase datetime
-      ((or `(,y ,m ,d) `(,y ,m ,d nil nil))
-       (pcase unit
-         ('month (enc-dec-short y (+ m shift) d))
-         ('submonth (enc-dec-short y m (+ d shift)))))
-      (`(,y ,m ,d ,H ,M)
-       (pcase unit
-         ('month (enc-dec-long y (+ m shift) d H M))
-         ('submonth (enc-dec-long y m d H (+ M shift))))))))
-
 (defun org-x-dag-repeater-get-next (sel-datetime datetime shift shifttype reptype)
   "Return the next timestamp repeater of DATETIME."
   (pcase reptype
@@ -1031,17 +1093,17 @@ encountered will be returned."
      (let ((next datetime)
            (pastp t))
        (while pastp
-         (setq next (org-x-dag-time-shift next shift shifttype)
-               pastp (org-x-dag-date< next sel-datetime)))
+         (setq next (org-x-dag-datetime-shift next shift shifttype)
+               pastp (org-x-dag-datetime< next sel-datetime)))
        next))
     ('restart
      ;; Next time is one repeater interval after now
      ;;
      ;; ASSUME cur needs to match the length of time
-     (org-x-dag-time-shift sel-datetime shift shifttype))
+     (org-x-dag-datetime-shift sel-datetime shift shifttype))
     ('cumulate
      ;; Next time is one repeater interval after the base timestamp
-     (org-x-dag-time-shift datetime shift shifttype))))
+     (org-x-dag-datetime-shift datetime shift shifttype))))
 
 (defun org-x-dag-unfold-timestamp (cur datetime rep future-limit)
   "Return all timestamps associated with DATETIME.
@@ -1050,24 +1112,20 @@ If REP is nil, return a singleton list just containing DATETIME.
 If REP is non-nil, return DATETIME and all repeaters up until
 FUTURE-LIMIT in a list."
   ;; ASSUME pts and future-limit are both long or short timestamps
-  (unless (org-x-dag-date< future-limit datetime)
+  (unless (org-x-dag-datetime< future-limit datetime)
     (pcase rep
       (`nil `(,datetime))
       (`(,value ,unit ,reptype)
        (->> (org-x-dag-repeater-get-next cur datetime value unit reptype)
-            (--unfold (unless (org-x-dag-date< future-limit it)
-                        (cons it (org-x-dag-time-shift it value unit))))
+            (--unfold (unless (org-x-dag-datetime< future-limit it)
+                        (cons it (org-x-dag-datetime-shift it value unit))))
             (cons datetime))))))
-
-(defun org-x-dag-date-add-time (date)
-  (-let (((_ M H) (decode-time (current-time))))
-    `(,@date ,H ,M)))
 
 (defun org-x-dag-get-scheduled-at (sel-date pts)
   (-let* (((&plist :datetime d :repeater r) pts)
           (islongp (org-ml-time-is-long d))
           (future-limit (if islongp `(,@sel-date 23 59) sel-date))
-          (sel-datetime (if islongp (org-x-dag-date-add-time sel-date) sel-date)))
+          (sel-datetime (if islongp (org-x-dag-date-at-current-time sel-date) sel-date)))
     (org-x-dag-unfold-timestamp sel-datetime d r future-limit)))
 
 (defun org-x-dag-get-deadlines-at (sel-date pts)
@@ -1077,8 +1135,8 @@ FUTURE-LIMIT in a list."
            (if w w
              (let ((f (if islongp 1440 1)))
                `(,(* f org-deadline-warning-days) submonth))))
-          (sel-datetime (if islongp (org-x-dag-date-add-time sel-date) sel-date))
-          (future-limit (org-x-dag-time-shift sel-datetime warn-shift warn-shifttype)))
+          (sel-datetime (if islongp (org-x-dag-date-at-current-time sel-date) sel-date))
+          (future-limit (org-x-dag-datetime-shift sel-datetime warn-shift warn-shifttype)))
     (org-x-dag-unfold-timestamp sel-datetime d r future-limit)))
 
 (defun org-x-dag-headline-get-planning ()
@@ -1119,24 +1177,6 @@ FUTURE-LIMIT in a list."
             ;; misc
             'type (concat "tagsmatch" ts-type)))))
 
-(defun org-x-dag-date-to-gregorian (date)
-  (-let (((y m d) date))
-    `(,m ,d ,y)))
-
-(defun org-x-dag-time-get-clock-time (time)
-  (when (org-ml-time-is-long time) (list (nth 3 time) (nth 4 time))))
-
-(defun org-x-dag-time-partition (time)
-  (if (org-ml-time-is-long time) (-split-at 3 time) `(,(-take 3 time) nil)))
-
-(defun org-x-dag-date-diff (date0 date1)
-  ""
-  (pcase (list date0 date1)
-    (`((,y0 ,m0 ,d0) (,y1 ,m1 ,d1))
-     (- (calendar-absolute-from-gregorian `(,m0 ,d0 ,y0))
-        (calendar-absolute-from-gregorian `(,m1 ,d1 ,y1))))
-    (_ (error "Invalid date format(s): %S or %S" date0 date1))))
-
 (defun org-x-dag-format-item (id extra category tags time)
   (let* ((tags* (org-x-dag-prepare-tags tags))
          (head (org-get-heading))
@@ -1153,26 +1193,21 @@ FUTURE-LIMIT in a list."
             'priority priority))))
 
 (defun org-x-dag-planning-props (id face pos date ts-date type)
-  (cl-flet
-      ((to-abs
-        (date)
-        (->> (org-x-dag-date-to-gregorian date)
-             (calendar-absolute-from-gregorian))))
-    (list
-     ;; face
-     'face (if (org-x-dag-id->is-done-p id) 'org-agenda-done face)
-     'undone-face face
-     'done-face 'org-agenda-done
-     ;; marker
-     'org-hd-marker (org-agenda-new-marker)
-     'org-marker (org-agenda-new-marker pos)
-     ;; headline stuff
-     'date (to-abs date)
-     'ts-date (to-abs ts-date)
-     'type type)))
+  (list
+   ;; face
+   'face (if (org-x-dag-id->is-done-p id) 'org-agenda-done face)
+   'undone-face face
+   'done-face 'org-agenda-done
+   ;; marker
+   'org-hd-marker (org-agenda-new-marker)
+   'org-marker (org-agenda-new-marker pos)
+   ;; headline stuff
+   'date (org-x-dag-date-to-absolute date)
+   'ts-date (org-x-dag-date-to-absolute ts-date)
+   'type type))
 
 (defun org-x-dag-format-scheduled-node (sel-date pos datetime category tags id)
-  (-let* (((this-date this-time) (org-x-dag-time-partition datetime))
+  (-let* (((this-date this-time) (org-x-dag-datetime-split datetime))
           (diff (org-x-dag-date-diff this-date sel-date))
           (pastp (< diff 0))
           (todayp (= diff 0))
@@ -1192,7 +1227,7 @@ FUTURE-LIMIT in a list."
         (org-add-props props))))
 
 (defun org-x-dag-format-deadline-node (sel-date pos datetime category tags id)
-  (-let* (((this-date this-time) (org-x-dag-time-partition datetime))
+  (-let* (((this-date this-time) (org-x-dag-datetime-split datetime))
           (diff (org-x-dag-date-diff this-date sel-date))
           (pastp (< diff 0))
           (futurep (< 0 diff))
@@ -1729,8 +1764,8 @@ FUTURE-LIMIT in a list."
               (-let (((&plist :pos) pts)
                      (donep (org-x-dag-id->is-done-p id)))
                 (--> datetimes
-                     (--remove (and donep (not (org-x-dag-date= (-take 3 it) sel-date))) it)
-                     (if (not todayp) (--remove (org-x-dag-date< (-take 3 it) sel-date) it) it)
+                     (--remove (and donep (not (org-x-dag-datetime= (-take 3 it) sel-date))) it)
+                     (if (not todayp) (--remove (org-x-dag-datetime< (-take 3 it) sel-date) it) it)
                      (--map (funcall format-datetime-fun sel-date pos it cat tags id) it)))))))
        (format-id
         (todayp cat id)
@@ -1748,9 +1783,7 @@ FUTURE-LIMIT in a list."
                                     #'org-x-dag-format-scheduled-node))))))))
     (org-x-dag-with-files (org-x-get-action-files)
         nil
-      (let ((todayp (->> (org-x-dag-date-to-gregorian sel-date)
-                         (calendar-absolute-from-gregorian)
-                         (= (org-today)))))
+      (let ((todayp (= (org-x-dag-date-to-absolute sel-date) (org-today))))
         (format-id todayp it-category it)))))
 
 (defun org-x-dag-scan-quarterly-plan ()
@@ -1905,29 +1938,6 @@ FUTURE-LIMIT in a list."
    headline))
 
 ;;; ALLOCATION
-
-(defun org-x-dag-quarter-to-date (quarter)
-  (-let (((y q) quarter))
-    (list y (1+ (* q 3)) 1)))
-
-(defun org-x-dag-shift-quarter (quarter n unit)
-  (-let (((y q) quarter))
-    (pcase unit
-      (`year `(,(+ n y) ,q))
-      (`quarter
-       (let* ((x (+ q n))
-              (q* (mod x 4))
-              (y* (+ y (floor (/ x 4.0)))))
-         `(,y* ,q*))))))
-
-(defun org-x-dag-quarter-diff (quarter1 quarter2)
-  (cl-flet
-      ((qt-to-abs
-        (q)
-        (->> (org-x-dag-quarter-to-date q)
-             (org-x-dag-date-to-gregorian)
-             (calendar-absolute-from-gregorian))))
-    (- (qt-to-abs quarter1) (qt-to-abs quarter2))))
 
 (pcase-defmacro regexp (capture regexp)
   `(and x (let ,capture (s-match ,regexp x))))
