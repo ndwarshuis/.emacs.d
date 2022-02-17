@@ -127,7 +127,7 @@
           (daynum (calendar-day-of-week greg))
           ;; Catch the special case where the first few days of January might
           ;; belong to the previous year
-          (start-year (if (and (= 1 m) (< d (1+ daynum))) (1- y)))
+          (start-year (if (and (= 1 m) (< d (1+ daynum))) (1- y) y))
           (start-greg `(1 1 ,start-year))
           (start-daynum (calendar-day-of-week start-greg))
           (start-abs (calendar-absolute-from-gregorian start-greg))
@@ -156,6 +156,10 @@
 (defun org-x-dag-quarter-to-date (quarter)
   (-let (((y q) quarter))
     (list y (1+ (* q 3)) 1)))
+
+(defun org-x-dag-date-to-quarter (date)
+  (-let (((y m _) date))
+    (list y (1+ (/ m 3)))))
 
 (defun org-x-dag-shift-quarter (quarter n unit)
   (-let (((y q) quarter))
@@ -325,11 +329,134 @@ that file as it currently sits on disk.")
   (let ((filemap (plist-get org-x-dag :file->ids)))
     (--mapcat (ht-get filemap it) files)))
 
+(defun org-x-dag-file->ids (file)
+  (org-x-dag-files->ids `(,file)))
+
 (defun org-x-dag->epg-ids ()
-  (org-x-dag-files->ids `(,(org-x-get-endpoint-goal-file))))
+  (org-x-dag-file->ids (org-x-get-endpoint-goal-file)))
 
 (defun org-x-dag->ltg-ids ()
-  (org-x-dag-files->ids `(,(org-x-get-lifetime-goal-file))))
+  (org-x-dag-file->ids (org-x-get-lifetime-goal-file)))
+
+(defun org-x-dag->current-date ()
+  (plist-get org-x-dag :current-date))
+
+;; (defun org-x-dag->qtp-ids ()
+;;   (org-x-dag-file->ids (org-x-qtp-get-file)))
+
+;; (defun org-x-dag->wkp-ids ()
+;;   (org-x-dag-file->ids (org-x-get-weekly-plan-file)))
+
+(defun org-x-dag-filter-ids-tags (tags ids)
+  (--filter (seq-set-equal-p (org-x-dag-id->tags t nil it) tags #'equal) ids))
+
+(defun org-x-dag-date-to-quarter-tags (date)
+  (-let (((y q) (org-x-dag-date-to-quarter date)))
+    (list (org-x-dag-format-year-tag y)
+          (org-x-dag-format-quarter-tag q))))
+
+(defun org-x-dag-date-to-week-tags (date)
+  (-let (((y _ _) date)
+         (w (org-x-dag-date-to-week-number date)))
+    (list (org-x-dag-format-year-tag y)
+          (org-x-dag-format-week-tag w))))
+
+(defun org-x-dag-date-to-daily-tags (date)
+  (-let (((y m d) date))
+    (list (org-x-dag-format-year-tag y)
+          (org-x-dag-format-month-tag m)
+          (org-x-dag-format-day-tag d))))
+
+;; (defun org-x-dag-date->tagged-ids (id-getter tag-getter date)
+;;   (let ((target-tags (funcall tag-getter date)))
+;;     (org-x-dag-filter-ids-tags target-tags (funcall id-getter))))
+
+(defun org-x-dag-date->tagged-ids (ids tag-getter date)
+  (let ((target-tags (funcall tag-getter date)))
+    (org-x-dag-filter-ids-tags target-tags ids)))
+
+;; (defun org-x-dag-date->qtp-ids (date)
+;;   (org-x-dag-date->tagged-ids #'org-x-dag->qtp-ids
+;;                               #'org-x-dag-date-to-quarter-tags
+;;                               date))
+
+;; (defun org-x-dag-date->wkp-ids (date)
+;;   (org-x-dag-date->tagged-ids #'org-x-dag->wkp-ids
+;;                               #'org-x-dag-date-to-week-tags
+;;                               date))
+
+;; (defun org-x-dag->qtp-current-ids ()
+;;   (org-x-dag-date->qtp-ids (org-x-dag->current-date)))
+
+;; (defun org-x-dag->wkp-current-ids (date)
+;;   (org-x-dag-date->wkp-ids (org-x-dag->current-date)))
+
+
+;; (defun org-x-dag->dlp-ids ()
+;;   (org-x-dag-file->ids (org-x-get-daily-plan-file)))
+
+;; (defun org-x-dag-date->dlp-ids (date)
+;;   (org-x-dag-date->tagged-ids #'org-x-dag->dlp-ids
+;;                               #'org-x-dag-date-to-daily-tags
+;;                               date))
+
+;; (defun org-x-dag->dlp-current-ids (date)
+;;   (org-x-dag-date->dlp-ids (org-x-dag->current-date)))
+
+(defun org-x-dag-which->ids (file date-to-tag which)
+  (cl-flet
+      ((date-ids
+        (ids date)
+        (org-x-dag-date->tagged-ids ids date-to-tag date)))
+    (let ((ids (org-x-dag-file->ids file)))
+      (pcase which
+        (`all ids)
+        (`current (date-ids ids (org-x-dag->current-date)))
+        (date (date-ids ids date))))))
+
+(defun org-x-dag->qtp-ids (which)
+  (org-x-dag-which->ids (org-x-qtp-get-file)
+                        #'org-x-dag-date-to-quarter-tags
+                        which))
+
+(defun org-x-dag->wkp-ids (which)
+  (org-x-dag-which->ids (org-x-get-weekly-plan-file)
+                        #'org-x-dag-date-to-week-tags
+                        which))
+
+(defun org-x-dag->dlp-ids (which)
+  (org-x-dag-which->ids (org-x-get-daily-plan-file)
+                        #'org-x-dag-date-to-daily-tags
+                        which))
+
+(defun org-x-dag-partition-child-ids (files ids)
+  (->> (org-x-dag-files->ids files)
+       (--split-with (-intersection ids (org-x-dag-id->children it)))))
+
+(defun org-x-dag-id->has-child-in-files-p (id files)
+  (-intersection (org-x-dag-id->children id) (org-x-dag-files->ids files)))
+
+(defun org-x-dag-id->has-parent-in-files-p (id files)
+  (-intersection (org-x-dag-id->parents id) (org-x-dag-files->ids files)))
+
+(defun org-x-dag->dlp-action-ids (which)
+  (->> (org-x-dag->dlp-ids which)
+       (org-x-dag-partition-child-ids (org-x-get-action-and-incubator-files))))
+
+(defun org-x-dag->wkp-qtp-ids (which)
+  (->> (org-x-dag->wkp-ids which)
+       (org-x-dag-partition-child-ids (list (org-x-qtp-get-file)))))
+
+(defun org-x-dag->qtp-goal-ids (which)
+  (->> (org-x-dag->qtp-ids which)
+       (org-x-dag-partition-child-ids `(,(org-x-get-lifetime-goal-file)
+                                        ,(org-x-get-endpoint-goal-file)))))
+
+;; (defun org-x-dag-date->dlp-parent-ids (date)
+;;   (let ((dlp-ids (org-x-dag-date->dlp-ids date)))
+;;     (->> (org-x-get-action-and-incubator-files)
+;;          (org-x-dag-files->ids)
+;;          (--filter (-intersection (org-x-dag-id->children it) dlp-ids)))))
 
 (defun org-x-dag->leaf-epg-ids ()
   (-remove #'org-x-dag-id->headline-children (org-x-dag->epg-ids)))
@@ -740,22 +867,6 @@ A date like (YEAR MONTH DAY).")
   (let ((datetime `(,@date ,@time)))
     (->> (org-x-dag-build-dlp-headline title nil ids datetime)
          (org-x-dag-dlp-add date))))
-
-(defun org-x-dag-date->dlp-ids (date)
-  (-let* (((y m d) date)
-          (target-tags (list (org-x-dag-format-year-tag y)
-                             (org-x-dag-format-month-tag m)
-                             (org-x-dag-format-day-tag d))))
-    (->> (list (org-x-get-daily-plan-file))
-         (org-x-dag-files->ids)
-         (--filter (let ((ts (org-x-dag-id->tags t nil it)))
-                     (seq-set-equal-p ts target-tags #'equal))))))
-
-(defun org-x-dag-date->dlp-action-ids (date)
-  (let ((dlp-ids (org-x-dag-date->dlp-ids date)))
-    (->> (org-x-get-action-and-incubator-files)
-         (org-x-dag-files->ids)
-         (--filter (-intersection (org-x-dag-id->children it) dlp-ids)))))
 
 ;;; BUFFER SCANNING
 
@@ -1787,15 +1898,32 @@ FUTURE-LIMIT in a list."
         (format-id todayp it-category it)))))
 
 (defun org-x-dag-scan-quarterly-plan ()
-  (cl-flet
-      ((format-id
-        (category id)
-        (-> (org-x-dag-format-tag-node category nil id)
-            (org-add-props nil))))
-    (org-x-dag-with-files (list (org-x-qtp-get-file))
-        nil
-      (org-x-dag-with-id it
-        (list (format-id it-category it))))))
+  (let ((week-file (list (org-x-get-weekly-plan-file)))
+        (current-quarter (->> (org-x-dag->current-date)
+                              (org-x-dag-date-to-quarter))))
+    (cl-flet
+        ((format-id
+          (id)
+          (org-x-dag-with-id id
+            (let ((alloc (-some->> (org-x-dag-get-local-property org-x-prop-allocate)
+                           (org-x-dag-allocation-fraction current-quarter)))
+                  (assignedp (org-x-dag-id->has-child-in-files-p id week-file)))
+              (-> (org-x-dag-format-tag-node "goal" nil id)
+                  (org-add-props nil
+                      'x-assignedp assignedp
+                      'x-alloc (or alloc 0)))))))
+      (org-x-with-file (org-x-qtp-get-file)
+        (-map #'format-id (org-x-dag->qtp-ids 'current))))))
+
+;; (cl-flet
+;;     ((format-id
+;;       (category id)
+;;       (-> (org-x-dag-format-tag-node category nil id)
+;;           (org-add-props nil))))
+;;   (org-x-dag-with-files (list (org-x-qtp-get-file))
+;;       nil
+;;     (org-x-dag-with-id it
+;;       (list (format-id it-category it))))))
 
 ;;; AGENDA VIEWS
 
