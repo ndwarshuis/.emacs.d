@@ -348,7 +348,7 @@ that file as it currently sits on disk.")
 ;;   (org-x-dag-file->ids (org-x-get-weekly-plan-file)))
 
 (defun org-x-dag-filter-ids-tags (tags ids)
-  (--filter (seq-set-equal-p (org-x-dag-id->tags t nil it) tags #'equal) ids))
+  (--filter (-intersection (org-x-dag-id->tags t nil it) tags) ids))
 
 (defun org-x-dag-date-to-quarter-tags (date)
   (-let (((y q) (org-x-dag-date-to-quarter date)))
@@ -1907,13 +1907,41 @@ FUTURE-LIMIT in a list."
           (org-x-dag-with-id id
             (let ((alloc (-some->> (org-x-dag-get-local-property org-x-prop-allocate)
                            (org-x-dag-allocation-fraction current-quarter)))
-                  (assignedp (org-x-dag-id->has-child-in-files-p id week-file)))
-              (-> (org-x-dag-format-tag-node "goal" nil id)
+                  (assignedp (org-x-dag-id->has-child-in-files-p id week-file))
+                  (tags (->> (org-x-dag-id->parents id)
+                             (--mapcat (org-x-dag-id->tags id nil it))
+                             (--filter (= (elt it 0) org-x-tag-category-prefix)))))
+              (-> (org-x-dag-format-tag-node "goal" tags id)
                   (org-add-props nil
                       'x-assignedp assignedp
+                      ;; override face
+                      'face (if assignedp 'org-warning 'default)
                       'x-alloc (or alloc 0)))))))
       (org-x-with-file (org-x-qtp-get-file)
         (-map #'format-id (org-x-dag->qtp-ids 'current))))))
+
+(defun org-x-dag-scan-weekly-plan ()
+  (let ((daily-file (list (org-x-get-daily-plan-file))))
+    (cl-flet
+        ((format-id
+          (id)
+          (org-x-dag-with-id id
+            ;; TODO this assigned thing needs to be limited in scope to the
+            ; the current ids of the time period in question
+            (let* ((assignedp (org-x-dag-id->has-child-in-files-p id daily-file))
+                   (day (-some->> (org-x-dag-id->tags t nil id)
+                          ;; TODO I guess this works...could be more precise
+                          (--filter (s-matches-p "[A-Z]\\{3\\}" it))
+                          (car)))
+                   (daynum (car (rassoc day org-x-dag-weekly-tags))))
+              (-> (org-x-dag-format-tag-node "goal" nil id)
+                  (org-add-props nil
+                      'x-assignedp assignedp
+                      'x-day-of-week (format "%d. %s" daynum day)
+                      ;; override face
+                      'face (if assignedp 'org-warning 'default)))))))
+      (org-x-with-file (org-x-get-weekly-plan-file)
+        (-map #'format-id (org-x-dag->wkp-ids 'current))))))
 
 ;; (cl-flet
 ;;     ((format-id
@@ -2098,6 +2126,59 @@ FUTURE-LIMIT in a list."
                (mins (hhmm-to-mins H M)))
            (/ (* mins d*) qt-mins)))
         (e (error "Invalid allocation: %s" e))))))
+
+;;; AGENDA VIEWS
+
+(defun org-x-dag-agenda-run-series (name files cmds)
+  (declare (indent 2))
+  (catch 'exit
+    (let ((org-agenda-buffer-name (format "*Agenda: %s*" name)))
+      (org-agenda-run-series name `((,@cmds) ((org-agenda-files ',files)))))))
+
+(defun org-x-dag-agenda-call (buffer-name header-name type match files settings)
+  (declare (indent 5))
+  (let* ((n (or header-name buffer-name))
+         (s `((org-agenda-overriding-header ,n) ,@settings)))
+    (org-x-dag-agenda-run-series buffer-name files `((,type ,match ,s)))))
+
+;; TODO the tags in the far column are redundant
+(defun org-x-dag-agenda-quarterly-plan ()
+  (interactive)
+  (let ((match ''org-x-dag-scan-quarterly-plan)
+        (files (org-x-get-action-files))
+        (header (->> (org-x-dag->current-date)
+                     (org-x-dag-date-to-quarter)
+                     (apply #'format "Quarterly Plan: %d Q%d"))))
+    (org-x-dag-agenda-call "Quarterly Plan" nil #'org-x-dag-show-nodes match files
+      `((org-agenda-todo-ignore-with-date t)
+        (org-agenda-overriding-header ,header)
+        (org-agenda-sorting-strategy '(user-defined-up category-keep))
+        ;; TODO add allocation (somehow)
+        (org-agenda-prefix-format '((tags . "  ")))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (let ((bucket (car (get-text-property 1 'tags line))))
+                (--> (-map #'cdr org-x-life-categories)
+                     (--find (equal (plist-get it :tag) bucket) it)
+                     (plist-get it :desc)))))))))))
+
+(defun org-x-dag-agenda-weekly-plan ()
+  (interactive)
+  (let* ((match ''org-x-dag-scan-weekly-plan)
+         (files (org-x-get-action-files))
+         (date (org-x-dag->current-date))
+         (header (->> (org-x-dag-date-to-week-number date)
+                      (format "Weekly Plan: %d W%02d" (car date)))))
+    (org-x-dag-agenda-call "Weekly Plan" nil #'org-x-dag-show-nodes match files
+      `((org-agenda-todo-ignore-with-date t)
+        (org-agenda-overriding-header ,header)
+        (org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-agenda-prefix-format '((tags . "  ")))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (get-text-property 1 'x-day-of-week line)))))))))
 
 (provide 'org-x-dag)
 ;;; org-x-dag.el ends here
