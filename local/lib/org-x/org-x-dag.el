@@ -291,6 +291,11 @@ that file as it currently sits on disk.")
           (parent-tags (and inherit? (ascend id nil))))
       (append local-tags parent-tags init))))
 
+(defun org-x-dag-id->title (id)
+  (org-x-dag-with-id-in-file id
+    (->> (org-get-heading t t t t)
+         (substring-no-properties))))
+
 (defun org-x-dag-id->bucket (inherit? id)
   (-some->> (org-x-dag-id->tags inherit? nil id)
     (--find (= (elt it 0) org-x-tag-category-prefix))
@@ -2047,10 +2052,11 @@ FUTURE-LIMIT in a list."
         (let ((first (car (org-ml-item-get-paragraph item))))
           (if (and (org-ml-is-type 'link first)
                    (equal (org-ml-get-property :type first) "id"))
-              (->> (org-ml-get-children first)
-                   (-map #'org-ml-to-trimmed-string)
-                   (apply #'concat)
-                   (cons (org-ml-get-property :path first)))
+              (org-ml-get-property :path first)
+              ;; (->> (org-ml-get-children first)
+              ;;      (-map #'org-ml-to-trimmed-string)
+              ;;      (apply #'concat)
+              ;;      (cons (org-ml-get-property :path first)))
             (error "Invalid link node: %S" first)))))
     (-when-let (first (->> headline
                            (org-ml-headline-get-contents (org-x-logbook-config))
@@ -2072,11 +2078,12 @@ FUTURE-LIMIT in a list."
     (-if-let (i (--find-index (org-x--is-drawer-with-name
                                org-x-drwr-parent-links it)
                               it))
-        (let ((d (nth i it))
-              (pl (->> (-map #'org-x-dag-build-parent-link-item ids)
-                       (apply #'org-ml-build-plain-list))))
-          (-replace-at i (org-ml-set-children (list pl) d) it))
-      (cons (org-x-dag-build-parent-link-drawer ids) it))
+        (let ((d (nth i it)))
+          (-if-let (pl (-some->> (-map #'org-x-dag-id->link-item ids)
+                         (apply #'org-ml-build-plain-list)))
+              (-replace-at i (org-ml-set-children (list pl) d) it)
+            (-remove-at i it)))
+      (if ids (cons (org-x-dag-build-parent-link-drawer ids) it) it))
     headline))
 
 (defmacro org-x-dag-headline-map-parent-links* (form headline)
@@ -2085,12 +2092,12 @@ FUTURE-LIMIT in a list."
             (it (org-x-dag-headline-get-parent-links ,h)))
        (org-x-dag-headline-set-parent-links ,form ,h))))
 
-(defun org-x-dag-headline-add-parent-link (id desc headline)
-  (org-x-dag-headline-map-parent-links* (cons (cons id desc) it) headline))
+(defun org-x-dag-headline-add-parent-link (id headline)
+  (org-x-dag-headline-map-parent-links* (cons id it) headline))
 
 (defun org-x-dag-headline-remove-parent-link (id headline)
   (org-x-dag-headline-map-parent-links*
-   (--remove-first (equal (car it) id) it)
+   (--remove-first (equal it id) it)
    headline))
 
 ;;; ALLOCATION
@@ -2126,6 +2133,38 @@ FUTURE-LIMIT in a list."
                (mins (hhmm-to-mins H M)))
            (/ (* mins d*) qt-mins)))
         (e (error "Invalid allocation: %s" e))))))
+
+;;; INTERACTIVE FUNCTIONS
+
+(defun org-x-dag-add-id-to-this-headline (id)
+  (org-ml-update-this-headline*
+    (org-x-dag-headline-add-parent-link id it)))
+
+(defun org-x-dag-read-id (ids cur-ids)
+  (cl-flet
+      ((make-cell
+        (id cur-ids)
+        (let ((title (org-x-dag-id->title id))
+              (presentp (and (member id cur-ids) t)))
+          (list (format "%c %s" (if presentp ?* ?\s) title)
+                :id id
+                :title title
+                :presentp presentp))))
+    (let ((mapper (->> ids
+                       (--map (make-cell it cur-ids))
+                       (--sort (plist-get (cdr it) :presentp)))))
+      (print (-map #'cdr mapper))
+      (alist-get (completing-read "Node: " mapper) mapper nil nil #'equal))))
+
+(defun org-x-dag-link-ltg-to-epg ()
+  (if (not (equal (buffer-file-name) (org-x-get-endpoint-goal-file)))
+      (message "Not in endpoint goal file")
+    (org-ml-update-this-headline*
+      (-let* ((ltg-ids (org-x-dag->ltg-ids))
+              (cur-ids (org-x-dag-headline-get-parent-links it))
+              ((&plist :id i :presentp p) (org-x-dag-read-id ltg-ids cur-ids)))
+        (if p (org-x-dag-headline-remove-parent-link i it)
+          (org-x-dag-headline-add-parent-link i it))))))
 
 ;;; AGENDA VIEWS
 
