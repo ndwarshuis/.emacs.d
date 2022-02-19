@@ -2157,12 +2157,25 @@ FUTURE-LIMIT in a list."
       (alist-get (completing-read "Node: " mapper) mapper nil nil #'equal))))
 
 (defun org-x-dag-link-ltg-to-epg ()
+  (interactive)
   (if (not (equal (buffer-file-name) (org-x-get-endpoint-goal-file)))
       (message "Not in endpoint goal file")
     (org-ml-update-this-headline*
       (-let* ((ltg-ids (org-x-dag->ltg-ids))
               (cur-ids (org-x-dag-headline-get-parent-links it))
               ((&plist :id i :presentp p) (org-x-dag-read-id ltg-ids cur-ids)))
+        (if p (org-x-dag-headline-remove-parent-link i it)
+          (org-x-dag-headline-add-parent-link i it))))))
+
+(defun org-x-dag-link-goal-to-qtp ()
+  (interactive)
+  (if (not (equal (buffer-file-name) (org-x-qtp-get-file)))
+      (message "Not in quarterly plan file")
+    (org-ml-update-this-headline*
+      (-let* ((goal-ids (append (org-x-dag->ltg-ids)
+                               (org-x-dag->epg-ids)))
+              (cur-ids (org-x-dag-headline-get-parent-links it))
+              ((&plist :id i :presentp p) (org-x-dag-read-id goal-ids cur-ids)))
         (if p (org-x-dag-headline-remove-parent-link i it)
           (org-x-dag-headline-add-parent-link i it))))))
 
