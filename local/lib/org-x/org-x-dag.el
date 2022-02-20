@@ -1758,7 +1758,7 @@ FUTURE-LIMIT in a list."
           (let ((parents (org-x-dag-id->parents id)))
             (-if-let (goal-ids (--filter (member (org-x-dag-id->file it) goal-files) parents))
                 goal-ids
-              (-map #'get parents)))))
+              (-mapcat #'get parents)))))
       (get id))))
 
 (defun org-x-dag-scan-tasks-with-goals ()
@@ -2301,6 +2301,21 @@ FUTURE-LIMIT in a list."
          '((:auto-map
             (lambda (line)
               (get-text-property 1 'x-day-of-week line)))))))))
+
+(defun org-x-dag-agenda-tasks-by-goal ()
+  (interactive)
+  (let ((match ''org-x-dag-scan-tasks-with-goals)
+        (files (org-x-get-action-files)))
+    (nd/org-agenda-call "Tasks by Goal" nil #'org-x-dag-show-nodes match files
+      `((org-agenda-todo-ignore-with-date t)
+        (org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-if-let (i (get-text-property 1 'x-goal-id line))
+                  ;; TODO this is the literal ID, I want the headline text
+                  (substring-no-properties i)
+                "Unlinked")))))))))
 
 (provide 'org-x-dag)
 ;;; org-x-dag.el ends here
