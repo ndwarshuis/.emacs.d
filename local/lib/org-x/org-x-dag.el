@@ -950,16 +950,12 @@ valid keyword or none of its parents have valid keywords."
           ;; if its parent has a keyword or none of its parents have keywords
           (when (and has-todo (or this-parent-key (--none-p (nth 1 it) cur-path))
                      (setq this-key (org-x-dag-get-local-property "ID")))
-            ;; If parent is not a todo and we want tag inheritance, store all tags
-            ;; above this headline (sans file-tags which we can get later easily)
-            ;; (org-entry-get nil org-x-prop-parent-type)
-            ;; TODO add the file tags here so I don't need to worry about them
-            ;; later
-            (setq all-tags (if (and (not this-parent-key)
-                                    org-use-tag-inheritance)
+            ;; If parent is not a todo and we want tag inheritance, store all
+            ;; tags above this headline (including file tags)
+            (setq all-tags (if (and (not this-parent-key) org-use-tag-inheritance)
                                (->> cur-path
                                     (--mapcat (nth 2 it))
-                                    (append this-tags))
+                                    (append this-tags org-file-tags))
                              this-tags)
                   this-links (or (org-x-dag-get-parent-links)
                                  ;;(org-x-dag-get-link-property)
@@ -1680,7 +1676,7 @@ FUTURE-LIMIT in a list."
                       'x-priority priority))))))
        (format-key
         (cat key)
-        (let ((tags (org-x-dag-id->tags t org-file-tags key)))
+        (let ((tags (org-x-dag-id->tags t nil key)))
           ;; TODO don't hardcode these things
           (org-x-dag-with-id key
             (unless (or (member org-x-tag-incubated tags)
@@ -1704,7 +1700,7 @@ FUTURE-LIMIT in a list."
                     'x-status status))))))
     (org-x-dag-with-files (org-x-get-action-files)
         (org-x-dag-id->is-toplevel-p it)
-      (let ((tags (org-x-dag-id->tags t org-file-tags it)))
+      (let ((tags (org-x-dag-id->tags t nil it)))
         (unless (member org-x-tag-incubated tags)
           (org-x-dag-with-id it
             (when (org-x-dag-headline-is-iterator-p)
@@ -1725,11 +1721,12 @@ FUTURE-LIMIT in a list."
     (-some-> (org-x-dag-id->headline-children id)
       (descend))))
 
+;; TODO this includes tasks underneath cancelled headlines
 (defun org-x-dag-scan-tasks ()
   (cl-flet
       ((format-key
         (category is-standalone key)
-        (let ((tags (org-x-dag-id->tags t org-file-tags key)))
+        (let ((tags (org-x-dag-id->tags t nil key)))
           ;; filter out incubators
           (org-x-dag-with-id key
             (unless (or (member org-x-tag-incubated tags)
@@ -1776,7 +1773,7 @@ FUTURE-LIMIT in a list."
   (cl-flet
       ((format-key
         (category key)
-        (let ((tags (org-x-dag-id->tags t org-file-tags key)))
+        (let ((tags (org-x-dag-id->tags t nil key)))
           (when (member org-x-tag-incubated tags)
             (org-x-dag-with-id key
               (let* ((sch (org-x-dag-headline-is-scheduled-p t))
@@ -1796,7 +1793,7 @@ FUTURE-LIMIT in a list."
   (cl-flet
       ((format-key
         (category key)
-        (let ((tags (org-x-dag-id->tags t org-file-tags key)))
+        (let ((tags (org-x-dag-id->tags t nil key)))
           (unless (member org-x-tag-incubated tags)
             (org-x-dag-with-id key
               (-let (((is-archivable is-project)
@@ -1900,7 +1897,7 @@ FUTURE-LIMIT in a list."
       ((format-timestamps
         (todayp sel-date cat id pts get-datetimes-fun format-datetime-fun)
         (-when-let (datetimes (funcall get-datetimes-fun sel-date pts))
-          (let ((tags (org-x-dag-id->tags t org-file-tags id)))
+          (let ((tags (org-x-dag-id->tags t nil id)))
             (unless (member org-x-tag-incubated tags)
               (-let (((&plist :pos) pts)
                      (donep (org-x-dag-id->is-done-p id)))
