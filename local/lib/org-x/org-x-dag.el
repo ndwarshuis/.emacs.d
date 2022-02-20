@@ -931,7 +931,7 @@ valid keyword or none of its parents have valid keywords."
       (setq this-point (car (match-data))
             this-level (length (match-string 1))
             this-todo (match-string 2)
-            this-title (-if-let (s (match-string 3)) s "")
+            this-title (-if-let (s (match-string 3)) (s-trim s) "")
             this-tags (-some-> (match-string-no-properties 4)
                         (split-string ":" t))
             this-key nil)
@@ -2309,8 +2309,9 @@ FUTURE-LIMIT in a list."
             (lambda (line)
               (-if-let (i (get-text-property 1 'x-goal-id line))
                   ;; TODO this is the literal ID, I want the headline text
-                  (substring-no-properties i)
-                "Unlinked")))))))))
+                  (->> (org-x-dag-id->title i)
+                       (substring-no-properties))
+                "0. Unlinked")))))))))
 
 (provide 'org-x-dag)
 ;;; org-x-dag.el ends here
