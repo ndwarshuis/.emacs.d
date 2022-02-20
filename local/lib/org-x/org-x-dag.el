@@ -256,6 +256,10 @@ that file as it currently sits on disk.")
   "Return todo keyword for ID."
   (org-x-dag-id->metaprop id :todo))
 
+(defun org-x-dag-id->title (id)
+  "Return title for ID."
+  (org-x-dag-id->metaprop id :title))
+
 (defun org-x-dag-id->local-tags (id)
   "Return local tags for ID."
   (org-x-dag-id->metaprop id :tags))
@@ -292,11 +296,6 @@ that file as it currently sits on disk.")
           (parent-tags (and inherit? (ascend id nil))))
       (append local-tags parent-tags init))))
 
-(defun org-x-dag-id->title (id)
-  (org-x-dag-with-id-in-file id
-    (->> (org-get-heading t t t t)
-         (substring-no-properties))))
-
 (defun org-x-dag-id->bucket (inherit? id)
   (-some->> (org-x-dag-id->tags inherit? nil id)
     (--find (= (elt it 0) org-x-tag-category-prefix))
@@ -305,7 +304,7 @@ that file as it currently sits on disk.")
 
 (defun org-x-dag-id->link (id)
   (org-x-dag-with-id-in-file id
-    (let ((desc (org-get-heading t t t t)))
+    (let ((desc (org-x-dag-id->title id)))
       (->> (org-ml-build-secondary-string! desc)
            (apply #'org-ml-build-link id :type "id")))))
 
@@ -931,7 +930,8 @@ valid keyword or none of its parents have valid keywords."
       ;; headline if the parent also has a keyword.
       (setq this-point (car (match-data))
             this-level (length (match-string 1))
-            this-todo (match-string-no-properties 2)
+            this-todo (match-string 2)
+            this-title (-if-let (s (match-string 3)) s "")
             this-tags (-some-> (match-string-no-properties 4)
                         (split-string ":" t))
             this-key nil)
@@ -960,7 +960,7 @@ valid keyword or none of its parents have valid keywords."
                                               this-point
                                               this-level
                                               this-todo
-                                              (match-string-no-properties 3)
+                                              this-title
                                               all-tags
                                               this-parent-key))
         (!cons (cons this-key this-meta) acc-meta)
@@ -1262,7 +1262,10 @@ FUTURE-LIMIT in a list."
   ;; ASSUME I don't use subtree-level categories
   (-let* (;; (category (org-get-category))
           (tags* (org-x-dag-prepare-tags tags))
-          (head (org-get-heading))
+          (todo-state (org-x-dag-id->todo key))
+          ;; TODO the only reason this format thing is here is to satisfy
+          ;; `org-agenda-format-item' (which I should probably just rewrite)
+          (head (format "%s %s" todo-state (org-x-dag-id->title key)))
           (level (org-x-dag-id->formatted-level key))
           (marker (org-agenda-new-marker))
           ;; no idea what this function actually does
@@ -1279,7 +1282,7 @@ FUTURE-LIMIT in a list."
             'org-hd-marker marker
             'org-marker marker
             ;; headline stuff
-            'todo-state (org-x-dag-id->todo key)
+            'todo-state todo-state
             'priority priority
             'ts-date ts
             ;; misc
@@ -1287,9 +1290,9 @@ FUTURE-LIMIT in a list."
 
 (defun org-x-dag-format-item (id extra category tags time)
   (let* ((tags* (org-x-dag-prepare-tags tags))
-         (head (org-get-heading))
          (level (org-x-dag-id->formatted-level id))
          (todo-state (org-x-dag-id->todo id))
+         (head (format "%s %s" todo-state (org-x-dag-id->title id)))
          (time-str (-some->> time (apply #'format "%02i:%02i ")))
          (item (org-agenda-format-item extra head level category tags* time-str))
          ;; TODO why am I getting the priority after sending the headline
