@@ -216,11 +216,12 @@ that file as it currently sits on disk.")
 
 ;; functions to construct nodes within state
 
-(defun org-x-dag-build-meta (file point level todo tags parent)
+(defun org-x-dag-build-meta (file point level todo title tags parent)
   (list :file file
         :point point
         :level level
         :todo todo
+        :title title
         :tags tags
         :buffer-parent parent))
 
@@ -897,6 +898,13 @@ A date like (YEAR MONTH DAY).")
         (s-split "\n")
         (--map (cadr (s-match "id:\\([^][]\\{36\\}\\)" it)))))))
 
+(defun org-x-dag-line-regexp (kws)
+  (let ((level-re "\\(\\*+\\)")
+        (kw-re (format "\\(%s\\)?" (s-join "\\|" kws)))
+        (title-re "\\(.*?\\)?")
+        (tag-re "\\(?:\\([[:alnum:]_@#%%:]+\\):\\)?"))
+    (format "^%s[ ]+%s%s%s[ ]*$" level-re kw-re title-re tag-re)))
+
 (defun org-x-dag-get-buffer-nodes (file kws)
   "Return a list of nodes from FILE.
 
@@ -904,6 +912,7 @@ A node will only be returned if the headline to which it points
 has a valid (meaning in KWS) keyword and either its parent has a
 valid keyword or none of its parents have valid keywords."
   (let ((more t)
+        (line-re (org-x-dag-line-regexp kws))
         cur-path this-point this-key this-level this-todo has-todo this-parent
         this-tags this-meta all-tags this-file-links this-links acc acc-meta
         this-parent-key)
@@ -911,69 +920,55 @@ valid keyword or none of its parents have valid keywords."
     (goto-char (point-min))
     ;; If not on a headline, check for a property drawer with links in it
     (unless (= ?* (following-char))
-      ;; (setq this-file-links (org-x-dag-get-link-property)))
       (setq this-file-links (org-x-dag-get-parent-links)))
-    ;; move forward until on a headline
-    (while (and (not (= ?* (following-char))) (= 0 (forward-line 1))))
-    ;; Build alist; Keep track of how 'deep' we are in a given org-tree using a
-    ;; stack. The stack will have members like (LEVEL KEY) where LEVEL is the
-    ;; level of the headline and KEY is the node key if it has a keyword. Only
-    ;; add a node to the accumulator if it has a keyword, and only include its
-    ;; parent headline if the parent also has a keyword (add the link targets
-    ;; regardless).
-    (while more
-      (when (= ?* (following-char))
-        (setq this-point (point)
-              this-key nil)
-        ;; TODO this might be optimizable
-        ;; Get tags (must be done from the first column)
-        (setq this-tags (org--get-local-tags))
-        ;; Get the level if the following char is a space (if it isn't this is
-        ;; actually a bolded object that starts on the first column like
-        ;; '*blabla*'
-        (while (= ?* (following-char)) (forward-char 1))
-        (when (= 32 (following-char))
-          (setq this-level (current-column))
-          ;; Check if the headline has a keyword
-          (forward-char 1)
-          (while (not (memq (following-char) '(?  ?\n))) (forward-char 1))
-          (setq this-todo (-> (+ 1 this-point this-level)
-                              (buffer-substring (+ this-point (current-column))))
-                has-todo (member this-todo kws))
-          ;; Adjust the stack so that the top headline is the parent of the
-          ;; current headline
-          (while (and cur-path (<= this-level (nth 0 (car cur-path))))
-            (!cdr cur-path))
-          (setq this-parent (car cur-path)
-                this-parent-key (nth 1 this-parent))
-          ;; Add the current headline to accumulator if it has a keyword, but only
-          ;; if its parent has a keyword or none of its parents have keywords
-          (when (and has-todo (or this-parent-key (--none-p (nth 1 it) cur-path))
-                     (setq this-key (org-x-dag-get-local-property "ID")))
-            ;; If parent is not a todo and we want tag inheritance, store all
-            ;; tags above this headline (including file tags)
-            (setq all-tags (if (and (not this-parent-key) org-use-tag-inheritance)
-                               (->> cur-path
-                                    (--mapcat (nth 2 it))
-                                    (append this-tags org-file-tags))
-                             this-tags)
-                  this-links (or (org-x-dag-get-parent-links)
-                                 ;;(org-x-dag-get-link-property)
-                                 (when (not this-parent-key) this-file-links))
-                  this-meta (org-x-dag-build-meta file
-                                                  this-point
-                                                  this-level
-                                                  (substring-no-properties this-todo)
-                                                  all-tags
-                                                  this-parent-key))
-            (!cons (cons this-key this-meta) acc-meta)
-            (!cons (cons this-key (append (list (nth 1 this-parent)) this-links))
-                   acc))
-          ;; Add current headline to stack
-          (!cons (list this-level this-key this-tags) cur-path)))
-      (setq more (= 0 (forward-line 1))))
-    ;; TODO reverse these to make things make sense later?
-    (list acc acc-meta)))
+    ;; loop through all headlines
+    (while (re-search-forward line-re nil t)
+      ;; Keep track of how 'deep' we are in a given org-tree using a stack. The
+      ;; stack will have members like (LEVEL KEY TAGS) where LEVEL is the level
+      ;; of the headline and KEY is the node key if it has a keyword, and TAGS
+      ;; is a list of tags for the headlines. Only add a node to the accumulator
+      ;; if it has a keyword and an ID property, and only include its parent
+      ;; headline if the parent also has a keyword.
+      (setq this-point (car (match-data))
+            this-level (length (match-string 1))
+            this-todo (match-string-no-properties 2)
+            this-tags (-some-> (match-string-no-properties 4)
+                        (split-string ":" t))
+            this-key nil)
+      ;; Adjust the stack so that the top headline is the parent of the
+      ;; current headline
+      (while (and cur-path (<= this-level (nth 0 (car cur-path))))
+        (!cdr cur-path))
+      (setq this-parent (car cur-path)
+            this-parent-key (nth 1 this-parent))
+      ;; Add the current headline to accumulator if it has a keyword, but only
+      ;; if its parent has a keyword or none of its parents have keywords
+      (when (and this-todo
+                 (or this-parent-key (--none-p (nth 1 it) cur-path))
+                 (setq this-key (org-x-dag-get-local-property "ID")))
+        ;; If parent is not a todo and we want tag inheritance, store all
+        ;; tags above this headline (including file tags)
+        (setq all-tags (if (and (not this-parent-key) org-use-tag-inheritance)
+                           (->> cur-path
+                                (--mapcat (nth 2 it))
+                                (append this-tags org-file-tags))
+                         this-tags)
+              ;; TODO this could be inherited to make parent linking easier later
+              this-links (or (org-x-dag-get-parent-links)
+                             (when (not this-parent-key) this-file-links))
+              this-meta (org-x-dag-build-meta file
+                                              this-point
+                                              this-level
+                                              this-todo
+                                              (match-string-no-properties 3)
+                                              all-tags
+                                              this-parent-key))
+        (!cons (cons this-key this-meta) acc-meta)
+        (!cons (cons this-key (append (list (nth 1 this-parent)) this-links))
+               acc))
+      ;; Add current headline to stack
+      (!cons (list this-level this-key this-tags) cur-path))
+    (list (nreverse acc) (nreverse acc-meta))))
 
 (defun org-x-dag-get-file-nodes (file)
   "Return all nodes in FILE in one pass."
