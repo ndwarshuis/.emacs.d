@@ -2070,7 +2070,12 @@ FUTURE-LIMIT in a list."
 
 (defconst org-x-drwr-parent-links "X_PARENT_LINKS")
 
-(defun org-x-dag-headline-get-parent-links (headline)
+(defun org-x-dag-build-parent-link-drawer (ids)
+  (->> (-map #'org-x-dag-id->link-item ids)
+       (apply #'org-ml-build-plain-list)
+       (org-ml-build-drawer org-x-drwr-parent-links)))
+
+(defun org-x-dag-section-get-parent-links (children)
   (cl-flet
       ((parse-item
         (item)
@@ -2078,13 +2083,8 @@ FUTURE-LIMIT in a list."
           (if (and (org-ml-is-type 'link first)
                    (equal (org-ml-get-property :type first) "id"))
               (org-ml-get-property :path first)
-              ;; (->> (org-ml-get-children first)
-              ;;      (-map #'org-ml-to-trimmed-string)
-              ;;      (apply #'concat)
-              ;;      (cons (org-ml-get-property :path first)))
             (error "Invalid link node: %S" first)))))
-    (-when-let (first (->> headline
-                           (org-ml-headline-get-contents (org-x-logbook-config))
+    (-when-let (first (->> children
                            (--find (org-x--is-drawer-with-name org-x-drwr-parent-links it))
                            (org-ml-get-children)
                            (car)))
@@ -2093,22 +2093,38 @@ FUTURE-LIMIT in a list."
                (-map #'parse-item))
         (error "Invalid parent link drawer")))))
 
-(defun org-x-dag-build-parent-link-drawer (ids)
-  (->> (-map #'org-x-dag-id->link-item ids)
-       (apply #'org-ml-build-plain-list)
-       (org-ml-build-drawer "X_PARENT_LINKS")))
+(defun org-x-dag-section-set-parent-links (ids children)
+  (-if-let (i (--find-index (org-x--is-drawer-with-name org-x-drwr-parent-links it)
+                            children))
+      (let ((d (nth i children)))
+        (-if-let (pl (-some->> (-map #'org-x-dag-id->link-item ids)
+                       (apply #'org-ml-build-plain-list)))
+            (-replace-at i (org-ml-set-children (list pl) d) children)
+          (-remove-at i children)))
+    (if ids (cons (org-x-dag-build-parent-link-drawer ids) children) children)))
+
+(defmacro org-x-dag-section-map-parent-links* (form children)
+  (let ((c (make-symbol "--headline")))
+    `(let* ((,c ,children)
+            (it (org-x-dag-section-get-parent-links ,c)))
+       (org-x-dag-section-set-parent-links ,form ,c))))
+
+(defun org-x-dag-section-add-parent-link (id children)
+  (org-x-dag-section-map-parent-links* (cons id it) children))
+
+(defun org-x-dag-section-remove-parent-link (id children)
+  (org-x-dag-section-map-parent-links*
+   (--remove-first (equal it id) it)
+   children))
+
+(defun org-x-dag-headline-get-parent-links (headline)
+  (->> headline
+       (org-ml-headline-get-contents (org-x-logbook-config))
+       (org-x-dag-section-get-parent-links)))
 
 (defun org-x-dag-headline-set-parent-links (ids headline)
   (org-ml-headline-map-contents* (org-x-logbook-config)
-    (-if-let (i (--find-index (org-x--is-drawer-with-name
-                               org-x-drwr-parent-links it)
-                              it))
-        (let ((d (nth i it)))
-          (-if-let (pl (-some->> (-map #'org-x-dag-id->link-item ids)
-                         (apply #'org-ml-build-plain-list)))
-              (-replace-at i (org-ml-set-children (list pl) d) it)
-            (-remove-at i it)))
-      (if ids (cons (org-x-dag-build-parent-link-drawer ids) it) it))
+    (org-x-dag-section-set-parent-links ids it)
     headline))
 
 (defmacro org-x-dag-headline-map-parent-links* (form headline)
@@ -2117,6 +2133,7 @@ FUTURE-LIMIT in a list."
             (it (org-x-dag-headline-get-parent-links ,h)))
        (org-x-dag-headline-set-parent-links ,form ,h))))
 
+;; TODO not DRY
 (defun org-x-dag-headline-add-parent-link (id headline)
   (org-x-dag-headline-map-parent-links* (cons id it) headline))
 
@@ -2168,41 +2185,69 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-read-id (ids cur-ids)
   (cl-flet
       ((make-cell
-        (id cur-ids)
-        (let ((title (org-x-dag-id->title id))
-              (presentp (and (member id cur-ids) t)))
-          (list (format "%c %s" (if presentp ?* ?\s) title)
+        (id type)
+        (-let ((title (org-x-dag-id->title id))
+               (presentp (not (eq type 'toadd)))
+               (prefix (pcase type
+                         (`present ?*)
+                         (`noexist ?!)
+                         (`toadd ?\s))))
+          (list (format "%c %s" prefix title)
                 :id id
                 :title title
                 :presentp presentp))))
-    (let ((mapper (->> ids
-                       (--map (make-cell it cur-ids))
-                       (--sort (plist-get (cdr it) :presentp)))))
+    (let* ((present (--map (list it 'present) (-intersection cur-ids ids)))
+           (noexist (--map (list it 'noexist) (-difference cur-ids ids)))
+           (toadd (--map (list it 'toadd) (-difference ids cur-ids)))
+           (mapper (->> (append present noexist toadd)
+                        (--map (apply #'make-cell it))
+                        (--sort (plist-get (cdr it) :presentp)))))
       (print (-map #'cdr mapper))
       (alist-get (completing-read "Node: " mapper) mapper nil nil #'equal))))
 
+(defun org-x-dag-this-headline-choose-id (toplevel-allowed? legal-files msg ids)
+  (cl-flet
+      ((update-nodes
+        (link-getter remover adder ids children)
+        (-let* ((cur-ids (funcall link-getter children))
+                ((&plist :id i :presentp p) (org-x-dag-read-id ids cur-ids)))
+          (funcall (if p remover adder) i children))))
+    (if (not (member (buffer-file-name) legal-files)) (message "Not in %s" msg)
+      (if (org-before-first-heading-p)
+          (if (not toplevel-allowed?) (message "Cannot set toplevel drawer.")
+            (org-ml-update-this-section*
+              ;; TODO org-ml shouldn't require this, just map the children
+              ;; directly
+              (org-ml-map-children*
+                (update-nodes #'org-x-dag-section-get-parent-links
+                              #'org-x-dag-section-remove-parent-link
+                              #'org-x-dag-section-add-parent-link
+                              ids it)
+                it)))
+        (org-ml-update-this-headline*
+          (update-nodes #'org-x-dag-headline-get-parent-links
+                        #'org-x-dag-headline-remove-parent-link
+                        #'org-x-dag-headline-add-parent-link
+                        ids it))))))
+
 (defun org-x-dag-link-ltg-to-epg ()
   (interactive)
-  (if (not (equal (buffer-file-name) (org-x-get-endpoint-goal-file)))
-      (message "Not in endpoint goal file")
-    (org-ml-update-this-headline*
-      (-let* ((ltg-ids (org-x-dag->ltg-ids))
-              (cur-ids (org-x-dag-headline-get-parent-links it))
-              ((&plist :id i :presentp p) (org-x-dag-read-id ltg-ids cur-ids)))
-        (if p (org-x-dag-headline-remove-parent-link i it)
-          (org-x-dag-headline-add-parent-link i it))))))
+  (let ((ids (org-x-dag->ltg-ids))
+        (legal (list (org-x-get-endpoint-goal-file))))
+    (org-x-dag-this-headline-choose-id nil legal "endpoint goal file" ids)))
 
 (defun org-x-dag-link-goal-to-qtp ()
   (interactive)
-  (if (not (equal (buffer-file-name) (org-x-qtp-get-file)))
-      (message "Not in quarterly plan file")
-    (org-ml-update-this-headline*
-      (-let* ((goal-ids (append (org-x-dag->ltg-ids)
-                               (org-x-dag->epg-ids)))
-              (cur-ids (org-x-dag-headline-get-parent-links it))
-              ((&plist :id i :presentp p) (org-x-dag-read-id goal-ids cur-ids)))
-        (if p (org-x-dag-headline-remove-parent-link i it)
-          (org-x-dag-headline-add-parent-link i it))))))
+  (let ((ids (append (org-x-dag->ltg-ids) (org-x-dag->epg-ids)))
+        (legal (list (org-x-qtp-get-file))))
+    (org-x-dag-this-headline-choose-id nil legal "quarterly plan file" ids)))
+
+(defun org-x-dag-link-action-to-goal ()
+  (interactive)
+  (let ((ids (append (org-x-dag->ltg-ids) (org-x-dag->epg-ids)))
+        (legal (org-x-get-action-and-incubator-files)))
+    ;; TODO this won't work on the toplevel section
+    (org-x-dag-this-headline-choose-id t legal "an action/incubator file" ids)))
 
 ;;; AGENDA VIEWS
 
