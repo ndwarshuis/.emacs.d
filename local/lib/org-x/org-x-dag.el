@@ -1117,8 +1117,9 @@ encountered will be returned."
   (->> (org-x-dag-collapse-tags tags)
        (org-x-dag-sort-tags)))
 
-(defun org-x-dag-add-default-props (item)
+(defun org-x-dag-add-default-props (item id)
   (org-add-props item nil
+    'x-id id
     'help-echo (org-x-dag-help-echo)
     'org-not-done-regexp org-not-done-regexp
     'org-todo-regexp org-todo-regexp
@@ -1277,7 +1278,7 @@ FUTURE-LIMIT in a list."
           ((ts . ts-type) (org-agenda-entry-get-agenda-timestamp (point)))
           (item (org-agenda-format-item "" head level category tags*))
           (priority (org-get-priority item)))
-    (-> (org-x-dag-add-default-props item)
+    (-> (org-x-dag-add-default-props item key)
         (org-add-props nil
             ;; face
             'face 'default
@@ -1303,7 +1304,7 @@ FUTURE-LIMIT in a list."
          ;; TODO why am I getting the priority after sending the headline
          ;; through some crazy formatting function?
          (priority (org-get-priority item)))
-    (-> (org-x-dag-add-default-props item)
+    (-> (org-x-dag-add-default-props item id)
         (org-add-props nil
             'todo-state todo-state
             'priority priority))))
@@ -1746,6 +1747,30 @@ FUTURE-LIMIT in a list."
       (-if-let (project-tasks (org-x-dag-get-task-nodes it))
           (--map (format-key it-category nil it) project-tasks)
         (list (format-key it-category t it))))))
+
+;; TODO this is hella slow...increases runtime by 25% (also super redundant)
+(defun org-x-dag-id->goals (id)
+  (let ((goal-files (list (org-x-get-lifetime-goal-file)
+                          (org-x-get-endpoint-goal-file))))
+    (cl-labels
+        ((get
+          (id)
+          (let ((parents (org-x-dag-id->parents id)))
+            (-if-let (goal-ids (--filter (member (org-x-dag-id->file it) goal-files) parents))
+                goal-ids
+              (-map #'get parents)))))
+      (get id))))
+
+(defun org-x-dag-scan-tasks-with-goals ()
+  (cl-flet
+      ((split-parent-goals
+        (s)
+        (let ((id (get-text-property 1 'x-id s)))
+          (-if-let (goal-ids (org-x-dag-id->goals id))
+              (--map (org-add-props s nil 'x-goal-id it) goal-ids)
+            (list (org-add-props s nil 'x-goal-id nil))))))
+    (->> (org-x-dag-scan-tasks)
+         (-mapcat #'split-parent-goals))))
 
 (defun org-x-dag-scan-incubated ()
   (cl-flet
