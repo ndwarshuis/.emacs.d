@@ -1687,6 +1687,18 @@ FUTURE-LIMIT in a list."
              (not (org-x-dag-id->is-done-p it)))
       (format-key it-category it))))
 
+(defun org-x-dag-scan-projects-with-goals ()
+  (cl-flet
+      ((split-parent-goals
+        (s)
+        (let ((id (get-text-property 1 'x-id s)))
+          (-if-let (goal-ids (org-x-dag-id->goals id))
+              (--map (org-add-props s nil 'x-goal-id it) goal-ids)
+            (list (org-add-props s nil 'x-goal-id nil))))))
+    (->> (org-x-dag-scan-projects)
+         (--filter (org-x-dag-id->is-toplevel-p (get-text-property 1 'x-id it)))
+         (-mapcat #'split-parent-goals))))
+
 (defun org-x-dag-scan-iterators ()
   (cl-flet*
       ((format-result
@@ -2308,7 +2320,6 @@ FUTURE-LIMIT in a list."
          '((:auto-map
             (lambda (line)
               (-if-let (i (get-text-property 1 'x-goal-id line))
-                  ;; TODO this is the literal ID, I want the headline text
                   (->> (org-x-dag-id->title i)
                        (substring-no-properties))
                 "0. Unlinked")))))))))
