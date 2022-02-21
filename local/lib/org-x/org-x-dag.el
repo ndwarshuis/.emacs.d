@@ -2324,5 +2324,22 @@ FUTURE-LIMIT in a list."
                        (substring-no-properties))
                 "0. Unlinked")))))))))
 
+;; TODO this is just toplevel projects (for now)
+;; TODO wetter than Seattle
+(defun org-x-dag-agenda-projects-by-goal ()
+  (interactive)
+  (let ((match ''org-x-dag-scan-projects-with-goals)
+        (files (org-x-get-action-files)))
+    (nd/org-agenda-call "Projects by Goal" nil #'org-x-dag-show-nodes match files
+      `((org-agenda-todo-ignore-with-date t)
+        (org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-if-let (i (get-text-property 1 'x-goal-id line))
+                  (->> (org-x-dag-id->title i)
+                       (substring-no-properties))
+                "0. Unlinked")))))))))
+
 (provide 'org-x-dag)
 ;;; org-x-dag.el ends here
