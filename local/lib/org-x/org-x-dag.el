@@ -934,7 +934,8 @@ valid keyword or none of its parents have valid keywords."
             this-title (-if-let (s (match-string 3)) (s-trim s) "")
             this-tags (-some-> (match-string-no-properties 4)
                         (split-string ":" t))
-            this-key nil)
+            this-key nil
+            this-links nil)
       ;; Adjust the stack so that the top headline is the parent of the
       ;; current headline
       (while (and cur-path (<= this-level (nth 0 (car cur-path))))
@@ -953,9 +954,11 @@ valid keyword or none of its parents have valid keywords."
                                 (--mapcat (nth 2 it))
                                 (append this-tags org-file-tags))
                          this-tags)
-              ;; TODO this could be inherited to make parent linking easier later
               this-links (or (org-x-dag-get-parent-links)
-                             (when (not this-parent-key) this-file-links))
+                             (if this-parent-key
+                                 (-some->> (--first (nth 3 it) cur-path)
+                                   (nth 3))
+                               this-file-links))
               this-meta (org-x-dag-build-meta file
                                               this-point
                                               this-level
@@ -964,10 +967,9 @@ valid keyword or none of its parents have valid keywords."
                                               all-tags
                                               this-parent-key))
         (!cons (cons this-key this-meta) acc-meta)
-        (!cons (cons this-key (append (list (nth 1 this-parent)) this-links))
-               acc))
+        (!cons (cons this-key `(,(nth 1 this-parent) ,@this-links)) acc))
       ;; Add current headline to stack
-      (!cons (list this-level this-key this-tags) cur-path))
+      (!cons (list this-level this-key this-tags this-links) cur-path))
     (list (nreverse acc) (nreverse acc-meta))))
 
 (defun org-x-dag-get-file-nodes (file)
