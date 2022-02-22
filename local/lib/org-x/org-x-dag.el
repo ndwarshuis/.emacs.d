@@ -1791,31 +1791,44 @@ FUTURE-LIMIT in a list."
           (--map (format-key it-category nil it) project-tasks)
         (list (format-key it-category t it))))))
 
-;; TODO this is hella slow...increases runtime by 25% (also super redundant)
-(defun org-x-dag-id->goals (id)
-  (let ((goal-files (list (org-x-get-lifetime-goal-file)
-                          (org-x-get-endpoint-goal-file))))
-    (cl-labels
-        ((get
-          (id)
-          (let ((parents (org-x-dag-id->parents id)))
-            (-if-let (goal-ids (--filter (member (org-x-dag-id->file it) goal-files) parents))
-                goal-ids
-              (-mapcat #'get parents)))))
-      (get id))))
-
+;; TODO wetter than Prince's dreams
 (defun org-x-dag-scan-tasks-with-goals ()
   (cl-flet
-      ((split-parent-goals
-        (s)
-        (let ((id (get-text-property 1 'x-id s)))
-          ;; ASSUME all foreign parents are actually goals
-          ;; TODO this isn't a great assumption
-          (-if-let (goal-ids (org-x-dag-id->foreign-parents id))
-              (--map (org-add-props s nil 'x-goal-id it) goal-ids)
-            (list (org-add-props s nil 'x-goal-id nil))))))
-    (->> (org-x-dag-scan-tasks)
-         (-mapcat #'split-parent-goals))))
+      ((format-key
+        (category is-standalone key)
+        (let ((tags (org-x-dag-id->tags t nil key)))
+          ;; filter out incubators
+          (org-x-dag-with-id key
+            (unless (member org-x-tag-incubated tags)
+              (let* ((s (org-x-headline-get-task-status-0 (org-x-dag-id->todo key)))
+                     (p (alist-get s org-x-headline-task-status-priorities)))
+                (unless (= p -1)
+                  (let ((item
+                         (-> (org-x-dag-format-tag-node category tags key)
+                             (org-add-props nil
+                                 'x-is-standalone is-standalone
+                                 'x-status s))))
+                    (-if-let (goal-ids (org-x-dag-id->foreign-parents key))
+                        (--map (org-add-props item nil 'x-goal-id it) goal-ids)
+                      (list (org-add-props item nil 'x-goal-id nil)))))))))))
+    (org-x-dag-with-files (org-x-get-action-files)
+        (org-x-dag-id->is-toplevel-p it)
+      (-if-let (project-tasks (org-x-dag-get-task-nodes it))
+          (--mapcat (format-key it-category nil it) project-tasks)
+        (format-key it-category t it)))))
+
+;; (defun org-x-dag-scan-tasks-with-goals ()
+;;   (cl-flet
+;;       ((split-parent-goals
+;;         (s)
+;;         (let ((id (get-text-property 1 'x-id s)))
+;;           ;; ASSUME all foreign parents are actually goals
+;;           ;; TODO this isn't a great assumption
+;;           (-if-let (goal-ids (org-x-dag-id->foreign-parents id))
+;;               (--map (org-add-props s nil 'x-goal-id it) goal-ids)
+;;             (list (org-add-props s nil 'x-goal-id nil))))))
+;;     (->> (org-x-dag-scan-tasks)
+;;          (-mapcat #'split-parent-goals))))
 
 (defun org-x-dag-scan-incubated ()
   (cl-flet
