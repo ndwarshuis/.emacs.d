@@ -1983,8 +1983,7 @@ FUTURE-LIMIT in a list."
             (let ((alloc (-some->> (org-x-dag-get-local-property org-x-prop-allocate)
                            (org-x-dag-allocation-fraction current-quarter)))
                   (assignedp (org-x-dag-id->has-child-in-files-p id week-file))
-                  (tags (->> (org-x-dag-id->parents id)
-                             (--mapcat (org-x-dag-id->tags id nil it))
+                  (tags (->> (org-x-dag-id->tags nil nil id)
                              (--filter (= (elt it 0) org-x-tag-category-prefix)))))
               (-> (org-x-dag-format-tag-node "goal" tags id)
                   (org-add-props nil
