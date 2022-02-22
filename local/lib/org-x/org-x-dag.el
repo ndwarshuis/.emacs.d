@@ -317,6 +317,23 @@ that file as it currently sits on disk.")
   (->> (plist-get org-x-dag :dag)
        (dag-get-parents id)))
 
+(defun org-x-dag-id->split-parents (id)
+  (let ((ps (org-x-dag-id->parents id)))
+    (if (org-x-dag-id->is-toplevel-p id)
+        `(nil ,ps)
+      (let ((f (org-x-dag-id->file id)))
+        ;; ASSUME there will only be one headline parent (not sure how that
+        ;; wouldn't be true, but this algorithm doesn't care or know)
+        (-if-let (i (--find-index (equal f (org-x-dag-id->file it)) ps))
+            `(,(nth i ps) ,(-remove-at i ps))
+          `(nil ,ps))))))
+
+(defun org-x-dag-id->headline-parent (id)
+  (car (org-x-dag-id->split-parents id)))
+
+(defun org-x-dag-id->foreign-parents (id)
+  (cadr (org-x-dag-id->split-parents id)))
+
 (defun org-x-dag-id->children (id)
   (->> (plist-get org-x-dag :dag)
        (dag-get-children id)))
@@ -886,16 +903,22 @@ A date like (YEAR MONTH DAY).")
                 (cadr)))))
 
 (defun org-x-dag-get-parent-links ()
-  (save-excursion
-    (let ((re (concat
-               "^[ \t]*:X_PARENT_LINKS:[ \t]*\n"
-               "\\(\\(?:^- .*?\n\\)*?\\)"
-               "[ \t]*:END:[ \t]*$"))
-          (end (save-excursion (outline-next-heading))))
-      (-some->> (and (re-search-forward re end t) (match-string 1))
-        (s-trim)
-        (s-split "\n")
-        (--map (cadr (s-match "id:\\([^][]\\{36\\}\\)" it)))))))
+  (cl-flet
+      ((match-id
+        (s)
+        (->> (s-match "id:\\([^][]\\{36\\}\\)" s)
+             (cadr)
+             (substring-no-properties))))
+    (save-excursion
+      (let ((re (concat
+                 "^[ \t]*:X_PARENT_LINKS:[ \t]*\n"
+                 "\\(\\(?:^- .*?\n\\)*?\\)"
+                 "[ \t]*:END:[ \t]*$"))
+            (end (save-excursion (outline-next-heading))))
+        (-some->> (and (re-search-forward re end t) (match-string 1))
+          (s-trim)
+          (s-split "\n")
+          (-map #'match-id))))))
 
 (defun org-x-dag-line-regexp (kws)
   (let ((level-re "\\(\\*+\\)")
@@ -1694,8 +1717,8 @@ FUTURE-LIMIT in a list."
       ((split-parent-goals
         (s)
         (let ((id (get-text-property 1 'x-id s)))
-          (-if-let (goal-ids (org-x-dag-id->goals id))
-              (--map (org-add-props s nil 'x-goal-id it) goal-ids)
+          (-if-let (goal-ids (org-x-dag-id->foreign-parents id))
+              (--map (org-add-props (copy-seq s) nil 'x-goal-id it) goal-ids)
             (list (org-add-props s nil 'x-goal-id nil))))))
     (->> (org-x-dag-scan-projects)
          (--filter (org-x-dag-id->is-toplevel-p (get-text-property 1 'x-id it)))
@@ -1775,7 +1798,9 @@ FUTURE-LIMIT in a list."
       ((split-parent-goals
         (s)
         (let ((id (get-text-property 1 'x-id s)))
-          (-if-let (goal-ids (org-x-dag-id->goals id))
+          ;; ASSUME all foreign parents are actually goals
+          ;; TODO this isn't a great assumption
+          (-if-let (goal-ids (org-x-dag-id->foreign-parents id))
               (--map (org-add-props s nil 'x-goal-id it) goal-ids)
             (list (org-add-props s nil 'x-goal-id nil))))))
     (->> (org-x-dag-scan-tasks)
