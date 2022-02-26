@@ -230,6 +230,8 @@ that file as it currently sits on disk.")
 ;; all functions with `org-x-dag->' or `org-x-dag-id->' depend on the value of
 ;; `org-x-dag'
 
+;; global state slot lookup
+
 (defun org-x-dag->metatable ()
   (plist-get org-x-dag :id->meta))
 
@@ -238,6 +240,8 @@ that file as it currently sits on disk.")
 
 (defun org-x-dag->adjacency-list ()
   (dag-get-adjacency-list (org-x-dag->dag)))
+
+;; id properties
 
 (defun org-x-dag-id->metaprop (id prop)
   (-> (org-x-dag->metatable)
@@ -264,21 +268,15 @@ that file as it currently sits on disk.")
   "Return local tags for ID."
   (org-x-dag-id->metaprop id :tags))
 
-(defun org-x-dag-id->is-done-p (id)
-  "Return t if ID has done keywords."
-  (member (org-x-dag-id->todo id) org-x-done-keywords))
+(defun org-x-dag-id->tags (parent-tags id)
+  "Return all tags for ID.
 
-(defun org-x-dag-id->is-floating-p (id)
-  (-> (plist-get org-x-dag :dag)
-      (dag-get-floating-nodes)
-      (ht-get id)))
+If PARENT-TAGS is nil, return all inherited tags based on the
+parents of ID. If PARENT-TAGS is a list of strings, these are
+used as the parent tags instead of looking them up.
 
-(defun org-x-dag-id->is-toplevel-p (id)
-  (or (not (org-x-dag-id->metaprop id :buffer-parent))
-      ;; TODO pretty sure this will never be used
-      (org-x-dag-id->is-floating-p id)))
-
-(defun org-x-dag-id->tags (inherit? init id)
+Returned tags will be ordered from left to right as lowest to
+highest in the tree."
   (cl-labels
       ((ascend
         (id tags)
@@ -290,62 +288,135 @@ that file as it currently sits on disk.")
                  (append tags)
                  (ascend parent))
           tags)))
-    ;; likewise, init tags have the lowest precedence (the likely use case for
-    ;; this argument is for file tags)
-    (let ((local-tags (org-x-dag-id->local-tags id))
-          (parent-tags (and inherit? (ascend id nil))))
-      (append local-tags parent-tags init))))
+    (let ((local-tags (org-x-dag-id->local-tags id)))
+      `(,@local-tags ,@(or parent-tags (ascend id nil))))))
 
-(defun org-x-dag-id->bucket (inherit? id)
-  (-some->> (org-x-dag-id->tags inherit? nil id)
+(defun org-x-dag-id->bucket (parent-tags id)
+  (-some->> (org-x-dag-id->tags parent-tags id)
     (--find (= (elt it 0) org-x-tag-category-prefix))
     (s-chop-prefix "_")
     (intern)))
 
 (defun org-x-dag-id->link (id)
+  "Return the link node for ID."
   (org-x-dag-with-id-in-file id
     (let ((desc (org-x-dag-id->title id)))
       (->> (org-ml-build-secondary-string! desc)
            (apply #'org-ml-build-link id :type "id")))))
 
 (defun org-x-dag-id->link-item (id)
+  "Return the link node of ID wrapped in an item node."
   (->> (org-x-dag-id->link id)
        (org-ml-build-paragraph)
        (org-ml-build-item)))
 
+;; id relationships
+
 (defun org-x-dag-id->parents (id)
+  "Return parent nodes of ID."
   (->> (plist-get org-x-dag :dag)
        (dag-get-parents id)))
 
-(defun org-x-dag-id->split-parents (id)
-  (let ((ps (org-x-dag-id->parents id)))
-    (if (org-x-dag-id->is-toplevel-p id)
-        `(nil ,ps)
-      (let ((f (org-x-dag-id->file id)))
-        ;; ASSUME there will only be one headline parent (not sure how that
-        ;; wouldn't be true, but this algorithm doesn't care or know)
-        (-if-let (i (--find-index (equal f (org-x-dag-id->file it)) ps))
-            `(,(nth i ps) ,(-remove-at i ps))
-          `(nil ,ps))))))
-
-(defun org-x-dag-id->headline-parent (id)
-  (car (org-x-dag-id->split-parents id)))
-
-(defun org-x-dag-id->foreign-parents (id)
-  (cadr (org-x-dag-id->split-parents id)))
-
 (defun org-x-dag-id->children (id)
+  "Return child nodes of ID."
   (->> (plist-get org-x-dag :dag)
        (dag-get-children id)))
 
-(defun org-x-dag-id->headline-children (id)
-  (->> (org-x-dag-id->children id)
-       (--filter (equal (org-x-dag-id->metaprop it :buffer-parent) id))))
+(defun org-x-dag-id->buffer-parent (id)
+  "Return the buffer parent id (if any) of ID."
+  (org-x-dag-id->metaprop id :buffer-parent))
 
-(defun org-x-dag-id->all-headline-children (id)
-  (->> (org-x-dag-id->headline-children id)
-       (-mapcat #'org-x-dag-id->all-headline-children)
+(defun org-x-dag-id->split-parents (id)
+  "Return the buffer and non-buffer parents of ID.
+
+Return value is a list like (BUFFER NON-BUFFER)."
+  (let ((parents (org-x-dag-id->parents id)))
+    (-if-let (buffer-parent (org-x-dag-id->buffer-parent id))
+        `(,buffer-parent ,@(-remove-item buffer-parent parents))
+      `(nil ,@parents))))
+
+(defun org-x-dag-id->foreign-parents (id)
+  "Return non-buffer (foreign) parents of ID."
+  (cadr (org-x-dag-id->split-parents id)))
+
+(defun org-x-dag-id->split-children (id)
+  "Return buffer and non-buffer children of ID.
+
+Return value is a list like (BUFFER NON-BUFFER)."
+  (->> (org-x-dag-id->children id)
+       (--separate (equal (org-x-dag-id->buffer-parent it) id))))
+
+(defun org-x-dag-id->buffer-children (id)
+  "Return children of ID that are in the same buffer."
+  (car (org-x-dag-id->split-children id)))
+
+(defun org-x-dag-id->foreign-children (id)
+  "Return children of ID that are not in the same buffer."
+  (cadr (org-x-dag-id->split-children id)))
+
+(defmacro org-x-dag-id->with-split-parents (id &rest body)
+  (declare (indent 1))
+  `(let ((it-buffer it-foreign) (org-x-dag-id->split-parents ,id))
+     ,@body))
+
+(defmacro org-x-dag-id->with-split-children (id &rest body)
+  (declare (indent 1))
+  `(let ((it-buffer it-foreign) (org-x-dag-id->split-children ,id))
+     ,@body))
+
+(defun org-x-dag-id->group-parent-links-by-file-p (id)
+  "Return parent links for ID grouped by file."
+  (org-x-dag-id->with-split-parents id
+    (-group-by #'org-x-dag-id->file it-foreign)))
+
+(defun org-x-dag-id->group-child-links-by-file-p (id)
+  "Return child links for ID grouped by file."
+  (org-x-dag-id->with-split-children id
+    (-group-by #'org-x-dag-id->file it-foreign)))
+
+(defun org-x-dag-id->all-buffer-children (id)
+  "Return nested children of ID that are in the same buffer."
+  (->> (org-x-dag-id->buffer-children id)
+       (-mapcat #'org-x-dag-id->all-buffer-children)
        (cons id)))
+
+;; id predicates/identities
+
+(defun org-x-dag-id->is-done-p (id)
+  "Return t if ID has done keywords."
+  (member (org-x-dag-id->todo id) org-x-done-keywords))
+
+(defun org-x-dag-id->is-floating-p (id)
+  "Return t if ID is floating."
+  (-> (plist-get org-x-dag :dag)
+      (dag-get-floating-nodes)
+      (ht-get id)))
+
+(defun org-x-dag-id->is-toplevel-p (id)
+  "Return t if ID is at the top of its buffer."
+  (not (org-x-dag-id->buffer-parent id)))
+
+(defun org-x-dag-id->parent-link-in-file-p (file id)
+  "Return t if ID has a parent link in FILE."
+  (org-x-dag-id->with-split-parents id
+    (--any-p (equal file (org-x-dag-id->file it)) it-foreign)))
+
+(defun org-x-dag-id->child-link-in-file-p (file id)
+  "Return t if ID has a child link in FILE."
+  (org-x-dag-id->with-split-children id
+    (--any-p (equal file (org-x-dag-id->file it)) it-foreign)))
+
+(defun org-x-dag-id->parent-link-in-files-p (files id)
+  "Return t if ID has a parent link in any of FILES."
+  (org-x-dag-id->with-split-parents id
+    (--any-p (member (org-x-dag-id->file it) files) it-foreign)))
+
+(defun org-x-dag-id->child-link-in-files-p (files id)
+  "Return t if ID has a child link in any of FILES."
+  (org-x-dag-id->with-split-children id
+    (--any-p (member (org-x-dag-id->file it) files) it-foreign)))
+
+;; files to ids
 
 (defun org-x-dag-files->ids (files)
   (let ((filemap (plist-get org-x-dag :file->ids)))
@@ -360,6 +431,9 @@ that file as it currently sits on disk.")
 (defun org-x-dag->ltg-ids ()
   (org-x-dag-file->ids (org-x-get-lifetime-goal-file)))
 
+(defun org-x-dag->svg-ids ()
+  (org-x-dag-file->ids (org-x-get-survival-goal-file)))
+
 (defun org-x-dag->current-date ()
   (plist-get org-x-dag :current-date))
 
@@ -370,7 +444,7 @@ that file as it currently sits on disk.")
 ;;   (org-x-dag-file->ids (org-x-get-weekly-plan-file)))
 
 (defun org-x-dag-filter-ids-tags (tags ids)
-  (--filter (-intersection (org-x-dag-id->tags t nil it) tags) ids))
+  (--filter (-intersection (org-x-dag-id->tags nil it) tags) ids))
 
 (defun org-x-dag-date-to-quarter-tags (date)
   (-let (((y q) (org-x-dag-date-to-quarter date)))
@@ -481,19 +555,19 @@ that file as it currently sits on disk.")
 ;;          (--filter (-intersection (org-x-dag-id->children it) dlp-ids)))))
 
 (defun org-x-dag->leaf-epg-ids ()
-  (-remove #'org-x-dag-id->headline-children (org-x-dag->epg-ids)))
+  (-remove #'org-x-dag-id->buffer-children (org-x-dag->epg-ids)))
 
 (defun org-x-dag->leaf-ltg-ids ()
   (let ((epg-file (org-x-get-endpoint-goal-file)))
     (->> (org-x-dag->ltg-ids)
-         (-remove #'org-x-dag-id->headline-children)
+         (-remove #'org-x-dag-id->buffer-children)
          (--remove (equal (org-x-dag-id->file it) epg-file)))))
 
 (defun org-x-dag-goal-count-tasks (id)
   (->> (org-x-dag-id->children id)
-       (-mapcat #'org-x-dag-id->all-headline-children)
+       (-mapcat #'org-x-dag-id->all-buffer-children)
        ;; TODO this isn't very efficient, looking up children twice
-       (-remove #'org-x-dag-id->headline-children)
+       (-remove #'org-x-dag-id->buffer-children)
        (length)))
 
 (defun org-x-dag-rank-leaf-goals (quarter ids)
@@ -1544,8 +1618,8 @@ FUTURE-LIMIT in a list."
     `(cl-flet
          ((get-project-or-task-status
            (key)
-           (-if-let (children (org-x-dag-id->headline-children key))
-               (let* ((tags (org-x-dag-id->tags nil ,parent-tags key))
+           (-if-let (children (org-x-dag-id->buffer-children key))
+               (let* ((tags (org-x-dag-id->tags ,parent-tags key))
                       (child-results (funcall ,callback key tags children))
                       ;; ASSUME the car of the results will be the toplevel
                       ;; key/status pair for this (sub)project
@@ -1664,12 +1738,12 @@ FUTURE-LIMIT in a list."
   (cl-flet
       ((get-status
         (key)
-        (-if-let (children (org-x-dag-id->headline-children key))
+        (-if-let (children (org-x-dag-id->buffer-children key))
             (->> children
                  (org-x-dag-headline-get-iterator-project-status key)
                  (car))
           (org-x-dag-headline-get-iterator-task-status key))))
-    (->> (org-x-dag-id->headline-children key)
+    (->> (org-x-dag-id->buffer-children key)
          (-map #'get-status)
          (org-x-dag-get-max-index org-x--iter-statuscodes))))
 
@@ -1711,12 +1785,12 @@ FUTURE-LIMIT in a list."
                       'x-priority priority))))))
        (format-key
         (cat key)
-        (let ((tags (org-x-dag-id->tags t nil key)))
+        (let ((tags (org-x-dag-id->tags nil key)))
           ;; TODO don't hardcode these things
           (org-x-dag-with-id key
             (unless (or (member org-x-tag-incubated tags)
                         (org-x-dag-headline-is-iterator-p))
-              (-some->> (org-x-dag-id->headline-children key)
+              (-some->> (org-x-dag-id->buffer-children key)
                 (org-x-dag-headline-get-project-status key tags)
                 (--map (format-result cat it))))))))
     (org-x-dag-with-files (org-x-get-action-files)
@@ -1747,7 +1821,7 @@ FUTURE-LIMIT in a list."
                     'x-status status))))))
     (org-x-dag-with-files (org-x-get-action-files)
         (org-x-dag-id->is-toplevel-p it)
-      (let ((tags (org-x-dag-id->tags t nil it)))
+      (let ((tags (org-x-dag-id->tags nil it)))
         (unless (member org-x-tag-incubated tags)
           (org-x-dag-with-id it
             (when (org-x-dag-headline-is-iterator-p)
@@ -1762,10 +1836,10 @@ FUTURE-LIMIT in a list."
         (->> (--remove (member (org-x-dag-id->todo it)
                                (list org-x-kw-canc org-x-kw-hold))
                        children)
-             (--mapcat (-if-let (cs (org-x-dag-id->headline-children it))
+             (--mapcat (-if-let (cs (org-x-dag-id->buffer-children it))
                            (descend cs)
                          (list it))))))
-    (-some-> (org-x-dag-id->headline-children id)
+    (-some-> (org-x-dag-id->buffer-children id)
       (descend))))
 
 ;; TODO this includes tasks underneath cancelled headlines
@@ -1773,7 +1847,7 @@ FUTURE-LIMIT in a list."
   (cl-flet
       ((format-key
         (category is-standalone key)
-        (let ((tags (org-x-dag-id->tags t nil key)))
+        (let ((tags (org-x-dag-id->tags nil key)))
           ;; filter out incubators
           (org-x-dag-with-id key
             (unless (or (member org-x-tag-incubated tags)
@@ -1797,7 +1871,7 @@ FUTURE-LIMIT in a list."
   (cl-flet
       ((format-key
         (category is-standalone key)
-        (let ((tags (org-x-dag-id->tags t nil key)))
+        (let ((tags (org-x-dag-id->tags nil key)))
           ;; filter out incubators
           (org-x-dag-with-id key
             (unless (member org-x-tag-incubated tags)
@@ -1835,12 +1909,12 @@ FUTURE-LIMIT in a list."
   (cl-flet
       ((format-key
         (category key)
-        (let ((tags (org-x-dag-id->tags t nil key)))
+        (let ((tags (org-x-dag-id->tags nil key)))
           (when (member org-x-tag-incubated tags)
             (org-x-dag-with-id key
               (let* ((sch (org-x-dag-headline-is-scheduled-p t))
                      (dead (org-x-dag-headline-is-deadlined-p t))
-                     (is-project (org-x-dag-id->headline-children key)))
+                     (is-project (org-x-dag-id->buffer-children key)))
                 (-> (org-x-dag-format-tag-node category tags key)
                     (org-add-props nil
                         'x-project-p is-project
@@ -1855,11 +1929,11 @@ FUTURE-LIMIT in a list."
   (cl-flet
       ((format-key
         (category key)
-        (let ((tags (org-x-dag-id->tags t nil key)))
+        (let ((tags (org-x-dag-id->tags nil key)))
           (unless (member org-x-tag-incubated tags)
             (org-x-dag-with-id key
               (-let (((is-archivable is-project)
-                      (-if-let (children (org-x-dag-id->headline-children key))
+                      (-if-let (children (org-x-dag-id->buffer-children key))
                           (-> (org-x-dag-headline-get-project-status key tags children)
                               (alist-get org-x-project-status-priorities)
                               (eq :archivable)
@@ -1876,7 +1950,7 @@ FUTURE-LIMIT in a list."
         (org-x-dag-id->is-toplevel-p it)
       (org-x-dag-with-id it
         (if (org-x-dag-headline-is-iterator-p)
-            (->> (org-x-dag-id->headline-children it)
+            (->> (org-x-dag-id->buffer-children it)
                  (--map (format-key it-category it)))
           (list (format-key it-category it)))))))
 
@@ -1891,7 +1965,7 @@ FUTURE-LIMIT in a list."
                 (has-children (->> (org-x-dag-id->children id)
                                    (--any-p (member (org-x-dag-id->file it)
                                                     child-files))))
-                (tags (org-x-dag-id->tags t nil id)))
+                (tags (org-x-dag-id->tags nil id)))
             (-> (org-x-dag-format-tag-node category tags id)
                 (org-add-props nil
                     'x-goal-status (list :type 'ltg
@@ -1918,7 +1992,7 @@ FUTURE-LIMIT in a list."
                 (has-parents (->> (org-x-dag-id->parents id)
                                   (--any-p (member (org-x-dag-id->file it)
                                                    parent-files))))
-                (tags (org-x-dag-id->tags t nil id)))
+                (tags (org-x-dag-id->tags nil id)))
             (-> (org-x-dag-format-tag-node category tags id)
                 (org-add-props nil
                     'x-goal-status (list :type 'epg
@@ -1959,7 +2033,7 @@ FUTURE-LIMIT in a list."
       ((format-timestamps
         (todayp sel-date cat id pts get-datetimes-fun format-datetime-fun)
         (-when-let (datetimes (funcall get-datetimes-fun sel-date pts))
-          (let ((tags (org-x-dag-id->tags t nil id)))
+          (let ((tags (org-x-dag-id->tags nil id)))
             (unless (member org-x-tag-incubated tags)
               (-let (((&plist :pos) pts)
                      (donep (org-x-dag-id->is-done-p id)))
@@ -1997,9 +2071,8 @@ FUTURE-LIMIT in a list."
             (let ((alloc (-some->> (org-x-dag-get-local-property org-x-prop-allocate)
                            (org-x-dag-allocation-fraction current-quarter)))
                   (assignedp (org-x-dag-id->has-child-in-files-p id week-file))
-                  (tags (->> (org-x-dag-id->tags nil nil id)
-                             (--filter (= (elt it 0) org-x-tag-category-prefix)))))
-              (-> (org-x-dag-format-tag-node "goal" tags id)
+                  (bucket (org-x-dag-id->bucket nil id)))
+              (-> (org-x-dag-format-tag-node "goal" (list bucket) id)
                   (org-add-props nil
                       'x-assignedp assignedp
                       ;; override face
@@ -2017,7 +2090,7 @@ FUTURE-LIMIT in a list."
             ;; TODO this assigned thing needs to be limited in scope to the
             ; the current ids of the time period in question
             (let* ((assignedp (org-x-dag-id->has-child-in-files-p id daily-file))
-                   (day (-some->> (org-x-dag-id->tags t nil id)
+                   (day (-some->> (org-x-dag-id->tags nil id)
                           ;; TODO I guess this works...could be more precise
                           (--filter (s-matches-p "[A-Z]\\{3\\}" it))
                           (car)))
@@ -2273,7 +2346,7 @@ FUTURE-LIMIT in a list."
     (if (not (member (buffer-file-name) legal-files)) (message "Not in %s" msg)
       (if (org-before-first-heading-p)
           (if (not toplevel-allowed?) (message "Cannot set toplevel drawer.")
-            (org-ml-update-this-section*
+            (org-ml~update-this-section* nil
               ;; TODO org-ml shouldn't require this, just map the children
               ;; directly
               (org-ml-map-children*
@@ -2282,7 +2355,7 @@ FUTURE-LIMIT in a list."
                               #'org-x-dag-section-add-parent-link
                               ids it)
                 it)))
-        (org-ml-update-this-headline*
+        (org-ml~update-this-headline* nil
           (update-nodes #'org-x-dag-headline-get-parent-links
                         #'org-x-dag-headline-remove-parent-link
                         #'org-x-dag-headline-add-parent-link
