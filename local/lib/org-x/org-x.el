@@ -298,6 +298,9 @@ org tag and a long name respectively for the category.")
 (defvar org-x-endpoint-goal-file nil
   "Path to endpoint goal file.")
 
+(defvar org-x-survival-goal-file nil
+  "Path to survival goal file.")
+
 (defvar org-x-quarterly-plan-file nil
   "Path to quarterly plan file.")
 
@@ -450,6 +453,10 @@ PATH must be relative to `org-directory' and end in '.org'."
 (defun org-x-get-lifetime-goal-file ()
   "Return the absolute path of `org-x-lifetime-goal-file'."
   (org-x--expand-path org-x-lifetime-goal-file))
+
+(defun org-x-get-survival-goal-file ()
+  "Return the absolute path of `org-x-survival-goal-file'."
+  (org-x--expand-path org-x-weekly-plan-file))
 
 (defun org-x-get-capture-file ()
   "Return the absolute path of `org-x-capture-file'."

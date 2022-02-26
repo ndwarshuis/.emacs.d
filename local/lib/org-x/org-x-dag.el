@@ -1017,6 +1017,7 @@ valid keyword or none of its parents have valid keywords."
   "Return a list of all files to be used in the DAG."
   `(,(org-x-get-lifetime-goal-file)
     ,(org-x-get-endpoint-goal-file)
+    ,(org-x-get-survival-goal-file)
     ,(org-x-qtp-get-file)
     ,(org-x-get-weekly-plan-file)
     ,(org-x-get-daily-plan-file)
