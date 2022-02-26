@@ -183,14 +183,40 @@
 
 ;; variables to store state
 
-(defun org-x-dag-create (d m f c)
-  (list :dag d :id->meta m :file->ids f :current-date c))
+(defun org-x-dag-create (d m fis c fs)
+  (list :dag d :id->meta m :file->ids fis :current-date c :files fs))
+
+(defun org-x-dag-read-file-paths ()
+  (list :goal-files (list :lifetime (org-x-get-lifetime-goal-file)
+                          :endpoint (org-x-get-endpoint-goal-file)
+                          :survival (org-x-get-survival-goal-file))
+        :plan-files (list :daily (org-x-get-daily-plan-file)
+                          :weekly (org-x-get-weekly-plan-file)
+                          :quarterly (org-x-qtp-get-file))
+        :incubator-files (org-x-get-incubator-files)
+        :action-files (org-x-get-action-files)))
+
+(defun org-x-dag-flatten-goal-file-state (state)
+  (-let (((&plist :lifetime l :endpoint e :survival s) state))
+    `(,l ,e ,s)))
+
+(defun org-x-dag-flatten-planning-file-state (state)
+  (-let (((&plist :quarterly q :weekly w :daily d) state))
+    `(,q ,w ,d)))
+
+(defun org-x-dag-flatten-file-state (state)
+  (-let (((&plist :goal-files :plan-files :incubator-files :action-files) state))
+    (append (org-x-dag-flatten-goal-file-state goal-files)
+            (org-x-dag-flatten-planning-file-state plan-files)
+            incubator-files
+            action-files)))
 
 (defun org-x-dag-empty ()
   (org-x-dag-create (dag-empty)
                     (ht-create #'equal)
                     (ht-create #'equal)
-                    (org-x-dag-current-date)))
+                    (org-x-dag-current-date)
+                    nil))
 
 (defvar org-x-dag (org-x-dag-empty)
                         
@@ -240,6 +266,32 @@ that file as it currently sits on disk.")
 
 (defun org-x-dag->adjacency-list ()
   (dag-get-adjacency-list (org-x-dag->dag)))
+
+;; state files
+
+(defun org-x-dag->file-state ()
+  (plist-get org-x-dag :files))
+
+(defun org-x-dag->goal-file-state ()
+  (plist-get (org-x-dag->file-state) :goal-files))
+
+(defun org-x-dag->planning-file-state ()
+  (plist-get (org-x-dag->file-state) :plan-files))
+
+(defun org-x-dag->goal-file (which)
+  (plist-get (org-x-dag->goal-file-state) which))
+
+(defun org-x-dag->planning-file (which)
+  (plist-get (org-x-dag->planning-file-state) which))
+
+(defun org-x-dag->action-files ()
+  (plist-get (org-x-dag->file-state) :action-files))
+
+(defun org-x-dag->incubator-files ()
+  (plist-get (org-x-dag->file-state) :incubator-files))
+
+(defun org-x-dag->files ()
+  (org-x-dag-flatten-file-state (org-x-dag->file-state)))
 
 ;; id properties
 
@@ -1087,15 +1139,15 @@ valid keyword or none of its parents have valid keywords."
 
 ;;; DAG SYNCHRONIZATION/CONSTRUCTION
 
-(defun org-x-dag-get-files ()
-  "Return a list of all files to be used in the DAG."
-  `(,(org-x-get-lifetime-goal-file)
-    ,(org-x-get-endpoint-goal-file)
-    ,(org-x-get-survival-goal-file)
-    ,(org-x-qtp-get-file)
-    ,(org-x-get-weekly-plan-file)
-    ,(org-x-get-daily-plan-file)
-    ,@(org-x-get-action-and-incubator-files)))
+;; (defun org-x-dag-get-files ()
+;;   "Return a list of all files to be used in the DAG."
+;;   `(,(org-x-get-lifetime-goal-file)
+;;     ,(org-x-get-endpoint-goal-file)
+;;     ,(org-x-get-survival-goal-file)
+;;     ,(org-x-qtp-get-file)
+;;     ,(org-x-get-weekly-plan-file)
+;;     ,(org-x-get-daily-plan-file)
+;;     ,@(org-x-get-action-and-incubator-files)))
 
 (defun org-x-dag-get-md5 (path)
   "Get the md5 checksum of PATH."
@@ -1111,7 +1163,9 @@ removed from, added to, or edited within the DAG respectively."
       ((lookup-md5
         (path)
         (alist-get path org-x-dag-sync-state nil nil #'equal)))
-    (-let* ((existing-files (org-x-dag-get-files))
+    (-let* (;;(existing-files (org-x-dag-get-files))
+            (file-state (org-x-dag-read-file-paths))
+            (existing-files (org-x-dag-flatten-file-state file-state))
             (state-files (-map #'car org-x-dag-sync-state))
             (to-remove (-difference state-files existing-files))
             ((&alist 'to-insert 'to-update 'no-change)
@@ -1122,7 +1176,7 @@ removed from, added to, or edited within the DAG respectively."
                                  ((null old-md5) 'to-insert)
                                  ((equal old-md5 new-md5) 'no-change)
                                  (t 'to-update)))))))
-      (list to-remove to-insert to-update no-change))))
+      (list file-state to-remove to-insert to-update no-change))))
 
 (defun org-x-dag-read-files (files)
   (cl-flet
@@ -1152,11 +1206,12 @@ removed from, added to, or edited within the DAG respectively."
 ;; the look things up) and a 'node' (which is a cons cell, the car of which is a
 ;; 'key' and the cdr of which is a 'relation'). These names suck, but the point
 ;; is we need to distinguish between them otherwise really strange things happen
-(defun org-x-dag-update (to-remove to-insert to-update)
+(defun org-x-dag-update (file-state to-remove to-insert to-update)
   "Update the DAG given files to add and remove.
 
 TO-REMOVE, TO-INSERT, and TO-UPDATE are lists of files to remove
-from, add to, and update with the DAG."
+from, add to, and update with the DAG. FILE-STATE is a nested
+plist holding the files to be used in the DAG."
   (-let* (((&plist :id->meta :file->ids) org-x-dag)
           (files2rem (append to-update to-remove))
           (files2ins (append to-update to-insert))
@@ -1164,7 +1219,8 @@ from, add to, and update with the DAG."
           ((ids2ins meta2ins fms2ins) (org-x-dag-read-files files2ins)))
     (org-x-dag-update-ht ids2rem meta2ins id->meta)
     (org-x-dag-update-ht files2rem fms2ins file->ids)
-    (org-x-dag-update-dag ids2ins ids2rem)))
+    (org-x-dag-update-dag ids2ins ids2rem)
+    (plist-put org-x-dag :files file-state)))
 
 (defun org-x-dag-sync (&optional force)
   "Sync the DAG with files from `org-x-dag-get-files'.
@@ -1174,8 +1230,12 @@ If FORCE is non-nil, sync no matter what."
     (setq org-x-dag-sync-state nil
           org-x-dag (org-x-dag-empty)))
   ;; TODO verify integrity somewhere in here
-  (-let (((to-remove to-insert to-update no-change) (org-x-dag-get-sync-state)))
-    (org-x-dag-update to-remove (-map #'car to-insert) (-map #'car to-update))
+  (-let (((file-state to-remove to-insert to-update no-change)
+          (org-x-dag-get-sync-state)))
+    (org-x-dag-update file-state
+                      to-remove
+                      (-map #'car to-insert)
+                      (-map #'car to-update))
     (setq org-x-dag-sync-state (append to-insert to-update no-change))
     nil))
 
@@ -2023,7 +2083,7 @@ FUTURE-LIMIT in a list."
             (-> (org-x-dag-format-tag-node category nil id)
                 (org-add-props nil
                     'x-error error-type))))))
-    (org-x-dag-with-files (org-x-dag-get-files)
+    (org-x-dag-with-files (org-x-dag->files)
         (not (org-x-dag-id->is-done-p it))
       (org-x-dag-with-id it
         (list (format-id it-category it))))))
