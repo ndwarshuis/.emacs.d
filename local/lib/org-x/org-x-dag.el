@@ -1880,14 +1880,18 @@ FUTURE-LIMIT in a list."
              (not (org-x-dag-id->is-done-p it)))
       (format-key it-category it))))
 
+(defun org-x-dag--item-add-goal-ids (item ids)
+  (if ids
+      (--map (org-add-props (copy-seq item) nil 'x-goal-id it) ids)
+    (list (org-add-props item nil 'x-goal-id nil))))
+
 (defun org-x-dag-scan-projects-with-goals ()
   (cl-flet
       ((split-parent-goals
         (s)
         (let ((id (get-text-property 1 'x-id s)))
           (-if-let (goal-ids (org-x-dag-id->linked-parents id))
-              (--map (org-add-props (copy-seq s) nil 'x-goal-id it) goal-ids)
-            (list (org-add-props s nil 'x-goal-id nil))))))
+              (org-x-dag--item-add-goal-ids s goal-ids)))))
     (->> (org-x-dag-scan-projects)
          (--filter (org-x-dag-id->is-toplevel-p (get-text-property 1 'x-id it)))
          (-mapcat #'split-parent-goals))))
@@ -1952,8 +1956,18 @@ FUTURE-LIMIT in a list."
 
 ;; TODO wetter than Prince's dreams
 (defun org-x-dag-scan-tasks-with-goals ()
-  (cl-flet
-      ((format-key
+  (cl-flet*
+      ((classify-parent
+        (id)
+        (cond
+         ((or (org-x-dag-id->is-goal-p :lifetime id)
+              (org-x-dag-id->is-goal-p :endpoint id))
+          :non-survival)
+         ((org-x-dag-id->is-goal-p :survival id)
+          :survival)
+         (t
+          :ignore)))
+       (format-key
         (category is-standalone key)
         (let ((tags (org-x-dag-id->tags nil key)))
           ;; filter out incubators
@@ -1962,17 +1976,21 @@ FUTURE-LIMIT in a list."
               (let* ((s (org-x-headline-get-task-status-0 (org-x-dag-id->todo key)))
                      (p (alist-get s org-x-headline-task-status-priorities)))
                 (unless (= p -1)
-                  (let ((item
-                         (-> (org-x-dag-format-tag-node category tags key)
-                             (org-add-props nil
-                                 'x-is-standalone is-standalone
-                                 'x-status s))))
-                    (-if-let (goal-ids (org-x-dag-id->linked-parents key))
-                        (--map (org-add-props item nil 'x-goal-id it) goal-ids)
-                      (list (org-add-props item nil 'x-goal-id nil)))))))))))
+                  (-let (((&alist :non-survival :survival)
+                          (->> (org-x-dag-id->linked-parents key)
+                               (-group-by #'classify-parent))))
+                    (unless (and survival (not non-survival))
+                      (-> (org-x-dag-format-tag-node category tags key)
+                          (org-add-props nil
+                              'x-is-standalone is-standalone
+                              'x-status s)
+                          (org-x-dag--item-add-goal-ids non-survival)))))))))))
     (org-x-dag-with-files (org-x-get-action-files)
         (org-x-dag-id->is-toplevel-p it)
-      (-if-let (project-tasks (org-x-dag-get-task-nodes it))
+      (-if-let (project-tasks (org-x-dag-get-task-nodes
+                                  (lambda (it) (not (member (org-x-dag-id->todo it)
+                                                       (list org-x-kw-canc org-x-kw-hold))))
+                                  it))
           (--mapcat (format-key it-category nil it) project-tasks)
         (format-key it-category t it)))))
 
