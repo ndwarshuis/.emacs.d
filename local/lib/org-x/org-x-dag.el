@@ -387,7 +387,7 @@ Return value is a list like (BUFFER NON-BUFFER)."
         (cons buffer-parent (-remove-item buffer-parent parents))
       (cons nil parents))))
 
-(defun org-x-dag-id->foreign-parents (id)
+(defun org-x-dag-id->linked-parents (id)
   "Return non-buffer (foreign) parents of ID."
   (cdr (org-x-dag-id->split-parents id)))
 
@@ -399,12 +399,12 @@ Return value is a list like (BUFFER NON-BUFFER)."
        (--separate (equal (org-x-dag-id->buffer-parent it) id))))
 
 (defun org-x-dag-id->buffer-children (id)
-  "Return children of ID that are in the same buffer."
+  "Return children of ID that are not linked."
   (car (org-x-dag-id->split-children id)))
 
-(defun org-x-dag-id->foreign-children (id)
-  "Return children of ID that are not in the same buffer."
-  (cdr (org-x-dag-id->split-children id)))
+(defun org-x-dag-id->linked-children (id)
+  "Return children of ID that are linked."
+  (cadr (org-x-dag-id->split-children id)))
 
 (defmacro org-x-dag-id->with-split-parents (id &rest body)
   (declare (indent 1))
@@ -1885,7 +1885,7 @@ FUTURE-LIMIT in a list."
       ((split-parent-goals
         (s)
         (let ((id (get-text-property 1 'x-id s)))
-          (-if-let (goal-ids (org-x-dag-id->foreign-parents id))
+          (-if-let (goal-ids (org-x-dag-id->linked-parents id))
               (--map (org-add-props (copy-seq s) nil 'x-goal-id it) goal-ids)
             (list (org-add-props s nil 'x-goal-id nil))))))
     (->> (org-x-dag-scan-projects)
@@ -1967,7 +1967,7 @@ FUTURE-LIMIT in a list."
                              (org-add-props nil
                                  'x-is-standalone is-standalone
                                  'x-status s))))
-                    (-if-let (goal-ids (org-x-dag-id->foreign-parents key))
+                    (-if-let (goal-ids (org-x-dag-id->linked-parents key))
                         (--map (org-add-props item nil 'x-goal-id it) goal-ids)
                       (list (org-add-props item nil 'x-goal-id nil)))))))))))
     (org-x-dag-with-files (org-x-get-action-files)
@@ -1980,7 +1980,7 @@ FUTURE-LIMIT in a list."
   (cl-flet
       ((format-key
         (category is-standalone key)
-        (-when-let (goal-ids (->> (org-x-dag-id->foreign-parents key)
+        (-when-let (goal-ids (->> (org-x-dag-id->linked-parents key)
                                   (--filter (org-x-dag-id->is-goal-p :survival it))))
           (let ((tags (org-x-dag-id->tags nil key)))
             (org-x-dag-with-id key
@@ -2013,7 +2013,7 @@ FUTURE-LIMIT in a list."
         (-let* (((&plist :key :status :tags) result)
                 (priority (alist-get status org-x-project-status-priorities)))
           (when (>= priority 0)
-            (-when-let (goal-ids (->> (org-x-dag-id->foreign-parents key)
+            (-when-let (goal-ids (->> (org-x-dag-id->linked-parents key)
                                       (--filter (org-x-dag-id->is-goal-p :survival it))))
               (org-x-dag-with-id key
                 (let ((item (-> (org-x-dag-format-tag-node cat tags key)
@@ -2043,7 +2043,7 @@ FUTURE-LIMIT in a list."
 ;;         (let ((id (get-text-property 1 'x-id s)))
 ;;           ;; ASSUME all foreign parents are actually goals
 ;;           ;; TODO this isn't a great assumption
-;;           (-if-let (goal-ids (org-x-dag-id->foreign-parents id))
+;;           (-if-let (goal-ids (org-x-dag-id->linked-parents id))
 ;;               (--map (org-add-props s nil 'x-goal-id it) goal-ids)
 ;;             (list (org-add-props s nil 'x-goal-id nil))))))
 ;;     (->> (org-x-dag-scan-tasks)
@@ -2098,58 +2098,83 @@ FUTURE-LIMIT in a list."
                  (--map (format-key it-category it)))
           (list (format-key it-category it)))))))
 
-(defun org-x-dag-scan-ltgs ()
-  (let ((child-files (append (list (org-x-get-lifetime-goal-file)
-                                   (org-x-get-endpoint-goal-file))
-                             (org-x-get-action-files))))
+(defun org-x-dag--classify-goal-link (which id)
+  (let ((f (org-x-dag-id->file id)))
+    (cond
+     ;; TODO consider combining these into one lookup (the only different
+     ;; between an incubated task and non-incubated is the present of a tag
+     ((member f `(,@(org-x-dag->incubator-files) ,@(org-x-dag->action-files)))
+      :action)
+     ((equal f (org-x-dag->goal-file which))
+      :local)
+     ((equal f (org-x-dag->planning-file :quarterly))
+      :plan)
+     (t
+      :other))))
+
+(defun org-x-dag--add-goal-status (item which local-children action-children
+                                        invalid-children &optional
+                                        goal-parents invalid-parents)
+  (org-add-props item nil
+    'x-goal-status (list :type which
+                         :local-children local-children
+                         :action-children action-children
+                         :invalid-children invalid-children
+                         :goal-parents goal-parents
+                         :invalid-parents invalid-parents)))
+
+(defun org-x-dag-scan-toplevel-goals (which)
+  (let ((child-files `(,(org-x-dag->goal-file which)
+                       ,@(org-x-dag->action-files)
+                       ,@(org-x-dag->incubator-files))))
     (cl-flet
         ((format-id
           (category id)
-          (let ((toplevelp (org-x-dag-id->is-toplevel-p id))
-                (has-children (->> (org-x-dag-id->children id)
-                                   (--any-p (member (org-x-dag-id->file it)
-                                                    child-files))))
-                (tags (org-x-dag-id->tags nil id)))
+          (-let* (((buffer linked) (org-x-dag-id->split-children id))
+                  ((&alist :action :local :plan :other)
+                   (--group-by (org-x-dag--classify-goal-link which it) linked))
+                  (tags (org-x-dag-id->tags nil id)))
             (-> (org-x-dag-format-tag-node category tags id)
-                (org-add-props nil
-                    'x-goal-status (list :type 'ltg
-                                         :childlessp (not has-children)
-                                         :toplevelp toplevelp
-                                         :parentlessp nil))))))
-      (org-x-dag-with-files (list (org-x-get-lifetime-goal-file))
+                (org-x-dag--add-goal-status which
+                                            (append buffer local)
+                                            action
+                                            other)))))
+      (org-x-dag-with-files (list (org-x-dag->goal-file which))
           nil
         (org-x-dag-with-id it
           (list (format-id it-category it)))))))
 
 (defun org-x-dag-scan-epgs ()
-  (let ((child-files (cons (org-x-get-endpoint-goal-file)
-                           (org-x-get-action-files)))
-        (parent-files (list (org-x-get-endpoint-goal-file)
-                            (org-x-get-lifetime-goal-file))))
+  (let ((parent-files `(,(org-x-dag->goal-file :lifetime)
+                       ,(org-x-dag->goal-file :survival))))
     (cl-flet
         ((format-id
           (category id)
-          (let ((toplevelp (org-x-dag-id->is-toplevel-p id))
-                (has-children (->> (org-x-dag-id->children id)
-                                   (--any-p (member (org-x-dag-id->file it)
-                                                    child-files))))
-                (has-parents (->> (org-x-dag-id->parents id)
-                                  (--any-p (member (org-x-dag-id->file it)
-                                                   parent-files))))
-                (tags (org-x-dag-id->tags nil id)))
+          (-let* (((buffer-children linked-children)
+                   (org-x-dag-id->split-children id))
+                  (linked-parents (org-x-dag-id->linked-parents id))
+                  ((&alist :action :local :plan :other)
+                   (--group-by (org-x-dag--classify-goal-link :endpoint it) linked-children))
+                  ((goal-parents other-parents)
+                   (--separate (member (org-x-dag-id->file it) parent-files)
+                               linked-parents))
+                  (tags (org-x-dag-id->tags nil id)))
             (-> (org-x-dag-format-tag-node category tags id)
-                (org-add-props nil
-                    'x-goal-status (list :type 'epg
-                                         :childlessp (not has-children)
-                                         :toplevelp toplevelp
-                                         :parentlessp (not has-parents)))))))
-      (org-x-dag-with-files (list (org-x-get-endpoint-goal-file))
+                (org-x-dag--add-goal-status :endpoint
+                                            (append buffer-children local)
+                                            action
+                                            other
+                                            goal-parents
+                                            other-parents)))))
+      (org-x-dag-with-files (list (org-x-dag->goal-file :endpoint))
           nil
         (org-x-dag-with-id it
           (list (format-id it-category it)))))))
 
 (defun org-x-dag-scan-goals ()
-  (append (org-x-dag-scan-ltgs) (org-x-dag-scan-epgs)))
+  (append (org-x-dag-scan-toplevel-goals :lifetime)
+          (org-x-dag-scan-toplevel-goals :survival)
+          (org-x-dag-scan-epgs)))
 
 (defun org-x-dag-scan-errors ()
   (cl-flet
@@ -2640,6 +2665,40 @@ FUTURE-LIMIT in a list."
                   (->> (org-x-dag-id->title i)
                        (substring-no-properties))
                 "0. Unlinked")))))))))
+
+(defun org-x-dag-agenda-goals ()
+  (interactive)
+  (let ((match ''org-x-dag-scan-goals))
+    (nd/org-agenda-call "Goals-0" nil #'org-x-dag-show-nodes match nil
+      `((org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-let* (((&plist :type y
+                               :local-children lc
+                               :action-children ac
+                               :invalid-children ic
+                               :goal-parents gp
+                               :invalid-parents ip)
+                       (get-text-property 1 'x-goal-status line))
+                      (type (cl-case y
+                              (:endpoint "0. Endpoint")
+                              (:lifetime "1. Lifetime")
+                              (:survival "2. Survival")))
+                      (subtext (cl-case y
+                                 (:endpoint
+                                  (cond
+                                   (ip "Invalid parent links")
+                                   ((not gp) "Missing toplevel goal")
+                                   (ic "Invalid child links")
+                                   ((and (not lc) (not ac) "Missing action"))
+                                   ((and lc (not ac)) "Branch")))
+                                 ((:lifetime :survival)
+                                  (cond
+                                   (ic "Invalid child links")
+                                   ((and (not lc) (not ac) "Missing goal/action"))
+                                   ((and lc (not ac)) "Branch"))))))
+                (if subtext (format "%s (%s)" type subtext) type))))))))))
 
 (provide 'org-x-dag)
 ;;; org-x-dag.el ends here
