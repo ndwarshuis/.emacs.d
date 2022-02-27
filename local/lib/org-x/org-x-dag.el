@@ -384,12 +384,12 @@ highest in the tree."
 Return value is a list like (BUFFER NON-BUFFER)."
   (let ((parents (org-x-dag-id->parents id)))
     (-if-let (buffer-parent (org-x-dag-id->buffer-parent id))
-        `(,buffer-parent ,@(-remove-item buffer-parent parents))
-      `(nil ,@parents))))
+        (cons buffer-parent (-remove-item buffer-parent parents))
+      (cons nil parents))))
 
 (defun org-x-dag-id->foreign-parents (id)
   "Return non-buffer (foreign) parents of ID."
-  (cadr (org-x-dag-id->split-parents id)))
+  (cdr (org-x-dag-id->split-parents id)))
 
 (defun org-x-dag-id->split-children (id)
   "Return buffer and non-buffer children of ID.
@@ -404,7 +404,7 @@ Return value is a list like (BUFFER NON-BUFFER)."
 
 (defun org-x-dag-id->foreign-children (id)
   "Return children of ID that are not in the same buffer."
-  (cadr (org-x-dag-id->split-children id)))
+  (cdr (org-x-dag-id->split-children id)))
 
 (defmacro org-x-dag-id->with-split-parents (id &rest body)
   (declare (indent 1))
@@ -447,6 +447,28 @@ Return value is a list like (BUFFER NON-BUFFER)."
 (defun org-x-dag-id->is-toplevel-p (id)
   "Return t if ID is at the top of its buffer."
   (not (org-x-dag-id->buffer-parent id)))
+
+(defun org-x-dag-id->is-buffer-leaf-p (id)
+  "Return t if ID has no buffer children."
+  (not (org-x-dag-id->buffer-children id)))
+
+(defun org-x-dag-id->is-childless-p (id)
+  "Return t if ID has no buffer children."
+  (not (org-x-dag-id->children id)))
+
+(defun org-x-dag-id->is-parentless-p (id)
+  "Return t if ID has no buffer children."
+  (not (org-x-dag-id->parents id)))
+
+(defun org-x-dag-id->is-goal-p (which id)
+  "Return t if ID is a goal defined by WHICH."
+  (let ((f (org-x-dag->goal-file which)))
+    (equal f (org-x-dag-id->file id))))
+
+(defun org-x-dag-id->is-plan-p (which id)
+  "Return t if ID is a plan defined by WHICH."
+  (let ((f (org-x-dag->planning-file which)))
+    (equal f (org-x-dag-id->file id))))
 
 (defun org-x-dag-id->parent-link-in-file-p (file id)
   "Return t if ID has a parent link in FILE."
@@ -1821,8 +1843,8 @@ FUTURE-LIMIT in a list."
        (cl-flet
            ((proc-file
              (it-file)
-             (-when-let (keys ,pre-form*)
-               (org-x-with-file it-file
+             (org-x-with-file it-file
+               (-when-let (keys ,pre-form*)
                  ;; NOTE there are other ways in org to get the category; the
                  ;; only one I ever cared about was the filename. Very simple,
                  ;; category = filename. Done
@@ -1887,20 +1909,18 @@ FUTURE-LIMIT in a list."
             (when (org-x-dag-headline-is-iterator-p)
               (list (format-result tags it-category it)))))))))
   
-(defun org-x-dag-get-task-nodes (id)
+(defun org-x-dag-get-task-nodes (pred id)
   (declare (indent 2))
   (cl-labels
       ((descend
         (children)
-        ;; TODO don't hardcode this
-        (->> (--remove (member (org-x-dag-id->todo it)
-                               (list org-x-kw-canc org-x-kw-hold))
-                       children)
+        (->> (-filter pred children)
              (--mapcat (-if-let (cs (org-x-dag-id->buffer-children it))
                            (descend cs)
                          (list it))))))
-    (-some-> (org-x-dag-id->buffer-children id)
-      (descend))))
+    (when (funcall pred id)
+      (-some-> (org-x-dag-id->buffer-children id)
+        (descend)))))
 
 ;; TODO this includes tasks underneath cancelled headlines
 (defun org-x-dag-scan-tasks ()
@@ -1922,7 +1942,11 @@ FUTURE-LIMIT in a list."
                           'x-status s)))))))))
     (org-x-dag-with-files (org-x-get-action-files)
         (org-x-dag-id->is-toplevel-p it)
-      (-if-let (project-tasks (org-x-dag-get-task-nodes it))
+      (-if-let (project-tasks (org-x-dag-get-task-nodes
+                                  (lambda (it) (not (member (org-x-dag-id->todo it)
+                                                       (list org-x-kw-canc org-x-kw-hold))))
+                                  it))
+
           (--map (format-key it-category nil it) project-tasks)
         (list (format-key it-category t it))))))
 
@@ -1949,6 +1973,36 @@ FUTURE-LIMIT in a list."
     (org-x-dag-with-files (org-x-get-action-files)
         (org-x-dag-id->is-toplevel-p it)
       (-if-let (project-tasks (org-x-dag-get-task-nodes it))
+          (--mapcat (format-key it-category nil it) project-tasks)
+        (format-key it-category t it)))))
+
+(defun org-x-dag-scan-survival-tasks ()
+  (cl-flet
+      ((format-key
+        (category is-standalone key)
+        (-when-let (goal-ids (->> (org-x-dag-id->foreign-parents key)
+                                  (--filter (org-x-dag-id->is-goal-p :survival it))))
+          (let ((tags (org-x-dag-id->tags nil key)))
+            (org-x-dag-with-id key
+              (unless (member org-x-tag-incubated tags)
+                (let* ((s (org-x-headline-get-task-status-0 (org-x-dag-id->todo key)))
+                       (p (alist-get s org-x-headline-task-status-priorities)))
+                  (unless (= p -1)
+                    (let ((item
+                           (-> (org-x-dag-format-tag-node category tags key)
+                               (org-add-props nil
+                                   'x-is-standalone is-standalone
+                                   'x-status s))))
+                      (--map (org-add-props item nil 'x-goal-id it) goal-ids))))))))))
+    (org-x-dag-with-files (org-x-dag->action-files)
+        (and (org-x-dag-id->is-toplevel-p it)
+             (not (org-x-dag-with-id it
+                    (equal (org-x-dag-get-local-property org-x-prop-parent-type)
+                           org-x-prop-parent-type-iterator))))
+      (-if-let (project-tasks (org-x-dag-get-task-nodes
+                                  (lambda (it) (not (member (org-x-dag-id->todo it)
+                                                       (list org-x-kw-canc org-x-kw-hold))))
+                                  it))
           (--mapcat (format-key it-category nil it) project-tasks)
         (format-key it-category t it)))))
 
@@ -2498,6 +2552,21 @@ FUTURE-LIMIT in a list."
   (let ((match ''org-x-dag-scan-tasks-with-goals)
         (files (org-x-get-action-files)))
     (nd/org-agenda-call "Tasks by Goal" nil #'org-x-dag-show-nodes match files
+      `((org-agenda-todo-ignore-with-date t)
+        (org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-if-let (i (get-text-property 1 'x-goal-id line))
+                  (->> (org-x-dag-id->title i)
+                       (substring-no-properties))
+                "0. Unlinked")))))))))
+
+(defun org-x-dag-agenda-survival-tasks ()
+  (interactive)
+  (let ((match ''org-x-dag-scan-survival-tasks)
+        (files (org-x-get-action-files)))
+    (nd/org-agenda-call "Survival Tasks" nil #'org-x-dag-show-nodes match files
       `((org-agenda-todo-ignore-with-date t)
         (org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
