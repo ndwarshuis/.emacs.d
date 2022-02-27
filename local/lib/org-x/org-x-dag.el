@@ -2006,6 +2006,36 @@ FUTURE-LIMIT in a list."
           (--mapcat (format-key it-category nil it) project-tasks)
         (format-key it-category t it)))))
 
+(defun org-x-dag-scan-survival-projects ()
+  (cl-flet*
+      ((format-result
+        (cat result)
+        (-let* (((&plist :key :status :tags) result)
+                (priority (alist-get status org-x-project-status-priorities)))
+          (when (>= priority 0)
+            (-when-let (goal-ids (->> (org-x-dag-id->foreign-parents key)
+                                      (--filter (org-x-dag-id->is-goal-p :survival it))))
+              (org-x-dag-with-id key
+                (let ((item (-> (org-x-dag-format-tag-node cat tags key)
+                                (org-add-props nil
+                                    'x-toplevelp (org-x-dag-id->is-toplevel-p key)
+                                    'x-status status
+                                    'x-priority priority))))
+                  (--map (org-add-props item nil 'x-goal-id it) goal-ids)))))))
+       (format-key
+        (cat key)
+        (let ((tags (org-x-dag-id->tags nil key)))
+          ;; TODO don't hardcode these things
+          (org-x-dag-with-id key
+            (unless (member org-x-tag-incubated tags)
+              (-some->> (org-x-dag-id->buffer-children key)
+                (org-x-dag-headline-get-project-status key tags)
+                (--mapcat (format-result cat it))))))))
+    (org-x-dag-with-files (org-x-dag->action-files)
+        (and (org-x-dag-id->is-toplevel-p it)
+             (not (org-x-dag-id->is-done-p it)))
+      (format-key it-category it))))
+
 ;; (defun org-x-dag-scan-tasks-with-goals ()
 ;;   (cl-flet
 ;;       ((split-parent-goals
@@ -2584,6 +2614,23 @@ FUTURE-LIMIT in a list."
   (let ((match ''org-x-dag-scan-projects-with-goals)
         (files (org-x-get-action-files)))
     (nd/org-agenda-call "Projects by Goal" nil #'org-x-dag-show-nodes match files
+      `((org-agenda-todo-ignore-with-date t)
+        (org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-if-let (i (get-text-property 1 'x-goal-id line))
+                  (->> (org-x-dag-id->title i)
+                       (substring-no-properties))
+                "0. Unlinked")))))))))
+
+;; TODO this is just toplevel projects (for now)
+;; TODO wetter than Seattle
+(defun org-x-dag-agenda-survival-projects ()
+  (interactive)
+  (let ((match ''org-x-dag-scan-survival-projects)
+        (files (org-x-get-action-files)))
+    (nd/org-agenda-call "Survival Projects" nil #'org-x-dag-show-nodes match files
       `((org-agenda-todo-ignore-with-date t)
         (org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
