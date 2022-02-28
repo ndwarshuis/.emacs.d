@@ -432,15 +432,48 @@ Return value is a list like (BUFFER NON-BUFFER)."
        (-mapcat #'org-x-dag-id->all-buffer-children)
        (cons id)))
 
+(defun org-x-dag-id->goal-status (which id)
+  (let* ((ps (org-x-dag-id->linked-parents id))
+         (ks (->> (-map #'org-x-dag-id->file ps)
+                  (--map (cond
+                          ((equal it (org-x-dag->goal-file :survival))
+                           :survival)
+                          ((member it `(,(org-x-dag->goal-file :endpoint)
+                                        ,(org-x-dag->goal-file :lifetime)))
+                           :non-survival)
+                          (t
+                           :other))))))
+    (cond
+     ((null ks)
+      :no-goals)
+     ((memq :other ks)
+      :invalid-goals)
+     ((and (memq :non-survival ks) (memq :survival ks))
+      :mixed-goals)
+     ((memq :survival ks)
+      :survival)
+     (t
+      (let ((gs (org-x-dag->qtp-goal-ids which)))
+        (if (--any-p (member it gs) ps) :planned :committed))))))
+
 ;; id predicates/identities
 
 (defun org-x-dag-id->is-done-p (id)
   "Return t if ID has done keywords."
   (member (org-x-dag-id->todo id) org-x-done-keywords))
 
-(defun org-x-dag-id->is-incubated (id)
-  "Return t if ID is incubated (not on quarterly plan)."
-  (let ((q (org-x-dag->qtp-goal-ids 'current)))
+(defun org-x-dag-id->id-survival-p (id)
+  "Return t if ID has a parent survival goal."
+  (let ((f (org-x-dag->goal-file :survival)))
+    (->> (org-x-dag-id->linked-parents id)
+         (--any-p (equal (org-x-dag-id->file it) f)))))
+
+(defun org-x-dag-id->is-incubated (which id)
+  "Return t if ID is incubated.
+
+This is defined as not having a linked parent that is a goal which
+is also referenced in WHICH quarterly plan."
+  (let ((q (org-x-dag->qtp-goal-ids which)))
     (--none-p (member it q) (org-x-dag-id->linked-parents id))))
 
 (defun org-x-dag-id->is-uncommitted (id)
@@ -450,9 +483,8 @@ This is equivalent to the GTD adjective \"maybe\". An ID can only
 be uncommitted if it is also incubated."
   (let ((fs `(,(org-x-dag->goal-file :lifetime)
               ,(org-x-dag->goal-file :endpoint))))
-    (and (org-x-dag-id->is-incubated id)
-         (->> (org-x-dag-id->linked-parents id)
-              (--none-p (member (org-x-dag-id->file it) fs))))))
+    (->> (org-x-dag-id->linked-parents id)
+         (--none-p (member (org-x-dag-id->file it) fs)))))
 
 (defun org-x-dag-id->is-floating-p (id)
   "Return t if ID is floating."
@@ -1883,7 +1915,8 @@ FUTURE-LIMIT in a list."
         (let ((tags (org-x-dag-id->tags nil key)))
           ;; TODO don't hardcode these things
           (org-x-dag-with-id key
-            (unless (or (member org-x-tag-incubated tags)
+            (unless (or (org-x-dag-id->is-incubated 'current key)
+                     ;; (member org-x-tag-incubated tags)
                         (org-x-dag-headline-is-iterator-p))
               (-some->> (org-x-dag-id->buffer-children key)
                 (org-x-dag-headline-get-project-status key tags)
