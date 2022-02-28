@@ -2159,13 +2159,15 @@ FUTURE-LIMIT in a list."
                  (--map (format-key it-category it)))
           (list (format-key it-category it)))))))
 
-(defun org-x-dag--classify-goal-link (which id)
+(defun org-x-dag--classify-goal-link (which which-goal id)
   (let ((f (org-x-dag-id->file id)))
     (cond
      ((member f (org-x-dag->action-files))
       :action)
      ((equal f (org-x-dag->goal-file which))
       :local)
+     ((and which-child (equal f (org-x-dag->goal-file which-child)))
+      :child-goal)
      ((equal f (org-x-dag->planning-file :quarterly))
       :plan)
      (t
@@ -2182,18 +2184,20 @@ FUTURE-LIMIT in a list."
                          :goal-parents goal-parents
                          :invalid-parents invalid-parents)))
 
-(defun org-x-dag-scan-toplevel-goals (which)
+(defun org-x-dag-scan-toplevel-goals (which which-goal)
   (cl-flet
       ((format-id
         (category id)
         (-let* (((buffer linked) (org-x-dag-id->split-children id))
-                ((&alist :action :local :plan :other)
-                 (--group-by (org-x-dag--classify-goal-link which it) linked))
+                ((&alist :action :local :child-goal :plan :other)
+                 (--group-by
+                  (org-x-dag--classify-goal-link which which-child it)
+                  linked))
                 (tags (org-x-dag-id->tags nil id)))
           (-> (org-x-dag-format-tag-node category tags id)
               (org-x-dag--add-goal-status which
                                           (append buffer local)
-                                          action
+                                          (append action child-goal)
                                           other)))))
     (org-x-dag-with-files (list (org-x-dag->goal-file which))
         nil
@@ -2201,8 +2205,7 @@ FUTURE-LIMIT in a list."
         (list (format-id it-category it))))))
 
 (defun org-x-dag-scan-epgs ()
-  (let ((parent-files `(,(org-x-dag->goal-file :lifetime)
-                       ,(org-x-dag->goal-file :survival))))
+  (let ((parent-files `(,(org-x-dag->goal-file :lifetime))))
     (cl-flet
         ((format-id
           (category id)
@@ -2228,8 +2231,8 @@ FUTURE-LIMIT in a list."
           (list (format-id it-category it)))))))
 
 (defun org-x-dag-scan-goals ()
-  (append (org-x-dag-scan-toplevel-goals :lifetime)
-          (org-x-dag-scan-toplevel-goals :survival)
+  (append (org-x-dag-scan-toplevel-goals :lifetime :endpoint)
+          (org-x-dag-scan-toplevel-goals :survival nil)
           (org-x-dag-scan-epgs)))
 
 (defun org-x-dag-scan-errors ()
