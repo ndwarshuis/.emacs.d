@@ -438,6 +438,22 @@ Return value is a list like (BUFFER NON-BUFFER)."
   "Return t if ID has done keywords."
   (member (org-x-dag-id->todo id) org-x-done-keywords))
 
+(defun org-x-dag-id->is-incubated (id)
+  "Return t if ID is incubated (not on quarterly plan)."
+  (let ((q (org-x-dag->qtp-goal-ids 'current)))
+    (--none-p (member it q) (org-x-dag-id->linked-parents id))))
+
+(defun org-x-dag-id->is-uncommitted (id)
+  "Return t if ID is uncommitted (not assigned a goal).
+
+This is equivalent to the GTD adjective \"maybe\". An ID can only
+be uncommitted if it is also incubated."
+  (let ((fs `(,(org-x-dag->goal-file :lifetime)
+              ,(org-x-dag->goal-file :endpoint))))
+    (and (org-x-dag-id->is-incubated id)
+         (->> (org-x-dag-id->linked-parents id)
+              (--none-p (member (org-x-dag-id->file it) fs))))))
+
 (defun org-x-dag-id->is-floating-p (id)
   "Return t if ID is floating."
   (-> (plist-get org-x-dag :dag)
@@ -573,31 +589,25 @@ Return value is a list like (BUFFER NON-BUFFER)."
 ;; (defun org-x-dag->dlp-current-ids (date)
 ;;   (org-x-dag-date->dlp-ids (org-x-dag->current-date)))
 
-(defun org-x-dag-which->ids (file date-to-tag which)
+(defun org-x-dag-which->ids (file-key date-to-tag which)
   (cl-flet
       ((date-ids
         (ids date)
         (org-x-dag-date->tagged-ids ids date-to-tag date)))
-    (let ((ids (org-x-dag-file->ids file)))
+    (let ((ids (org-x-dag-file->ids (org-x-dag->planning-file file-key))))
       (pcase which
         (`all ids)
         (`current (date-ids ids (org-x-dag->current-date)))
         (date (date-ids ids date))))))
 
 (defun org-x-dag->qtp-ids (which)
-  (org-x-dag-which->ids (org-x-qtp-get-file)
-                        #'org-x-dag-date-to-quarter-tags
-                        which))
+  (org-x-dag-which->ids :quarterly #'org-x-dag-date-to-quarter-tags which))
 
 (defun org-x-dag->wkp-ids (which)
-  (org-x-dag-which->ids (org-x-get-weekly-plan-file)
-                        #'org-x-dag-date-to-week-tags
-                        which))
+  (org-x-dag-which->ids :weekly #'org-x-dag-date-to-week-tags which))
 
 (defun org-x-dag->dlp-ids (which)
-  (org-x-dag-which->ids (org-x-get-daily-plan-file)
-                        #'org-x-dag-date-to-daily-tags
-                        which))
+  (org-x-dag-which->ids :daily #'org-x-dag-date-to-daily-tags which))
 
 (defun org-x-dag-partition-child-ids (files ids)
   (->> (org-x-dag-files->ids files)
@@ -618,9 +628,12 @@ Return value is a list like (BUFFER NON-BUFFER)."
        (org-x-dag-partition-child-ids (list (org-x-qtp-get-file)))))
 
 (defun org-x-dag->qtp-goal-ids (which)
-  (->> (org-x-dag->qtp-ids which)
-       (org-x-dag-partition-child-ids `(,(org-x-get-lifetime-goal-file)
-                                        ,(org-x-get-endpoint-goal-file)))))
+  "Return all goal IDs associated with WHICH quarter."
+  (let ((fs `(,(org-x-dag->goal-file :endpoint)
+              ,(org-x-dag->goal-file :lifetime))))
+    (->> (org-x-dag->qtp-ids which)
+         (-mapcat #'org-x-dag-id->linked-parents)
+         (--filter (member (org-x-dag-id->file it) fs)))))
 
 ;; (defun org-x-dag-date->dlp-parent-ids (date)
 ;;   (let ((dlp-ids (org-x-dag-date->dlp-ids date)))
