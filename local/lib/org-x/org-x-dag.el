@@ -193,8 +193,9 @@
         :plan-files (list :daily (org-x-get-daily-plan-file)
                           :weekly (org-x-get-weekly-plan-file)
                           :quarterly (org-x-qtp-get-file))
-        :incubator-files (org-x-get-incubator-files)
-        :action-files (org-x-get-action-files)))
+        :action-files (append (org-x-get-action-files)
+                              (org-x-get-incubator-files))))
+        
 
 (defun org-x-dag-flatten-goal-file-state (state)
   (-let (((&plist :lifetime l :endpoint e :survival s) state))
@@ -205,10 +206,9 @@
     `(,q ,w ,d)))
 
 (defun org-x-dag-flatten-file-state (state)
-  (-let (((&plist :goal-files :plan-files :incubator-files :action-files) state))
+  (-let (((&plist :goal-files :plan-files :action-files) state))
     (append (org-x-dag-flatten-goal-file-state goal-files)
             (org-x-dag-flatten-planning-file-state plan-files)
-            incubator-files
             action-files)))
 
 (defun org-x-dag-empty ()
@@ -286,9 +286,6 @@ that file as it currently sits on disk.")
 
 (defun org-x-dag->action-files ()
   (plist-get (org-x-dag->file-state) :action-files))
-
-(defun org-x-dag->incubator-files ()
-  (plist-get (org-x-dag->file-state) :incubator-files))
 
 (defun org-x-dag->files ()
   (org-x-dag-flatten-file-state (org-x-dag->file-state)))
@@ -653,7 +650,7 @@ be uncommitted if it is also incubated."
 
 (defun org-x-dag->dlp-action-ids (which)
   (->> (org-x-dag->dlp-ids which)
-       (org-x-dag-partition-child-ids (org-x-get-action-and-incubator-files))))
+       (org-x-dag-partition-child-ids (org-x-dag->action-files))))
 
 (defun org-x-dag->wkp-qtp-ids (which)
   (->> (org-x-dag->wkp-ids which)
@@ -2128,7 +2125,7 @@ FUTURE-LIMIT in a list."
                         'x-project-p is-project
                         'x-scheduled sch
                         'x-deadlined dead))))))))
-    (org-x-dag-with-files (org-x-get-action-and-incubator-files)
+    (org-x-dag-with-files (org-x-dag->action-files)
         (and (org-x-dag-id->is-toplevel-p it)
              (not (org-x-dag-id->is-done-p it)))
       (list (format-key it-category it)))))
@@ -2165,9 +2162,7 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag--classify-goal-link (which id)
   (let ((f (org-x-dag-id->file id)))
     (cond
-     ;; TODO consider combining these into one lookup (the only different
-     ;; between an incubated task and non-incubated is the present of a tag
-     ((member f `(,@(org-x-dag->incubator-files) ,@(org-x-dag->action-files)))
+     ((member f (org-x-dag->action-files))
       :action)
      ((equal f (org-x-dag->goal-file which))
       :local)
@@ -2188,25 +2183,22 @@ FUTURE-LIMIT in a list."
                          :invalid-parents invalid-parents)))
 
 (defun org-x-dag-scan-toplevel-goals (which)
-  (let ((child-files `(,(org-x-dag->goal-file which)
-                       ,@(org-x-dag->action-files)
-                       ,@(org-x-dag->incubator-files))))
-    (cl-flet
-        ((format-id
-          (category id)
-          (-let* (((buffer linked) (org-x-dag-id->split-children id))
-                  ((&alist :action :local :plan :other)
-                   (--group-by (org-x-dag--classify-goal-link which it) linked))
-                  (tags (org-x-dag-id->tags nil id)))
-            (-> (org-x-dag-format-tag-node category tags id)
-                (org-x-dag--add-goal-status which
-                                            (append buffer local)
-                                            action
-                                            other)))))
-      (org-x-dag-with-files (list (org-x-dag->goal-file which))
-          nil
-        (org-x-dag-with-id it
-          (list (format-id it-category it)))))))
+  (cl-flet
+      ((format-id
+        (category id)
+        (-let* (((buffer linked) (org-x-dag-id->split-children id))
+                ((&alist :action :local :plan :other)
+                 (--group-by (org-x-dag--classify-goal-link which it) linked))
+                (tags (org-x-dag-id->tags nil id)))
+          (-> (org-x-dag-format-tag-node category tags id)
+              (org-x-dag--add-goal-status which
+                                          (append buffer local)
+                                          action
+                                          other)))))
+    (org-x-dag-with-files (list (org-x-dag->goal-file which))
+        nil
+      (org-x-dag-with-id it
+        (list (format-id it-category it))))))
 
 (defun org-x-dag-scan-epgs ()
   (let ((parent-files `(,(org-x-dag->goal-file :lifetime)
@@ -2609,7 +2601,7 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-link-action-to-goal ()
   (interactive)
   (let ((ids (append (org-x-dag->ltg-ids) (org-x-dag->epg-ids)))
-        (legal (org-x-get-action-and-incubator-files)))
+        (legal (org-x-dag->action-files)))
     ;; TODO this won't work on the toplevel section
     (org-x-dag-this-headline-choose-id t legal "an action/incubator file" ids)))
 
