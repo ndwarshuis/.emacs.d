@@ -1949,10 +1949,11 @@ FUTURE-LIMIT in a list."
             (-> (org-x-dag-format-tag-node cat tags key)
                 (org-add-props nil
                     'x-status status))))))
+    ;; TODO this will only scan toplevel iterators
     (org-x-dag-with-files (org-x-get-action-files)
         (org-x-dag-id->is-toplevel-p it)
       (let ((tags (org-x-dag-id->tags nil it)))
-        (unless (member org-x-tag-incubated tags)
+        (when (eq (cadr (org-x-dag-id->goal-status 'current id)) :planned)
           (org-x-dag-with-id it
             (when (org-x-dag-headline-is-iterator-p)
               (list (format-result tags it-category it)))))))))
@@ -1976,7 +1977,6 @@ FUTURE-LIMIT in a list."
       ((format-key
         (category is-standalone key)
         (let ((tags (org-x-dag-id->tags nil key)))
-          ;; filter out incubators
           (org-x-dag-with-id key
             (unless (or (not (eq (cadr (org-x-dag-id->goal-status 'current key)) :planned))
                         (org-x-dag-headline-is-scheduled-p nil)
@@ -2593,7 +2593,7 @@ FUTURE-LIMIT in a list."
   (let ((ids (append (org-x-dag->ltg-ids) (org-x-dag->epg-ids)))
         (legal (org-x-dag->action-files)))
     ;; TODO this won't work on the toplevel section
-    (org-x-dag-this-headline-choose-id t legal "an action/incubator file" ids)))
+    (org-x-dag-this-headline-choose-id t legal "an action file" ids)))
 
 ;;; AGENDA VIEWS
 
