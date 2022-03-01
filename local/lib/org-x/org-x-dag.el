@@ -439,19 +439,20 @@ Return value is a list like (BUFFER NON-BUFFER)."
                                         ,(org-x-dag->goal-file :lifetime)))
                            :non-survival)
                           (t
-                           :other))))))
-    (cond
-     ((null ks)
-      :no-goals)
-     ((memq :other ks)
-      :invalid-goals)
-     ((and (memq :non-survival ks) (memq :survival ks))
-      :mixed-goals)
-     ((memq :survival ks)
-      :survival)
-     (t
-      (let ((gs (org-x-dag->qtp-goal-ids which)))
-        (if (--any-p (member it gs) ps) :planned :committed))))))
+                           :other)))))
+         (status (cond
+                  ((null ks)
+                   :no-goals)
+                  ((memq :other ks)
+                   :invalid-goals)
+                  ((and (memq :non-survival ks) (memq :survival ks))
+                   :mixed-goals)
+                  ((memq :survival ks)
+                   :survival)
+                  (t
+                   (let ((gs (org-x-dag->qtp-goal-ids which)))
+                     (if (--any-p (member it gs) ps) :planned :committed))))))
+    (list ps status)))
 
 ;; id predicates/identities
 
@@ -662,7 +663,8 @@ be uncommitted if it is also incubated."
               ,(org-x-dag->goal-file :lifetime))))
     (->> (org-x-dag->qtp-ids which)
          (-mapcat #'org-x-dag-id->linked-parents)
-         (--filter (member (org-x-dag-id->file it) fs)))))
+         (--filter (member (org-x-dag-id->file it) fs))
+         (-uniq))))
 
 ;; (defun org-x-dag-date->dlp-parent-ids (date)
 ;;   (let ((dlp-ids (org-x-dag-date->dlp-ids date)))
@@ -1912,8 +1914,7 @@ FUTURE-LIMIT in a list."
         (let ((tags (org-x-dag-id->tags nil key)))
           ;; TODO don't hardcode these things
           (org-x-dag-with-id key
-            (unless (or (org-x-dag-id->is-incubated 'current key)
-                     ;; (member org-x-tag-incubated tags)
+            (unless (or (not (eq (cadr (org-x-dag-id->goal-status 'current key)) :planned))
                         (org-x-dag-headline-is-iterator-p))
               (-some->> (org-x-dag-id->buffer-children key)
                 (org-x-dag-headline-get-project-status key tags)
@@ -1977,7 +1978,7 @@ FUTURE-LIMIT in a list."
         (let ((tags (org-x-dag-id->tags nil key)))
           ;; filter out incubators
           (org-x-dag-with-id key
-            (unless (or (member org-x-tag-incubated tags)
+            (unless (or (not (eq (cadr (org-x-dag-id->goal-status 'current key)) :planned))
                         (org-x-dag-headline-is-scheduled-p nil)
                         (org-x-dag-headline-is-deadlined-p nil))
               (let* ((s (org-x-headline-get-task-status-0 (org-x-dag-id->todo key)))
@@ -2012,22 +2013,20 @@ FUTURE-LIMIT in a list."
           :ignore)))
        (format-key
         (category is-standalone key)
-        (let ((tags (org-x-dag-id->tags nil key)))
-          ;; filter out incubators
-          (org-x-dag-with-id key
-            (unless (member org-x-tag-incubated tags)
+        (-let (((goal-ids goal-status) (org-x-dag-id->goal-status 'current key)))
+          (when (memq goal-status '(:planned :committed))
+            (org-x-dag-with-id key
               (let* ((s (org-x-headline-get-task-status-0 (org-x-dag-id->todo key)))
-                     (p (alist-get s org-x-headline-task-status-priorities)))
+                     (p (alist-get s org-x-headline-task-status-priorities))
+                     (tags (org-x-dag-id->tags nil key)))
                 (unless (= p -1)
-                  (-let (((&alist :non-survival :survival)
-                          (->> (org-x-dag-id->linked-parents key)
-                               (-group-by #'classify-parent))))
-                    (unless (and survival (not non-survival))
-                      (-> (org-x-dag-format-tag-node category tags key)
-                          (org-add-props nil
-                              'x-is-standalone is-standalone
-                              'x-status s)
-                          (org-x-dag--item-add-goal-ids non-survival)))))))))))
+                  ;; ASSUME only ids with at least one valid goal will get this
+                  ;; far
+                  (-> (org-x-dag-format-tag-node category tags key)
+                      (org-add-props nil
+                          'x-is-standalone is-standalone
+                          'x-status s)
+                      (org-x-dag--item-add-goal-ids goal-ids)))))))))
     (org-x-dag-with-files (org-x-get-action-files)
         (org-x-dag-id->is-toplevel-p it)
       (-if-let (project-tasks (org-x-dag-get-task-nodes
@@ -2041,20 +2040,18 @@ FUTURE-LIMIT in a list."
   (cl-flet
       ((format-key
         (category is-standalone key)
-        (-when-let (goal-ids (->> (org-x-dag-id->linked-parents key)
-                                  (--filter (org-x-dag-id->is-goal-p :survival it))))
-          (let ((tags (org-x-dag-id->tags nil key)))
+        (-let (((goal-ids goal-status) (org-x-dag-id->goal-status 'current key)))
+          (when (eq goal-status :survival)
             (org-x-dag-with-id key
-              (unless (member org-x-tag-incubated tags)
-                (let* ((s (org-x-headline-get-task-status-0 (org-x-dag-id->todo key)))
-                       (p (alist-get s org-x-headline-task-status-priorities)))
-                  (unless (= p -1)
-                    (let ((item
-                           (-> (org-x-dag-format-tag-node category tags key)
-                               (org-add-props nil
-                                   'x-is-standalone is-standalone
-                                   'x-status s))))
-                      (--map (org-add-props item nil 'x-goal-id it) goal-ids))))))))))
+              (let* ((s (org-x-headline-get-task-status-0 (org-x-dag-id->todo key)))
+                     (p (alist-get s org-x-headline-task-status-priorities))
+                     (tags (org-x-dag-id->tags nil key)))
+                (unless (= p -1)
+                  (-> (org-x-dag-format-tag-node category tags key)
+                      (org-add-props nil
+                          'x-is-standalone is-standalone
+                          'x-status s)
+                      (org-x-dag--item-add-goal-ids goal-ids)))))))))
     (org-x-dag-with-files (org-x-dag->action-files)
         (and (org-x-dag-id->is-toplevel-p it)
              (not (org-x-dag-with-id it
@@ -2074,68 +2071,57 @@ FUTURE-LIMIT in a list."
         (-let* (((&plist :key :status :tags) result)
                 (priority (alist-get status org-x-project-status-priorities)))
           (when (>= priority 0)
-            (-when-let (goal-ids (->> (org-x-dag-id->linked-parents key)
-                                      (--filter (org-x-dag-id->is-goal-p :survival it))))
-              (org-x-dag-with-id key
-                (let ((item (-> (org-x-dag-format-tag-node cat tags key)
-                                (org-add-props nil
-                                    'x-toplevelp (org-x-dag-id->is-toplevel-p key)
-                                    'x-status status
-                                    'x-priority priority))))
-                  (--map (org-add-props item nil 'x-goal-id it) goal-ids)))))))
+            (-let (((goal-ids goal-status) (org-x-dag-id->goal-status 'current key)))
+              (when (eq goal-status :survival)
+                (org-x-dag-with-id key
+                  (-> (org-x-dag-format-tag-node cat tags key)
+                      (org-add-props nil
+                          'x-toplevelp (org-x-dag-id->is-toplevel-p key)
+                          'x-status status
+                          'x-priority priority)
+                      (org-x-dag--item-add-goal-ids goal-ids))))))))
        (format-key
         (cat key)
         (let ((tags (org-x-dag-id->tags nil key)))
           ;; TODO don't hardcode these things
           (org-x-dag-with-id key
-            (unless (member org-x-tag-incubated tags)
-              (-some->> (org-x-dag-id->buffer-children key)
-                (org-x-dag-headline-get-project-status key tags)
-                (--mapcat (format-result cat it))))))))
+            (-some->> (org-x-dag-id->buffer-children key)
+              (org-x-dag-headline-get-project-status key tags)
+              (--mapcat (format-result cat it)))))))
+    ;; TODO this is hella-inefficient, just get the child links from the
+    ;; survival goal file and start from there
     (org-x-dag-with-files (org-x-dag->action-files)
         (and (org-x-dag-id->is-toplevel-p it)
              (not (org-x-dag-id->is-done-p it)))
       (format-key it-category it))))
 
-;; (defun org-x-dag-scan-tasks-with-goals ()
+;; (defun org-x-dag-scan-incubated ()
 ;;   (cl-flet
-;;       ((split-parent-goals
-;;         (s)
-;;         (let ((id (get-text-property 1 'x-id s)))
-;;           ;; ASSUME all foreign parents are actually goals
-;;           ;; TODO this isn't a great assumption
-;;           (-if-let (goal-ids (org-x-dag-id->linked-parents id))
-;;               (--map (org-add-props s nil 'x-goal-id it) goal-ids)
-;;             (list (org-add-props s nil 'x-goal-id nil))))))
-;;     (->> (org-x-dag-scan-tasks)
-;;          (-mapcat #'split-parent-goals))))
-
-(defun org-x-dag-scan-incubated ()
-  (cl-flet
-      ((format-key
-        (category key)
-        (let ((tags (org-x-dag-id->tags nil key)))
-          (when (member org-x-tag-incubated tags)
-            (org-x-dag-with-id key
-              (let* ((sch (org-x-dag-headline-is-scheduled-p t))
-                     (dead (org-x-dag-headline-is-deadlined-p t))
-                     (is-project (org-x-dag-id->buffer-children key)))
-                (-> (org-x-dag-format-tag-node category tags key)
-                    (org-add-props nil
-                        'x-project-p is-project
-                        'x-scheduled sch
-                        'x-deadlined dead))))))))
-    (org-x-dag-with-files (org-x-dag->action-files)
-        (and (org-x-dag-id->is-toplevel-p it)
-             (not (org-x-dag-id->is-done-p it)))
-      (list (format-key it-category it)))))
+;;       ((format-key
+;;         (category key)
+;;         (let ((tags (org-x-dag-id->tags nil key)))
+;;           (when (member org-x-tag-incubated tags)
+;;             (org-x-dag-with-id key
+;;               (let* ((sch (org-x-dag-headline-is-scheduled-p t))
+;;                      (dead (org-x-dag-headline-is-deadlined-p t))
+;;                      (is-project (org-x-dag-id->buffer-children key)))
+;;                 (-> (org-x-dag-format-tag-node category tags key)
+;;                     (org-add-props nil
+;;                         'x-project-p is-project
+;;                         'x-scheduled sch
+;;                         'x-deadlined dead))))))))
+;;     (org-x-dag-with-files (org-x-dag->action-files)
+;;         (and (org-x-dag-id->is-toplevel-p it)
+;;              (not (org-x-dag-id->is-done-p it)))
+;;       (list (format-key it-category it)))))
 
 (defun org-x-dag-scan-archived ()
   (cl-flet
       ((format-key
         (category key)
         (let ((tags (org-x-dag-id->tags nil key)))
-          (unless (member org-x-tag-incubated tags)
+          ;; TODO is this what I actually want?
+          (when (memq (cadr (org-x-dag-id->goal-status 'current key)) '(:planned :committed))
             (org-x-dag-with-id key
               (-let (((is-archivable is-project)
                       (-if-let (children (org-x-dag-id->buffer-children key))
@@ -2262,13 +2248,14 @@ FUTURE-LIMIT in a list."
         (todayp sel-date cat id pts get-datetimes-fun format-datetime-fun)
         (-when-let (datetimes (funcall get-datetimes-fun sel-date pts))
           (let ((tags (org-x-dag-id->tags nil id)))
-            (unless (member org-x-tag-incubated tags)
-              (-let (((&plist :pos) pts)
-                     (donep (org-x-dag-id->is-done-p id)))
-                (--> datetimes
-                     (--remove (and donep (not (org-x-dag-datetime= (-take 3 it) sel-date))) it)
-                     (if (not todayp) (--remove (org-x-dag-datetime< (-take 3 it) sel-date) it) it)
-                     (--map (funcall format-datetime-fun sel-date pos it cat tags id) it)))))))
+            ;; TODO this will show all tasks regardless of if they have a
+            ;; goal/plan or not
+            (-let (((&plist :pos) pts)
+                   (donep (org-x-dag-id->is-done-p id)))
+              (--> datetimes
+                   (--remove (and donep (not (org-x-dag-datetime= (-take 3 it) sel-date))) it)
+                   (if (not todayp) (--remove (org-x-dag-datetime< (-take 3 it) sel-date) it) it)
+                   (--map (funcall format-datetime-fun sel-date pos it cat tags id) it))))))
        (format-id
         (todayp cat id)
         (org-x-dag-with-id id
