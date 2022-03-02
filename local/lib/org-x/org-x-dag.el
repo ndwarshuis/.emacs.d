@@ -242,13 +242,14 @@ that file as it currently sits on disk.")
 
 ;; functions to construct nodes within state
 
-(defun org-x-dag-build-meta (file point level todo title tags parent)
+(defun org-x-dag-build-meta (file point level todo title tags planning parent)
   (list :file file
         :point point
         :level level
         :todo todo
         :title title
         :tags tags
+        :planning planning
         :buffer-parent parent))
 
 ;; state lookup functions
@@ -1180,6 +1181,10 @@ valid keyword or none of its parents have valid keywords."
                                 (--mapcat (nth 2 it))
                                 (append this-tags org-file-tags))
                          this-tags)
+              this-planning (save-excursion
+                              (forward-line 1)
+                              (when (looking-at org-planning-line-re)
+                                (org-element-planning-parser nil)))
               this-links (or (org-x-dag-get-parent-links)
                              (if this-parent-key
                                  (-some->> (--first (nth 3 it) cur-path)
@@ -1191,6 +1196,7 @@ valid keyword or none of its parents have valid keywords."
                                               this-todo
                                               this-title
                                               all-tags
+                                              this-planning
                                               this-parent-key))
         (!cons (cons this-key this-meta) acc-meta)
         (!cons (cons this-key `(,(nth 1 this-parent) ,@this-links)) acc))
