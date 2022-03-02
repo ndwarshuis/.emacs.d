@@ -242,7 +242,7 @@ that file as it currently sits on disk.")
 
 ;; functions to construct nodes within state
 
-(defun org-x-dag-build-meta (file point level todo title tags planning parent)
+(defun org-x-dag-build-meta (file point level todo title tags planning props parent)
   (list :file file
         :point point
         :level level
@@ -250,6 +250,7 @@ that file as it currently sits on disk.")
         :title title
         :tags tags
         :planning planning
+        :props props
         :buffer-parent parent))
 
 ;; state lookup functions
@@ -1096,15 +1097,32 @@ A date like (YEAR MONTH DAY).")
 
 ;;; BUFFER SCANNING
 
-(defun org-x-dag-get-local-property (prop)
-  (car (org--property-local-values prop nil)))
+(defun org-x-dag-get-local-property (range prop)
+  (-when-let ((beg . end) range)
+    (save-excursion
+      (goto-char beg)
+      (when (re-search-forward (org-re-property prop nil t) end t)
+        (match-string-no-properties 3)))))
 
-(defun org-x-dag-get-link-property ()
-  (-some->> (org-x-dag-get-local-property org-x-prop-goal)
-    (s-split ";")
-    (--map (->> (s-trim it)
-                (s-match "^\\[\\[id:\\(.*\\)\\]\\[.*\\]\\]$")
-                (cadr)))))
+(defun org-x-dag-get-local-properties (range props)
+  (-when-let ((beg . end) range)
+    (save-excursion
+      (let (acc)
+        (while props
+          (goto-char beg)
+          (when (re-search-forward (org-re-property (car props) nil t) end t)
+            (!cons (cons (car props) (match-string-no-properties 3)) acc))
+          (!cdr props))
+        acc))))
+          
+    ;; (car (org--property-local-values prop nil)))
+
+;; (defun org-x-dag-get-link-property (range)
+;;   (-some->> (org-x-dag-get-local-property range org-x-prop-goal)
+;;     (s-split ";")
+;;     (--map (->> (s-trim it)
+;;                 (s-match "^\\[\\[id:\\(.*\\)\\]\\[.*\\]\\]$")
+;;                 (cadr)))))
 
 (defun org-x-dag-get-parent-links ()
   (cl-flet
@@ -1131,12 +1149,14 @@ A date like (YEAR MONTH DAY).")
         (tag-re "\\(?:\\([[:alnum:]_@#%%:]+\\):\\)?"))
     (format "^%s[ ]+%s%s%s[ ]*$" level-re kw-re title-re tag-re)))
 
-(defun org-x-dag-get-buffer-nodes (file kws)
+(defun org-x-dag-get-buffer-nodes (file kws target-props)
   "Return a list of nodes from FILE.
 
 A node will only be returned if the headline to which it points
 has a valid (meaning in KWS) keyword and either its parent has a
-valid keyword or none of its parents have valid keywords."
+valid keyword or none of its parents have valid keywords.
+TARGET-PROPS is a list of properties to parse from each
+headline."
   (let ((more t)
         (line-re (org-x-dag-line-regexp kws))
         cur-path this-point this-key this-level this-todo has-todo this-parent
@@ -1161,6 +1181,7 @@ valid keyword or none of its parents have valid keywords."
             this-title (-if-let (s (match-string 3)) (s-trim s) "")
             this-tags (-some-> (match-string-no-properties 4)
                         (split-string ":" t))
+            this-prop-bounds (org-get-property-block)
             this-key nil
             this-links nil)
       ;; Adjust the stack so that the top headline is the parent of the
@@ -1173,7 +1194,7 @@ valid keyword or none of its parents have valid keywords."
       ;; if its parent has a keyword or none of its parents have keywords
       (when (and this-todo
                  (or this-parent-key (--none-p (nth 1 it) cur-path))
-                 (setq this-key (org-x-dag-get-local-property "ID")))
+                 (setq this-key (org-x-dag-get-local-property this-prop-bounds "ID")))
         ;; If parent is not a todo and we want tag inheritance, store all
         ;; tags above this headline (including file tags)
         (setq all-tags (if (and (not this-parent-key) org-use-tag-inheritance)
@@ -1190,6 +1211,7 @@ valid keyword or none of its parents have valid keywords."
                                  (-some->> (--first (nth 3 it) cur-path)
                                    (nth 3))
                                this-file-links))
+              this-props (org-x-dag-get-local-properties this-prop-bounds target-props)
               this-meta (org-x-dag-build-meta file
                                               this-point
                                               this-level
@@ -1197,6 +1219,7 @@ valid keyword or none of its parents have valid keywords."
                                               this-title
                                               all-tags
                                               this-planning
+                                              this-props
                                               this-parent-key))
         (!cons (cons this-key this-meta) acc-meta)
         (!cons (cons this-key `(,(nth 1 this-parent) ,@this-links)) acc))
@@ -1207,7 +1230,10 @@ valid keyword or none of its parents have valid keywords."
 (defun org-x-dag-get-file-nodes (file)
   "Return all nodes in FILE in one pass."
   (org-x-with-file file
-    (org-x-dag-get-buffer-nodes file org-todo-keywords-1)))
+    (org-x-dag-get-buffer-nodes file
+                                org-todo-keywords-1
+                                (list org-x-prop-parent-type
+                                      org-x-prop-created))))
 
 ;;; DAG SYNCHRONIZATION/CONSTRUCTION
 
@@ -1675,15 +1701,15 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-headline-is-closed-p (want-time)
   (org-x-headline-has-timestamp org-closed-time-regexp want-time))
 
-(defun org-x-dag-is-created-p (want-time)
-  (save-excursion
-    (-when-let (ts (org-x-dag-get-local-property org-x-prop-created))
-      (if want-time (org-2ft ts) t))))
+;; (defun org-x-dag-is-created-p (want-time)
+;;   (save-excursion
+;;     (-when-let (ts (org-x-dag-get-local-property org-x-prop-created))
+;;       (if want-time (org-2ft ts) t))))
 
-(defun org-x-dag-headline-is-iterator-p ()
-  (save-excursion
-    (->> (org-x-dag-get-local-property org-x-prop-parent-type)
-         (equal org-x-prop-parent-type-iterator))))
+;; (defun org-x-dag-headline-is-iterator-p ()
+;;   (save-excursion
+;;     (->> (org-x-dag-get-local-property org-x-prop-parent-type)
+;;          (equal org-x-prop-parent-type-iterator))))
 
 (defconst org-x-headline-task-status-priorities
   '((:archivable . -1)
