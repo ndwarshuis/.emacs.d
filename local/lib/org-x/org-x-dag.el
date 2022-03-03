@@ -1097,34 +1097,35 @@ A date like (YEAR MONTH DAY).")
 
 ;;; BUFFER SCANNING
 
-(defun org-x-dag-get-local-property (range prop)
-  (-when-let ((beg . end) range)
+(defun org-x-dag-get-local-property (bounds prop)
+  (-when-let ((_ beg end _) bounds)
     (save-excursion
       (goto-char beg)
       (when (re-search-forward (org-re-property prop nil t) end t)
         (match-string-no-properties 3)))))
 
-(defun org-x-dag-get-local-properties (range props)
-  (-when-let ((beg . end) range)
-    (save-excursion
-      (let (acc)
-        (while props
-          (goto-char beg)
-          (when (re-search-forward (org-re-property (car props) nil t) end t)
-            (!cons (cons (car props) (match-string-no-properties 3)) acc))
-          (!cdr props))
-        acc))))
-          
-    ;; (car (org--property-local-values prop nil)))
+(defun org-x-dag-get-local-properties (bounds props)
+  (when bounds
+    (-let (((_ beg end _) bounds))
+      (save-excursion
+        (let (acc)
+          (while props
+            (goto-char beg)
+            (when (re-search-forward (org-re-property (car props) nil t) end t)
+              (!cons (cons (car props) (match-string-no-properties 3)) acc))
+            (!cdr props))
+          acc)))))
 
-;; (defun org-x-dag-get-link-property (range)
-;;   (-some->> (org-x-dag-get-local-property range org-x-prop-goal)
-;;     (s-split ";")
-;;     (--map (->> (s-trim it)
-;;                 (s-match "^\\[\\[id:\\(.*\\)\\]\\[.*\\]\\]$")
-;;                 (cadr)))))
+(defconst org-x-dag-parent-link-drawer-re 
+  (concat
+   "^[ \t]*:X_PARENT_LINKS:[ \t]*\n"
+   "\\(\\(?:^- .*?\n\\)*?\\)"
+   "[ \t]*:END:[ \t]*$"))
 
-(defun org-x-dag-get-parent-links ()
+(defun org-x-dag-next-headline ()
+  (save-excursion (outline-next-heading)))
+
+(defun org-x-dag-get-parent-links (&optional start end)
   (cl-flet
       ((match-id
         (s)
@@ -1132,15 +1133,14 @@ A date like (YEAR MONTH DAY).")
              (cadr)
              (substring-no-properties))))
     (save-excursion
-      (let ((re (concat
-                 "^[ \t]*:X_PARENT_LINKS:[ \t]*\n"
-                 "\\(\\(?:^- .*?\n\\)*?\\)"
-                 "[ \t]*:END:[ \t]*$"))
-            (end (save-excursion (outline-next-heading))))
-        (-some->> (and (re-search-forward re end t) (match-string 1))
-          (s-trim)
-          (s-split "\n")
-          (-map #'match-id))))))
+      (when start
+        (goto-char start))
+      (let ((end (or end (org-x-dag-next-headline))))
+        (when (re-search-forward org-x-dag-parent-link-drawer-re end t)
+          (-some->> (match-string 1)
+            (s-trim)
+            (s-split "\n")
+            (-map #'match-id)))))))
 
 (defun org-x-dag-line-regexp (kws)
   (let ((level-re "\\(\\*+\\)")
@@ -1148,6 +1148,41 @@ A date like (YEAR MONTH DAY).")
         (title-re "\\(.*?\\)?")
         (tag-re "\\(?:\\([[:alnum:]_@#%%:]+\\):\\)?"))
     (format "^%s[ ]+%s%s%s[ ]*$" level-re kw-re title-re tag-re)))
+
+(defconst org-x-dag-prop-drawer-re
+  (concat
+   "^[\t ]*:PROPERTIES:[\t ]*\n"
+   ;; "\\([\t ]*:\\S-+:\\(?: .*\\)?[\t ]*\n\\)"
+   "\\(\\(.\\|\n\\)*?\\)"
+   "[\t ]*:END:[\t ]*$"))
+
+(defun org-x-dag-property-block (end)
+  "Return (DRWR-BEG BEG END DRWR-END) of the property block.
+
+This is like `org-get-property-block' except way faster, and
+assumes the point is on the first line of the headline in
+question. END is the end of the search space (presumably the next
+headline)."
+  (save-excursion
+    (when (re-search-forward org-x-dag-prop-drawer-re end t)
+      (list (match-beginning 0)
+            (match-beginning 1)
+            (match-end 1)
+            (match-end 0)))))
+
+(defun org-x-dag-parse-this-planning (prop-beg)
+  "Parse the planning element for this headline.
+
+Assume point is somewhere on the first line of headline. Note
+that it is invalid for the planning keyword to start on anything
+other than the next line.
+
+PROP-BEG is the beginning position of the property drawer and
+used for optimization."
+  (save-excursion
+    (forward-line 1)
+    (when (and (< (point) prop-beg) (looking-at org-planning-line-re))
+      (org-element-planning-parser prop-beg))))
 
 (defun org-x-dag-get-buffer-nodes (file kws target-props)
   "Return a list of nodes from FILE.
@@ -1181,7 +1216,8 @@ headline."
             this-title (-if-let (s (match-string 3)) (s-trim s) "")
             this-tags (-some-> (match-string-no-properties 4)
                         (split-string ":" t))
-            this-prop-bounds (org-get-property-block)
+            next-pos (or (org-x-dag-next-headline) (point-max))
+            this-prop-bounds (org-x-dag-property-block next-pos)
             this-key nil
             this-links nil)
       ;; Adjust the stack so that the top headline is the parent of the
@@ -1202,11 +1238,8 @@ headline."
                                 (--mapcat (nth 2 it))
                                 (append this-tags org-file-tags))
                          this-tags)
-              this-planning (save-excursion
-                              (forward-line 1)
-                              (when (looking-at org-planning-line-re)
-                                (org-element-planning-parser nil)))
-              this-links (or (org-x-dag-get-parent-links)
+              this-planning (org-x-dag-parse-this-planning (car this-prop-bounds))
+              this-links (or (org-x-dag-get-parent-links (nth 3 this-prop-bounds) next-pos)
                              (if this-parent-key
                                  (-some->> (--first (nth 3 it) cur-path)
                                    (nth 3))
@@ -1224,7 +1257,10 @@ headline."
         (!cons (cons this-key this-meta) acc-meta)
         (!cons (cons this-key `(,(nth 1 this-parent) ,@this-links)) acc))
       ;; Add current headline to stack
-      (!cons (list this-level this-key this-tags this-links) cur-path))
+      (!cons (list this-level this-key this-tags this-links) cur-path)
+      ;; Since we know the next headline's position already, skip ahead to
+      ;; save some work
+      (goto-char next-pos))
     (list (nreverse acc) (nreverse acc-meta))))
 
 (defun org-x-dag-get-file-nodes (file)
