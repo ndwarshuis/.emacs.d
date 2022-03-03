@@ -1738,6 +1738,21 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-headline-is-closed-p (want-time)
   (org-x-headline-has-timestamp org-closed-time-regexp want-time))
 
+(defun org-x-dag-id->planning-timestamp (which id)
+  (->> (org-x-dag-id->metaprop id :planning)
+       (org-ml-get-property which)))
+
+(defun org-x-dag-id->node-property (prop id)
+  (alist-get prop (org-x-dag-id->metaprop id :props) nil nil #'equal))
+
+(defun org-x-dag-id->node-property-equal-p (prop value id)
+  (equal (org-x-dag-id->node-property prop id) value))
+
+(defun org-x-dag-id->is-iterator-p (id)
+  (org-x-dag-id->node-property-equal-p org-x-prop-parent-type
+                                       org-x-prop-parent-type-iterator
+                                       id))
+
 ;; (defun org-x-dag-is-created-p (want-time)
 ;;   (save-excursion
 ;;     (-when-let (ts (org-x-dag-get-local-property org-x-prop-created))
@@ -1771,7 +1786,13 @@ FUTURE-LIMIT in a list."
     (:inert . 4)))
 
 (defun org-x-dag-time-is-archivable-p (epochtime)
-  (< (- (float-time) epochtime) (* 60 60 24 org-x-archive-delay)))
+  (< (* 60 60 24 org-x-archive-delay) (- (float-time) epochtime)))
+
+(defun org-x-dag-id->is-archivable-p (id)
+  (-some->> (org-x-dag-id->planning-timestamp :closed id)
+    (org-ml-timestamp-get-start-time)
+    (org-ml-time-to-unixtime)
+    (org-x-dag-time-is-archivable-p)))
 
 ;;; STATUS DETERMINATION
 
@@ -1798,6 +1819,19 @@ FUTURE-LIMIT in a list."
      ((org-x-headline-is-inert-p) :inert)
      ((org-x-dag-headline-is-closed-p nil) :undone-closed)
      (t :active))))
+
+(defun org-x-dag-id->task-status (id)
+  ;; ASSUME this is actually a task
+  (let ((c (org-x-dag-id->planning-timestamp :closed id)))
+    (if (org-x-dag-id->is-done-p id)
+        (if c
+            (if (org-x-dag-time-is-archivable-p c) :archivable :complete)
+          :done-unclosed)
+      (cond
+       ;; ((org-x-headline-is-expired-p) :expired)
+       ;; ((org-x-headline-is-inert-p) :inert)
+       (c :undone-closed)
+       (t :active)))))
 
 (defun org-x-dag-get-max-index (ys xs)
   "Return the member of XS that has the highest index in YS."
@@ -1833,111 +1867,112 @@ FUTURE-LIMIT in a list."
                            (org-x-dag-get-max-index ',allowed-codes))))
          (cons status (-mapcat #'cdr results))))))
 
-(defun org-x-dag-headline-get-project-status (key tags children)
+(defun org-x-dag-headline-get-project-status (id tags children)
   ;; ASSUME children will always be at least 1 long
-  (org-x-dag-with-id key
-    (let ((keyword (org-x-dag-id->todo key)))
-      (-let (((status . child-results)
-              (cond
-               ((org-x-dag-headline-is-scheduled-p nil)
-                (list :scheduled-project))
-               ((equal keyword org-x-kw-hold)
-                (list (if (org-x-headline-is-inert-p) :inert :held)))
-               ((member keyword org-x--project-invalid-todostates)
-                (list :invalid-todostate))
-               ((equal keyword org-x-kw-canc)
-                (list (if (org-x-headline-is-archivable-p) :archivable :complete)))
-               ((equal keyword org-x-kw-done)
-                (org-x-dag-descend-into-project children tags
-                  ((:archivable)
-                   (:complete)
-                   (:done-incomplete :stuck :inert :held :wait :active
-                                     :scheduled-project :invalid-todostate
-                                     :undone-complete))
-                  (if (member it-kw org-x-done-keywords)
-                      (if (org-x-headline-is-archivable-p) 0 1)
-                    2)
-                  #'org-x-dag-headline-get-project-status))
-               ((equal keyword org-x-kw-todo)
-                (org-x-dag-descend-into-project children tags
-                  ((:undone-complete :complete :archivable)
-                   (:stuck :scheduled-project :invalid-todostate
-                           :done-incomplete)
-                   (:held)
-                   (:wait)
-                   (:inert)
-                   (:active))
-                  (cond
-                   ((and (not (member it-kw org-x-done-keywords))
-                         (org-x-headline-is-inert-p))
-                    4)
-                   ((equal it-kw org-x-kw-todo)
-                    (if (org-x-dag-headline-is-scheduled-p nil) 5 1))
-                   ((equal it-kw org-x-kw-hold)
-                    2)
-                   ((equal it-kw org-x-kw-wait)
-                    3)
-                   ((equal it-kw org-x-kw-next)
-                    5)
-                   (t 0))
-                  #'org-x-dag-headline-get-project-status))
-               (t (error "Invalid keyword detected: %s" keyword)))))
-        (cons (list :key key :status status :tags tags) child-results)))))
-
-(defun org-x-dag-headline-get-iterator-project-status (key children)
-  (org-x-dag-with-id key
-    (let* ((kw (org-x-dag-id->todo key))
-           (status
+  ;; (org-x-dag-with-id id
+  (let ((keyword (org-x-dag-id->todo id)))
+    (-let (((status . child-results)
             (cond
-             ((or (member kw org-x--project-invalid-todostates)
-                  (org-x-dag-headline-is-scheduled-p nil))
-              (list :project-error))
-             ((equal kw org-x-kw-canc)
-              (list :empt))
-             ;; TODO this is a bit awkward since I don't care about the child statuses
-             ;; and I don't care about tags
-             ((equal kw org-x-kw-done)
-              (org-x-dag-descend-into-project children nil
-                ((:empt)
-                 (:project-error :unscheduled :actv))
-                (if (member it-kw org-x-done-keywords) 0 1)
-                ;; TODO this has an argument mismatch
-                #'org-x-dag-headline-get-iterator-project-status))
-             ((equal kw org-x-kw-todo)
-              (org-x-dag-descend-into-project children nil
-                ((:unscheduled :project-error)
-                 (:empt)
-                 (:actv))
-                ;; TODO this triggers a compiler warning because I don't use
-                ;; `it-kw'
-                (let ((ts (org-x-dag-headline-is-scheduled-p t)))
-                  (cond
-                   ((not ts) 0)
-                   ((> org-x-iterator-active-future-offset (- ts (float-time))) 1)
-                   (t 2)))
-                #'org-x-dag-headline-get-iterator-project-status))
-             (t (error "Invalid keyword detected: %s" kw)))))
-      status)))
+             ((org-x-dag-id->planning-timestamp :scheduled id)
+              (list :scheduled-project))
+             ((equal keyword org-x-kw-hold)
+              ;; (list (if (org-x-headline-is-inert-p) :inert :held)))
+              (list :held))
+             ((member keyword org-x--project-invalid-todostates)
+              (list :invalid-todostate))
+             ((equal keyword org-x-kw-canc)
+              (list (if (org-x-id->is-archivable-p id) :archivable :complete)))
+             ((equal keyword org-x-kw-done)
+              (org-x-dag-descend-into-project children tags
+                ((:archivable)
+                 (:complete)
+                 (:done-incomplete :stuck :inert :held :wait :active
+                                   :scheduled-project :invalid-todostate
+                                   :undone-complete))
+                (if (member it-kw org-x-done-keywords)
+                    (if (org-x-dag-id->is-archivable-p id) 0 1)
+                  2)
+                #'org-x-dag-headline-get-project-status))
+             ((equal keyword org-x-kw-todo)
+              (org-x-dag-descend-into-project children tags
+                ((:undone-complete :complete :archivable)
+                 (:stuck :scheduled-project :invalid-todostate
+                         :done-incomplete)
+                 (:held)
+                 (:wait)
+                 ;; (:inert)
+                 (:active))
+                (cond
+                 ;; ((and (not (member it-kw org-x-done-keywords))
+                 ;;       (org-x-headline-is-inert-p))
+                 ;;  4)
+                 ((equal it-kw org-x-kw-todo)
+                  (if (org-x-dag-id->planning-timestamp :scheduled id) 4 1))
+                 ((equal it-kw org-x-kw-hold)
+                  2)
+                 ((equal it-kw org-x-kw-wait)
+                  3)
+                 ((equal it-kw org-x-kw-next)
+                  4)
+                 (t 0))
+                #'org-x-dag-headline-get-project-status))
+             (t (error "Invalid keyword detected: %s" keyword)))))
+      (cons (list :key key :status status :tags tags) child-results))))
 
-(defun org-x-dag-headline-get-iterator-task-status (key)
-  (org-x-dag-with-id key
-    (if (org-x-dag-id->is-done-p key) :empt
-      (-if-let (ts (or (org-x-dag-headline-is-scheduled-p t)
-                       (org-x-dag-headline-is-deadlined-p t)))
-          (if (< org-x-iterator-active-future-offset (- ts (float-time)))
-              :actv
-            :empt)
-        :unscheduled))))
+(defun org-x-dag-headline-get-iterator-project-status (id children)
+  ;; (org-x-dag-with-id id
+  (let* ((kw (org-x-dag-id->todo id))
+         (status
+          (cond
+           ((or (member kw org-x--project-invalid-todostates)
+                (org-x-dag-id->planning-timestamp :scheduled id))
+            (list :project-error))
+           ((equal kw org-x-kw-canc)
+            (list :empt))
+           ;; TODO this is a bit awkward since I don't care about the child statuses
+           ;; and I don't care about tags
+           ((equal kw org-x-kw-done)
+            (org-x-dag-descend-into-project children nil
+              ((:empt)
+               (:project-error :unscheduled :actv))
+              (if (member it-kw org-x-done-keywords) 0 1)
+              ;; TODO this has an argument mismatch
+              #'org-x-dag-headline-get-iterator-project-status))
+           ((equal kw org-x-kw-todo)
+            (org-x-dag-descend-into-project children nil
+              ((:unscheduled :project-error)
+               (:empt)
+               (:actv))
+              ;; TODO this triggers a compiler warning because I don't use
+              ;; `it-kw'
+              (let ((ts (org-x-dag-id->planning-timestamp :scheduled id)))
+                (cond
+                 ((not ts) 0)
+                 ((> org-x-iterator-active-future-offset (- ts (float-time))) 1)
+                 (t 2)))
+              #'org-x-dag-headline-get-iterator-project-status))
+           (t (error "Invalid keyword detected: %s" kw)))))
+    status))
 
-(defun org-x-dag-headline-get-iterator-status (key)
+(defun org-x-dag-headline-get-iterator-task-status (id)
+  ;; (org-x-dag-with-id key
+  (if (org-x-dag-id->is-done-p id) :empt
+    (-if-let (ts (or (org-x-dag-id->planning-timestamp :scheduled id)
+                     (org-x-dag-id->planning-timestamp :deadline id)))
+        (if (< org-x-iterator-active-future-offset (- ts (float-time)))
+            :actv
+          :empt)
+      :unscheduled)))
+
+(defun org-x-dag-headline-get-iterator-status (id)
   (cl-flet
       ((get-status
-        (key)
-        (-if-let (children (org-x-dag-id->buffer-children key))
+        (id)
+        (-if-let (children (org-x-dag-id->buffer-children id))
             (->> children
-                 (org-x-dag-headline-get-iterator-project-status key)
+                 (org-x-dag-headline-get-iterator-project-status id)
                  (car))
-          (org-x-dag-headline-get-iterator-task-status key))))
+          (org-x-dag-headline-get-iterator-task-status id))))
     (->> (org-x-dag-id->buffer-children key)
          (-map #'get-status)
          (org-x-dag-get-max-index org-x--iter-statuscodes))))
@@ -1984,11 +2019,11 @@ FUTURE-LIMIT in a list."
           ;; TODO don't hardcode these things
           (org-x-dag-with-id key
             (unless (or (not (eq (cadr (org-x-dag-id->goal-status 'current key)) :planned))
-                        (org-x-dag-headline-is-iterator-p))
+                        (org-x-dag-id->is-iterator-p key))
               (-some->> (org-x-dag-id->buffer-children key)
                 (org-x-dag-headline-get-project-status key tags)
                 (--map (format-result cat it))))))))
-    (org-x-dag-with-files (org-x-get-action-files)
+    (org-x-dag-with-files (org-x-dag->action-files)
         (and (org-x-dag-id->is-toplevel-p it)
              (not (org-x-dag-id->is-done-p it)))
       (format-key it-category it))))
@@ -2019,12 +2054,12 @@ FUTURE-LIMIT in a list."
                 (org-add-props nil
                     'x-status status))))))
     ;; TODO this will only scan toplevel iterators
-    (org-x-dag-with-files (org-x-get-action-files)
+    (org-x-dag-with-files (org-x-dag->action-files)
         (org-x-dag-id->is-toplevel-p it)
       (let ((tags (org-x-dag-id->tags nil it)))
         (when (eq (cadr (org-x-dag-id->goal-status 'current id)) :planned)
           (org-x-dag-with-id it
-            (when (org-x-dag-headline-is-iterator-p)
+            (when (org-x-dag-id->is-iterator-p it)
               (list (format-result tags it-category it)))))))))
   
 (defun org-x-dag-get-task-nodes (pred id)
@@ -2046,13 +2081,13 @@ FUTURE-LIMIT in a list."
       ((format-key
         (category is-standalone key)
         (let ((tags (org-x-dag-id->tags nil key)))
-          (org-x-dag-with-id key
-            (unless (or (not (eq (cadr (org-x-dag-id->goal-status 'current key)) :planned))
-                        (org-x-dag-headline-is-scheduled-p nil)
-                        (org-x-dag-headline-is-deadlined-p nil))
-              (let* ((s (org-x-headline-get-task-status-0 (org-x-dag-id->todo key)))
-                     (p (alist-get s org-x-headline-task-status-priorities)))
-                (unless (= p -1)
+          (unless (or (not (eq (cadr (org-x-dag-id->goal-status 'current key)) :planned))
+                      (org-x-dag->planning-file :scheduled key)
+                      (org-x-dag->planning-file :deadline key))
+            (let* ((s (org-x-dag-id->task-status id))
+                   (p (alist-get s org-x-headline-task-status-priorities)))
+              (unless (= p -1)
+                (org-x-dag-with-id key
                   (-> (org-x-dag-format-tag-node category tags key)
                       (org-add-props nil
                           'x-is-standalone is-standalone
@@ -2063,7 +2098,6 @@ FUTURE-LIMIT in a list."
                                   (lambda (it) (not (member (org-x-dag-id->todo it)
                                                        (list org-x-kw-canc org-x-kw-hold))))
                                   it))
-
           (--map (format-key it-category nil it) project-tasks)
         (list (format-key it-category t it))))))
 
@@ -2084,13 +2118,13 @@ FUTURE-LIMIT in a list."
         (category is-standalone key)
         (-let (((goal-ids goal-status) (org-x-dag-id->goal-status 'current key)))
           (when (memq goal-status '(:planned :committed))
-            (org-x-dag-with-id key
-              (let* ((s (org-x-headline-get-task-status-0 (org-x-dag-id->todo key)))
-                     (p (alist-get s org-x-headline-task-status-priorities))
-                     (tags (org-x-dag-id->tags nil key)))
-                (unless (= p -1)
-                  ;; ASSUME only ids with at least one valid goal will get this
-                  ;; far
+            (let* ((s (org-x-dag-id->task-status id))
+                   (p (alist-get s org-x-headline-task-status-priorities))
+                   (tags (org-x-dag-id->tags nil key)))
+              (unless (= p -1)
+                ;; ASSUME only ids with at least one valid goal will get this
+                ;; far
+                (org-x-dag-with-id key
                   (-> (org-x-dag-format-tag-node category tags key)
                       (org-add-props nil
                           'x-is-standalone is-standalone
@@ -2111,11 +2145,11 @@ FUTURE-LIMIT in a list."
         (category is-standalone key)
         (-let (((goal-ids goal-status) (org-x-dag-id->goal-status 'current key)))
           (when (eq goal-status :survival)
-            (org-x-dag-with-id key
-              (let* ((s (org-x-headline-get-task-status-0 (org-x-dag-id->todo key)))
-                     (p (alist-get s org-x-headline-task-status-priorities))
-                     (tags (org-x-dag-id->tags nil key)))
-                (unless (= p -1)
+            (let* ((s (org-x-dag->task-status key))
+                   (p (alist-get s org-x-headline-task-status-priorities))
+                   (tags (org-x-dag-id->tags nil key)))
+              (unless (= p -1)
+                (org-x-dag-with-id key
                   (-> (org-x-dag-format-tag-node category tags key)
                       (org-add-props nil
                           'x-is-standalone is-standalone
@@ -2123,9 +2157,7 @@ FUTURE-LIMIT in a list."
                       (org-x-dag--item-add-goal-ids goal-ids)))))))))
     (org-x-dag-with-files (org-x-dag->action-files)
         (and (org-x-dag-id->is-toplevel-p it)
-             (not (org-x-dag-with-id it
-                    (equal (org-x-dag-get-local-property org-x-prop-parent-type)
-                           org-x-prop-parent-type-iterator))))
+             (not (org-x-dag-id->is-iterator-p it)))
       (-if-let (project-tasks (org-x-dag-get-task-nodes
                                   (lambda (it) (not (member (org-x-dag-id->todo it)
                                                        (list org-x-kw-canc org-x-kw-hold))))
@@ -2153,10 +2185,9 @@ FUTURE-LIMIT in a list."
         (cat key)
         (let ((tags (org-x-dag-id->tags nil key)))
           ;; TODO don't hardcode these things
-          (org-x-dag-with-id key
-            (-some->> (org-x-dag-id->buffer-children key)
-              (org-x-dag-headline-get-project-status key tags)
-              (--mapcat (format-result cat it)))))))
+          (-some->> (org-x-dag-id->buffer-children key)
+            (org-x-dag-headline-get-project-status key tags)
+            (--mapcat (format-result cat it))))))
     ;; TODO this is hella-inefficient, just get the child links from the
     ;; survival goal file and start from there
     (org-x-dag-with-files (org-x-dag->action-files)
@@ -2198,7 +2229,7 @@ FUTURE-LIMIT in a list."
                               (alist-get org-x-project-status-priorities)
                               (eq :archivable)
                               (list t))
-                        (-> (org-x-headline-get-task-status-0 (org-x-dag-id->todo key))
+                        (-> (org-x-dag-id->task-status id)
                             (alist-get org-x-headline-task-status-priorities)
                             (eq :archivable)
                             (list t)))))
@@ -2208,11 +2239,10 @@ FUTURE-LIMIT in a list."
                           'x-project-p is-project)))))))))
     (org-x-dag-with-files (org-x-get-action-files)
         (org-x-dag-id->is-toplevel-p it)
-      (org-x-dag-with-id it
-        (if (org-x-dag-headline-is-iterator-p)
-            (->> (org-x-dag-id->buffer-children it)
-                 (--map (format-key it-category it)))
-          (list (format-key it-category it)))))))
+      (if (org-x-dag->is-iterator-p it)
+          (->> (org-x-dag-id->buffer-children it)
+               (--map (format-key it-category it)))
+        (list (format-key it-category it))))))
 
 (defun org-x-dag--classify-goal-link (which which-goal id)
   (let ((f (org-x-dag-id->file id)))
@@ -2273,17 +2303,17 @@ FUTURE-LIMIT in a list."
                    (--separate (member (org-x-dag-id->file it) parent-files)
                                linked-parents))
                   (tags (org-x-dag-id->tags nil id)))
-            (-> (org-x-dag-format-tag-node category tags id)
-                (org-x-dag--add-goal-status :endpoint
-                                            (append buffer-children local)
-                                            action
-                                            other
-                                            goal-parents
-                                            other-parents)))))
+            (org-x-dag-with-id id
+              (-> (org-x-dag-format-tag-node category tags id)
+                  (org-x-dag--add-goal-status :endpoint
+                                              (append buffer-children local)
+                                              action
+                                              other
+                                              goal-parents
+                                              other-parents))))))
       (org-x-dag-with-files (list (org-x-dag->goal-file :endpoint))
           nil
-        (org-x-dag-with-id it
-          (list (format-id it-category it)))))))
+        (list (format-id it-category it))))))
 
 (defun org-x-dag-scan-goals ()
   (append (org-x-dag-scan-toplevel-goals :lifetime :endpoint)
@@ -2294,22 +2324,21 @@ FUTURE-LIMIT in a list."
   (cl-flet
       ((format-id
         (category id)
-        (org-x-dag-with-id id
-          (-when-let (error-type
-                      (if (org-x-dag-headline-is-iterator-p)
-                          (unless (org-x-dag-get-local-property "ARCHIVE")
-                            :missing-archive)
-                        (-if-let (created (org-x-dag-is-created-p t))
-                            (when (<= (float-time) created)
-                              :future-created)
-                          :missing-created)))
+        (-when-let (error-type
+                    (if (org-x-dag-id->is-iterator-p id)
+                        (unless (org-x-dag-id->node-property "ARCHIVE" id)
+                          :missing-archive)
+                      (-if-let (created (org-x-dag-id->node-property org-x-prop-created))
+                          (when (<= (float-time) (org-2ft created))
+                            :future-created)
+                        :missing-created)))
+          (org-x-dag-with-id id
             (-> (org-x-dag-format-tag-node category nil id)
                 (org-add-props nil
                     'x-error error-type))))))
     (org-x-dag-with-files (org-x-dag->files)
         (not (org-x-dag-id->is-done-p it))
-      (org-x-dag-with-id it
-        (list (format-id it-category it))))))
+      (list (format-id it-category it)))))
 
 (defun org-x-dag-scan-agenda (sel-date)
   (cl-flet*
@@ -2328,18 +2357,16 @@ FUTURE-LIMIT in a list."
        (format-id
         (todayp cat id)
         (org-x-dag-with-id id
-          (-when-let (res (org-x-dag-headline-get-planning))
-            (-let (((dead sched) res))
-              (append
-               (when dead
-                 (format-timestamps todayp sel-date cat id dead
-                                    #'org-x-dag-get-deadlines-at
-                                    #'org-x-dag-format-deadline-node))
-               (when sched
-                 (format-timestamps todayp sel-date cat id sched
-                                    #'org-x-dag-get-scheduled-at
-                                    #'org-x-dag-format-scheduled-node))))))))
-    (org-x-dag-with-files (org-x-get-action-files)
+          (append
+           (-when-let (dead (org-x-dag-id->planning-timestamp :deadline id))
+             (format-timestamps todayp sel-date cat id dead
+                                #'org-x-dag-get-deadlines-at
+                                #'org-x-dag-format-deadline-node))
+           (-when-let (sched(org-x-dag-id->planning-timestamp :scheduled id))
+             (format-timestamps todayp sel-date cat id sched
+                                #'org-x-dag-get-scheduled-at
+                                #'org-x-dag-format-scheduled-node))))))
+    (org-x-dag-with-files (org-x-dag->action-files)
         nil
       (let ((todayp (= (org-x-dag-date-to-absolute sel-date) (org-today))))
         (format-id todayp it-category it)))))
@@ -2351,18 +2378,18 @@ FUTURE-LIMIT in a list."
     (cl-flet
         ((format-id
           (id)
-          (org-x-dag-with-id id
-            (let ((alloc (-some->> (org-x-dag-get-local-property org-x-prop-allocate)
-                           (org-x-dag-allocation-fraction current-quarter)))
-                  (assignedp (org-x-dag-id->has-child-in-files-p id week-file))
-                  (bucket (org-x-dag-id->bucket nil id)))
+          (let ((alloc (-some->> (org-x-dag-id->node-property org-x-prop-allocate id)
+                         (org-x-dag-allocation-fraction current-quarter)))
+                (assignedp (org-x-dag-id->has-child-in-files-p id week-file))
+                (bucket (org-x-dag-id->bucket nil id)))
+            (org-x-dag-with-id id
               (-> (org-x-dag-format-tag-node "goal" (list bucket) id)
                   (org-add-props nil
                       'x-assignedp assignedp
                       ;; override face
                       'face (if assignedp 'org-warning 'default)
                       'x-alloc (or alloc 0)))))))
-      (org-x-with-file (org-x-qtp-get-file)
+      (org-x-with-file (org-x-dag->planning-file :quarterly)
         (-map #'format-id (org-x-dag->qtp-ids 'current))))))
 
 (defun org-x-dag-scan-weekly-plan ()
@@ -2370,22 +2397,22 @@ FUTURE-LIMIT in a list."
     (cl-flet
         ((format-id
           (id)
-          (org-x-dag-with-id id
-            ;; TODO this assigned thing needs to be limited in scope to the
-            ; the current ids of the time period in question
-            (let* ((assignedp (org-x-dag-id->has-child-in-files-p id daily-file))
-                   (day (-some->> (org-x-dag-id->tags nil id)
-                          ;; TODO I guess this works...could be more precise
-                          (--filter (s-matches-p "[A-Z]\\{3\\}" it))
-                          (car)))
-                   (daynum (car (rassoc day org-x-dag-weekly-tags))))
+          ;; TODO this assigned thing needs to be limited in scope to the
+          ;; the current ids of the time period in question
+          (let* ((assignedp (org-x-dag-id->has-child-in-files-p id daily-file))
+                 (day (-some->> (org-x-dag-id->tags nil id)
+                        ;; TODO I guess this works...could be more precise
+                        (--filter (s-matches-p "[A-Z]\\{3\\}" it))
+                        (car)))
+                 (daynum (car (rassoc day org-x-dag-weekly-tags))))
+            (org-x-dag-with-id id
               (-> (org-x-dag-format-tag-node "goal" nil id)
                   (org-add-props nil
                       'x-assignedp assignedp
                       'x-day-of-week (format "%d. %s" daynum day)
                       ;; override face
                       'face (if assignedp 'org-warning 'default)))))))
-      (org-x-with-file (org-x-get-weekly-plan-file)
+      (org-x-with-file (org-x-dag->planning-file :weekly)
         (-map #'format-id (org-x-dag->wkp-ids 'current))))))
 
 ;; (cl-flet
