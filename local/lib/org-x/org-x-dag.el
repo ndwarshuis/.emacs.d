@@ -1217,7 +1217,6 @@ headline."
             this-tags (-some-> (match-string-no-properties 4)
                         (split-string ":" t))
             next-pos (or (org-x-dag-next-headline) (point-max))
-            this-prop-bounds (org-x-dag-property-block next-pos)
             this-key nil
             this-links nil)
       ;; Adjust the stack so that the top headline is the parent of the
@@ -1230,7 +1229,9 @@ headline."
       ;; if its parent has a keyword or none of its parents have keywords
       (when (and this-todo
                  (or this-parent-key (--none-p (nth 1 it) cur-path))
-                 (setq this-key (org-x-dag-get-local-property this-prop-bounds "ID")))
+                 (setq
+                  this-prop-bounds (org-x-dag-property-block next-pos)
+                  this-key (org-x-dag-get-local-property this-prop-bounds "ID")))
         ;; If parent is not a todo and we want tag inheritance, store all
         ;; tags above this headline (including file tags)
         (setq all-tags (if (and (not this-parent-key) org-use-tag-inheritance)
