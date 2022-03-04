@@ -376,7 +376,7 @@ highest in the tree."
   "Return the buffer parent id (if any) of ID."
   (org-x-dag-id->metaprop id :buffer-parent))
 
-(defun org-x-dag-id->split-parents (id)
+(defun org-x-dag-id->split-parents-2 (id)
   "Return the buffer and non-buffer parents of ID.
 
 Return value is a list like (BUFFER NON-BUFFER)."
@@ -385,33 +385,51 @@ Return value is a list like (BUFFER NON-BUFFER)."
         (cons buffer-parent (-remove-item buffer-parent parents))
       (cons nil parents))))
 
+(defun org-x-dag-split-3 (fun id)
+  (-let* (((buffer linked) (funcall fun id))
+          (f (org-x-dag-id->file id))
+          ((local foreign) (--separate (equal f (org-x-dag-id->file it)) linked)))
+    (list buffer local foreign)))
+
+(defun org-x-dag-id->split-parents-3 (id)
+  "Return the buffer, local, and foreign parents of ID.
+
+Return value is a list like (BUFFER LOCAL FOREIGN)."
+  (org-x-dag-split-3 #'org-x-dag-id->split-parents-2 id))
+
 (defun org-x-dag-id->linked-parents (id)
   "Return non-buffer (foreign) parents of ID."
-  (cdr (org-x-dag-id->split-parents id)))
+  (cdr (org-x-dag-id->split-parents-2 id)))
 
-(defun org-x-dag-id->split-children (id)
+(defun org-x-dag-id->split-children-2 (id)
   "Return buffer and non-buffer children of ID.
 
 Return value is a list like (BUFFER NON-BUFFER)."
   (->> (org-x-dag-id->children id)
        (--separate (equal (org-x-dag-id->buffer-parent it) id))))
 
+(defun org-x-dag-id->split-children-3 (id)
+  "Return buffer, local, and foreign children of ID.
+
+Return value is a list like (BUFFER LOCAL FOREIGN)."
+  (org-x-dag-split-3 #'org-x-dag-id->split-children-2 id))
+
 (defun org-x-dag-id->buffer-children (id)
   "Return children of ID that are not linked."
-  (car (org-x-dag-id->split-children id)))
+  (car (org-x-dag-id->split-children-2 id)))
 
 (defun org-x-dag-id->linked-children (id)
   "Return children of ID that are linked."
-  (cadr (org-x-dag-id->split-children id)))
+  (cadr (org-x-dag-id->split-children-2 id)))
 
 (defmacro org-x-dag-id->with-split-parents (id &rest body)
   (declare (indent 1))
-  `(let ((it-buffer it-foreign) (org-x-dag-id->split-parents ,id))
+  `(let ((it-buffer it-foreign) (org-x-dag-id->split-parents-2 ,id))
      ,@body))
 
 (defmacro org-x-dag-id->with-split-children (id &rest body)
   (declare (indent 1))
-  `(let ((it-buffer it-foreign) (org-x-dag-id->split-children ,id))
+  `(let ((it-buffer it-foreign) (org-x-dag-id->split-children-2 ,id))
      ,@body))
 
 (defun org-x-dag-id->group-parent-links-by-file-p (id)
@@ -429,6 +447,13 @@ Return value is a list like (BUFFER NON-BUFFER)."
   (->> (org-x-dag-id->buffer-children id)
        (-mapcat #'org-x-dag-id->all-buffer-children)
        (cons id)))
+
+(defun org-x-dag-id->goal-status-0 (which id)
+  (-let* (((buffer linked) (org-x-dag-id->split-children-2 id))
+          (file (org-x-dag-id->file id))
+          ((local foreign) (--separate (equal (org-x-dag-id->file it) file) buffer))
+          (branchp (and local t)))
+    ()))
 
 (defun org-x-dag-id->goal-status (which id)
   (let* ((ps (org-x-dag-id->linked-parents id))
@@ -2291,7 +2316,7 @@ except it ignores inactive timestamps."
   (cl-flet
       ((format-id
         (category id)
-        (-let* (((buffer linked) (org-x-dag-id->split-children id))
+        (-let* (((buffer linked) (org-x-dag-id->split-children-2 id))
                 ((&alist :action :local :child-goal :plan :other)
                  (--group-by
                   (org-x-dag--classify-goal-link which which-child it)
@@ -2312,7 +2337,7 @@ except it ignores inactive timestamps."
         ((format-id
           (category id)
           (-let* (((buffer-children linked-children)
-                   (org-x-dag-id->split-children id))
+                   (org-x-dag-id->split-children-2 id))
                   (linked-parents (org-x-dag-id->linked-parents id))
                   ((&alist :action :local :plan :other)
                    (--group-by (org-x-dag--classify-goal-link :endpoint it) linked-children))
