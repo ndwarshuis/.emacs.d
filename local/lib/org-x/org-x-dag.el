@@ -1220,7 +1220,7 @@ headline."
         (line-re (org-x-dag-line-regexp kws))
         cur-path this-point this-key this-level this-todo has-todo this-parent
         this-tags this-meta all-tags this-file-links this-links acc acc-meta
-        this-parent-key)
+        acc-links this-parent-key)
     ;; TODO add org-mode sanity check
     (goto-char (point-min))
     ;; If not on a headline, check for a property drawer with links in it
@@ -1279,6 +1279,7 @@ headline."
                                               this-planning
                                               this-props
                                               this-parent-key))
+        (!cons (cons this-key this-links) acc-links)
         (!cons (cons this-key this-meta) acc-meta)
         (!cons (cons this-key `(,(nth 1 this-parent) ,@this-links)) acc))
       ;; Add current headline to stack
@@ -1286,7 +1287,7 @@ headline."
       ;; Since we know the next headline's position already, skip ahead to
       ;; save some work
       (goto-char next-pos))
-    (list (nreverse acc) (nreverse acc-meta))))
+    (list (nreverse acc) (nreverse acc-meta) acc-links)))
 
 (defun org-x-dag-get-file-nodes (file)
   "Return all nodes in FILE in one pass."
@@ -1341,14 +1342,16 @@ removed from, added to, or edited within the DAG respectively."
   (cl-flet
       ((append-results
         (acc file)
-        (-let* (((acc-ids acc-meta acc-filemaps) acc)
-                ((ids metas) (org-x-dag-get-file-nodes file))
+        (-let* (((acc-ids acc-meta acc-filemaps acc-links) acc)
+                ((ids metas links) (org-x-dag-get-file-nodes file))
                 (filemap (cons file (-map #'car ids))))
-          (list (append ids acc-ids)
-                (append metas acc-meta)
-                (cons filemap acc-filemaps)))))
+          `((,@ids ,@acc-ids)
+            (,@metas ,@acc-meta)
+            (,filemap ,@acc-filemaps)
+            (,@links ,@acc-links)))))
     (-reduce-from #'append-results nil files)))
 
+;; TODO what about all the nodes that don't need to be updated?
 (defun org-x-dag-update-ht (to-remove to-insert ht)
   (--each to-remove
     (ht-remove ht it))
@@ -1375,7 +1378,8 @@ plist holding the files to be used in the DAG."
           (files2rem (append to-update to-remove))
           (files2ins (append to-update to-insert))
           (ids2rem (org-x-dag-files->ids files2rem))
-          ((ids2ins meta2ins fms2ins) (org-x-dag-read-files files2ins)))
+          ((ids2ins meta2ins fms2ins links2ins)
+           (org-x-dag-read-files files2ins)))
     (org-x-dag-update-ht ids2rem meta2ins id->meta)
     (org-x-dag-update-ht files2rem fms2ins file->ids)
     (org-x-dag-update-dag ids2ins ids2rem)
