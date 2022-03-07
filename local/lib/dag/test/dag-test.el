@@ -57,9 +57,9 @@
     (dag-test-sets-equal-p (-map #'car broken-edges-alist)
                            (dag-test-ht-keys b))))
 
-(defun dag-test-has-valid-floating-nodes-p (dag floating-nodes)
-  (-let (((&plist :floating-nodes f) dag))
-    (dag-test-sets-equal-p floating-nodes (dag-test-ht-keys f))))
+;; (defun dag-test-has-valid-floating-nodes-p (dag floating-nodes)
+;;   (-let (((&plist :floating-nodes f) dag))
+;;     (dag-test-sets-equal-p floating-nodes (dag-test-ht-keys f))))
 
 (defun dag-test-has-valid-order-p (dag order)
   (-let (((&plist :order o) dag))
@@ -67,44 +67,42 @@
 
 ;; test macros
 
-(defmacro dag-test-dag-is-valid-p (dag adjlist broken-edges floating-nodes order)
+(defmacro dag-test-dag-is-valid-p (dag adjlist broken-edges order)
   (declare (indent 1))
   `(progn
      (dag-test-has-valid-adjlist-p ,dag ',adjlist)
      (dag-test-has-valid-broken-edges-p ,dag ',broken-edges)
-     (dag-test-has-valid-floating-nodes-p ,dag ',floating-nodes)
      (dag-test-has-valid-order-p ,dag ',order)))
 
-(defmacro dag-test-alist-is-valid-p (alist adjlist broken-edges floating-nodes order)
+(defmacro dag-test-alist-is-valid-p (alist adjlist broken-edges order)
   (declare (indent 1))
   `(let ((dag (dag-alist-to-dag ',alist)))
      (dag-test-dag-is-valid-p dag
-       ,adjlist ,broken-edges ,floating-nodes ,order)))
+       ,adjlist ,broken-edges ,order)))
 
 (defmacro dag-test-alist-remove-is-valid-p (alist to-remove adjlist broken-edges
-                                                  floating-nodes order)
+                                                  order)
   (declare (indent 2))
   `(let ((dag (->> (dag-alist-to-dag ',alist)
                    (dag-remove-nodes ',to-remove))))
      (dag-test-dag-is-valid-p dag
-       ,adjlist ,broken-edges ,floating-nodes ,order)))
+       ,adjlist ,broken-edges ,order)))
 
 (defmacro dag-test-alist-insert-is-valid-p (alist to-insert adjlist broken-edges
-                                                  floating-nodes order)
+                                                  order)
   (declare (indent 2))
   `(let ((dag (->> (dag-alist-to-dag ',alist)
                    (dag-insert-nodes ',to-insert))))
      (dag-test-dag-is-valid-p dag
-       ,adjlist ,broken-edges ,floating-nodes ,order)))
+       ,adjlist ,broken-edges ,order)))
 
 (defmacro dag-test-alist-edit-is-valid-p (alist to-remove to-insert adjlist
-                                                broken-edges floating-nodes
-                                                order)
+                                                broken-edges order)
   (declare (indent 3))
   `(let ((dag (->> (dag-alist-to-dag ',alist)
                    (dag-edit-nodes ',to-remove ',to-insert))))
      (dag-test-dag-is-valid-p dag
-       ,adjlist ,broken-edges ,floating-nodes ,order)))
+       ,adjlist ,broken-edges ,order)))
 
 ;; tests
 
@@ -112,35 +110,30 @@
   (dag-test-alist-is-valid-p nil
     nil
     nil
-    nil
     nil))
 
 (ert-deftest dag-test-one ()
   (dag-test-alist-is-valid-p ((a))
+    ((a :children nil :parents nil))
     nil
-    nil
-    (a)
-    nil))
+    (a)))
 
 (ert-deftest dag-test-one-cycle ()
   (dag-test-alist-is-valid-p ((a a))
     ((a :children (a) :parents (a)))
     nil
-    nil
     nil))
 
 (ert-deftest dag-test-one-broken ()
   (dag-test-alist-is-valid-p ((a b))
-    nil
+    ((a :children nil :parents nil))
     ((a b))
-    (a)
-    nil))
+    (a)))
 
 (ert-deftest dag-test-two ()
   (dag-test-alist-is-valid-p ((a) (b a))
     ((a :children (b) :parents nil)
      (b :children nil :parents (a)))
-    nil
     nil
     (a b)))
 
@@ -149,22 +142,20 @@
     ((a :children (b) :parents (b))
      (b :children (a) :parents (a)))
     nil
-    nil
     nil))
 
 (ert-deftest dag-test-two-floating ()
   (dag-test-alist-is-valid-p ((a) (b))
+    ((a :children nil :parents nil)
+     (b :children nil :parents nil))
     nil
-    nil
-    (a b)
-    nil))
+    (b a)))
 
 (ert-deftest dag-test-two-broken ()
   (dag-test-alist-is-valid-p ((a) (b a c))
     ((a :children (b) :parents nil)
      (b :children nil :parents (a)))
     ((b c))
-    nil
     (a b)))
 
 (ert-deftest dag-test-three-linear ()
@@ -173,7 +164,6 @@
      (b :children (c) :parents (a))
      (c :children nil :parents (b)))
     nil
-    nil
     (a b c)))
 
 (ert-deftest dag-test-three-tree ()
@@ -181,7 +171,6 @@
     ((a :children (b c) :parents nil)
      (b :children nil :parents (a))
      (c :children nil :parents (a)))
-    nil
     nil
     (a c b)))
 
@@ -197,10 +186,11 @@
      (b :children (d e) :parents (a))
      (c :children (d e) :parents (a))
      (d :children nil :parents (b c))
-     (e :children nil :parents (b c)))
+     (e :children nil :parents (b c))
+     (x :children nil :parents nil)
+     (z :children nil :parents nil))
     ((x y))
-    (x z)
-    (a c b e d)))
+    (z x a c b e d)))
 
 (ert-deftest dag-test-remove ()
   (dag-test-alist-remove-is-valid-p ((a)
@@ -213,7 +203,6 @@
      (b :children (d) :parents (a))
      (c :children (d) :parents (a))
      (d :children nil :parents (b c)))
-    nil
     nil
     (a c b d)))
 
@@ -228,7 +217,6 @@
      (b :children (d) :parents (a))
      (d :children nil :parents (b)))
     ((d c))
-    nil
     (a b d)))
 
 (ert-deftest dag-test-remove-break-float ()
@@ -238,10 +226,10 @@
                                      (d c))
       (b)
     ((c :children (d) :parents nil)
-     (d :children nil :parents (c)))
+     (d :children nil :parents (c))
+     (a :children nil :parents nil))
     ((c b))
-    (a)
-    (c d)))
+    (c a d)))
 
 (ert-deftest dag-test-insert ()
   (dag-test-alist-insert-is-valid-p ((a)
@@ -254,7 +242,6 @@
      (c :children (d e) :parents (a))
      (d :children nil :parents (b c))
      (e :children nil :parents (b c)))
-    nil
     nil
     (a c b d e)))
 
@@ -269,7 +256,6 @@
      (c :children (d) :parents (a))
      (d :children nil :parents (b c)))
     ((d x))
-    nil
     (a c b d)))
 
 (ert-deftest dag-test-insert-floating ()
@@ -279,10 +265,10 @@
       ((d))
     ((a :children (b c) :parents nil)
      (b :children nil :parents (a))
-     (c :children nil :parents (a)))
+     (c :children nil :parents (a))
+     (d :children nil :parents nil))
     nil
-    (d)
-    (a c b)))
+    (a d c b)))
 
 (ert-deftest dag-test-insert-broken ()
   (dag-test-alist-insert-is-valid-p ((a)
@@ -294,7 +280,6 @@
      (c :children (d) :parents (a))
      (d :children nil :parents (c)))
     ((d x))
-    nil
     (a c b d)))
 
 (ert-deftest dag-test-insert-fix-broken ()
@@ -306,7 +291,6 @@
      (b :children (c) :parents (a))
      (c :children (d) :parents (b))
      (d :children nil :parents (c)))
-    nil
     nil
     (a b c d)))
 
@@ -325,7 +309,6 @@
      (d :children nil :parents (c))
      (e :children nil :parents (c)))
     ((e b))
-    nil
     (c a e d)))
 
 (ert-deftest dag-test-edit-remove ()
@@ -340,7 +323,6 @@
      (b :children (d) :parents (a))
      (c :children (d) :parents (a))
      (d :children nil :parents (b c)))
-    nil
     nil
     (a c b d)))
 
@@ -357,7 +339,6 @@
      (d :children nil :parents (b c))
      (e :children nil :parents (b c)))
     nil
-    nil
     (a c b d e)))
 
 (ert-deftest dag-test-edit-null ()
@@ -373,7 +354,6 @@
      (c :children (e d) :parents (a))
      (d :children nil :parents (b c))
      (e :children nil :parents (b c)))
-    nil
     nil
     (a c b e d)))
 
@@ -392,8 +372,7 @@
      (d :children nil :parents (b c))
      (e :children nil :parents (b c)))
     nil
-    nil
-    (a b c d e)))
+    (a c b e d)))
 
 ;; TODO add test for transitive reduction
 
