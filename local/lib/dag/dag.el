@@ -242,8 +242,9 @@ parent keys for that child."
       (ht-remove broken-edges it)))
   broken-edges)
 
-(defun dag--adjlist-remove-nodes (to-remove adjlist broken-edges)
-  (let (r r-rel child-rel)
+
+(defun dag--adjlist-remove-nodes-0 (to-remove adjlist)
+  (let (r r-rel child-rel broken-acc)
     (while to-remove
       ;; If the node to be removed is in the adjacency list, get a list of its
       ;; parents, remove the node from the child list of each parent, then
@@ -260,13 +261,18 @@ parent keys for that child."
           (when (and (setq child-rel (ht-get adjlist it))
                      (not (member it to-remove)))
             (ht-set adjlist it (dag--plist-remove child-rel :parents r))
-            (dag--ht-cons broken-edges it r)))
+            (!cons (cons it r) broken-acc)))
         (ht-remove adjlist r))
-      ;; Remove all broken edges assigned to this node regardless of its
-      ;; presence in the adjacency list
-      (ht-remove broken-edges r)
-      (!cdr to-remove)))
-  (list adjlist broken-edges))
+      (!cdr to-remove))
+    (list adjlist broken-acc)))
+
+(defun dag--adjlist-remove-nodes (to-remove adjlist broken-edges)
+  (-let (((adjlist* broken) (dag--adjlist-remove-nodes-0 to-remove adjlist)))
+    (--each to-remove 
+      (ht-remove broken-edges it))
+    (--each broken
+      (dag--ht-cons broken-edges (car it) (cdr it)))
+    (list adjlist* broken-edges)))
 
 (defmacro dag--intersection-difference (xs ys &optional zs)
   "Calculate the intersection and difference of XS and YS.
