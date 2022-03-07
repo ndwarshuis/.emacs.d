@@ -398,7 +398,7 @@ Return a DAG object."
   (if (not (or to-remove to-insert)) dag
     (-let* ((to-remove* (-difference to-remove (-map #'car to-insert)))
             ((&plist :adjlist a :broken-edges b) dag)
-            ((a* b*) (dag--adjlist-remove-nodes to-remove a b))
+            ((a* b*) (dag--adjlist-remove-nodes to-remove* a b))
             ((a** b**) (dag--adjlist-insert-nodes to-insert a* b*)))
       (dag--create a** b**))))
 
