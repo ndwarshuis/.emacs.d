@@ -43,6 +43,37 @@ The type of WHAT will determine how the hash table is build:
    ((numberp what) (make-hash-table :size what :test #'equal))
    (t (ht<-alist what #'equal))))
 
+(defun dag--bimap-create (init)
+  "Create a bidirectional adjacency list.
+
+INIT is an alist where the car is a child key and the cdr is the
+parent keys for that child."
+  (let ((ht-child (dag--ht-create nil))
+        (ht-parent (dag--ht-create nil))
+        key parents)
+    (--each init
+      (setq key (car it)
+            parents (cdr it))
+      (ht-set ht-child key parents)
+      (ht-set ht-parent key nil))
+    (--each init
+      (setq key (car it)
+            parents (cdr it))
+      (while parents
+        (->> (ht-get ht-parent (car parents))
+             (cons key)
+             (ht-set ht-parent (car parents)))
+        (!cdr parents)))
+    (list :parent ht-parent :child ht-child)))
+
+;; (defun dag--bimap-remove (keys bimap)
+;;   (-let (((&plist :parent :child) bimap))
+;;     (--each keys
+;;       (--each (ht-get child it)
+;;         (ht-set parent it (remove it it))
+;;       (ht-remove child it)
+;;       (ht-remove parent it))))))
+
 (defun dag--plist-cons (plist prop x)
   (plist-put plist prop (cons x (plist-get plist prop))))
 
@@ -130,24 +161,6 @@ The type of WHAT will determine how the hash table is build:
     (when (--all-p (= 0 it) (ht-values parent-degrees))
       (nreverse ordered-nodes))))
 
-(defun dag--get-floating (adjlist init)
-  ;; Find 'floating nodes', which are nodes that have no children or parents
-  ;; (this will happen if the original alist has node keys that aren't
-  ;; referenced by any parents).
-  ;;
-  ;; O(N)
-  (let ((acc (or init (dag--ht-create nil)))
-        cur)
-    (dag--each-key adjlist
-      (setq cur (ht-get adjlist it))
-      ;; If adjlist key has parents and/or children, remove it from the floating
-      ;; if present, otherwise add it to floating and remove it from adjlist
-      (if (or (plist-get cur :children) (plist-get cur :parents))
-          (ht-remove acc it)
-        (ht-remove adjlist it)
-        (ht-set acc it t)))
-    (list adjlist acc)))
-
 (defun dag--alist-to-ht (parent-adjlist)
   (let ((h (dag--ht-create parent-adjlist))
         (broken-edges (dag--ht-create nil))
@@ -218,14 +231,10 @@ The type of WHAT will determine how the hash table is build:
       (setq order (cdr order)))
     extra-edges))
 
-(defun dag--create (adjlist broken-edges floating)
-  ;; TODO this floating this is probably not necessary; it automatically makes
-  ;; any algorithm using this function at least O(N)
-  (-let (((a f) (dag--get-floating adjlist floating)))
-    (list :adjlist a
-          :broken-edges broken-edges
-          :floating-nodes f
-          :order (dag--get-topological-order adjlist))))
+(defun dag--create (adjlist broken-edges)
+  (list :adjlist adjlist
+        :broken-edges broken-edges
+        :order (dag--get-topological-order adjlist)))
 
 (defun dag--prune-broken-edges (broken-edges)
   (dag--each-key broken-edges
@@ -233,15 +242,14 @@ The type of WHAT will determine how the hash table is build:
       (ht-remove broken-edges it)))
   broken-edges)
 
-(defun dag--adjlist-remove-nodes (to-remove adjlist broken-edges floating)
+(defun dag--adjlist-remove-nodes (to-remove adjlist broken-edges)
   (let (r r-rel child-rel)
     (while to-remove
       ;; If the node to be removed is in the adjacency list, get a list of its
       ;; parents, remove the node from the child list of each parent, then
-      ;; delete the node itself. Otherwise try to delete if from floating nodes.
+      ;; delete the node itself.
       (setq r (car to-remove))
-      (if (not (setq r-rel (ht-get adjlist r)))
-          (ht-remove floating r)
+      (when (setq r-rel (ht-get adjlist r))
         (--each (plist-get r-rel :parents)
           (when (and (not (member it to-remove)) (ht-contains-p adjlist it))
             (dag--adjlist-remove-child-edge it r adjlist)))
@@ -258,7 +266,7 @@ The type of WHAT will determine how the hash table is build:
       ;; presence in the adjacency list
       (ht-remove broken-edges r)
       (!cdr to-remove)))
-  (list adjlist broken-edges floating))
+  (list adjlist broken-edges))
 
 (defmacro dag--intersection-difference (xs ys &optional zs)
   "Calculate the intersection and difference of XS and YS.
@@ -370,38 +378,35 @@ keys.
 
 Return a DAG object."
   (-let (((a b) (dag--alist-to-ht parent-adjlist)))
-    (dag--create a b nil)))
+    (dag--create a b)))
 
 (defun dag-empty ()
   "Return an empty DAG."
-  (dag--create (dag--ht-create nil) (dag--ht-create nil) nil))
+  (dag--create (dag--ht-create nil) (dag--ht-create nil)))
 
 (defun dag-remove-nodes (to-remove dag)
-  (-let (((&plist :adjlist a :broken-edges b :floating-nodes f) dag))
-    (->> (dag--adjlist-remove-nodes to-remove a b f)
+  (-let (((&plist :adjlist a :broken-edges b) dag))
+    (->> (dag--adjlist-remove-nodes to-remove a b)
          (apply #'dag--create))))
 
 (defun dag-insert-nodes (to-insert dag)
-  (-let* (((&plist :adjlist a :broken-edges b :floating-nodes f) dag)
+  (-let* (((&plist :adjlist a :broken-edges b) dag)
           ((a* b*) (dag--adjlist-insert-nodes to-insert a b)))
-    (dag--create a* b* f)))
+    (dag--create a* b*)))
 
 (defun dag-edit-nodes (to-remove to-insert dag)
   (if (not (or to-remove to-insert)) dag
     (-let* ((to-remove* (-difference to-remove (-map #'car to-insert)))
-            ((&plist :adjlist a :broken-edges b :floating-nodes f) dag)
-            ((a* b* f*) (dag--adjlist-remove-nodes to-remove a b f))
+            ((&plist :adjlist a :broken-edges b) dag)
+            ((a* b*) (dag--adjlist-remove-nodes to-remove a b))
             ((a** b**) (dag--adjlist-insert-nodes to-insert a* b*)))
-      (dag--create a** b** f*))))
+      (dag--create a** b**))))
 
 (defun dag-get-adjacency-list (dag)
   (plist-get dag :adjlist))
 
 (defun dag-get-broken-edges (dag)
   (plist-get dag :broken-edges))
-
-(defun dag-get-floating-nodes (dag)
-  (plist-get dag :floating-nodes))
 
 (defun dag-get-topological-order (dag)
   (plist-get dag :order))
@@ -415,9 +420,7 @@ Return a DAG object."
   (< 0 (dag-get-length dag)))
 
 (defun dag-is-empty-p (dag)
-  (= 0
-     (ht-size (dag-get-adjacency-list dag))
-     (ht-size (dag-get-floating-nodes dag))))
+  (= 0 (ht-size (dag-get-adjacency-list dag))))
   
 (defun dag-get-node (key dag)
   (-some-> (dag-get-adjacency-list dag)
@@ -442,14 +445,6 @@ Return a DAG object."
      (dag--each-key it-adjlist
        (setq it-rel (ht-get it-adjlist it))
        (when ,form (!cons (cons it it-rel) acc)))
-     acc))
-
-(defmacro dag-get-floating-nodes-where (dag form)
-  (declare (indent 1))
-  `(let ((it-adjlist (dag-get-floating-nodes ,dag))
-         acc)
-     (dag--each-key it-adjlist
-       (when ,form (!cons it acc)))
      acc))
 
 (defun dag-get-leaf-nodes (dag)
