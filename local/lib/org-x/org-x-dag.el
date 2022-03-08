@@ -183,8 +183,14 @@
 
 ;; variables to store state
 
-(defun org-x-dag-create (d m fis c fs)
-  (list :dag d :id->meta m :file->ids fis :current-date c :files fs))
+(defun org-x-dag-create (d m fis il if c fs)
+  (list :dag d
+        :id->meta m
+        :file->ids fis
+        :illegal-local il
+        :illegal-foreign if
+        :current-date c
+        :files fs))
 
 (defun org-x-dag-read-file-paths ()
   (list :goal-files (list :lifetime (org-x-get-lifetime-goal-file)
@@ -213,6 +219,8 @@
 
 (defun org-x-dag-empty ()
   (org-x-dag-create (dag-empty)
+                    (ht-create #'equal)
+                    (ht-create #'equal)
                     (ht-create #'equal)
                     (ht-create #'equal)
                     (org-x-dag-current-date)
@@ -302,6 +310,17 @@ that file as it currently sits on disk.")
 (defun org-x-dag-id->file (id)
   "Return file for ID."
   (org-x-dag-id->metaprop id :file))
+
+(defun org-x-dag-id->file-group (id)
+  "Return file group for ID.
+Return one of seven values: :lifetime, :survival, :endpoint,
+:quarterly, :weekly, :daily, or nil (which means action files)."
+  (let* ((f (org-x-dag-id->file id))
+         (g (or (--find (equal f (org-x-dag->goal-file it))
+                        '(:lifetime :survival :endpoint))
+                (--find (equal f (org-x-dag->planning-file it))
+                        '(:quarterly :weekly :daily)))))
+    (list f g)))
 
 (defun org-x-dag-id->point (id)
   "Return point for ID."
@@ -448,12 +467,18 @@ Return value is a list like (BUFFER LOCAL FOREIGN)."
        (-mapcat #'org-x-dag-id->all-buffer-children)
        (cons id)))
 
-(defun org-x-dag-id->goal-status-0 (which id)
-  (-let* (((buffer linked) (org-x-dag-id->split-children-2 id))
-          (file (org-x-dag-id->file id))
-          ((local foreign) (--separate (equal (org-x-dag-id->file it) file) buffer))
-          (branchp (and local t)))
-    ()))
+(defun org-x-dag-id->epg-status (id)
+  (-let* (((cbuffer clocal cforeign) (org-x-dag-id->split-children-3 id))
+          ((pbuffer plocal pforeign) (org-x-dag-id->split-parents-3 id))
+          ;; (deadline (org-x-dag-id->planning-timestamp :deadline id))
+          (leafp (not local)))
+    (list :leafp leafp
+          :toplevelp (org-x-dag-id->is-toplevel-p id)
+          ;; :deadline ;; past, current, out of range (if after parent deadline)
+          :committed ;; t if linked to the LTG
+          :planned ;; t if on a plan
+          :fulfilled ;; t if any child tasks
+          )))
 
 (defun org-x-dag-id->goal-status (which id)
   (let* ((ps (org-x-dag-id->linked-parents id))
@@ -510,11 +535,11 @@ be uncommitted if it is also incubated."
     (->> (org-x-dag-id->linked-parents id)
          (--none-p (member (org-x-dag-id->file it) fs)))))
 
-(defun org-x-dag-id->is-floating-p (id)
-  "Return t if ID is floating."
-  (-> (plist-get org-x-dag :dag)
-      (dag-get-floating-nodes)
-      (ht-get id)))
+;; (defun org-x-dag-id->is-floating-p (id)
+;;   "Return t if ID is floating."
+;;   (-> (plist-get org-x-dag :dag)
+;;       (dag-get-floating-nodes)
+;;       (ht-get id)))
 
 (defun org-x-dag-id->is-toplevel-p (id)
   "Return t if ID is at the top of its buffer."
@@ -1153,9 +1178,9 @@ A date like (YEAR MONTH DAY).")
   (cl-flet
       ((match-id
         (s)
-        (->> (s-match "id:\\([^][]\\{36\\}\\)" s)
-             (cadr)
-             (substring-no-properties))))
+        (-some->> (s-match "id:\\([^][]\\{36\\}\\)" s)
+          (cadr)
+          (substring-no-properties))))
     (save-excursion
       (when start
         (goto-char start))
@@ -1164,7 +1189,8 @@ A date like (YEAR MONTH DAY).")
           (-some->> (match-string 1)
             (s-trim)
             (s-split "\n")
-            (-map #'match-id)))))))
+            (-map #'match-id)
+            (-non-nil)))))))
 
 (defun org-x-dag-line-regexp (kws)
   (let ((level-re "\\(\\*+\\)")
@@ -1265,10 +1291,10 @@ headline."
                          this-tags)
               this-planning (org-x-dag-parse-this-planning (car this-prop-bounds))
               this-links (or (org-x-dag-get-parent-links (nth 3 this-prop-bounds) next-pos)
-                             (if this-parent-key
-                                 (-some->> (--first (nth 3 it) cur-path)
-                                   (nth 3))
-                               this-file-links))
+                             (unless this-parent-key
+                               (-some->> (--first (nth 3 it) cur-path)
+                                 (nth 3)
+                                 (append this-file-links))))
               this-props (org-x-dag-get-local-properties this-prop-bounds target-props)
               this-meta (org-x-dag-build-meta file
                                               this-point
@@ -1279,7 +1305,8 @@ headline."
                                               this-planning
                                               this-props
                                               this-parent-key))
-        (!cons (cons this-key this-links) acc-links)
+        (when this-links
+          (!cons (cons this-key this-links) acc-links))
         (!cons (cons this-key this-meta) acc-meta)
         (!cons (cons this-key `(,(nth 1 this-parent) ,@this-links)) acc))
       ;; Add current headline to stack
@@ -1364,6 +1391,55 @@ removed from, added to, or edited within the DAG respectively."
                  (dag-edit-nodes to-remove to-insert dag))))
     (plist-put org-x-dag :dag dag*)))
 
+;; TODO this will also include broken links, which isn't totally wrong but these
+;; should be filtered out as including them is suboptimal (note: I figureed out
+;; they were here because the broken links dag code is wrong)
+(defun org-x-dag-filter-links (relations)
+  (cl-flet
+      ((classify-edge
+        (edge)
+        (-let* (((child parent) edge)
+                ((cfile cgroup) (org-x-dag-id->file-group child))
+                ((pfile pgroup) (org-x-dag-id->file-group parent)))
+          (cl-case cgroup
+            ;; the only allowed links are local
+            ((:lifetime :survival)
+             (unless (equal cfile pfile)
+               :foreign))
+            ;; should only link locally or a lifetime goal
+            (:endpoint
+             (unless (or (equal cfile pfile) (eq pgroup :lifetime))
+               :foreign))
+            ;; should only link to an endpoint or lifetime goal
+            (:quarterly
+             (cond
+              ((memq pgroup '(:endpoint :lifetime)) nil)
+              ((equal pfile cfile) :local)
+              (t :foreign)))
+            ;; should only link to a quarterly plan
+            (:weekly
+             (cond
+              ((eq pgroup :quarterly) nil)
+              ((equal pfile cfile) :local)
+              (t :foreign)))
+            ;; should only link to a weekly plan or an action
+            (:daily
+             (cond
+              ((memq pgroup '(nil :weekly)) nil)
+              ((equal pfile cfile) :local)
+              (t :foreign)))
+            ;; actions can only be linked to goal files, and nothing else
+            (t
+             (cond
+              ((memq pgroup '(:lifetime :endpoint :survival)) nil)
+              ((equal pfile cfile) :local)
+              (t :foreign)))))))
+    (-let (((&alist :foreign :local) (->> relations
+                                          (--mapcat (-let (((c . ps) it))
+                                                      (--map (list c it) ps)))
+                                          (-group-by #'classify-edge))))
+      (list foreign local))))
+
 ;; TODO there is a HUGE DIFFERENCE between a 'key' (the things in the hash table
 ;; the look things up) and a 'node' (which is a cons cell, the car of which is a
 ;; 'key' and the cdr of which is a 'relation'). These names suck, but the point
@@ -1374,7 +1450,8 @@ removed from, added to, or edited within the DAG respectively."
 TO-REMOVE, TO-INSERT, and TO-UPDATE are lists of files to remove
 from, add to, and update with the DAG. FILE-STATE is a nested
 plist holding the files to be used in the DAG."
-  (-let* (((&plist :id->meta :file->ids) org-x-dag)
+  (-let* (((&plist :id->meta :file->ids :illegal-foreign if :illegal-local il)
+           org-x-dag)
           (files2rem (append to-update to-remove))
           (files2ins (append to-update to-insert))
           (ids2rem (org-x-dag-files->ids files2rem))
@@ -1383,7 +1460,12 @@ plist holding the files to be used in the DAG."
     (org-x-dag-update-ht ids2rem meta2ins id->meta)
     (org-x-dag-update-ht files2rem fms2ins file->ids)
     (org-x-dag-update-dag ids2ins ids2rem)
-    (plist-put org-x-dag :files file-state)))
+    (plist-put org-x-dag :files file-state)
+    ;; update illegal links after updating the adjlist, since we need that to
+    ;; figure out which links are illegal
+    (-let (((illegal-foreign illegal-local) (org-x-dag-filter-links links2ins)))
+      (org-x-dag-update-ht files2rem illegal-foreign if)
+      (org-x-dag-update-ht files2rem illegal-local il))))
 
 (defun org-x-dag-sync (&optional force)
   "Sync the DAG with files from `org-x-dag-get-files'.
