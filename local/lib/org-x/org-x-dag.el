@@ -1391,54 +1391,57 @@ removed from, added to, or edited within the DAG respectively."
                  (dag-edit-nodes to-remove to-insert dag))))
     (plist-put org-x-dag :dag dag*)))
 
+
+(defun org-x-dag-id->parent-class (id parent)
+  (-let* (((cfile cgroup) (org-x-dag-id->file-group id))
+          ((pfile pgroup) (org-x-dag-id->file-group parent)))
+    (cl-case cgroup
+      ;; the only allowed links are local
+      ((:lifetime :survival)
+       (unless (equal cfile pfile)
+         :ill-foreign))
+      ;; should only link locally or a lifetime goal
+      (:endpoint
+       (unless (or (equal cfile pfile) (eq pgroup :lifetime))
+         :ill-foreign))
+      ;; should only link to an endpoint or lifetime goal
+      (:quarterly
+       (cond
+        ((memq pgroup '(:endpoint :lifetime)) nil)
+        ((equal pfile cfile) :ill-local)
+        (t :ill-foreign)))
+      ;; should only link to a quarterly plan
+      (:weekly
+       (cond
+        ((eq pgroup :quarterly) nil)
+        ((equal pfile cfile) :ill-local)
+        (t :ill-foreign)))
+      ;; should only link to a weekly plan or an action
+      (:daily
+       (cond
+        ((memq pgroup '(nil :weekly)) nil)
+        ((equal pfile cfile) :ill-local)
+        (t :ill-foreign)))
+      ;; actions can only be linked to goal files, and nothing else
+      (t
+       (cond
+        ((memq pgroup '(:lifetime :endpoint :survival)) nil)
+        ((equal pfile cfile) :ill-local)
+        (t :ill-foreign))))))
+
 ;; TODO this will also include broken links, which isn't totally wrong but these
 ;; should be filtered out as including them is suboptimal (note: I figureed out
 ;; they were here because the broken links dag code is wrong)
 (defun org-x-dag-filter-links (relations)
   (cl-flet
-      ((classify-edge
-        (edge)
-        (-let* (((child parent) edge)
-                ((cfile cgroup) (org-x-dag-id->file-group child))
-                ((pfile pgroup) (org-x-dag-id->file-group parent)))
-          (cl-case cgroup
-            ;; the only allowed links are local
-            ((:lifetime :survival)
-             (unless (equal cfile pfile)
-               :foreign))
-            ;; should only link locally or a lifetime goal
-            (:endpoint
-             (unless (or (equal cfile pfile) (eq pgroup :lifetime))
-               :foreign))
-            ;; should only link to an endpoint or lifetime goal
-            (:quarterly
-             (cond
-              ((memq pgroup '(:endpoint :lifetime)) nil)
-              ((equal pfile cfile) :local)
-              (t :foreign)))
-            ;; should only link to a quarterly plan
-            (:weekly
-             (cond
-              ((eq pgroup :quarterly) nil)
-              ((equal pfile cfile) :local)
-              (t :foreign)))
-            ;; should only link to a weekly plan or an action
-            (:daily
-             (cond
-              ((memq pgroup '(nil :weekly)) nil)
-              ((equal pfile cfile) :local)
-              (t :foreign)))
-            ;; actions can only be linked to goal files, and nothing else
-            (t
-             (cond
-              ((memq pgroup '(:lifetime :endpoint :survival)) nil)
-              ((equal pfile cfile) :local)
-              (t :foreign)))))))
-    (-let (((&alist :foreign :local) (->> relations
-                                          (--mapcat (-let (((c . ps) it))
-                                                      (--map (list c it) ps)))
-                                          (-group-by #'classify-edge))))
-      (list foreign local))))
+      ((flatten-relation
+        (rel)
+        (-let (((c . ps) rel))
+          (--map (list c it) ps))))
+    (-let (((&alist :ill-foreign :ill-local)
+            (->> (-mapcat #'flatten-relation relations)
+                 (--group-by (apply #'org-x-dag-id->parent-class it)))))
+      (list ill-foreign ill-local))))
 
 ;; TODO there is a HUGE DIFFERENCE between a 'key' (the things in the hash table
 ;; the look things up) and a 'node' (which is a cons cell, the car of which is a
