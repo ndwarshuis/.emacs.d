@@ -183,9 +183,10 @@
 
 ;; variables to store state
 
-(defun org-x-dag-create (d m fis il if c fs)
+(defun org-x-dag-create (d m fis il if s c fs)
   (list :dag d
         :id->meta m
+        :id->status s
         :file->ids fis
         :illegal-local il
         :illegal-foreign if
@@ -219,6 +220,7 @@
 
 (defun org-x-dag-empty ()
   (org-x-dag-create (dag-empty)
+                    (ht-create #'equal)
                     (ht-create #'equal)
                     (ht-create #'equal)
                     (ht-create #'equal)
@@ -325,6 +327,10 @@ Return one of seven values: :lifetime, :survival, :endpoint,
 (defun org-x-dag-id->point (id)
   "Return point for ID."
   (org-x-dag-id->metaprop id :point))
+
+(defun org-x-dag-id->level (id)
+  "Return level for ID."
+  (org-x-dag-id->metaprop id :level))
 
 (defun org-x-dag-id->todo (id)
   "Return todo keyword for ID."
@@ -511,6 +517,12 @@ Return value is a list like (BUFFER LOCAL FOREIGN)."
   "Return t if ID has done keywords."
   (member (org-x-dag-id->todo id) org-x-done-keywords))
 
+(defun org-x-dag-id->is-closed-p (id)
+  "Return t if ID is closed.
+This means the ID has a closed timestamp in the past."
+  (-when-let (c (org-x-dag-id->planning-epoch :closed id))
+    (<= c (float-time))))
+
 (defun org-x-dag-id->id-survival-p (id)
   "Return t if ID has a parent survival goal."
   (let ((f (org-x-dag->goal-file :survival)))
@@ -616,6 +628,22 @@ be uncommitted if it is also incubated."
 
 (defun org-x-dag-filter-ids-tags (tags ids)
   (--filter (-intersection (org-x-dag-id->tags nil it) tags) ids))
+
+(defun org-x-dag-quarter-tags-to-date (tags)
+  (-let (((y q) (reverse tags)))
+    (org-x-dag-quarter-to-date (list (org-x-dag-tag-to-year y)
+                                     (org-x-dag-tag-to-quarter q)))))
+
+(defun org-x-dag-weekly-tags-to-date (tags)
+  (-let (((y w) (reverse tags)))
+    (org-x-dag-week-number-to-date (list (org-x-dag-tag-to-year y)
+                                         (org-x-dag-tag-to-week w)))))
+
+(defun org-x-dag-daily-tags-to-date (tags)
+  (-let (((y m d) (reverse tags)))
+    (org-x-dag-week-number-to-date (list (org-x-dag-tag-to-year y)
+                                         (org-x-dag-tag-to-month m)
+                                         (org-x-dag-tag-to-day d)))))
 
 (defun org-x-dag-date-to-quarter-tags (date)
   (-let (((y q) (org-x-dag-date-to-quarter date)))
@@ -785,8 +813,33 @@ A date like (YEAR MONTH DAY).")
     (5 . "FRI")
     (6 . "SAT")))
 
+(defun org-x-dag--parse-date-tag (prefix tag)
+  (let ((re (format "%s\\([0-9]+\\)" prefix)))
+    (-some->> (s-match re tag)
+      (nth 1)
+      (string-to-number))))
+
+(defun org-x-dag-tag-to-year (tag)
+  (-some->> (org-x-dag--parse-date-tag "Y" tag)
+    (+ 2000)))
+
+(defun org-x-dag-tag-to-quarter (tag)
+  (org-x-dag--parse-date-tag "Q" tag))
+
+(defun org-x-dag-tag-to-week (tag)
+  (org-x-dag--parse-date-tag "W" tag))
+
+(defun org-x-dag-tag-to-day-of-week (tag)
+  (car (rassoc tag org-x-dag-weekly-tags)))
+
+(defun org-x-dag-tag-to-month (tag)
+  (org-x-dag--parse-date-tag "M" tag))
+
+(defun org-x-dag-tag-to-day (tag)
+  (org-x-dag--parse-date-tag "D" tag))
+
 (defun org-x-dag-format-year-tag (year)
-  (format "Y%d" (mod year 2000)))
+  (format "Y%02d" (mod year 2000)))
 
 (defun org-x-dag-format-quarter-tag (quarter)
   (format "Q%d" quarter))
@@ -1391,7 +1444,6 @@ removed from, added to, or edited within the DAG respectively."
                  (dag-edit-nodes to-remove to-insert dag))))
     (plist-put org-x-dag :dag dag*)))
 
-
 (defun org-x-dag-id->parent-class (id parent)
   (-let* (((cfile cgroup) (org-x-dag-id->file-group id))
           ((pfile pgroup) (org-x-dag-id->file-group parent)))
@@ -1443,6 +1495,121 @@ removed from, added to, or edited within the DAG respectively."
                  (--group-by (apply #'org-x-dag-id->parent-class it)))))
       (list ill-foreign ill-local))))
 
+
+(defun org-x-dag-id->illegal-parents (which id)
+  (ht-get (plist-get org-x-dag which) id))
+
+(defun org-x-dag-id->has-illegal-children-p (which id)
+  (ht-find (lambda (_ v) (member id v)) (plist-get org-x-dag which)))
+
+(defun org-x-dag-id->any-illegal-p (id)
+  (or (org-x-dag-id->illegal-parents :illegal-foreign id)
+      (org-x-dag-id->illegal-parents :illegal-local id)
+      (org-x-dag-id->has-illegal-children-p :illegal-foreign id)
+      (org-x-dag-id->has-illegal-children-p :illegal-local id)))
+
+(defun org-x-dag-id->created-epoch (id)
+  (-some->> (org-x-dag-id->node-property org-x-prop-created id)
+    (org-2ft)))
+
+(defun org-x-dag-id->created-in-past-p (id)
+  (-when-let (e (org-x-dag-id->created-epoch id))
+    (<= e (float-time))))
+
+(defun org-x-dag-id->0th-status (id)
+  (cl-flet
+      ((check-todo-or-done
+        (id kw)
+        (cond
+         ((member kw org-x-done-keywords)
+          (unless (org-x-dag-id->is-closed-p id)
+            "DONE/CANC headlines must be closed"))
+         ((equal kw org-x-kw-todo)
+          (when (org-x-dag-id->is-closed-p id)
+            "closed headlines must be marked DONE/CANC"))
+         (t
+          "keyword must be TODO or DONE")))
+       (check-not-scheduled
+        (id)
+        (when (org-x-dag-id->planning-timestamp :scheduled id)
+          "scheduled timestamps not allowed"))
+       (check-not-deadlined
+        (id)
+        (when (org-x-dag-id->planning-timestamp :deadline id)
+          "deadlined timestamps not allowed"))
+       (check-level
+        (level id)
+        (unless (= level (org-x-dag-id->level id))
+          (format "headline must have level %d" level))))
+    (cond
+     ;; all nodes must have legal nodes and have a creation timestamp
+     ((org-x-dag-id->any-illegal-p id)
+      "has illegal links")
+     ((not (org-x-dag-id->created-in-past-p id))
+      "must have creation timestamp in the past")
+     (t
+      (-let (((_ group) (org-x-dag-id->file-group id))
+             (kw (org-x-dag-id->todo id)))
+        (cl-case group
+          ;; lifetime/survival nodes
+          ;; - can only be marked TODO (they never end)
+          ;; - cannot be marked with CLOSED/SCHEDULED/DEADLINE
+          ((:lifetime :survival)
+           (cond
+            ((not (equal kw org-x-kw-todo))
+             "keyword must be TODO")
+            ((org-x-dag-id->metaprop :planning id)
+             "planning element not allowed")))
+          ;; endpoint nodes
+          ;; - cannot be SCHEDULED
+          ;; - can only be TODO or DONE/CANC with CLOSED
+          (:endpoint
+           (or (check-not-scheduled id)
+               (check-todo-or-done id kw)))
+          ;; quarterly plan nodes
+          ;; - can only be level 4 headlines
+          ;; - cannot be SCHEDULED
+          ;; - can only be TODO or DONE/CANC with CLOSED
+          ;; - if DEADLINE, timestamp must start on/after the quarter
+          (:quarterly
+           (or (check-level 4 id)
+               (check-not-scheduled id)
+               (check-todo-or-done id kw)
+               (-when-let (d (org-x-dag-id->planning-datetime :deadline id))
+                 (when (->> (org-x-dag-id->tags nil id)
+                            (org-x-dag-quarter-tags-to-date)
+                            (org-x-dag-datetime< d))
+                   "deadline occurs after quarter start"))))
+          ;; weekly plan nodes
+          ;; - can only level 4
+          ;; - cannot be SCHEDULED or DEADLINE
+          ;; - can only be TODO or DONE/CANC with CLOSED
+          ;; - if DEADLINE, timestamp must start on/after the quarter
+          (:weekly
+           (or (check-level 4 id)
+               (check-not-scheduled id)
+               (check-not-deadlined id)
+               (check-todo-or-done id kw)))
+          ;; daily plan nodes
+          ;; - can only be level 4 headlines
+          ;; - can only be TODO or DONE/CANC with CLOSED
+          ;; - must be SCHEDULED with long timestamp on the indicated day
+          (:daily
+           (or (check-level 4 id)
+               (check-todo-or-done id kw)
+               (-let (((date time) (->> (org-x-dag-id->planning-datetime id)
+                                        (org-x-dag-datetime-split))))
+                 (cond
+                  ((not (and date time))
+                   "must have HH:MM scheduled timestamp")
+                  ((->> (org-x-dag-id->tags nil id)
+                        (org-x-dag-daily-tags-to-date)
+                        (org-x-dag-datetime= date))
+                   "timestamp must be within the calendar date")))))
+          ;; action nodes
+          ;; - anything goes...apparently
+          (t nil)))))))
+
 ;; TODO there is a HUGE DIFFERENCE between a 'key' (the things in the hash table
 ;; the look things up) and a 'node' (which is a cons cell, the car of which is a
 ;; 'key' and the cdr of which is a 'relation'). These names suck, but the point
@@ -1453,7 +1620,11 @@ removed from, added to, or edited within the DAG respectively."
 TO-REMOVE, TO-INSERT, and TO-UPDATE are lists of files to remove
 from, add to, and update with the DAG. FILE-STATE is a nested
 plist holding the files to be used in the DAG."
-  (-let* (((&plist :id->meta :file->ids :illegal-foreign if :illegal-local il)
+  (-let* (((&plist :id->meta
+                   :file->ids
+                   :illegal-foreign if
+                   :illegal-local il
+                   :id->status)
            org-x-dag)
           (files2rem (append to-update to-remove))
           (files2ins (append to-update to-insert))
@@ -1468,7 +1639,12 @@ plist holding the files to be used in the DAG."
     ;; figure out which links are illegal
     (-let (((illegal-foreign illegal-local) (org-x-dag-filter-links links2ins)))
       (org-x-dag-update-ht files2rem illegal-foreign if)
-      (org-x-dag-update-ht files2rem illegal-local il))))
+      (org-x-dag-update-ht files2rem illegal-local il))
+    ;; update node-level status after figuring out which are invalid via links
+    (let ((status2ins (->> (-map #'car ids2ins)
+                           (--map (cons it (org-x-dag-id->0th-status it))))))
+      (org-x-dag-update-ht ids2rem status2ins id->status))))
+    
 
 (defun org-x-dag-sync (&optional force)
   "Sync the DAG with files from `org-x-dag-get-files'.
@@ -1881,6 +2057,14 @@ except it ignores inactive timestamps."
 (defun org-x-dag-id->planning-timestamp (which id)
   (-some->> (org-x-dag-id->metaprop id :planning)
     (org-ml-get-property which)))
+
+(defun org-x-dag-id->planning-datetime (which id)
+  (-some->> (org-x-dag-id->planning-timestamp which id)
+    (org-ml-timestamp-get-start-time)))
+
+(defun org-x-dag-id->planning-epoch (which id)
+  (-some->> (org-x-dag-id->planning-datetime which id)
+    (org-ml-time-to-unixtime)))
 
 (defun org-x-dag-id->node-property (prop id)
   (alist-get prop (org-x-dag-id->metaprop id :props) nil nil #'equal))
