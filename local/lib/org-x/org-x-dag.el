@@ -1649,8 +1649,9 @@ removed from, added to, or edited within the DAG respectively."
 (defun org-x-dag-status-is-error-p (status)
   (eq (car (cdr status)) :error))
 
-(defmacro org-x-dag-id->with-project-children (id child-statuses codetree task-fun)
-  (declare (indent 2))
+(defmacro org-x-dag-id->with-child-statuses (id child-statuses task-key
+                                                  project-key codetree task-fun)
+  (declare (indent 4))
   (let ((flat-codes (-map #'car codetree))
         (proj-ranking-tbl
          (->> codetree
@@ -1669,17 +1670,126 @@ removed from, added to, or edited within the DAG respectively."
        (let* ((ranks (--map (-let (((id . status) it))
                               (pcase status
                                 (`(:error _) nil)
-                                (`(:status (:type :task :code ,code))
-                                 (alist-get code ',proj-ranking-tbl))
-                                (`(:status (:type :project :code ,code))
-                                 (funcall ,task-fun id code))))
+                                (`(:status (:type ,k :code ,code))
+                                 (cl-case k
+                                   (,task-key
+                                    (alist-get code ',proj-ranking-tbl))
+                                   (,project-key
+                                    (funcall ,task-fun id code))))))
                             ,child-statuses)))
          (if (-any #'null ranks)
              (to-status :error "Child error")
            (->> (nth (-max ranks) ',flat-codes)
                 (apply #'to-status)))))))
 
-;; TODO where do iterators fit into this?
+;; TODO not DRY
+(defun org-x-dag-id->iterator-task-status (id)
+  (cl-flet
+      ((to-status
+        (type data)
+        (org-x-dag-id-action-status id type :task data)))
+    (let ((kw (org-x-dag-id->todo id)))
+      (-if-let (c (org-x-dag-id->planning-epoch :closed id))
+          (if (member kw org-x-done-keywords)
+              (->> (if (org-x-dag-time-is-archivable-p c) :archivable :complete)
+                   (to-status :status))
+            (to-status :error "Closed iterator tasks must be marked DONE/CANC"))
+        (cond
+         ((member kw org-x-done-keywords)
+          (to-status :error "Done iterator tasks must have closed timestamp"))
+         ((equal kw org-x-k-todo)
+          (-if-let (ts (or (org-x-dag-id->planning-epoch :scheduled id)
+                           (org-x-dag-id->planning-epoch :deadline id)))
+              (if (< org-x-iterator-active-future-offset (- ts (float-time)))
+                  (to-status :status :future)
+                (to-status :status :active))
+            (to-status :error "Iterator tasks must be scheduled or deadlined")))
+         (t
+          (to-status :error "Iterator tasks cannot have keyword: %s" kw)))))))
+
+(defun org-x-dag-id->iterator-project-status (id)
+  (cl-flet
+      ((to-status
+        (code)
+        (org-x-dag-id-action-status id :status :project code))
+       (to-error
+        (msg)
+        (org-x-dag-id-action-status id :error :project msg)))
+    (let ((kw (org-x-dag-id->todo id))
+          (child-statuses
+           (->> (org-x-dag-id->buffer-children id)
+                (-mapcat #'org-x-dag-id->iterator-project-status)))
+          (status
+           (cond
+            ((not child-statuses)
+             (org-x-dag-id->iterator-task-status id))
+            ((org-x-dag-id->planning-timestamp :scheduled id)
+             (to-error "Iterator project nodes cannot be scheduled"))
+            ((equal kw org-x-kw-canc)
+             (to-status :complete))
+            ((equal kw org-x-kw-done)
+             (org-x-dag-id->with-child-statuses id child-statuses :iterator-task :iterator-project
+               (((:status :archivable))
+                ((:status :complete))
+                ((:error "Complete iterator projects can only have complete children")
+                 :active :future))
+               (lambda (_ code)
+                 (cl-case code
+                   (:archivable 0)
+                   (:closed 1)
+                   (t 2)))))
+            ((equal kw org-x-kw-todo)
+             (org-x-dag-id->with-child-statuses id child-statuses :iterator-task :iterator-project
+               (((:error "Open iterator projects need to have at least one active child")
+                 :complete :archivable)
+                ((:status :active))
+                ((:status :future)))
+               (lambda (_ code)
+                 (cl-case code
+                   ((:archivable :complete) 0)
+                   (:active 1)
+                   (:future 2)))))
+            (t
+             (to-error (format "Iterator projects has invalid keyword: %s" kw))))))
+      `(,status ,@child-statuses))))
+
+(defun org-x-dag-headline-get-iterator-status (id)
+  (cl-flet
+      ((to-status
+        (code)
+        (org-x-dag-id-action-status id :status :iterator code))
+       (to-error
+        (msg)
+        (org-x-dag-id-action-status id :error :iterator msg)))
+    (let* ((kw (org-x-dag-id->todo id))
+           (child-statuses
+            (->> (org-x-dag-id->buffer-children id)
+                 (-mapcat #'org-x-dag-id->iterator-project-status)))
+           (this-status
+            (cond
+             ((not (org-x-dag-id->node-property "ARCHIVE" id))
+              (to-error "Iterator must have ARCHIVE set"))
+             ((not (org-x-dag-id->node-property org-x-prop-time-shift id))
+              (to-error "Iterator must have %s set" org-x-prop-time-shift))
+             ;; TODO this is set up to assume that iterators will never be
+             ;; archived, which is almost true (with almost doing some heavy lifting)
+             ((not (equal kw org-x-kw-todo))
+              (to-error "Iterators can only be marked TODO"))
+             ((not child-statuses)
+              (to-status :empty))
+             (t
+              ;; TODO this is utterly gross...
+              (let ((s (if (--any-p (pcase (cdr it)
+                                      (`(:status (:type ,(or :iterator-task
+                                                             :iterator-proejct)
+                                                        :code :future))
+                                       t))
+                                    child-statuses)
+                           :future
+                         :active)))
+                (to-status s))))))
+      `(,this-status ,@child-statuses))))
+
 (defun org-x-dag-id->action-status (id)
   (cl-flet
       ((to-status
@@ -1688,61 +1798,65 @@ removed from, added to, or edited within the DAG respectively."
        (to-error
         (msg)
         (org-x-dag-id-action-status id :error :project msg)))
-    (let* ((keyword (org-x-dag-id->todo id))
-           (child-statuses (->> (org-x-dag-id->buffer-children id)
-                                (-mapcat #'org-x-dag-id->action-status)))
-           (this-status
-            (cond
-             ((org-x-dag-id->any-illegal-p id)
-              (to-error "Node has illegal links"))
-             ((not (org-x-dag-id->created-in-past-p id))
-              (to-error "Node must have creation timestamp in the past"))
-             ((not child-statuses)
-              (org-x-dag-id->task-status id))
-             ((org-x-dag-id->planning-timestamp :scheduled id)
-              (to-error "Projects cannot be scheduled"))
-             ((equal keyword org-x-kw-hold)
-              (to-status :held))
-             ((member keyword org-x--project-invalid-todostates)
-              (->> (s-join ", " org-x--project-invalid-todostates)
-                   (format "Projects cannot have these keywords: %s")
-                   (to-error)))
-             ((equal keyword org-x-kw-canc)
-              (->> (if (org-x-dag-id->is-archivable-p id) :archivable :complete)
-                   (to-status)))
-             ((equal keyword org-x-kw-done)
-              (org-x-dag-id->with-project-children id child-statuses
-                (((:status :archivable))
-                 ((:status :complete))
-                 ((:error "DONE projects can only have complete child nodes")
-                  :stuck :held :wait :active))
-                (lambda (_ code)
-                  (cl-case code
-                    (:archivable 0)
-                    (:complete 1)
-                    (:active 2)))))
-             ((equal keyword org-x-kw-todo)
-              (org-x-dag-id->with-project-children id child-statuses
-                (((:error "TODO projects should have at least one active child")
-                  :archivable :complete)
-                 ((:status :stuck))
-                 ((:status :held))
-                 ((:status :wait))
-                 ((:status :active)))
-                (lambda (id _)
-                  (let ((kw (org-x-dag-id->todo id)))
-                    (cond
-                     ((equal kw org-x-kw-todo)
-                      (if (org-x-dag-id->planning-timestamp :scheduled id) 4 1))
-                     ((equal kw org-x-kw-hold) 2)
-                     ((equal kw org-x-kw-wait) 3)
-                     ((equal kw org-x-kw-next) 4)
-                     ;; ASSUME anything that doesn't have the above keywords
-                     ;; is either :archivable or :complete in which case it
-                     ;; is an error
-                     (t 0))))))
-             (t (error "Could not determine status for '%s'" id)))))
-      `(,this-status ,@child-statuses))))
+    (if (org-x-dag-id->is-iterator-p id)
+        (org-x-dag-headline-get-iterator-status id)
+      (let* ((keyword (org-x-dag-id->todo id))
+             (child-statuses (->> (org-x-dag-id->buffer-children id)
+                                  (-mapcat #'org-x-dag-id->action-status)))
+             (this-status
+              (cond
+               ;; TODO this isn't done for iterators
+               ((org-x-dag-id->any-illegal-p id)
+                (to-error "Node has illegal links"))
+               ((not (org-x-dag-id->created-in-past-p id))
+                (to-error "Node must have creation timestamp in the past"))
+               ((org-x-dag-id->is-iterator-p id)
+                ((not child-statuses)
+                 (org-x-dag-id->task-status id))
+                ((org-x-dag-id->planning-timestamp :scheduled id)
+                 (to-error "Projects cannot be scheduled"))
+                ((equal keyword org-x-kw-hold)
+                 (to-status :held))
+                ((member keyword org-x--project-invalid-todostates)
+                 (->> (s-join ", " org-x--project-invalid-todostates)
+                      (format "Projects cannot have these keywords: %s")
+                      (to-error)))
+                ((equal keyword org-x-kw-canc)
+                 (->> (if (org-x-dag-id->is-archivable-p id) :archivable :complete)
+                      (to-status)))
+                ((equal keyword org-x-kw-done)
+                 (org-x-dag-id->with-child-statuses id child-statuses :task :project
+                   (((:status :archivable))
+                    ((:status :complete))
+                    ((:error "DONE projects can only have complete child nodes")
+                     :stuck :held :wait :active))
+                   (lambda (_ code)
+                     (cl-case code
+                       (:archivable 0)
+                       (:complete 1)
+                       (:active 2)))))
+                ((equal keyword org-x-kw-todo)
+                 (org-x-dag-id->with-child-statuses id child-statuses :task :project
+                   (((:error "TODO projects should have at least one active child")
+                     :archivable :complete)
+                    ((:status :stuck))
+                    ((:status :held))
+                    ((:status :wait))
+                    ((:status :active)))
+                   (lambda (id _)
+                     (let ((kw (org-x-dag-id->todo id)))
+                       (cond
+                        ((equal kw org-x-kw-todo)
+                         (if (org-x-dag-id->planning-timestamp :scheduled id) 4 1))
+                        ((equal kw org-x-kw-hold) 2)
+                        ((equal kw org-x-kw-wait) 3)
+                        ((equal kw org-x-kw-next) 4)
+                        ;; ASSUME anything that doesn't have the above keywords
+                        ;; is either :archivable or :complete in which case it
+                        ;; is an error
+                        (t 0))))))
+                (t (error "Could not determine status for '%s'" id))))))
+             `(,this-status ,@child-statuses)))))
 
 (defun org-x-dag-id->endpoint-status (id)
   ())
