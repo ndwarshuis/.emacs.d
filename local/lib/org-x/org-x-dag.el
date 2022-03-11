@@ -523,6 +523,13 @@ This means the ID has a closed timestamp in the past."
   (-when-let (c (org-x-dag-id->planning-epoch :closed id))
     (<= c (float-time))))
 
+(defun org-x-dag-id->is-archivable-p (id)
+  "Return t if ID is archivable.
+This means the ID has be closed for longer than
+`org-x-archive-delay'."
+  (-when-let (c (org-x-dag-id->planning-epoch :closed id))
+    (org-x-dag-time-is-archivable-p c)))
+
 (defun org-x-dag-id->id-survival-p (id)
   "Return t if ID has a parent survival goal."
   (let ((f (org-x-dag->goal-file :survival)))
@@ -1517,18 +1524,21 @@ removed from, added to, or edited within the DAG respectively."
     (<= e (float-time))))
 
 (defun org-x-dag-id->0th-status (id)
-  (cl-flet
-      ((check-todo-or-done
+  (cl-flet*
+      ((check-done
         (id kw)
         (cond
          ((member kw org-x-done-keywords)
           (unless (org-x-dag-id->is-closed-p id)
             "DONE/CANC headlines must be closed"))
-         ((equal kw org-x-kw-todo)
-          (when (org-x-dag-id->is-closed-p id)
-            "closed headlines must be marked DONE/CANC"))
          (t
-          "keyword must be TODO or DONE")))
+          (when (org-x-dag-id->is-closed-p id)
+            "closed headlines must be marked DONE/CANC"))))
+       (check-todo-or-done
+        (id kw)
+        (or (check-done id kw)
+            (unless (equal kw org-x-kw-todo)
+              "keyword must be TODO or DONE")))
        (check-not-scheduled
         (id)
         (when (org-x-dag-id->planning-timestamp :scheduled id)
@@ -1607,8 +1617,153 @@ removed from, added to, or edited within the DAG respectively."
                         (org-x-dag-datetime= date))
                    "timestamp must be within the calendar date")))))
           ;; action nodes
-          ;; - anything goes...apparently
-          (t nil)))))))
+          ;; - closed keywords must be marked DONE/CANC
+          (t (check-done id kw))))))))
+
+(defun org-x-dag-id-status (id type data)
+  (let ((payload (cl-case type
+                   ((:error :status) `(,type ,data))
+                   (t (error "invalid status type: %s" type)))))
+    `(,id . ,payload)))
+
+(defun org-x-dag-id-action-status (id status-type action-type code)
+  (org-x-dag-id-status id status-type (list :type action-type :code code)))
+
+(defun org-x-dag-id->task-status (id)
+  (cl-flet
+      ((to-status
+        (type data)
+        (org-x-dag-id-action-status id type :task data)))
+    (let ((kw (org-x-dag-id->todo id)))
+      (-if-let (c (org-x-dag-id->planning-epoch :closed id))
+          (if (member kw org-x-done-keywords)
+              (->> (if (org-x-dag-time-is-archivable-p c) :archivable :complete)
+                   (to-status :status))
+            (to-status :error "Closed id must be marked DONE/CANC"))
+        (cond
+         ((member kw org-x-done-keywords)
+          (to-status :error "Done id's must have closed timestamp"))
+         (t
+          (to-status :status :active)))))))
+
+(defun org-x-dag-status-is-error-p (status)
+  (eq (car (cdr status)) :error))
+
+(defmacro org-x-dag-id->with-project-children (id child-statuses codetree task-fun)
+  (declare (indent 2))
+  (let ((flat-codes (-map #'car codetree))
+        (proj-ranking-tbl
+         (->> codetree
+              (--map-indexed
+               (-let* (((key . child-codes) it)
+                       (i it-index)
+                       (trans (--map (cons it i) child-codes)))
+                 (pcase key
+                   (`(:error ,_) trans)
+                   (`(:status ,s) (cons (cons s it-index) trans)))))
+              (-flatten-n 1))))
+    `(cl-flet
+         ((to-status
+           (type data)
+           (org-x-dag-id-action-status id type :project data)))
+       (let* ((ranks (--map (-let (((id . status) it))
+                              (pcase status
+                                (`(:error _) nil)
+                                (`(:status (:type :task :code ,code))
+                                 (alist-get code ',proj-ranking-tbl))
+                                (`(:status (:type :project :code ,code))
+                                 (funcall ,task-fun id code))))
+                            ,child-statuses)))
+         (if (-any #'null ranks)
+             (to-status :error "Child error")
+           (->> (nth (-max ranks) ',flat-codes)
+                (apply #'to-status)))))))
+
+;; TODO where do iterators fit into this?
+(defun org-x-dag-id->action-status (id)
+  (cl-flet
+      ((to-status
+        (code)
+        (org-x-dag-id-action-status id :status :project code))
+       (to-error
+        (msg)
+        (org-x-dag-id-action-status id :error :project msg)))
+    (let* ((keyword (org-x-dag-id->todo id))
+           (child-statuses (->> (org-x-dag-id->buffer-children id)
+                                (-mapcat #'org-x-dag-id->action-status)))
+           (this-status
+            (cond
+             ((org-x-dag-id->any-illegal-p id)
+              (to-error "Node has illegal links"))
+             ((not (org-x-dag-id->created-in-past-p id))
+              (to-error "Node must have creation timestamp in the past"))
+             ((not child-statuses)
+              (org-x-dag-id->task-status id))
+             ((org-x-dag-id->planning-timestamp :scheduled id)
+              (to-error "Projects cannot be scheduled"))
+             ((equal keyword org-x-kw-hold)
+              (to-status :held))
+             ((member keyword org-x--project-invalid-todostates)
+              (->> (s-join ", " org-x--project-invalid-todostates)
+                   (format "Projects cannot have these keywords: %s")
+                   (to-error)))
+             ((equal keyword org-x-kw-canc)
+              (->> (if (org-x-dag-id->is-archivable-p id) :archivable :complete)
+                   (to-status)))
+             ((equal keyword org-x-kw-done)
+              (org-x-dag-id->with-project-children id child-statuses
+                (((:status :archivable))
+                 ((:status :complete))
+                 ((:error "DONE projects can only have complete child nodes")
+                  :stuck :held :wait :active))
+                (lambda (_ code)
+                  (cl-case code
+                    (:archivable 0)
+                    (:complete 1)
+                    (:active 2)))))
+             ((equal keyword org-x-kw-todo)
+              (org-x-dag-id->with-project-children id child-statuses
+                (((:error "TODO projects should have at least one active child")
+                  :archivable :complete)
+                 ((:status :stuck))
+                 ((:status :held))
+                 ((:status :wait))
+                 ((:status :active)))
+                (lambda (id _)
+                  (let ((kw (org-x-dag-id->todo id)))
+                    (cond
+                     ((equal kw org-x-kw-todo)
+                      (if (org-x-dag-id->planning-timestamp :scheduled id) 4 1))
+                     ((equal kw org-x-kw-hold) 2)
+                     ((equal kw org-x-kw-wait) 3)
+                     ((equal kw org-x-kw-next) 4)
+                     ;; ASSUME anything that doesn't have the above keywords
+                     ;; is either :archivable or :complete in which case it
+                     ;; is an error
+                     (t 0))))))
+             (t (error "Could not determine status for '%s'" id)))))
+      `(,this-status ,@child-statuses))))
+
+(defun org-x-dag-id->endpoint-status (id)
+  ())
+
+(defun org-x-dag-id->file-level-status (id)
+  "Return file-level status of ID and its children.
+
+Assume ID is a toplevel headline. Return an alist where the car
+of each cell is the ID and the cdr is its status."
+  (-let (((_ group) (org-x-dag-id->file-group id)))
+    (cl-case group
+      (:action
+       (org-x-dag-id->action-status id))
+      (:endpoint
+       (org-x-dag-id->endpoint-status id)))))
+
+;; (defun org-x-dag-file-level-status (ids)
+;;   (->> (--filter (org-x-dag-id->is-toplevel-p it) ids)
+;;        ;; TODO this function doesn't exist yet
+;;        (--filter (org-x-dag-id->error id))))
+       
 
 ;; TODO there is a HUGE DIFFERENCE between a 'key' (the things in the hash table
 ;; the look things up) and a 'node' (which is a cons cell, the car of which is a
@@ -2143,23 +2298,6 @@ except it ignores inactive timestamps."
      ((org-x-headline-is-inert-p) :inert)
      ((org-x-dag-headline-is-closed-p nil) :undone-closed)
      (t :active))))
-
-(defun org-x-dag-id->task-status (id)
-  ;; ASSUME this is actually a task
-  (let ((c (org-x-dag-id->planning-timestamp :closed id)))
-    (if (org-x-dag-id->is-done-p id)
-        (if c
-            (if (->> (org-ml-timestamp-get-start-time c)
-                     (org-ml-time-to-unixtime)
-                     (org-x-dag-time-is-archivable-p))
-                :archivable
-              :complete)
-          :done-unclosed)
-      (cond
-       ;; ((org-x-headline-is-expired-p) :expired)
-       ;; ((org-x-headline-is-inert-p) :inert)
-       (c :undone-closed)
-       (t :active)))))
 
 (defun org-x-dag-get-max-index (ys xs)
   "Return the member of XS that has the highest index in YS."
