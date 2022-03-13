@@ -1596,7 +1596,6 @@ removed from, added to, or edited within the DAG respectively."
           ;; - can only level 4
           ;; - cannot be SCHEDULED or DEADLINE
           ;; - can only be TODO or DONE/CANC with CLOSED
-          ;; - if DEADLINE, timestamp must start on/after the quarter
           (:weekly
            (or (check-level 4 id)
                (check-not-scheduled id)
@@ -2082,6 +2081,26 @@ return another status."
                          (org-x-dag-status-error id))
                   (org-x-dag-qtp-status id :active deadline))))
           (org-x-dag-qtp-status id :active nil))))))
+
+(defun org-x-dag-wkp-status (id code)
+  (org-x-dag-status-valid id (list :code)))
+
+(defun org-x-dag-id->wkp-status (id)
+  (let ((kw (org-x-dag-id->todo id))
+        (closed (org-x-dag-id->planning-timestamp :closed id)))
+    (-if-let (err (or (org-x-dag-id->illegal-link-error id)
+                      (org-x-dag-id->created-error id)
+                      (org-x-dag-done-closed-error kw closed)
+                      (unless (eq 4 (org-x-dag-id->level id))
+                        "Weekly plans cannot have children")
+                      (when (org-x-dag-id->planning-timestamp :scheduled id)
+                        "Quarterly plans cannot be scheduled")
+                      (when (org-x-dag-id->planning-timestamp :deadline id)
+                        "Quarterly plans cannot be deadlined")))
+        (org-x-dag-status-error id general-error)
+      (if (member kw org-x-done-keywords)
+          (org-x-dag-qtp-status id :complete)
+        (org-x-dag-qtp-status id :active)))))
 
 (defun org-x-dag-id->file-level-status (id)
   "Return file-level status of ID and its children.
