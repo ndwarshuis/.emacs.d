@@ -1684,8 +1684,8 @@ return another status."
   ;; - :future
   (org-x-dag-status-valid id (list :code code :action-type action-type)))
 
-(defun org-x-dag-goal-status (id code deadline)
-  (org-x-dag-status-valid (list :code code :deadline deadline)))
+(defun org-x-dag-endpoint-status (id deadline code)
+  (org-x-dag-status-valid id (list :code code :deadline deadline)))
 
 ;; (defun org-x-dag-id->task-status (id)
 ;;   (cl-flet
@@ -1738,25 +1738,31 @@ return another status."
        (funcall ,trans-fun it-id a c))
      ,childless-form))
 
+(defmacro org-x-dag-id->with-endpoint-child-statuses (id child-statuses deadline
+                                                         codelist trans-fun
+                                                         childless-form)
+  (declare (indent 3))
+  `(org-x-dag-id->with-child-statuses ,id ,child-statuses ,codelist
+     (org-x-dag-endpoint-status ,id ,deadline it)
+     (-let (((&plist :deadline d :code c) it-data))
+       (funcall ,trans-fun it-id ,deadline d c))
+     ,childless-form))
+
+(defmacro org-x-dag-id->with-nested-buffer-children (id child-form node-form)
+  (declare (indent 1))
+  ;; Distinguish between immediate children and all deeper children;
+  ;; assume that the car of anything returned by
+  ;; `org-x-dag-id->action-status' is the parent of all the status
+  ;; objects in the cdr, so map these together
+  `(let* ((results (->> (org-x-dag-id->buffer-children ,id)
+                        (--map ,child-form)))
+          (it (-map #'car results)))
+     (->> (apply #'append results)
+          (cons ,node-form))))
+
 (defun org-x-dag-id->action-status (id in-iteratorp)
   (cl-flet*
-      ((get-child-statuses
-        (id iteratorp)
-        ;; Distinguish between immediate children and all deeper children;
-        ;; assume that the car of anything returned by
-        ;; `org-x-dag-id->action-status' is the parent of all the status
-        ;; objects in the cdr, so map these together
-        (-let (((shallow deep)
-                (->> (org-x-dag-id->buffer-children id)
-                     (--reduce-from
-                      (-let (((child . subchildren)
-                              (org-x-dag-id->action-status it iteratorp))
-                             ((acc-children acc-subchildren) acc))
-                        `((,child ,@acc-children)
-                          (,@subchildren ,@acc-subchildren)))
-                      nil))))
-          (list shallow deep)))
-       (to-valid-closed
+      ((to-valid-closed
         (id type ts)
         (->> (if (->> (org-ml-timestamp-get-start-time ts)
                       (org-ml-time-to-unixtime)
@@ -1908,56 +1914,53 @@ return another status."
                      (org-x-dag-status-error)))
             (org-x-dag-action-status id :task :active))))))
     
-    (-let* ((kw (org-x-dag-id->todo id))
-            (closed (org-x-dag-id->planning-timestamp :closed id))
-            (iteratorp (org-x-dag-id->is-iterator-p id))
-            ((c-statuses subc-statuses) (get-child-statuses id iteratorp))
-            (this-status
-             ;; first check for a bunch of errors that are equally valid at any
-             ;; level in the DAG
-             (-if-let (general-error
-                       (cond
-                        ((org-x-dag-id->any-illegal-p id)
-                         "Action has illegal links")
-                        ((not (org-x-dag-id->created-in-past-p id))
-                         "Action must have creation timestamp in the past")
-                        ((and closed (not (member kw org-x-done-keywords)))
-                         "Closed actions must be marked with DONE/CANC")
-                        ((and (not closed) (member kw org-x-done-keywords))
-                         "DONE/CANC actions must have closed timestamp")
-                        ((and c-statuses
-                              (org-x-dag-id->planning-timestamp :scheduled id))
-                         "Actions with children cannot be scheduled")
-                        ((and c-statuses
-                              (org-x-dag-id->planning-timestamp :deadline id))
-                         "Actions with children cannot be deadlined")
-                        ((and iteratorp in-iteratorp)
-                         "Iterators cannot be nested")))
-                 (org-x-dag-status-error id general-error)
-               (cond
-                ;; CANC actions work the same regardless of action type; if the
-                ;; closed timestamp is archivable, its :archivable, otherwise it
-                ;; is :complete (NOTE that this is 'nice' because I made it such
-                ;; that :complete and :archivable have the same meaning and key
-                ;; for all action types)
-                ((equal kw org-x-kw-canc) 
-                 (let ((type (cond
-                              (iteratorp :iterator)
-                              (in-iteratorp
-                               (if c-statuses :iterator-project :iterator-task))
-                              (t
-                               (if c-statuses :project :task)))))
-                   (to-valid-closed id type closed)))
-                ;; assuming none of the general checks above matched, try more
-                ;; specific checks depending on if the current action is an
-                ;; iterator (and if we are inside one)
-                (iteratorp
-                 (iterator-status id kw closed c-statuses))
-                (in-iteratorp
-                 (iterator-project-status id kw closed c-statuses))
-                (t
-                 (project-status id kw closed c-statuses))))))
-      `(,this-status ,@c-statuses ,@subc-statuses))))
+    (-let ((kw (org-x-dag-id->todo id))
+           (closed (org-x-dag-id->planning-timestamp :closed id))
+           (iteratorp (org-x-dag-id->is-iterator-p id)))
+      (org-x-dag-id->with-nested-buffer-children id
+        (org-x-dag-id->action-status it iteratorp)
+        ;; first check for a bunch of errors that are equally valid at any
+        ;; level in the DAG
+        (-if-let (general-error
+                  (cond
+                   ((org-x-dag-id->any-illegal-p id)
+                    "Action has illegal links")
+                   ((not (org-x-dag-id->created-in-past-p id))
+                    "Action must have creation timestamp in the past")
+                   ((and closed (not (member kw org-x-done-keywords)))
+                    "Closed actions must be marked with DONE/CANC")
+                   ((and (not closed) (member kw org-x-done-keywords))
+                    "DONE/CANC actions must have closed timestamp")
+                   ((and it (org-x-dag-id->planning-timestamp :scheduled id))
+                    "Actions with children cannot be scheduled")
+                   ((and it (org-x-dag-id->planning-timestamp :deadline id))
+                    "Actions with children cannot be deadlined")
+                   ((and iteratorp in-iteratorp)
+                    "Iterators cannot be nested")))
+            (org-x-dag-status-error id general-error)
+          (cond
+           ;; CANC actions work the same regardless of action type; if the
+           ;; closed timestamp is archivable, its :archivable, otherwise it is
+           ;; :complete (NOTE that this is 'nice' because I made it such that
+           ;; :complete and :archivable have the same meaning and key for all
+           ;; action types)
+           ((equal kw org-x-kw-canc) 
+            (let ((type (cond
+                         (iteratorp :iterator)
+                         (in-iteratorp
+                          (if it :iterator-project :iterator-task))
+                         (t
+                          (if it :project :task)))))
+              (to-valid-closed id type closed)))
+           ;; assuming none of the general checks above matched, try more
+           ;; specific checks depending on if the current action is an iterator
+           ;; (and if we are inside one)
+           (iteratorp
+            (iterator-status id kw closed it))
+           (in-iteratorp
+            (iterator-project-status id kw closed it))
+           (t
+            (project-status id kw closed it))))))))
 
 (defun org-x-dag-id->has-done-error-p (id)
   (or (and (not (org-x-dag-id->is-done-p id)) (org-x-dag-id->is-closed-p id))
@@ -1972,29 +1975,71 @@ return another status."
             (to-error "Keyword must be marked TODO/DONE")
           (funcall alt-fun id))))))
 
-;; (defun org-x-dag-id->endpoint-status (id)
-;;   (cl-flet
-;;       ((to-status
-;;         (type code)
-;;         (org-x-dag-goal-status id :status type code))
-;;        (to-error
-;;         (type msg)
-;;         (org-x-dag-goal-status id :error type msg)))
-;;   (let ((child-statuses (->> (org-x-dag-id->buffer-children id)
-;;                              (-mapcat #'org-x-dag-id->endpoint-status)))
-;;         (this-status
-;;          (cond
-;;           ((org-x-dag-id->has-done-error-p id)
-;;            (to-error :branch "Closed timestamps must have DONE/CANC"))
-;;           ((org-x-dag-id->planning-timestamp :scheduled id)
-;;            (to-error :branch "Endpoint goals cannot be scheduled"))
-;;           ((equal kw org-x-kw-todo)
-;;            (to-status :branch :active))
-;;           ((org-x-dag-id->is-done-p id)
-;;            (to-status :branch :complete))
-;;           ((not children)
-;;            ())))
-;;     `(,this-status ,@child-statuses)))))
+(defun org-x-dag-id->illegal-link-error (id)
+  (when (org-x-dag-id->any-illegal-p id)
+    "Node has illegal links"))
+
+(defun org-x-dag-done-closed-error (kw closed)
+  (cond
+   ((and closed (not (member kw org-x-done-keywords)))
+    "Closed nodes must be marked with DONE/CANC")
+   ((and (not closed) (member kw org-x-done-keywords))
+    "DONE/CANC nodes must have closed timestamp")))
+
+(defun org-x-dag-id->created-error (id)
+  (unless (org-x-dag-id->created-in-past-p id)
+    "Node must have creation timestamp in the past"))
+
+(defun org-x-dag-id->endpoint-status (id)
+  (cl-flet*
+      ((to-valid-closed
+        (id ts)
+        (->> (if (->> (org-ml-timestamp-get-start-time ts)
+                      (org-ml-time-to-unixtime)
+                      (org-x-dag-time-is-archivable-p))
+                 :archivable
+               :complete)
+             (org-x-dag-endpoint-status id nil))))
+    (let ((kw (org-x-dag-id->todo id))
+          (closed (org-x-dag-id->planning-timestamp :closed id)))
+      (org-x-dag-id->with-nested-buffer-children id
+        (org-x-dag-id->endpoint-status it)
+        (-if-let (general-error
+                  (or (org-x-dag-id->illegal-link-error id)
+                      (org-x-dag-id->created-error id)
+                      (org-x-dag-done-closed-error kw closed)
+                      (cond
+                       ((org-x-dag-id->planning-timestamp :scheduled id)
+                        "Endpoint goals cannot be scheduled")
+                       ((member kw (list org-x-kw-next org-x-kw-hold org-x-kw-wait))
+                        "Endpoint goal has invalid keyword: %s" kw))))
+            (org-x-dag-status-error id general-error)
+          (if (equal kw org-x-kw-canc)
+              (to-valid-closed id closed)
+            (let ((deadline (org-x-dag-id->planning-epoch :deadline id)))
+              (if (equal kw org-x-kw-done)
+                  (org-x-dag-id->with-endpoint-child-statuses id it deadline
+                    ((:valid :archivable)
+                     (:valid :complete)
+                     (:error "Closed endpoint goals must only have closed children"))
+                    (lambda (_ _ _ code)
+                      (pcase code
+                        (:archivable 0)
+                        (:complete 1)
+                        (:active 2)))
+                    (to-valid-closed id closed))
+                (org-x-dag-id->with-endpoint-child-statuses id it deadline
+                  ((:error "Open endpoint goals must have at least one open child")
+                   (:valid :active)
+                   (:error "Child deadline cannot occur after this deadline"))
+                  (lambda (_ this-deadline child-deadline code)
+                    (if (and this-deadline child-deadline
+                             (< deadline child-deadline))
+                        2
+                      (pcase code
+                        (:active 1)
+                        ((or :complete :archivable) 2))))
+                  (org-x-dag-endpoint-status id deadline :active))))))))))
 
 (defun org-x-dag-id->file-level-status (id)
   "Return file-level status of ID and its children.
