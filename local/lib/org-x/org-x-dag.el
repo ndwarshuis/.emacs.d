@@ -1990,6 +1990,8 @@ return another status."
   (unless (org-x-dag-id->created-in-past-p id)
     "Node must have creation timestamp in the past"))
 
+;; TODO it might make more sense to make a 'status' independent of time, such
+;; that as time changes, we don't need to constantly recalculate this
 (defun org-x-dag-id->endpoint-status (id)
   (cl-flet*
       ((to-valid-closed
@@ -2053,6 +2055,33 @@ return another status."
                       "Toplevel goals can only be TODO")))
       (org-x-dag-status-error id general-error)
     (org-x-dag-toplevel-goal-status id)))
+
+(defun org-x-dag-qtp-status (id code deadline)
+  (org-x-dag-status-valid id (list :code code :deadline)))
+
+(defun org-x-dag-id->qtp-status (id)
+  (let ((kw (org-x-dag-id->todo id))
+        (closed (org-x-dag-id->planning-timestamp :closed id)))
+    (-if-let (err (or (org-x-dag-id->illegal-link-error id)
+                      (org-x-dag-id->created-error id)
+                      (org-x-dag-done-closed-error kw closed)
+                      (unless (eq 4 (org-x-dag-id->level id))
+                        "Quarterly plans cannot have children")
+                      (when (org-x-dag-id->planning-timestamp :scheduled id)
+                        "Quarterly plans cannot be scheduled")))
+        (org-x-dag-status-error id general-error)
+      (if (member kw org-x-done-keywords)
+          (org-x-dag-qtp-status id :complete)
+        (-if-let (deadline (org-x-dag-id->planning-datetime :deadline id))
+            (if (org-ml-time-is-long)
+                (org-x-dag-status-error id "Quarterly plan deadlines must be short")
+              (let ((qdate (->> (org-x-dag-id->tags nil id)
+                                (org-x-dag-quarter-tags-to-date))))
+                (if (org-x-dag-datetime< deadline qdate)
+                    (->> "Quarterly plan deadlines must start within/after quarter"
+                         (org-x-dag-status-error id))
+                  (org-x-dag-qtp-status id :active deadline))))
+          (org-x-dag-qtp-status id :active nil))))))
 
 (defun org-x-dag-id->file-level-status (id)
   "Return file-level status of ID and its children.
