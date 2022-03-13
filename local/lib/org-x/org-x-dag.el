@@ -2083,7 +2083,7 @@ return another status."
           (org-x-dag-qtp-status id :active nil))))))
 
 (defun org-x-dag-wkp-status (id code)
-  (org-x-dag-status-valid id (list :code)))
+  (org-x-dag-status-valid id (list :code code)))
 
 (defun org-x-dag-id->wkp-status (id)
   (let ((kw (org-x-dag-id->todo id))
@@ -2101,6 +2101,34 @@ return another status."
       (if (member kw org-x-done-keywords)
           (org-x-dag-qtp-status id :complete)
         (org-x-dag-qtp-status id :active)))))
+
+(defun org-x-dag-wkp-status (id code scheduled)
+  (org-x-dag-status-valid id (list :code code :scheduled scheduled)))
+
+(defun org-x-dag-id->dlp-status (id)
+  (let ((kw (org-x-dag-id->todo id))
+        (closed (org-x-dag-id->planning-timestamp :closed id)))
+    (-if-let (err (or (org-x-dag-id->illegal-link-error id)
+                      (org-x-dag-id->created-error id)
+                      (org-x-dag-done-closed-error kw closed)
+                      (unless (eq 4 (org-x-dag-id->level id))
+                        "Daily plans cannot have children")
+                      (when (org-x-dag-id->planning-timestamp :deadline id)
+                        "Daily plans cannot be deadlined")))
+        (org-x-dag-status-error id general-error)
+      (if (member kw org-x-done-keywords)
+          (org-x-dag-wlp-status id :complete nil)
+        (let ((scheduled (org-x-dag-id->planning-datetime :scheduled id)))
+          (if (not (and scheduled (org-ml-time-is-long scheduled)))
+              (->> "Daily plans must have long scheduled timestamp"
+                   (org-x-dag-status-error id))
+            ;; ASSUME this won't fail (likewise for quarterly plans)
+            (let ((ddate (->> (org-x-dag-id->tags nil id)
+                              (org-x-dag-daily-tags-to-date))))
+              (if (org-x-dag-datetime= ddate (-take 3 scheduled))
+                  (org-x-dag-wkp-status id :active scheduled)
+                (->> "Daily plan scheduled timestamp at wrong date"
+                     (org-x-dag-status-error id))))))))))
 
 (defun org-x-dag-id->file-level-status (id)
   "Return file-level status of ID and its children.
