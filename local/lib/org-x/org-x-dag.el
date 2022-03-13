@@ -1760,24 +1760,8 @@ return another status."
           (cons ,node-form))))
 
 (defun org-x-dag-id->action-status (id in-iteratorp)
-  (cl-flet*
-      ((to-valid-closed
-        (id type ts)
-        (->> (if (->> (org-ml-timestamp-get-start-time ts)
-                      (org-ml-time-to-unixtime)
-                      (org-x-dag-time-is-archivable-p))
-                 :archivable
-               :complete)
-             (org-x-dag-action-status id type)))
-       (check-archivable
-        (id closed status)
-        (org-x-dag-status-with-data status
-          (-let (((&plist :code c :action-type a) it-data))
-            (if (eq c :archivable)
-                (to-valid-closed id a closed)
-              (org-x-dag-action-status id a c)))))
-
-       (iterator-status
+  (cl-flet
+      ((iterator-status
         (id kw closed c-statuses)
         (cond
          ((not (org-x-dag-id->node-property "ARCHIVE" id))
@@ -1786,30 +1770,24 @@ return another status."
           (->> (format "Iterator must have %s set" org-x-prop-time-shift)
                (org-x-dag-status-error id)))
          ((equal kw org-x-done-keywords)
-          (->> 
-           (org-x-dag-id->with-action-child-statuses id c-statuses :iterator
-             ((:valid :archivable)
-              (:valid :complete)
-              (:error "Complete iterators can only have complete child nodes"))
-             (lambda (_ type code)
-               (when (memq type '(:iterator-task :iterator-project))
-                 (pcase code
-                   (:archivable 0)
-                   (:complete 1)
-                   ((or :active :future) 2))))
-             (org-x-dag-action-status id :iterator :complete))
-           (check-archivable id closed)))
-         ((equal kw org-x-kw-todo)
           (org-x-dag-id->with-action-child-statuses id c-statuses :iterator
-            ((:valid :empty)
-             (:valid :active)
-             (:valid :future))
+            ((:valid :complete)
+             (:error "Complete iterators can only have complete child nodes"))
             (lambda (_ type code)
               (when (memq type '(:iterator-task :iterator-project))
                 (pcase code
-                  ((or :archivable :complete) 0)
-                  (:active 1)
-                  (:future 2))))
+                  (:complete 0)
+                  (:active 1))))
+            (org-x-dag-action-status id :iterator :complete)))
+         ((equal kw org-x-kw-todo)
+          (org-x-dag-id->with-action-child-statuses id c-statuses :iterator
+            ((:valid :empty)
+             (:valid :active))
+            (lambda (_ type code)
+              (when (memq type '(:iterator-task :iterator-project))
+                (pcase code
+                  (:complete 0)
+                  (:active 1))))
             (org-x-dag-action-status id :iterator :empty)))
          (t
           (funcall to-error "Iterator can only have DONE/CANC/TODO keywords"))))
@@ -1818,36 +1796,27 @@ return another status."
         (id kw closed c-statuses)
         (cond
          ((equal kw org-x-kw-done)
-          (->> 
-           (org-x-dag-id->with-action-child-statuses id c-statuses :iterator-project
-             ((:valid :archivable)
-              (:valid :complete)
-              (:error "Complete iterator projects can only have complete children"))
-             (lambda (_ type code)
-               (when (memq type '(:iterator-task :iterator-project))
-                 (pcase code
-                   (:archivable 0)
-                   (:complete 1)
-                   ((or :active :future) 2))))
-             (to-valid-closed id :iterator-task closed))
-           (check-archivable id closed)))
+          (org-x-dag-id->with-action-child-statuses id c-statuses :iterator-project
+            ((:valid :complete)
+             (:error "Complete iterator projects can only have complete children"))
+            (lambda (_ type code)
+              (when (memq type '(:iterator-task :iterator-project))
+                (pcase code
+                  (:complete 0)
+                  (:active 1))))
+            (org-x-dag-action-status id :iterator-task :complete)))
          ((equal kw org-x-kw-todo)
           (org-x-dag-id->with-action-child-statuses id c-statuses :iterator-project
             ((:error "Open iterator projects must have at least one active child")
-             (:valid :active)
-             (:valid :future))
+             (:valid :active))
             (lambda (_ type code)
               (when (memq type '(:iterator-project :iterator-task))
                 (pcase code
-                  ((or :archivable :complete) 0)
-                  (:active 1)
-                  (:future 2))))
-            (-if-let (ts (or (org-x-dag-id->planning-epoch :scheduled id)
-                             (org-x-dag-id->planning-epoch :deadline id)))
-                (let ((code (if (< org-x-iterator-active-future-offset
-                                   (- ts (float-time)))
-                                :future :active)))
-                  (org-x-dag-action-status id :iterator-task code))
+                  (:complete 0)
+                  (:active 1))))
+            (if (or (org-x-dag-id->planning-epoch :scheduled id)
+                    (org-x-dag-id->planning-epoch :deadline id))
+                (org-x-dag-action-status id :iterator-task :active)
               (->> "Iterator tasks must be scheduled or deadlined"
                    (org-x-dag-status-error id)))))
          (t
@@ -1860,19 +1829,17 @@ return another status."
          ((equal kw org-x-kw-done)
           (->>
            (org-x-dag-id->with-action-child-statuses id c-statuses :project
-             ((:valid :archivable)
-              (:valid :complete)
+             ((:valid :complete)
               (:error "DONE projects can only have complete child nodes"))
              ;; TODO figure out what to do when a key doesn't match, it
              ;; should make an error but not sure if it should be a
              ;; runtime error or a returned status error
              (lambda (_ type code)
                (pcase `(,type ,code)
-                 (`(,_ :archivable) 0)
-                 (`(,_ :complete) 1)
-                 (`(:project ,(or :stuck :held :wait :active)) 2)
-                 (`(:task :active) 2)
-                 (`(:iterator ,(or :active :future :empty) 2))
+                 (`(,_ :complete) 0)
+                 (`(:project ,(or :stuck :held :wait :active)) 1)
+                 (`(:task :active) 1)
+                 (`(:iterator ,(or :active :future :empty) 1))
                  (e (error "Invalid task/code combination: %S" e))))
              (to-valid-closed id :task closed))
            (check-archivable id closed)))
@@ -1885,7 +1852,7 @@ return another status."
              (:valid :active))
             (lambda (id type code)
               (pcase `(,type ,code)
-                (`(,_ ,(or :archivable :complete)) 0)
+                (`(,_ :complete) 0)
                 (`(:project :stuck) 1)
                 (`(:project :held) 2)
                 (`(:project :wait) 3)
@@ -1897,12 +1864,11 @@ return another status."
                     ((equal kw org-x-kw-wait) 3)
                     ((equal kw org-x-kw-next) 4)
                     ((equal kw org-x-kw-todo)
-                     (if (org-x-dag-id->planning-timestamp :scheduled id)
-                         4 1))
+                     (if (org-x-dag-id->planning-timestamp :scheduled id) 4 1))
                     (t
                      (error "Could not translate task with keyword: %s" kw)))))
-                (`(:iterator ,(or :active :empty)) 1)
-                (`(:iterator :future) 4)
+                (`(:iterator :empty) 1)
+                (`(:iterator :active) 4)
                 (e (error "Invalid task/code combination: %S" e))))
             (org-x-dag-action-status id :task :active)))
          (t
@@ -1938,11 +1904,7 @@ return another status."
                     "Iterators cannot be nested")))
             (org-x-dag-status-error id general-error)
           (cond
-           ;; CANC actions work the same regardless of action type; if the
-           ;; closed timestamp is archivable, its :archivable, otherwise it is
-           ;; :complete (NOTE that this is 'nice' because I made it such that
-           ;; :complete and :archivable have the same meaning and key for all
-           ;; action types)
+           ;; CANC actions work the same regardless of action type
            ((equal kw org-x-kw-canc) 
             (let ((type (cond
                          (iteratorp :iterator)
@@ -1950,7 +1912,7 @@ return another status."
                           (if it :iterator-project :iterator-task))
                          (t
                           (if it :project :task)))))
-              (to-valid-closed id type closed)))
+              (org-x-dag-action-status id type :complete)))
            ;; assuming none of the general checks above matched, try more
            ;; specific checks depending on if the current action is an iterator
            ;; (and if we are inside one)
@@ -1960,10 +1922,6 @@ return another status."
             (iterator-project-status id kw closed it))
            (t
             (project-status id kw closed it))))))))
-
-(defun org-x-dag-id->has-done-error-p (id)
-  (or (and (not (org-x-dag-id->is-done-p id)) (org-x-dag-id->is-closed-p id))
-      (and (org-x-dag-id->is-done-p id) (not (org-x-dag-id->is-closed-p id)))))
 
 (defun org-x-dag-status-check-todo-or-done (id to-error alt-fun)
   (declare (indent 2))
@@ -1986,61 +1944,50 @@ return another status."
     "DONE/CANC nodes must have closed timestamp")))
 
 (defun org-x-dag-id->created-error (id)
-  (unless (org-x-dag-id->created-in-past-p id)
-    "Node must have creation timestamp in the past"))
+  (unless (org-x-dag-id->node-property org-x-prop-created id)
+    "Node must have creation timestamp"))
 
 ;; TODO it might make more sense to make a 'status' independent of time, such
 ;; that as time changes, we don't need to constantly recalculate this
 (defun org-x-dag-id->endpoint-status (id)
-  (cl-flet*
-      ((to-valid-closed
-        (id ts)
-        (->> (if (->> (org-ml-timestamp-get-start-time ts)
-                      (org-ml-time-to-unixtime)
-                      (org-x-dag-time-is-archivable-p))
-                 :archivable
-               :complete)
-             (org-x-dag-endpoint-status id nil))))
-    (let ((kw (org-x-dag-id->todo id))
-          (closed (org-x-dag-id->planning-timestamp :closed id)))
-      (org-x-dag-id->with-nested-buffer-children id
-        (org-x-dag-id->endpoint-status it)
-        (-if-let (general-error
-                  (or (org-x-dag-id->illegal-link-error id)
-                      (org-x-dag-id->created-error id)
-                      (org-x-dag-done-closed-error kw closed)
-                      (cond
-                       ((org-x-dag-id->planning-timestamp :scheduled id)
-                        "Endpoint goals cannot be scheduled")
-                       ((member kw (list org-x-kw-next org-x-kw-hold org-x-kw-wait))
-                        "Endpoint goal has invalid keyword: %s" kw))))
-            (org-x-dag-status-error id general-error)
-          (if (equal kw org-x-kw-canc)
-              (to-valid-closed id closed)
-            (let ((deadline (org-x-dag-id->planning-epoch :deadline id)))
-              (if (equal kw org-x-kw-done)
-                  (org-x-dag-id->with-endpoint-child-statuses id it deadline
-                    ((:valid :archivable)
-                     (:valid :complete)
-                     (:error "Closed endpoint goals must only have closed children"))
-                    (lambda (_ _ _ code)
-                      (pcase code
-                        (:archivable 0)
-                        (:complete 1)
-                        (:active 2)))
-                    (to-valid-closed id closed))
+  (let ((kw (org-x-dag-id->todo id))
+        (closed (org-x-dag-id->planning-timestamp :closed id)))
+    (org-x-dag-id->with-nested-buffer-children id
+      (org-x-dag-id->endpoint-status it)
+      (-if-let (general-error
+                (or (org-x-dag-id->illegal-link-error id)
+                    (org-x-dag-id->created-error id)
+                    (org-x-dag-done-closed-error kw closed)
+                    (cond
+                     ((org-x-dag-id->planning-timestamp :scheduled id)
+                      "Endpoint goals cannot be scheduled")
+                     ((member kw (list org-x-kw-next org-x-kw-hold org-x-kw-wait))
+                      "Endpoint goal has invalid keyword: %s" kw))))
+          (org-x-dag-status-error id general-error)
+        (if (equal kw org-x-kw-canc)
+            (org-x-dag-endpoint-status id nil :complete)
+          (let ((deadline (org-x-dag-id->planning-epoch :deadline id)))
+            (if (equal kw org-x-kw-done)
                 (org-x-dag-id->with-endpoint-child-statuses id it deadline
-                  ((:error "Open endpoint goals must have at least one open child")
-                   (:valid :active)
-                   (:error "Child deadline cannot occur after this deadline"))
-                  (lambda (_ this-deadline child-deadline code)
-                    (if (and this-deadline child-deadline
-                             (< deadline child-deadline))
-                        2
-                      (pcase code
-                        (:active 1)
-                        ((or :complete :archivable) 2))))
-                  (org-x-dag-endpoint-status id deadline :active))))))))))
+                  ((:valid :complete)
+                   (:error "Closed endpoint goals must only have closed children"))
+                  (lambda (_ _ _ code)
+                    (pcase code
+                      (:complete 0)
+                      (:active 1)))
+                  (org-x-dag-endpoint-status id nil :complete))
+              (org-x-dag-id->with-endpoint-child-statuses id it deadline
+                ((:error "Open endpoint goals must have at least one open child")
+                 (:valid :active)
+                 (:error "Child deadline cannot occur after this deadline"))
+                (lambda (_ this-deadline child-deadline code)
+                  (if (and this-deadline child-deadline
+                           (< deadline child-deadline))
+                      2
+                    (pcase code
+                      (:active 1)
+                      (:complete 2))))
+                (org-x-dag-endpoint-status id deadline :active)))))))))
 
 (defun org-x-dag-toplevel-goal-status (id)
   (org-x-dag-status-valid id :toplevel-goal))
