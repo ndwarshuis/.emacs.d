@@ -2041,6 +2041,19 @@ return another status."
                         ((or :complete :archivable) 2))))
                   (org-x-dag-endpoint-status id deadline :active))))))))))
 
+(defun org-x-dag-toplevel-goal-status (id)
+  (org-x-dag-status-valid id :toplevel-goal))
+
+(defun org-x-dag-id->toplevel-goal-status (id)
+  (-if-let (err (or (org-x-dag-id->illegal-link-error id)
+                    (org-x-dag-id->created-error id)
+                    (when (org-x-dag-id->metaprop :planning id)
+                      "Toplevel goals cannot have planning elements.")
+                    (unless (equal org-x-kw-todo (org-x-dag-id->todo id))
+                      "Toplevel goals can only be TODO")))
+      (org-x-dag-status-error id general-error)
+    (org-x-dag-toplevel-goal-status id)))
+
 (defun org-x-dag-id->file-level-status (id)
   "Return file-level status of ID and its children.
 
