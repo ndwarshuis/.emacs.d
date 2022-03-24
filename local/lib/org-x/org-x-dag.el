@@ -1448,12 +1448,11 @@ used for optimization."
              (org-x-dag-bs>>= acc ,trans-form)))
        (org-x-dag-bs :valid ,default))))
 
-(defmacro org-x-dag-bs-action-with-closed (node child-bss type-name
-                                                canc-bs-form done-form open-form)
-  (declare (indent 3))
+(defmacro org-x-dag-bs-action-with-closed (node-data type-name canc-bs-form
+                                                     done-form open-form)
+  (declare (indent 2))
   (let ((c (make-symbol "--closed")))
-    `(-let (((&plist :node-meta (&plist :todo it-todo :planning it-planning))
-             ,node))
+    `(-let (((&plist :todo it-todo :planning it-planning) ,node-data))
        (-if-let (,c (-some->> it-planning
                       (org-ml-get-property :closed)
                       (org-ml-timestamp-get-start-time)
@@ -1475,14 +1474,14 @@ used for optimization."
           (t
            ,open-form))))))
 
-(defun org-x-dag-action-project-bs-inner (node child-bss)
+(defun org-x-dag-action-project-bs-inner (node-data child-bss)
   (cl-flet
       ((new-proj
         (status)
         (org-x-dag-bs :valid `(:sp-proj ,@status))))
     ;; rankings
     ;; *-active > proj-wait > proj-held > (proj-stuck == iter-empty) > *-complete
-    (org-x-dag-bs-action-with-closed node child-bss "projects"
+    (org-x-dag-bs-action-with-closed node-data "projects"
       `(:sp-proj :proj-complete ,it-comptime)
 
       ;; done form
@@ -1598,8 +1597,8 @@ used for optimization."
     (`((:si-active ,_) ,_) (org-x-dag-bs :valid nil))
     (`(,_ (:si-active ,_)) (org-x-dag-bs :valid t))))
 
-(defun org-x-dag-action-subiter-bs-inner (node child-bss)
-  (org-x-dag-bs-action-with-closed node child-bss "sub-iterators"
+(defun org-x-dag-action-subiter-bs-inner (node-data child-bss)
+  (org-x-dag-bs-action-with-closed node "sub-iterators"
     `(:si-complete ,it-comptime)
 
     ;; done form
@@ -1645,8 +1644,8 @@ used for optimization."
         (->> (format "Sub-iterators cannot have keyword '%s'" it-todo)
              (org-x-dag-bs :error)))))))
 
-(defun org-x-dag-action-iter-bs-inner (node child-bss)
-  (org-x-dag-bs-action-with-closed node child-bss "iterators"
+(defun org-x-dag-action-iter-bs-inner (node-data child-bss)
+  (org-x-dag-bs-action-with-closed node-data "iterators"
     `(:iter-complete ,it-comptime)
 
     ;; done form
@@ -1709,7 +1708,7 @@ used for optimization."
                     (list :id ci :parents (cons n cps) :node-meta cm))
                   shallow)))
     (list (->> (--map (plist-get it :node-meta) shallow)
-               (funcall node-fun node)
+               (funcall node-fun m)
                (org-x-dag-node n ps))
           (funcall concat-fun shallow* rest))))
 
@@ -1764,7 +1763,7 @@ used for optimization."
     `(,p ,@ps ,@is)))
 
 (defun org-x-dag-epg-bs-inner (node child-bss)
-  (org-x-dag-bs-action-with-closed node child-bss "endpoint goal"
+  (org-x-dag-bs-action-with-closed node "endpoint goal"
     `(:complete ,comp-time)
     (org-x-dag-fold-child-bss child-bss `(:complete ,comp-time)
       (->> (pcase `(,acc ,it)
@@ -1862,6 +1861,62 @@ used for optimization."
 
 (defun org-x-dag-svg-bs (tree)
   (org-x-dag-toplevel-goal-bs "SVG" :survival tree))
+
+(defun org-x-dag-bs-error-kw (type-name kw)
+  (->> (format "%ss cannot have keyword '%s" type-name kw)
+       (org-x-dag-bs :error)))
+
+(defun org-x-dag-qtp-bs-inner (node-data)
+  (org-x-dag-bs-action-with-closed node-data "quarterly plan"
+    `(:complete ,it-comptime)
+    (org-x-dag-bs :valid `(:complete ,it-comptime))
+    (-let (((sched dead) (-some->> it-planning
+                           (org-ml-get-properties '(:scheduled :deadline)))))
+      (cond
+       (sched
+        (org-x-dag-bs :error "QTPs cannot be scheduled"))
+       ((equal it-todo org-x-kw-todo)
+        (if (not dead) (org-x-dag-bs :valid '(:active nil))
+          (-let* (((&plist :tags) node-data)
+                  (tag-dt (org-x-dag-quarter-tags-to-date tags))
+                  (dead-dt (->> (org-ml-timestamp-get-start-time dead)
+                                (org-x-dag-datetime-split)
+                                (car))))
+            (if (org-x-dag-datetime< tag-date dead-dt)
+                (org-x-dag-bs :valid `(:active ,dead))
+              (org-x-dag-bs :error "QTP deadlines must be due after the quarter starts")))))
+       (t
+        (org-x-dag-bs-error-kw "QTP" it-todo))))))
+
+(defun org-x-dag-with-treetop-error (tree)
+  (declare (indent 3))
+  (-let* (((node . children) tree)
+          ((&plist :id n :parents ps :node-meta m) node)
+          ((shallow rest) (->> (-map #'org-x-dag-with-treetop-error children)
+                               (apply #'-zip-lists)))
+          (shallow*
+           (--map (-let (((&plist :id ci :parents cps :node-meta cm) it))
+                    (org-x-dag-node ci (cons n cps) cm))
+                  shallow)))
+    (list
+     (org-x-dag-node n ps (org-x-dag-bs :error "Children not allowed"))
+     ,@shallow*
+     ,@(-flatten-n 1 rest))))
+
+(defun org-x-dag-with-treetop (tree node-fun)
+  (declare (indent 3))
+  (-let* (((top . children) tree)
+          (top* (org-x-dag-node-fmap top
+                  (if children (org-x-dag-bs :error "Children not allowed")
+                    (funcall node-fun it)))))
+    `(,top* ,@(-map #'org-x-dag-with-treetop-error children))))
+
+(defun org-x-dag-qtp-bs (tree)
+  (-let (((n ns) (org-x-dag-with-treetop tree #'org-x-dag-qtp-bs-inner)))
+    (--map (org-x-dag-node-fmap it
+             (org-x-dag-bs-fmap it
+               `(:quarterly ,it)))
+           `(,n ,@ns))))
 
 (defun org-x-dag-get-file-nodes (file group)
   (let* ((meta (list :file file
