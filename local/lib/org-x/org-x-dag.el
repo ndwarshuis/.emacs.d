@@ -1888,6 +1888,22 @@ used for optimization."
        (t
         (org-x-dag-bs-error-kw "QTP" it-todo))))))
 
+(defun org-x-dag-wkp-bs-inner (node-data)
+  (org-x-dag-bs-action-with-closed node-data "weekly plan"
+    `(:complete ,it-comptime)
+    (org-x-dag-bs :valid `(:complete ,it-comptime))
+    (-let (((sched dead) (-some->> it-planning
+                           (org-ml-get-properties '(:scheduled :deadline)))))
+      (cond
+       (sched
+        (org-x-dag-bs :error "WKPs cannot be scheduled"))
+       (dead
+        (org-x-dag-bs :error "WKPs cannot be deadlined"))
+       ((equal it-todo org-x-kw-todo)
+        (org-x-dag-bs :valid `(:active)))
+       (t
+        (org-x-dag-bs-error-kw "WKP" it-todo))))))
+
 (defun org-x-dag-with-treetop-error (tree)
   (declare (indent 3))
   (-let* (((node . children) tree)
@@ -1913,6 +1929,13 @@ used for optimization."
 
 (defun org-x-dag-qtp-bs (tree)
   (-let (((n ns) (org-x-dag-with-treetop tree #'org-x-dag-qtp-bs-inner)))
+    (--map (org-x-dag-node-fmap it
+             (org-x-dag-bs-fmap it
+               `(:quarterly ,it)))
+           `(,n ,@ns))))
+
+(defun org-x-dag-wkp-bs (tree)
+  (-let (((n ns) (org-x-dag-with-treetop tree #'org-x-dag-wkp-bs-inner)))
     (--map (org-x-dag-node-fmap it
              (org-x-dag-bs-fmap it
                `(:quarterly ,it)))
