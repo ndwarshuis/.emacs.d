@@ -1823,7 +1823,45 @@ used for optimization."
 
 (defun org-x-dag-epg-bs (tree)
   (-let (((n ns) (org-x-dag-epg-bs-outer tree)))
-    (--map (org-x-dag-node-fmap it (org-x-dag-bs-fmap it `(:epg ,it))) `(,n ,@ns))))
+    (--map (org-x-dag-node-fmap it
+             (org-x-dag-bs-fmap it
+               `(:endpoint ,it)))
+           `(,n ,@ns))))
+
+(defun org-x-dag-toplevel-goal-bs-inner (type-name node child-bss)
+  (-let (((&plist :node-meta (&plist :planning :todo)) node))
+    (cond
+     ((not (equal todo org-x-kw-todo))
+      (->> (format "%ss can only be TODO" type-name)
+           (org-x-dag-bs :error)))
+     (planning
+      (->> (format "%ss cannot have planning elements" type-name)
+           (org-x-dag-bs :error)))
+     ((-any #'org-x-dag-bs-error-p child-bss)
+      (org-x-dag-bs :error "Child error"))
+     (t
+      (org-x-dag-bs :valid '(:active))))))
+
+(defun org-x-dag-toplevel-goal-bs-outer (type-name tree)
+  (org-x-dag-with-children-1
+   tree
+   (lambda (tree)
+     (org-x-dag-toplevel-goal-bs-outer type-name tree))
+   (lambda (node child-bss)
+     (org-x-dag-toplevel-goal-bs-inner type-name node child-bss))))
+
+(defun org-x-dag-toplevel-goal-bs (type-name type-key tree)
+  (-let (((n ns) (org-x-dag-toplevel-goal-bs-outer type-name tree)))
+    (--map (org-x-dag-node-fmap it
+             (org-x-dag-bs-fmap it
+               `(,type-key ,it)))
+           `(,n ,@ns))))
+
+(defun org-x-dag-ltg-bs (tree)
+  (org-x-dag-toplevel-goal-bs "LTG" :lifetime tree))
+
+(defun org-x-dag-svg-bs (tree)
+  (org-x-dag-toplevel-goal-bs "SVG" :survival tree))
 
 (defun org-x-dag-get-file-nodes (file group)
   (let* ((meta (list :file file
