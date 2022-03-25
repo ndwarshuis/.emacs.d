@@ -1408,10 +1408,12 @@ used for optimization."
 
 (defmacro org-x-dag-bs-fmap (bs form)
   (declare (indent 1))
-  `(pcase ,bs
-     (`(:error ,_) ',bs)
-     (`(:valid ,it) (org-x-dag-bs :valid ,form))
-     (e (error "Learn to use functors, dummy; this isn't one: %s" e))))
+  (let ((b (make-symbol "--bs")))
+    `(let ((,b ,bs))
+       (pcase ,b
+         (`(:error ,_) ,b)
+         (`(:valid ,it) (org-x-dag-bs :valid ,form))
+         (e (error "Learn to use functors, dummy; this isn't one: %s" e))))))
 
 (defun org-x-dag-bs-error-p (bs)
   (eq (car bs) :error))
@@ -1904,6 +1906,31 @@ used for optimization."
        (t
         (org-x-dag-bs-error-kw "WKP" it-todo))))))
 
+(defun org-x-dag-dlp-bs-inner (node-data)
+  (org-x-dag-bs-action-with-closed node-data "daily metablock"
+    `(:complete ,it-comptime)
+    (org-x-dag-bs :valid `(:complete ,it-comptime))
+    (-let (((sched dead) (-some->> it-planning
+                           (org-ml-get-properties '(:scheduled :deadline)))))
+      (cond
+       (dead
+        (org-x-dag-bs :error "Daily metablocks cannot be deadlined"))
+       ((equal it-todo org-x-kw-todo)
+        (-if-let ((sched-date sched-time) (-some->> it-planning
+                                            (org-ml-get-property :scheduled)
+                                            (org-ml-timestamp-get-start-time)
+                                            (org-x-dag-datetime-split)))
+            (if (not sched-time)
+               (org-x-dag-bs :error "Daily metablocks must have scheduled time")
+              (-let* (((&plist :tags) node-data)
+                      (tag-date (org-x-dag-daily-tags-to-date tags)))
+                (if (org-x-dag-datetime= tag-date sched-date)
+                    (org-x-dag-bs :valid `(:active))
+                  (org-x-dag-bs :error "Daily metablocks must be scheduled within their date"))))
+          (org-x-dag-bs :error "Daily metablocks must be scheduled")))
+       (t
+        (org-x-dag-bs-error-kw "Daily metablock" it-todo))))))
+
 (defun org-x-dag-with-treetop-error (tree)
   (declare (indent 3))
   (-let* (((node . children) tree)
@@ -1931,7 +1958,7 @@ used for optimization."
   (-let (((n ns) (org-x-dag-with-treetop tree #'org-x-dag-qtp-bs-inner)))
     (--map (org-x-dag-node-fmap it
              (org-x-dag-bs-fmap it
-               `(:quarterly ,it)))
+               `(:weekly ,it)))
            `(,n ,@ns))))
 
 (defun org-x-dag-wkp-bs (tree)
@@ -1939,6 +1966,13 @@ used for optimization."
     (--map (org-x-dag-node-fmap it
              (org-x-dag-bs-fmap it
                `(:quarterly ,it)))
+           `(,n ,@ns))))
+
+(defun org-x-dag-dlp-bs (tree)
+  (-let (((n ns) (org-x-dag-with-treetop tree #'org-x-dag-dlp-bs-inner)))
+    (--map (org-x-dag-node-fmap it
+             (org-x-dag-bs-fmap it
+               `(:daily ,it)))
            `(,n ,@ns))))
 
 (defun org-x-dag-get-file-nodes (file group)
