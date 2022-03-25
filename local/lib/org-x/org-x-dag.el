@@ -1294,6 +1294,17 @@ used for optimization."
     (when (and (< (point) prop-beg) (looking-at org-planning-line-re))
       (org-element-planning-parser prop-beg))))
 
+(defun org-x-dag-node (id parents node-meta)
+  (list :id id
+        :parents parents
+        :node-meta node-meta))
+
+(defmacro org-x-dag-node-fmap (node form)
+  (declare (indent 1))
+  ;; TODO not efficient (may or may not matter)
+  `(-let (((&plist :id i :parents ps :node-meta it) ,node))
+     (org-x-dag-node i ps ,form)))
+
 (defun org-x-dag-get-buffer-nodes (file-meta kws target-props)
   (let ((more t)
         (line-re (org-x-dag-line-regexp kws))
@@ -1418,12 +1429,9 @@ used for optimization."
 (defun org-x-dag-bs-error-p (bs)
   (eq (car bs) :error))
 
-(defun org-x-dag-complete-time (epoch canceledp)
-  (list epoch canceledp))
-
 ;; [Status a] -> b -> (a -> a -> Status Bool) -> (a -> Bool) -> (a -> Status b)
 ;; -> Status b
-(defmacro org-x-dag-fold-child-bss (bss default rank-form stop-form trans-form)
+(defmacro org-x-dag-bs-fold-children (bss default rank-form stop-form trans-form)
   (declare (indent 2))
   (let ((err (org-x-dag-bs :error "Child error")))
     `(-if-let ((x . xs) ,bss)
@@ -1450,33 +1458,41 @@ used for optimization."
              (org-x-dag-bs>>= acc ,trans-form)))
        (org-x-dag-bs :valid ,default))))
 
+(defun org-x-dag-bs-error-kw (type-name kw)
+  (->> (format "%ss cannot have keyword '%s" type-name kw)
+       (org-x-dag-bs :error)))
+
 (defmacro org-x-dag-bs-action-with-closed (node-data type-name canc-bs-form
                                                      done-form open-form)
   (declare (indent 2))
   (let ((c (make-symbol "--closed")))
-    `(-let (((&plist :todo it-todo :planning it-planning) ,node-data))
-       (-if-let (,c (-some->> it-planning
-                      (org-ml-get-property :closed)
-                      (org-ml-timestamp-get-start-time)
-                      (org-ml-time-to-unixtime)))
+    `(cl-flet
+         ((complete-time
+           (epoch canceledp)
+           (list :epoch epoch :canceledp canceledp)))
+       (-let (((&plist :todo it-todo :planning it-planning) ,node-data))
+         (-if-let (,c (-some->> it-planning
+                        (org-ml-get-property :closed)
+                        (org-ml-timestamp-get-start-time)
+                        (org-ml-time-to-unixtime)))
+             (cond
+              ((equal it-todo org-x-kw-canc)
+               (let ((it-comptime (complete-time ,c t)))
+                 (org-x-dag-bs :valid ,canc-bs-form)))
+              ((equal it-todo org-x-kw-done)
+               (let ((it-comptime (complete-time ,c nil)))
+                 ,done-form))
+              (t
+               (->> (format "Closed %s must be marked CANC/DONE" ,type-name)
+                    (org-x-dag-bs :error))))
            (cond
-            ((equal it-todo org-x-kw-canc)
-             (let ((it-comptime (org-x-dag-complete-time ,c t)))
-               (org-x-dag-bs :valid ,canc-bs-form)))
-            ((equal it-todo org-x-kw-done)
-             (let ((it-comptime (org-x-dag-complete-time ,c nil)))
-               ,done-form))
+            ((member it-todo org-x-done-keywords)
+             (->> (format "DONE/CANC %s must be closed" ,type-name)
+                  (org-x-dag-bs :error)))
             (t
-             (->> (format "Closed %s must be marked CANC/DONE" ,type-name)
-                  (org-x-dag-bs :error))))
-         (cond
-          ((member it-todo org-x-done-keywords)
-           (->> (format "DONE/CANC %s must be closed" ,type-name)
-                (org-x-dag-bs :error)))
-          (t
-           ,open-form))))))
+             ,open-form)))))))
 
-(defun org-x-dag-action-project-bs-inner (node-data child-bss)
+(defun org-x-dag-bs-action-project-inner (node-data child-bss)
   (cl-flet
       ((new-proj
         (status)
@@ -1487,7 +1503,7 @@ used for optimization."
       `(:sp-proj :proj-complete ,it-comptime)
 
       ;; done form
-      (org-x-dag-fold-child-bss child-bss `(:sp-task :task-complete ,it-comptime)
+      (org-x-dag-bs-fold-children child-bss `(:sp-task :task-complete ,it-comptime)
         ;; TODO this could be slightly more efficient if the error type is
         ;; returned in this form and not the last
         (->> (pcase `(,acc ,it)
@@ -1514,8 +1530,8 @@ used for optimization."
           (_ (org-x-dag-bs :error "Completed projects cannot have active children"))))
 
       ;; undone form
-      (-let* ((sched (-some->> it-planning (org-ml-get-property :scheduled)))
-              (dead (-some->> it-planning (org-ml-get-property :deadline)))
+      (-let* (((sched dead) (-some->> it-planning
+                              (org-ml-get-properties '(:scheduled :deadline))))
               (task-default `(:sp-task :task-active (,it-todo ,sched ,dead))))
         (cond
          ((equal it-todo org-x-kw-hold)
@@ -1523,7 +1539,7 @@ used for optimization."
          ((and sched child-bss)
           (org-x-dag-bs :error "Projects cannot be scheduled"))
          ((equal it-todo org-x-kw-todo)
-          (org-x-dag-fold-child-bss child-bss task-default
+          (org-x-dag-bs-fold-children child-bss task-default
             (->> (pcase `(,acc ,it)
                    (`((:sp-proj :proj-active) ,_) nil)
                    (`((:sp-iter :iter-active ,_) ,_) nil)
@@ -1572,15 +1588,13 @@ used for optimization."
                 ((equal c-todo org-x-kw-next) (new-proj :proj-active))
                 ((equal c-todo org-x-kw-wait) (new-proj :proj-wait))
                 ((equal c-todo org-x-kw-hold) (new-proj :proj-hold))
-                (t (->> (format "Undefined keyword: %s" c-todo)
-                        (org-x-dag-bs :error))))))))
+                (t (org-x-dag-bs-error-kw "Task action" c-todo)))))))
          (child-bss
-          (->> (format "Projects cannot have keyword '%s'" it-todo)
-               (org-x-dag-bs :error)))
+          (org-x-dag-bs-error-kw "Project action" it-todo))
          (t
           task-default))))))
 
-(defun org-x-dag-action-subiter-rank (si-a si-b)
+(defun org-x-dag-bs-action-subiter-todo-rank (si-a si-b)
   (pcase `(,si-a ,si-b)
     (`((:si-active (,ts-a ,dead-a)) (:si-active (,ts-b ,dead-b)))
      (let ((dt-a (org-ml-timestamp-get-start-time ts-a))
@@ -1599,28 +1613,75 @@ used for optimization."
     (`((:si-active ,_) ,_) (org-x-dag-bs :valid nil))
     (`(,_ (:si-active ,_)) (org-x-dag-bs :valid t))))
 
-(defun org-x-dag-action-subiter-bs-inner (node-data child-bss)
+(defun org-x-dag-bs-action-subiter-complete-rank (si-a si-b)
+  (->> (pcase `(,si-a ,si-b)
+         (`((:si-complete ,_) (:si-complete ,_)) nil)
+         (`((:si-complete ,_) ,_) t)
+         (`(,_ (:si-complete ,_)) nil))
+       (org-x-dag-bs :valid)))
+
+(defun org-x-dag-node-data-is-iterator-p (node-data)
+  (-let (((&plist :props) node-data))
+    (-when-let (p (alist-get org-x-prop-parent-type props nil nil #'equal))
+      (equal p org-x-prop-parent-type-iterator))))
+
+(defun org-x-dag-bs-action-subiter-complete-fold (child-bss type-name comp-key)
+  (declare (indent 1))
+  (org-x-dag-bs-fold-children child-bss `(,comp-key ,it-comptime)
+    (->> (pcase `(,si-a ,si-b)
+           (`((:si-complete ,_) (:si-complete ,_)) nil)
+           (`((:si-complete ,_) ,_) t)
+           (`(,_ (:si-complete ,_)) nil))
+         (org-x-dag-bs :valid))
+    (pcase acc
+      (`(:si-complete ,_) nil)
+      (_ t))
+    (pcase it
+      (`(:si-complete ,_)
+       (org-x-dag-bs :valid `(,comp-key ,it-comptime)))
+      (_
+       (->> (format "Completed %s cannot have active children" type-name)
+            (org-x-dag-bs :error))))))
+
+(defun org-x-dag-bs-action-subiter-todo-fold (child-bss type-name active-key default)
+  (org-x-dag-bs-fold-children child-bss default
+    (pcase `(,si-a ,si-b)
+      (`((:si-active (,ts-a ,dead-a)) (:si-active (,ts-b ,dead-b)))
+       (let ((dt-a (org-ml-timestamp-get-start-time ts-a))
+             (dt-b (org-ml-timestamp-get-start-time ts-b)))
+         (cond
+          ((not (eq dead-a dead-b))
+           (->> "All sub-iter timestamps must be scheduled or deadlined"
+                (org-x-dag-bs :error)))
+          ((xor (org-ml-time-is-long dt-a) (org-ml-time-is-long dt-b))
+           (->> "All sub-iter timestamps must be long or short"
+                (org-x-dag-bs :error)))
+          (t
+           ;; ASSUME this won't fail since the datetimes are assumed to be the
+           ;; same length as per rules above
+           (org-x-dag-bs :valid (org-x-dag-datetime< dt-a dt-b))))))
+      (`((:si-active ,_) ,_) (org-x-dag-bs :valid nil))
+      (`(,_ (:si-active ,_)) (org-x-dag-bs :valid t)))
+    (pcase acc
+      (`(:si-active ,_) t)
+      (_ nil))
+    (pcase it
+      (`(:si-complete ,_)
+       (->> (format "Active %s must have at least one active child" type-name)
+            (org-x-dag-bs :error)))
+      (`(:si-active ,ts-data)
+       (org-x-dag-bs :valid `(,active-key ,ts-data))))))
+
+(defun org-x-dag-node-is-iterator-p (node)
+  (org-x-dag-node-data-is-iterator-p (plist-get node :node-data)))
+
+(defun org-x-dag-bs-action-subiter-inner (node-data child-bss)
   (org-x-dag-bs-action-with-closed node "sub-iterators"
     `(:si-complete ,it-comptime)
-
-    ;; done form
-    (org-x-dag-fold-child-bss child-bss `(:si-complete ,it-comptime)
-      (->> (pcase `(,acc ,it)
-             (`((:si-complete ,_) (:si-complete ,_)) nil)
-             (`((:si-complete ,_) ,_) t)
-             (`(,_ (:si-complete ,_)) nil))
-           (org-x-dag-bs :valid))
-      (pcase acc
-        (`(:si-complete ,_) nil)
-        (_ t))
-      (pcase it
-        (`(:si-complete ,_)
-         (org-x-dag-bs :valid `(:si-complete ,it-comptime)))
-        (_ (org-x-dag-bs :error "Completed sub-iterators cannot have active children"))))
-
-    ;; undone form
-    (-let* ((sched (org-ml-get-property :scheduled it-planning))
-            (dead (org-ml-get-property :dead ti-planning)))
+    (org-x-dag-bs-action-subiter-complete-fold child-bss
+      "sub-iterators" :si-complete)
+    (-let (((sched dead) (-some->> it-planning
+                           (org-ml-get-properties '(:scheduled :deadline)))))
       (cond
        ((and sched child-bss)
         (org-x-dag-bs :error "Sub-iterators with children cannot be scheduled"))
@@ -1628,146 +1689,35 @@ used for optimization."
         (org-x-dag-bs :error "Sub-iterators with children cannot be deadlined"))
        ((not (xor sched dead))
         (org-x-dag-bs :error "Sub-iterators must either be deadlined or scheduled"))
-       ;; todo test for iterator property here
+       ((org-x-dag-node-data-is-iterator-p node-data)
+        (org-x-dag-bs :error "Iterators cannot be nested"))
        ((equal it-todo org-x-kw-todo)
-        (org-x-dag-fold-child-bss child-bss (->> `(,(or sched dead) ,(and dead t))
-                                                 (list :si-active))
-          (org-x-dag-action-subiter-rank acc it)
-          (pcase acc
-            (`(:si-active ,_) t)
-            (_ nil))
-          (pcase it
-            (`(:si-complete ,_)
-             (->> "Active iterators must have at least one active child"
-                  (org-x-dag-bs :error)))
-            (`(:si-active ,ts-data)
-             (org-x-dag-bs :valid `(:si-active ,ts-data))))))
+        (org-x-dag-bs-action-subiter-todo-fold child-bss
+          "sub-iterator" :si-active
+          `(:si-active ,(or sched dead) ,(and dead t))))
        (t
-        (->> (format "Sub-iterators cannot have keyword '%s'" it-todo)
-             (org-x-dag-bs :error)))))))
+        (org-x-dag-bs-error-kw "Sub-iterator" it-todo))))))
 
-(defun org-x-dag-action-iter-bs-inner (node-data child-bss)
+(defun org-x-dag-bs-action-iter-inner (node-data child-bss)
   (org-x-dag-bs-action-with-closed node-data "iterators"
     `(:iter-complete ,it-comptime)
+    (org-x-dag-bs-action-subiter-complete-fold child-bss
+      "iterators" :iter-complete)
+    (cond
+     ((and child-bss (-some->> it-planning (org-ml-get-property :scheduled)))
+      (org-x-dag-bs :error "Iterators cannot be scheduled"))
+     ;; TODO also check for timeshift and archive props
+     ((equal it-todo org-x-kw-todo)
+      (org-x-dag-bs-action-subiter-todo-fold child-bss
+        "iterator" :iter-active
+        '(:iter-empty)))
+     (t
+      (org-x-dag-bs-error-kw "Iterator" it-todo)))))
 
-    ;; done form
-    (org-x-dag-fold-child-bss child-bss `(:iter-complete ,it-comptime)
-      (->> (pcase `(,acc ,it)
-             (`((:si-complete ,_) (:si-complete ,_)) nil)
-             (`((:si-complete ,_) ,_) t)
-             (`(,_ (:si-complete ,_)) nil))
-           (org-x-dag-bs :valid))
-      (pcase acc
-        (`(:si-complete ,_) nil)
-        (_ t))
-      (pcase it
-        (`(:si-complete ,_)
-         (org-x-dag-bs :valid `(:iter-complete ,it-comptime)))
-        (_ (org-x-dag-bs :error "Completed iterators cannot have active children"))))
-
-    ;; undone form
-    (-let* ((sched (org-ml-get-property :scheduled it-planning)))
-      (cond
-       ((and sched child-bss)
-        (org-x-dag-bs :error "Iterators cannot be scheduled"))
-       ((equal it-todo org-x-kw-todo)
-        (org-x-dag-fold-child-bss child-bss '(:iter-empty)
-          (org-x-dag-action-subiter-rank acc it)
-          (pcase acc
-            (`(:si-active ,_) t)
-            (_ nil))
-          (pcase it
-            (`(:si-complete ,_)
-             (->> "Active iterators must have at least one active child"
-                  (org-x-dag-bs :error)))
-            (`(:si-active ,ts-data)
-             (org-x-dag-bs :valid `(:iter-active ,ts-data))))))
-       (t
-        (->> (format "Iterators cannot have keyword '%s'" it-todo)
-             (org-x-dag-bs :error)))))))
-
-(defun org-x-dag-node (id parents node-meta)
-  (list :id id
-        :parents parents
-        :node-meta node-meta))
-
-(defmacro org-x-dag-node-fmap (node form)
-  (declare (indent 1))
-  ;; TODO not efficient (may or may not matter)
-  `(-let (((&plist :id i :parents ps :node-meta it) ,node))
-     (org-x-dag-node i ps ,form)))
-
-;; TODO add a slot for the buffer parent (so that we know which are toplevel and not)
-(defun org-x-dag-with-children (tree child-fun node-fun concat-fun)
-  (declare (indent 3))
-  ;; TODO this is super inefficient, make a plist mapper function
-  (-let* (((node . children) tree)
-          ((&plist :id n :parents ps :node-meta m) node)
-          ((shallow rest) (->> (-map child-fun children)
-                               (apply #'-zip-lists)))
-          (shallow*
-           (--map (-let (((&plist :id ci :parents cps :node-meta cm) it))
-                    (list :id ci :parents (cons n cps) :node-meta cm))
-                  shallow)))
-    (list (->> (--map (plist-get it :node-meta) shallow)
-               (funcall node-fun m)
-               (org-x-dag-node n ps))
-          (funcall concat-fun shallow* rest))))
-
-;; Tree a -> (Tree a -> (b, [d])) -> (a -> [b] -> c) -> (c, [d])
-(defun org-x-dag-with-children-1 (tree child-fun node-fun)
-  (org-x-dag-with-children tree child-fun node-fun
-    (lambda (shallow deep)
-      (append shallow (-flatten-n 1 deep)))))
-
-;; Tree a -> (Tree a -> (b, ([d], [e]))) -> (a -> [b] -> c) -> (c, ([d], [e]))
-(defun org-x-dag-with-children-2 (tree child-fun node-fun)
-  (org-x-dag-with-children tree child-fun node-fun
-    (lambda (shallow deep)
-      (--reduce-from (-let (((a b) acc)
-                            ((as bs) it))
-                       `((,@as ,@a) (,@bs ,@b)))
-                     `(,shallow nil)
-                     deep))))
-
-(defun org-x-dag-action-subiter-bs (tree)
-  (org-x-dag-with-children-1
-   tree
-   #'org-x-dag-action-subiter-bs
-   #'org-x-dag-action-subiter-bs-inner))
-
-(defun org-x-dag-action-iter-bs (tree)
-  (org-x-dag-with-children-1
-   tree
-   #'org-x-dag-action-subiter-bs
-   ;; TODO this doesn't map deep enough
-   (lambda (node child-bss)
-     (org-x-dag-node-fmap node
-       (org-x-dag-bs-fmap (org-x-dag-action-iter-bs-inner it child-bss)
-         `(:sp-proj it))))))
-
-(defun org-x-dag-action-project-bs (tree)
-  (-let* (((node . children) tree)
-          ((&plist :props) node)
-          (pt (alist-get org-x-prop-parent-type props nil nil #'equal)))
-    (if (equal pt org-x-prop-parent-type-iterator)
-        (-let (((iter subiters) (org-x-dag-action-iter-bs tree)))
-          `(,iter (nil ,subiters)))
-      (org-x-dag-with-children-2
-       tree
-       #'org-x-dag-action-project-bs
-       #'org-x-dag-action-project-bs-inner))))
-
-;; TODO need to check for created timestamps
-(defun org-x-dag-action-bs (node-tree)
-  ;; TODO these types might not line up properly
-  (-let (((p (ps is)) (org-x-dag-action-project-bs node-tree)))
-    `(,p ,@ps ,@is)))
-
-(defun org-x-dag-epg-bs-inner (node child-bss)
+(defun org-x-dag-bs-epg-inner (node child-bss)
   (org-x-dag-bs-action-with-closed node "endpoint goal"
     `(:complete ,comp-time)
-    (org-x-dag-fold-child-bss child-bss `(:complete ,comp-time)
+    (org-x-dag-bs-fold-children child-bss `(:complete ,comp-time)
       (->> (pcase `(,acc ,it)
              (`((:complete ,_) (:complete ,_)) nil)
              (`(,_ (:complete ,_)) nil)
@@ -1780,13 +1730,12 @@ used for optimization."
         (`(:complete ,_)
          (org-x-dag-bs :valid `(:complete ,it-comptime)))
         (_ (org-x-dag-bs :error "Completed EPGs cannot have active children"))))
-    (let ((sched (-some->> it-planning (org-ml-get-property :scheduled)))
-          (dead (-some->> it-planning (org-ml-get-property :deadline))))
-      (cond
-       (sched
-        (org-x-dag-bs :error "EPGs cannot be scheduled"))
-       ((equal it-todo org-x-kw-todo)
-        (org-x-dag-fold-child-bss child-bss `(:active ,dead)
+    (cond
+     ((-some->> it-planning (org-ml-get-property :scheduled))
+      (org-x-dag-bs :error "EPGs cannot be scheduled"))
+     ((equal it-todo org-x-kw-todo)
+      (let ((dead (-some->> it-planning (org-ml-get-property :deadline))))
+        (org-x-dag-bs-fold-children child-bss `(:active ,dead)
           (->> (pcase `(,acc ,it)
                  (`((:active ,_) (:active ,_)) nil)
                  (`(,_ (:active ,_)) t)
@@ -1811,74 +1760,145 @@ used for optimization."
                 (t
                  (org-x-dag-bs :error "Child deadlines must be before parent deadlines")))))
             (_
-             (org-x-dag-bs :error "Active EPGs must have at least one active child")))))
-       (t
-        (->> (format "EPG with invalid keyword: %s" it-todo)
-             (org-x-dag-bs :error)))))))
+             (org-x-dag-bs :error "Active EPGs must have at least one active child"))))))
+     (t
+      (org-x-dag-bs-error-kw "Endpoint goal" it-todo)))))
 
-(defun org-x-dag-epg-bs-outer (tree)
-  (org-x-dag-with-children-1
+(defun org-x-dag-bs-with-treetop-error (tree parent-node)
+  (declare (indent 3))
+  (-let* (((node . children) tree)
+          ((&plist :id i :parents ps) node)
+          ((&plist :id pi) parent-node)
+          (this (->> (org-x-dag-bs :error "Children not allowed")
+                     (org-x-dag-node i (cons i ps)))))
+    (cons this (--mapcat (org-x-dag-bs-with-treetop-error it node) children))))
+
+(defun org-x-dag-bs-with-treetop (tree node-fun)
+  (declare (indent 3))
+  (-let* (((top . children) tree)
+          (top* (org-x-dag-node-fmap top
+                  (if children (org-x-dag-bs :error "Children not allowed")
+                    (funcall node-fun it)))))
+    (cons top* (--mapcat (org-x-dag-bs-with-treetop-error it top) children))))
+
+;; TODO add a slot for the buffer parent (so that we know which are toplevel and not)
+(defun org-x-dag-bs-with-children (tree child-fun node-fun concat-fun)
+  (declare (indent 3))
+  ;; TODO this is super inefficient, make a plist mapper function
+  (-let* (((node . children) tree)
+          ((&plist :id i :parents ps :node-meta m) node)
+          ((shallow rest) (->> (-map child-fun children)
+                               (apply #'-zip-lists)))
+          (shallow*
+           (--map (-let (((&plist :id ci :parents cps :node-meta cm) it))
+                    (list :id ci :parents (cons i cps) :node-meta cm))
+                  shallow)))
+    (list (->> (--map (plist-get it :node-meta) shallow)
+               (funcall node-fun m)
+               (org-x-dag-node i ps))
+          (funcall concat-fun shallow* rest))))
+
+;; Tree a -> (Tree a -> (b, [d])) -> (a -> [b] -> c) -> (c, [d])
+(defun org-x-dag-bs-with-children-1 (tree child-fun node-fun)
+  (org-x-dag-bs-with-children tree child-fun node-fun
+    (lambda (shallow deep)
+      (append shallow (-flatten-n 1 deep)))))
+
+;; Tree a -> (Tree a -> (b, ([d], [e]))) -> (a -> [b] -> c) -> (c, ([d], [e]))
+(defun org-x-dag-bs-with-children-2 (tree child-fun node-fun)
+  (org-x-dag-bs-with-children tree child-fun node-fun
+    (lambda (shallow deep)
+      (--reduce-from (-let (((a b) acc)
+                            ((as bs) it))
+                       `((,@as ,@a) (,@bs ,@b)))
+                     `(,shallow nil)
+                     deep))))
+
+(defun org-x-dag-bs-action-subiter (tree)
+  (org-x-dag-bs-with-children-1
    tree
-   #'org-x-dag-epg-bs-outer
-   #'org-x-dag-epg-bs-inner))
+   #'org-x-dag-bs-action-subiter
+   #'org-x-dag-bs-action-subiter-inner))
 
-(defun org-x-dag-epg-bs (tree)
-  (-let (((n ns) (org-x-dag-epg-bs-outer tree)))
-    (--map (org-x-dag-node-fmap it
-             (org-x-dag-bs-fmap it
-               `(:endpoint ,it)))
-           `(,n ,@ns))))
+(defun org-x-dag-bs-action-iter (tree)
+  (org-x-dag-bs-with-children-1
+   tree
+   #'org-x-dag-bs-action-subiter
+   (lambda (node child-bss)
+     (org-x-dag-node-fmap node
+       (org-x-dag-bs-fmap (org-x-dag-bs-action-iter-inner it child-bss)
+         `(:sp-proj it))))))
 
-(defun org-x-dag-toplevel-goal-bs-inner (type-name node child-bss)
-  (-let (((&plist :node-meta (&plist :planning :todo)) node))
+(defun org-x-dag-bs-action-project (tree)
+  (if (org-x-dag-node-is-iterator-p (car tree))
+      (-let (((iter subiters) (org-x-dag-bs-action-iter tree)))
+        `(,iter (nil ,subiters)))
+    (org-x-dag-bs-with-children-2
+     tree
+     #'org-x-dag-bs-action-project
+     #'org-x-dag-bs-action-project-inner)))
+
+;; TODO need to check for created timestamps
+(defun org-x-dag-bs-action (node-tree)
+  ;; TODO these types might not line up properly
+  (-let (((p (ps is)) (org-x-dag-bs-action-project node-tree)))
+    `(,p ,@ps ,@is)))
+
+(defun org-x-dag-bs-epg-outer (tree)
+  (org-x-dag-bs-with-children-1
+   tree
+   #'org-x-dag-bs-epg-outer
+   #'org-x-dag-bs-epg-inner))
+
+(defun org-x-dag-bs-prefix (key nodes)
+  (--map (org-x-dag-node-fmap it (org-x-dag-bs-fmap it `(,key ,it))) nodes))
+
+(defun org-x-dag-bs-epg (tree)
+  (-let (((n ns) (org-x-dag-bs-epg-outer tree)))
+    (org-x-dag-bs-prefix :endpoint `(,n ,@ns))))
+
+(defun org-x-dag-bs-toplevel-goal-inner (type-name node-data child-bss)
+  (-let (((&plist :planning :todo) node-data))
     (cond
-     ((not (equal todo org-x-kw-todo))
-      (->> (format "%ss can only be TODO" type-name)
-           (org-x-dag-bs :error)))
      (planning
       (->> (format "%ss cannot have planning elements" type-name)
            (org-x-dag-bs :error)))
      ((-any #'org-x-dag-bs-error-p child-bss)
       (org-x-dag-bs :error "Child error"))
+     ((equal todo org-x-kw-todo)
+      (org-x-dag-bs :valid '(:active)))
      (t
-      (org-x-dag-bs :valid '(:active))))))
+      (org-x-dag-bs-error-kw type-name todo)))))
 
-(defun org-x-dag-toplevel-goal-bs-outer (type-name tree)
-  (org-x-dag-with-children-1
+(defun org-x-dag-bs-toplevel-goal-outer (type-name tree)
+  (org-x-dag-bs-with-children-1
    tree
    (lambda (tree)
-     (org-x-dag-toplevel-goal-bs-outer type-name tree))
-   (lambda (node child-bss)
-     (org-x-dag-toplevel-goal-bs-inner type-name node child-bss))))
+     (org-x-dag-bs-toplevel-goal-outer type-name tree))
+   (lambda (node-data child-bss)
+     (org-x-dag-bs-toplevel-goal-inner type-name node-data child-bss))))
 
-(defun org-x-dag-toplevel-goal-bs (type-name type-key tree)
-  (-let (((n ns) (org-x-dag-toplevel-goal-bs-outer type-name tree)))
-    (--map (org-x-dag-node-fmap it
-             (org-x-dag-bs-fmap it
-               `(,type-key ,it)))
-           `(,n ,@ns))))
+(defun org-x-dag-bs-toplevel-goal (type-name type-key tree)
+  (-let (((n ns) (org-x-dag-bs-toplevel-goal-outer type-name tree)))
+    (org-x-dag-bs-prefix type-key `(,n ,@ns))))
 
-(defun org-x-dag-ltg-bs (tree)
-  (org-x-dag-toplevel-goal-bs "LTG" :lifetime tree))
+(defun org-x-dag-bs-ltg (tree)
+  (org-x-dag-bs-toplevel-goal "LTG" :lifetime tree))
 
-(defun org-x-dag-svg-bs (tree)
-  (org-x-dag-toplevel-goal-bs "SVG" :survival tree))
+(defun org-x-dag-bs-svg (tree)
+  (org-x-dag-bs-toplevel-goal "SVG" :survival tree))
 
-(defun org-x-dag-bs-error-kw (type-name kw)
-  (->> (format "%ss cannot have keyword '%s" type-name kw)
-       (org-x-dag-bs :error)))
+;; planning
 
-(defun org-x-dag-qtp-bs-inner (node-data)
+(defun org-x-dag-bs-qtp-inner (node-data)
   (org-x-dag-bs-action-with-closed node-data "quarterly plan"
     `(:complete ,it-comptime)
     (org-x-dag-bs :valid `(:complete ,it-comptime))
-    (-let (((sched dead) (-some->> it-planning
-                           (org-ml-get-properties '(:scheduled :deadline)))))
-      (cond
-       (sched
-        (org-x-dag-bs :error "QTPs cannot be scheduled"))
-       ((equal it-todo org-x-kw-todo)
-        (if (not dead) (org-x-dag-bs :valid '(:active nil))
+    (cond
+     ((-some->> it-planning (org-ml-get-properties :scheduled))
+      (org-x-dag-bs :error "QTPs cannot be scheduled"))
+     ((equal it-todo org-x-kw-todo)
+      (-if-let (dead (-some->> it-planning (org-ml-get-properties :deadline)))
           (-let* (((&plist :tags) node-data)
                   (tag-dt (org-x-dag-quarter-tags-to-date tags))
                   (dead-dt (->> (org-ml-timestamp-get-start-time dead)
@@ -1886,94 +1906,60 @@ used for optimization."
                                 (car))))
             (if (org-x-dag-datetime< tag-date dead-dt)
                 (org-x-dag-bs :valid `(:active ,dead))
-              (org-x-dag-bs :error "QTP deadlines must be due after the quarter starts")))))
-       (t
-        (org-x-dag-bs-error-kw "QTP" it-todo))))))
+              (->> "QTP deadlines must be due after the quarter starts"
+                   (org-x-dag-bs :error))))
+        (org-x-dag-bs :valid '(:active nil))))
+     (t
+      (org-x-dag-bs-error-kw "QTP" it-todo)))))
 
-(defun org-x-dag-wkp-bs-inner (node-data)
+(defun org-x-dag-bs-wkp-inner (node-data)
   (org-x-dag-bs-action-with-closed node-data "weekly plan"
     `(:complete ,it-comptime)
     (org-x-dag-bs :valid `(:complete ,it-comptime))
-    (-let (((sched dead) (-some->> it-planning
-                           (org-ml-get-properties '(:scheduled :deadline)))))
-      (cond
-       (sched
-        (org-x-dag-bs :error "WKPs cannot be scheduled"))
-       (dead
-        (org-x-dag-bs :error "WKPs cannot be deadlined"))
-       ((equal it-todo org-x-kw-todo)
-        (org-x-dag-bs :valid `(:active)))
-       (t
-        (org-x-dag-bs-error-kw "WKP" it-todo))))))
+    (cond
+     ((-some->> it-planning (org-ml-get-properties :scheduled))
+      (org-x-dag-bs :error "WKPs cannot be scheduled"))
+     ((-some->> it-planning (org-ml-get-properties :deadline))
+      (org-x-dag-bs :error "WKPs cannot be deadlined"))
+     ((equal it-todo org-x-kw-todo)
+      (org-x-dag-bs :valid `(:active)))
+     (t
+      (org-x-dag-bs-error-kw "WKP" it-todo)))))
 
-(defun org-x-dag-dlp-bs-inner (node-data)
+(defun org-x-dag-bs-dlp-inner (node-data)
   (org-x-dag-bs-action-with-closed node-data "daily metablock"
     `(:complete ,it-comptime)
     (org-x-dag-bs :valid `(:complete ,it-comptime))
-    (-let (((sched dead) (-some->> it-planning
-                           (org-ml-get-properties '(:scheduled :deadline)))))
-      (cond
-       (dead
-        (org-x-dag-bs :error "Daily metablocks cannot be deadlined"))
-       ((equal it-todo org-x-kw-todo)
-        (-if-let ((sched-date sched-time) (-some->> it-planning
-                                            (org-ml-get-property :scheduled)
-                                            (org-ml-timestamp-get-start-time)
-                                            (org-x-dag-datetime-split)))
-            (if (not sched-time)
-               (org-x-dag-bs :error "Daily metablocks must have scheduled time")
-              (-let* (((&plist :tags) node-data)
-                      (tag-date (org-x-dag-daily-tags-to-date tags)))
-                (if (org-x-dag-datetime= tag-date sched-date)
-                    (org-x-dag-bs :valid `(:active))
-                  (org-x-dag-bs :error "Daily metablocks must be scheduled within their date"))))
-          (org-x-dag-bs :error "Daily metablocks must be scheduled")))
-       (t
-        (org-x-dag-bs-error-kw "Daily metablock" it-todo))))))
+    (cond
+     ((-some->> it-planning (org-ml-get-properties :deadline))
+      (org-x-dag-bs :error "Daily metablocks cannot be deadlined"))
+     ((equal it-todo org-x-kw-todo)
+      (-if-let ((sched-date sched-time) (-some->> it-planning
+                                          (org-ml-get-property :scheduled)
+                                          (org-ml-timestamp-get-start-time)
+                                          (org-x-dag-datetime-split)))
+          (if (not sched-time)
+              (org-x-dag-bs :error "Daily metablocks must have scheduled time")
+            (-let* (((&plist :tags) node-data)
+                    (tag-date (org-x-dag-daily-tags-to-date tags)))
+              (if (org-x-dag-datetime= tag-date sched-date)
+                  (org-x-dag-bs :valid `(:active))
+                (org-x-dag-bs :error "Daily metablocks must be scheduled within their date"))))
+        (org-x-dag-bs :error "Daily metablocks must be scheduled")))
+     (t
+      (org-x-dag-bs-error-kw "Daily metablock" it-todo)))))
 
-(defun org-x-dag-with-treetop-error (tree)
-  (declare (indent 3))
-  (-let* (((node . children) tree)
-          ((&plist :id n :parents ps :node-meta m) node)
-          ((shallow rest) (->> (-map #'org-x-dag-with-treetop-error children)
-                               (apply #'-zip-lists)))
-          (shallow*
-           (--map (-let (((&plist :id ci :parents cps :node-meta cm) it))
-                    (org-x-dag-node ci (cons n cps) cm))
-                  shallow)))
-    (list
-     (org-x-dag-node n ps (org-x-dag-bs :error "Children not allowed"))
-     ,@shallow*
-     ,@(-flatten-n 1 rest))))
+(defun org-x-dag-bs-qtp (tree)
+  (-let (((n ns) (org-x-dag-bs-with-treetop tree #'org-x-dag-bs-qtp-inner)))
+    (org-x-dag-bs-prefix :quarterly `(,n ,@ns))))
 
-(defun org-x-dag-with-treetop (tree node-fun)
-  (declare (indent 3))
-  (-let* (((top . children) tree)
-          (top* (org-x-dag-node-fmap top
-                  (if children (org-x-dag-bs :error "Children not allowed")
-                    (funcall node-fun it)))))
-    `(,top* ,@(-map #'org-x-dag-with-treetop-error children))))
+(defun org-x-dag-bs-wkp (tree)
+  (-let (((n ns) (org-x-dag-bs-with-treetop tree #'org-x-dag-bs-wkp-inner)))
+    (org-x-dag-bs-prefix :weekly `(,n ,@ns))))
 
-(defun org-x-dag-qtp-bs (tree)
-  (-let (((n ns) (org-x-dag-with-treetop tree #'org-x-dag-qtp-bs-inner)))
-    (--map (org-x-dag-node-fmap it
-             (org-x-dag-bs-fmap it
-               `(:weekly ,it)))
-           `(,n ,@ns))))
-
-(defun org-x-dag-wkp-bs (tree)
-  (-let (((n ns) (org-x-dag-with-treetop tree #'org-x-dag-wkp-bs-inner)))
-    (--map (org-x-dag-node-fmap it
-             (org-x-dag-bs-fmap it
-               `(:quarterly ,it)))
-           `(,n ,@ns))))
-
-(defun org-x-dag-dlp-bs (tree)
-  (-let (((n ns) (org-x-dag-with-treetop tree #'org-x-dag-dlp-bs-inner)))
-    (--map (org-x-dag-node-fmap it
-             (org-x-dag-bs-fmap it
-               `(:daily ,it)))
-           `(,n ,@ns))))
+(defun org-x-dag-bs-dlp (tree)
+  (-let (((n ns) (org-x-dag-bs-with-treetop tree #'org-x-dag-bs-dlp-inner)))
+    (org-x-dag-bs-prefix :daily `(,n ,@ns))))
 
 (defun org-x-dag-get-file-nodes (file group)
   (let* ((meta (list :file file
@@ -1984,10 +1970,20 @@ used for optimization."
                        (:action (list org-x-prop-parent-type
                                       org-x-prop-time-shift
                                       "ARCHIVE")))
-                     (append def-props))))
-    ;; TODO use group to determine which properties we need
-    (org-x-with-file file
-      (org-x-dag-get-buffer-nodes meta org-todo-keywords-1 props))))
+                     (append def-props)))
+         (bs-fun (pcase group
+                   (:action #'org-x-dag-bs-action)
+                   (:lifetime #'org-x-dag-bs-ltg)
+                   (:survival #'org-x-dag-bs-svg)
+                   (:endpoint #'org-x-dag-bs-epg)
+                   (:quarterly #'org-x-dag-bs-qtp)
+                   (:weekly #'org-x-dag-bs-wkp)
+                   (:daily #'org-x-dag-bs-dlp)))
+         (nodes
+          (org-x-with-file file
+            (org-x-dag-get-buffer-nodes meta org-todo-keywords-1 props))))
+    (->> (org-x-dag-buffer-nodes-to-tree nodes)
+         (-mapcat bs-fun))))
 
 ;;; DAG SYNCHRONIZATION/CONSTRUCTION
 
