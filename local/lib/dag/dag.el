@@ -379,14 +379,13 @@ ZS."
       (!cdr to-insert*))
     (list adjlist (dag--prune-broken-edges broken-ht))))
 
-(defun dag-alist-to-dag (parent-adjlist)
+(defun dag-plist-to-dag (parent-adjlist)
   "Convert PARENT-ADJLIST to a DAG.
 
-PARENT-ADJLIST is an alist where each member represents a
-node in which the car is a identifying the node and the cdr is a
-list of other keys representing edges to the parents of the car.
-The set of all car keys must be equivalent to the set of all cdr
-keys.
+PARENT-ADJLIST is a list of plists where each member represents a
+node in which the :id is the node ID, :parents are the ID's of
+the parents of the ID in :id, and :node-meta is arbitrary
+metadata associated with the node.
 
 Return a DAG object."
   (-let (((a b) (dag--alist-to-ht parent-adjlist)))

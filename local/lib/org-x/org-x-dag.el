@@ -2060,7 +2060,7 @@ removed from, added to, or edited within the DAG respectively."
 
 (defun org-x-dag-update-dag (to-insert to-remove)
   (let* ((dag (org-x-dag->dag))
-         (dag* (if (dag-is-empty-p dag) (dag-alist-to-dag to-insert)
+         (dag* (if (dag-is-empty-p dag) (dag-plist-to-dag to-insert)
                  (dag-edit-nodes to-remove to-insert dag))))
     (plist-put org-x-dag :dag dag*)))
 
