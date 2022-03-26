@@ -1309,15 +1309,15 @@ used for optimization."
      (org-x-dag-node i ps ,form)))
 
 (defun org-x-dag-get-buffer-nodes (file-meta kws target-props)
-  (let ((more t)
-        (line-re (org-x-dag-line-regexp kws))
+  (let ((line-re (org-x-dag-line-regexp kws))
         cur-path this-point this-key this-level this-todo has-todo this-parent
         this-tags this-meta all-tags this-file-links this-links this-parent-key acc)
-    ;; TODO add org-mode sanity check
     (goto-char (point-min))
     ;; If not on a headline, check for a property drawer with links in it
     (unless (= ?* (following-char))
-      (setq this-file-links (org-x-dag-get-parent-links)))
+      (->> (org-x-dag-next-headline)
+           (org-x-dag-get-parent-links nil)
+           (setq this-file-links)))
     ;; loop through all headlines
     (while (re-search-forward line-re nil t)
       ;; Keep track of how 'deep' we are in a given org-tree using a stack. The
