@@ -1209,23 +1209,25 @@ A date like (YEAR MONTH DAY).")
 
 ;;; BUFFER SCANNING
 
-(defun org-x-dag-get-local-property (bounds prop)
+(defun org-x-dag-get-local-property (bounds prop-re)
   (-when-let ((_ beg end _) bounds)
     (save-excursion
       (goto-char beg)
-      (when (re-search-forward (org-re-property prop nil t) end t)
+      (when (re-search-forward prop-re end t)
         (match-string-no-properties 3)))))
 
-(defun org-x-dag-get-local-properties (bounds props)
+(defun org-x-dag-get-local-properties (bounds prop-pairs)
   (when bounds
-    (-let (((_ beg end _) bounds))
+    (-let (((_ beg end _) bounds)
+           (cur))
       (save-excursion
         (let (acc)
-          (while props
+          (while prop-pairs
             (goto-char beg)
-            (when (re-search-forward (org-re-property (car props) nil t) end t)
-              (!cons (cons (car props) (match-string-no-properties 3)) acc))
-            (!cdr props))
+            (setq cur (car prop-pairs))
+            (when (re-search-forward (cdr cur) end t)
+              (!cons (cons (car cur) (match-string-no-properties 3)) acc))
+            (!cdr prop-pairs))
           acc)))))
 
 (defconst org-x-dag-parent-link-drawer-re 
@@ -1310,6 +1312,8 @@ used for optimization."
 
 (defun org-x-dag-get-buffer-nodes (file-meta kws target-props)
   (let ((line-re (org-x-dag-line-regexp kws))
+        (pps (--map (cons it (org-re-property it nil t)) target-props))
+        (id-prop (org-re-property "ID" nil t))
         cur-path this-point this-key this-level this-todo has-todo this-parent
         this-tags this-meta all-tags this-file-links this-links this-parent-key acc)
     (goto-char (point-min))
@@ -1347,7 +1351,7 @@ used for optimization."
                  (or this-parent-key (--none-p (nth 1 it) cur-path))
                  (setq
                   this-prop-bounds (org-x-dag-property-block next-pos)
-                  this-key (org-x-dag-get-local-property this-prop-bounds "ID")))
+                  this-key (org-x-dag-get-local-property this-prop-bounds id-prop)))
         ;; If parent is not a node and we want tag inheritance, store all
         ;; tags above this headline (including file tags)
         (setq this-links (or (-> (nth 3 this-prop-bounds)
@@ -1372,7 +1376,7 @@ used for optimization."
                           :planning (->> (car this-prop-bounds)
                                          (org-x-dag-parse-this-planning))
                           :props (-> this-prop-bounds
-                                     (org-x-dag-get-local-properties target-props)))))
+                                     (org-x-dag-get-local-properties pps)))))
         (!cons this-node acc))
       ;; Add current headline to stack
       ;; TODO this isn't necessary for non-node children of nodes
