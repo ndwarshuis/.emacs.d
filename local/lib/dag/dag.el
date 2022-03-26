@@ -121,8 +121,8 @@ parent keys for that child."
   (->> (ht-get adjlist key)
        (dag-relation-get-parents)))
 
-(defun dag--new-relationship (p c)
-  (list :parents p :children c))
+(defun dag--new-relationship (p c n)
+  (list :parents p :children c :node-meta n))
 
 (defmacro dag--each-key (h &rest body)
   (declare (indent 1))
@@ -162,7 +162,7 @@ parent keys for that child."
       (nreverse ordered-nodes))))
 
 (defun dag--alist-to-ht (parent-adjlist)
-  (let ((h (dag--ht-create parent-adjlist))
+  (let ((h (dag--ht-create nil))
         (broken-edges (dag--ht-create nil))
         (parents)
         (relations)
@@ -174,7 +174,11 @@ parent keys for that child."
     ;; O(N)
     (while parent-adjlist
       (setq cur (car parent-adjlist))
-      (ht-set h (car cur) (dag--new-relationship (cdr cur) nil))
+      (ht-set h
+              (plist-get cur :id)
+              (dag--new-relationship (plist-get cur :parents)
+                                     nil
+                                     (plist-get cur :node-meta)))
       (!cdr parent-adjlist))
     ;; Add child relationships: For each node key, get the parent relation keys,
     ;; and for each of these, lookup the key in the hash table and add the
@@ -324,11 +328,12 @@ ZS."
 
 (defun dag--adjlist-insert-nodes (to-insert adjlist broken-ht)
   (let (i i-key i-rel edges-to-add parent-edges broken-edges edges-to-remove
-          parent-rel to-insert*)
+          parent-rel to-insert* meta-to-add)
     (while to-insert
       (setq i (car to-insert)
-            i-key (car i)
-            edges-to-add (cdr i))
+            i-key (plist-get i :id)
+            edges-to-add (plist-get i :parents)
+            meta-to-add (plist-get i :node-meta))
       ;; Add new node:
       ;;
       ;; If the node does not exist, add an empty relationship (it will be
@@ -336,7 +341,7 @@ ZS."
       ;; table, transfer it to the adjacency list.
       (if (not (setq i-rel (ht-get adjlist i-key)))
           (progn
-            (ht-set adjlist i-key (dag--new-relationship nil nil))
+            (ht-set adjlist i-key (dag--new-relationship nil nil meta-to-add))
             (dag--mend-edge adjlist broken-ht i-key))
         ;; If the node does exist, get the edges that shouldn't be changed
         ;; (added & current), the edges that are to be added (added - current)
@@ -347,16 +352,17 @@ ZS."
         ;; added for later.
         (setq parent-edges (plist-get i-rel :parents))
         (dag--intersection-difference parent-edges edges-to-add edges-to-remove)
-        (ht-set adjlist i-key (plist-put i-rel :parents parent-edges))
+        (ht-set adjlist i-key (-> (plist-put i-rel :parents parent-edges)
+                                  (plist-put :node-meta meta-to-add)))
         (--each edges-to-remove
           (dag--adjlist-remove-child-edge it i-key adjlist))
         ;; Similar to above, get the edges to be added and the nodes that are to
         ;; remain, and set the broken edges hash table to the latter.
         (setq broken-edges (ht-get broken-ht i-key))
         (dag--intersection-difference broken-edges edges-to-add)
-        (ht-set broken-ht i-key broken-edges)
-        (!cons (cons i-key edges-to-add) to-insert*)
-        (!cdr to-insert)))
+        (ht-set broken-ht i-key broken-edges))
+      (!cons (cons i-key edges-to-add) to-insert*)
+      (!cdr to-insert))
     ;; Add edges in a separate loop since we need all the inserted nodes to be
     ;; present before testing if an edge is broken
     (while to-insert*
