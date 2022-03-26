@@ -204,19 +204,22 @@
                               (org-x-get-incubator-files))))
         
 
-(defun org-x-dag-flatten-goal-file-state (state)
-  (-let (((&plist :lifetime l :endpoint e :survival s) state))
-    `(,l ,e ,s)))
+;; (defun org-x-dag-flatten-goal-file-state (state)
+;;   (-let (((&plist :lifetime l :endpoint e :survival s) state))
+;;     `(,l ,e ,s)))
 
-(defun org-x-dag-flatten-planning-file-state (state)
-  (-let (((&plist :quarterly q :weekly w :daily d) state))
-    `(,q ,w ,d)))
+;; (defun org-x-dag-flatten-planning-file-state (state)
+;;   (-let (((&plist :quarterly q :weekly w :daily d) state))
+;;     `(,q ,w ,d)))
 
 (defun org-x-dag-flatten-file-state (state)
-  (-let (((&plist :goal-files :plan-files :action-files) state))
-    (append (org-x-dag-flatten-goal-file-state goal-files)
-            (org-x-dag-flatten-planning-file-state plan-files)
-            action-files)))
+  (cl-flet
+      ((flat-flip
+        (plist)
+        (->> (-partition-all 2 plist)
+             (--map (cons (cadr it) (car it))))))
+  (-let (((&plist :goal-files g :plan-files p :action-files a) state))
+    (append (flat-flip g) (flat-flip p) (--map (cons it :action) a)))))
 
 (defun org-x-dag-empty ()
   (org-x-dag-create (dag-empty)
@@ -1987,16 +1990,6 @@ used for optimization."
 
 ;;; DAG SYNCHRONIZATION/CONSTRUCTION
 
-;; (defun org-x-dag-get-files ()
-;;   "Return a list of all files to be used in the DAG."
-;;   `(,(org-x-get-lifetime-goal-file)
-;;     ,(org-x-get-endpoint-goal-file)
-;;     ,(org-x-get-survival-goal-file)
-;;     ,(org-x-qtp-get-file)
-;;     ,(org-x-get-weekly-plan-file)
-;;     ,(org-x-get-daily-plan-file)
-;;     ,@(org-x-get-action-and-incubator-files)))
-
 (defun org-x-dag-get-md5 (path)
   "Get the md5 checksum of PATH."
   (org-x-with-file path (buffer-hash)))
@@ -2007,49 +2000,47 @@ used for optimization."
 The returned value will be a list like (TO-REMOVE TO-INSERT
 TO-UPDATE) which will contain the file paths the should be
 removed from, added to, or edited within the DAG respectively."
-  (cl-flet
+  (cl-flet*
       ((lookup-md5
         (path)
-        (alist-get path org-x-dag-sync-state nil nil #'equal)))
-    (-let* (;;(existing-files (org-x-dag-get-files))
-            (file-state (org-x-dag-read-file-paths))
+        (alist-get path org-x-dag-sync-state nil nil #'equal))
+       (get-file-md5
+        (file-pair)
+        (-let (((path . group) file-pair)
+                (md5 ))
+          (list :path path
+                :group group
+                :md5 (org-x-dag-get-md5 path))))
+       (file-status
+        (file-data)
+        (-let* (((&plist :md5 new-md5 :path path) file-data)
+                (old-md5 (lookup-md5 path)))
+          (cond
+           ((not old-md5) 'to-insert)
+           ((equal old-md5 new-md5) 'no-change)
+           (t 'to-update)))))
+    (-let* ((file-state (org-x-dag-read-file-paths))
             (existing-files (org-x-dag-flatten-file-state file-state))
             (state-files (-map #'car org-x-dag-sync-state))
-            (to-remove (-difference state-files existing-files))
+            (to-remove (->> (-map #'car existing-files)
+                            (-difference state-files)))
             ((&alist 'to-insert 'to-update 'no-change)
-             (->> (--map (cons it (org-x-dag-get-md5 it)) existing-files)
-                  (--group-by (-let* (((path . new-md5) it)
-                                      (old-md5 (lookup-md5 path)))
-                                (cond
-                                 ((null old-md5) 'to-insert)
-                                 ((equal old-md5 new-md5) 'no-change)
-                                 (t 'to-update)))))))
+             (->> (-map #'get-file-md5 existing-files)
+                  (-group-by #'file-status))))
       (list file-state to-remove to-insert to-update no-change))))
 
-(defun org-x-dag-flatten-file-state (file-state)
-  (-let* (((&plist :goal-files g :plan-files p :action-files a) file-state))
-    (->> (append g p)
-         (-partition-all 2)
-         (--map (cons (nth 1 it) (nth 0 it)))
-         (append (--map (cons it :action) a)))))
-
-(defun org-x-dag-read-files (files file-state)
+(defun org-x-dag-read-files (files)
   (cl-flet
       ((append-results
-        (acc file-pair)
-        (-let* (((file . group) file-pair)
-                ((acc-ids acc-meta acc-filemaps acc-links) acc)
-                ((ids metas links) (org-x-dag-get-file-nodes file group))
-                (filemap (cons file (-map #'car ids))))
+        (acc filedata)
+        (-let* (((&plist :path :group) filedata)
+                ((acc-ids acc-filemaps acc-links) acc)
+                (ids (org-x-dag-get-file-nodes path group))
+                (filemap (cons path (--map (plist-get :id it) ids))))
           `((,@ids ,@acc-ids)
-            (,@metas ,@acc-meta)
-            (,filemap ,@acc-filemaps)
-            (,@links ,@acc-links)))))
-    ;; TODO wtf is this error prone garbage? (the use of filter implies failure
-    ;; in a list that should have a bijective mapping to the file list)
-    (->> (org-x-dag-flatten-file-state file-state)
-         (--filter (member (car it) files))
-         (-reduce-from #'append-results nil))))
+            (,filemap ,@acc-filemaps)))))
+            ;; (,@links ,@acc-links)))))
+    (-reduce-from #'append-results nil files)))
 
 ;; TODO what about all the nodes that don't need to be updated?
 (defun org-x-dag-update-ht (to-remove to-insert ht)
@@ -2725,21 +2716,20 @@ plist holding the files to be used in the DAG."
           (files2rem (append to-update to-remove))
           (files2ins (append to-update to-insert))
           (ids2rem (org-x-dag-files->ids files2rem))
-          ((ids2ins meta2ins fms2ins links2ins)
-           (org-x-dag-read-files files2ins file-state)))
-    (org-x-dag-update-ht ids2rem meta2ins id->meta)
-    (org-x-dag-update-ht files2rem fms2ins file->ids)
+          ((ids2ins fms2ins links2ins) (org-x-dag-read-files files2ins)))
+    ;; (org-x-dag-update-ht ids2rem meta2ins id->meta)
+    ;; (org-x-dag-update-ht files2rem fms2ins file->ids)
     (org-x-dag-update-dag ids2ins ids2rem)
-    (plist-put org-x-dag :files file-state)
+    (plist-put org-x-dag :files file-state)))
     ;; update illegal links after updating the adjlist, since we need that to
     ;; figure out which links are illegal
-    (-let (((illegal-foreign illegal-local) (org-x-dag-filter-links links2ins)))
-      (org-x-dag-update-ht files2rem illegal-foreign if)
-      (org-x-dag-update-ht files2rem illegal-local il))
+    ;; (-let (((illegal-foreign illegal-local) (org-x-dag-filter-links links2ins)))
+    ;;   (org-x-dag-update-ht files2rem illegal-foreign if)
+    ;;   (org-x-dag-update-ht files2rem illegal-local il))
     ;; update node-level status after figuring out which are invalid via links
-    (let ((status2ins (->> (-map #'car ids2ins)
-                           (--map (cons it (org-x-dag-id->0th-status it))))))
-      (org-x-dag-update-ht ids2rem status2ins id->status))))
+    ;; (let ((status2ins (->> (-map #'car ids2ins)
+    ;;                        (--map (cons it (org-x-dag-id->0th-status it))))))
+    ;;   (org-x-dag-update-ht ids2rem status2ins id->status))))
     
 
 (defun org-x-dag-sync (&optional force)
@@ -2752,11 +2742,10 @@ If FORCE is non-nil, sync no matter what."
   ;; TODO verify integrity somewhere in here
   (-let (((file-state to-remove to-insert to-update no-change)
           (org-x-dag-get-sync-state)))
-    (org-x-dag-update file-state
-                      to-remove
-                      (-map #'car to-insert)
-                      (-map #'car to-update))
-    (setq org-x-dag-sync-state (append to-insert to-update no-change))
+    (org-x-dag-update file-state to-remove to-insert to-update)
+    (->> (append to-update to-insert no-change)
+         (--map (cons (plist-get it :path) (plist-get it :md5)))
+         (setq org-x-dag-sync-state))
     nil))
 
 ;; NODE FORMATTING
