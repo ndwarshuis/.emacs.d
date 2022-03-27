@@ -1209,36 +1209,33 @@ A date like (YEAR MONTH DAY).")
 
 ;;; BUFFER SCANNING
 
-(defun org-x-dag-get-local-property (bounds prop-re)
-  (-when-let ((_ beg end _) bounds)
-    (save-excursion
-      (goto-char beg)
-      (when (re-search-forward prop-re end t)
-        (match-string-no-properties 3)))))
+(defun org-x-dag-get-local-property (beg end prop-re)
+  (save-excursion
+    (goto-char beg)
+    (when (re-search-forward prop-re end t)
+      (match-string-no-properties 3))))
 
-(defun org-x-dag-get-local-properties (bounds prop-pairs)
-  (when bounds
-    (-let (((_ beg end _) bounds))
-      (save-excursion
-        (let (acc cur)
-          (while prop-pairs
-            (goto-char beg)
-            (setq cur (car prop-pairs))
-            (when (re-search-forward (cdr cur) end t)
-              (!cons (cons (car cur) (match-string-no-properties 3)) acc))
-            (!cdr prop-pairs))
-          acc)))))
+(defun org-x-dag-get-local-properties (beg end prop-pairs)
+  (save-excursion
+    (let (acc cur)
+      (while prop-pairs
+        (goto-char beg)
+        (setq cur (car prop-pairs))
+        (when (re-search-forward (cdr cur) end t)
+          (!cons (cons (car cur) (match-string-no-properties 3)) acc))
+        (!cdr prop-pairs))
+      acc)))
 
 (defconst org-x-dag-parent-link-drawer-re 
   (concat
    "^[ \t]*:X_PARENT_LINKS:[ \t]*\n"
-   "\\(\\(?:^- .*?\n\\)*?\\)"
+   "\\(\\(?:^- .*?\n\\)+\\)"
    "[ \t]*:END:[ \t]*$"))
 
 (defun org-x-dag-next-headline ()
   (save-excursion (outline-next-heading)))
 
-(defun org-x-dag-get-parent-links (&optional start end)
+(defun org-x-dag-get-parent-links (start end)
   (cl-flet
       ((match-id
         (s)
@@ -1248,13 +1245,14 @@ A date like (YEAR MONTH DAY).")
     (save-excursion
       (when start
         (goto-char start))
-      (let ((end (or end (org-x-dag-next-headline))))
-        (when (re-search-forward org-x-dag-parent-link-drawer-re end t)
-          (-some->> (match-string 1)
-            (s-trim)
-            (s-split "\n")
-            (-map #'match-id)
-            (-non-nil)))))))
+      (when (re-search-forward org-x-dag-parent-link-drawer-re end t)
+        (let ((ss (split-string (match-string-no-properties 1) "\n" t))
+              acc)
+          (while ss
+            (when (string-match "id:\\([^][]\\{36\\}\\)" (car ss))
+              (!cons (match-string-no-properties 1 (car ss)) acc))
+            (!cdr ss))
+          acc)))))
 
 (defun org-x-dag-line-regexp (kws)
   (let ((level-re "\\(\\*+\\)")
@@ -1314,13 +1312,13 @@ used for optimization."
          (first-hl (org-x-dag-next-headline))
          ;; If not on a headline, check for a property drawer with links in it
          (this-file-links (unless (= ?* (following-char))
-                            (org-x-dag-get-parent-links first-hl nil)))
+                            (org-x-dag-get-parent-links nil first-hl)))
          (pps (--map (cons it (org-re-property it nil t)) target-props))
          (id-prop (org-re-property "ID" nil t))
          ;; stack vars
          bare-stack node-level bury-level
          ;; data vars
-         this-id this-level this-todo this-tags this-pblock acc)
+         this-id this-level this-todo this-tags this-pblock pbeg pend acc)
     (when first-hl
       (goto-char first-hl))
     (while (looking-at line-re)
@@ -1349,7 +1347,9 @@ used for optimization."
         (cond
          ((and this-todo
                (setq this-pblock (org-x-dag-property-block next-pos)
-                     this-id (org-x-dag-get-local-property this-pblock id-prop)))
+                     pbeg (nth 1 this-pblock)
+                     pend (nth 2 this-pblock)
+                     this-id (org-x-dag-get-local-property pbeg pend id-prop)))
           (setq bury-level nil)
           (when this-tags
             (setq this-tags (split-string this-tags ":")))
@@ -1359,8 +1359,8 @@ used for optimization."
                                  (append this-tags))))
           (-> (list
                :id this-id
-               :parents (or (-> (nth 3 this-pblock)
-                                (org-x-dag-get-parent-links next-pos))
+               :parents (or (org-x-dag-get-parent-links (nth 3 this-pblock)
+                                                        next-pos)
                             (unless node-level
                               (nth 2 (car bare-stack))))
                :node-meta
@@ -1370,9 +1370,8 @@ used for optimization."
                 :todo this-todo
                 :title (or this-title "")
                 :tags this-tags
-                :planning (->> (car this-pblock)
-                               (org-x-dag-parse-this-planning))
-                :props (org-x-dag-get-local-properties this-pblock pps)))
+                :planning (org-x-dag-parse-this-planning (nth 0 this-pblock))
+                :props (org-x-dag-get-local-properties pbeg pend pps)))
               (!cons acc))
           (setq node-level this-level))
          ;; Underneath a node but not on a node, therefore we are buried
