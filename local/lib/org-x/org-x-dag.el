@@ -1352,7 +1352,7 @@ used for optimization."
                      this-id (org-x-dag-get-local-property this-pblock id-prop)))
           (setq bury-level nil)
           (when this-tags
-            (setq this-tags (split-string this-tags ":" t)))
+            (setq this-tags (split-string this-tags ":")))
           (when (and (not node-level) bare-stack)
             (setq this-tags (->> (car bare-stack)
                                  (nth 1)
