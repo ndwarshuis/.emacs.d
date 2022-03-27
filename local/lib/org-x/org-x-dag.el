@@ -1601,32 +1601,6 @@ used for optimization."
          (t
           task-default))))))
 
-(defun org-x-dag-bs-action-subiter-todo-rank (si-a si-b)
-  (pcase `(,si-a ,si-b)
-    (`((:si-active (,ts-a ,dead-a)) (:si-active (,ts-b ,dead-b)))
-     (let ((dt-a (org-ml-timestamp-get-start-time ts-a))
-           (dt-b (org-ml-timestamp-get-start-time ts-b)))
-       (cond
-        ((not (eq dead-a dead-b))
-         (->> "All sub-iter timestamps must be scheduled or deadlined"
-              (org-x-dag-bs :error)))
-        ((xor (org-ml-time-is-long dt-a) (org-ml-time-is-long dt-b))
-         (->> "All sub-iter timestamps must be long or short"
-              (org-x-dag-bs :error)))
-        (t
-         ;; ASSUME this won't fail since the datetimes are assumed to be the
-         ;; same length as per rules above
-         (org-x-dag-bs :valid (org-x-dag-datetime< dt-a dt-b))))))
-    (`((:si-active ,_) ,_) (org-x-dag-bs :valid nil))
-    (`(,_ (:si-active ,_)) (org-x-dag-bs :valid t))))
-
-(defun org-x-dag-bs-action-subiter-complete-rank (si-a si-b)
-  (->> (pcase `(,si-a ,si-b)
-         (`((:si-complete ,_) (:si-complete ,_)) nil)
-         (`((:si-complete ,_) ,_) t)
-         (`(,_ (:si-complete ,_)) nil))
-       (org-x-dag-bs :valid)))
-
 (defun org-x-dag-node-data-is-iterator-p (node-data)
   (-let (((&plist :props) node-data))
     (-when-let (p (alist-get org-x-prop-parent-type props nil nil #'equal))
