@@ -1383,7 +1383,7 @@ used for optimization."
           (setq bury-level nil
                 node-level nil)
           (when this-tags
-            (setq this-tags (split-string this-tags ":" t)))
+            (setq this-tags (split-string this-tags ":")))
           (-> (list this-level
                     (append this-tags (or (nth 1 (car bare-stack)) org-file-tags))
                     (or (org-x-dag-get-parent-links nil next-pos)
