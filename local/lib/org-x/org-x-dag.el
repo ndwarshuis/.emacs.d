@@ -1236,23 +1236,17 @@ A date like (YEAR MONTH DAY).")
   (save-excursion (outline-next-heading)))
 
 (defun org-x-dag-get-parent-links (start end)
-  (cl-flet
-      ((match-id
-        (s)
-        (-some->> (s-match "id:\\([^][]\\{36\\}\\)" s)
-          (cadr)
-          (substring-no-properties))))
-    (save-excursion
-      (when start
-        (goto-char start))
-      (when (re-search-forward org-x-dag-parent-link-drawer-re end t)
-        (let ((ss (split-string (match-string-no-properties 1) "\n" t))
-              acc)
-          (while ss
-            (when (string-match "id:\\([^][]\\{36\\}\\)" (car ss))
-              (!cons (match-string-no-properties 1 (car ss)) acc))
-            (!cdr ss))
-          acc)))))
+  (save-excursion
+    (when start
+      (goto-char start))
+    (when (re-search-forward org-x-dag-parent-link-drawer-re end t)
+      (let ((ss (split-string (match-string-no-properties 1) "\n" t))
+            acc)
+        (while ss
+          (when (string-match "id:\\([^][]\\{36\\}\\)" (car ss))
+            (!cons (match-string-no-properties 1 (car ss)) acc))
+          (!cdr ss))
+        acc))))
 
 (defun org-x-dag-line-regexp (kws)
   (let ((level-re "\\(\\*+\\)")
