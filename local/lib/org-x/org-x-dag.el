@@ -1289,17 +1289,6 @@ used for optimization."
     (when (and (< (point) prop-beg) (looking-at org-planning-line-re))
       (org-element-planning-parser prop-beg))))
 
-(defun org-x-dag-node (id parents node-meta)
-  (list :id id
-        :parents parents
-        :node-meta node-meta))
-
-(defmacro org-x-dag-node-fmap (node form)
-  (declare (indent 1))
-  ;; TODO not efficient (may or may not matter)
-  `(-let (((&plist :id i :parents ps :node-meta it) ,node))
-     (org-x-dag-node i ps ,form)))
-
 (defun org-x-dag-get-buffer-nodes (file-meta kws target-props)
   (goto-char (point-min))
   (let* ((line-re (org-x-dag-line-regexp kws))
@@ -1748,49 +1737,64 @@ used for optimization."
      (t
       (org-x-dag-bs-error-kw "Endpoint goal" it-todo)))))
 
-(defun org-x-dag-bs-with-treetop-error (tree parent-node)
+(defun org-x-dag-bs-with-treetop-error (tree parent-id)
   (declare (indent 3))
   (-let* (((node . children) tree)
-          ((&plist :id i :parents ps) node)
-          ((&plist :id pi) parent-node)
+          ((&plist :id i :parents links :node-meta m) node)
+          (ps (cons parent-id links))
           (this (->> (org-x-dag-bs :error "Children not allowed")
-                     (org-x-dag-node i (cons i ps)))))
-    (cons this (--mapcat (org-x-dag-bs-with-treetop-error it node) children))))
+                     (org-x-dag-node i ps parent-id m))))
+    (cons this (--mapcat (org-x-dag-bs-with-treetop-error it i) children))))
 
 (defun org-x-dag-bs-with-treetop (tree node-fun)
   (declare (indent 3))
-  (-let* (((top . children) tree)
-          (top* (org-x-dag-node-fmap top
-                  (if children (org-x-dag-bs :error "Children not allowed")
-                    (funcall node-fun it)))))
-    (cons top* (--mapcat (org-x-dag-bs-with-treetop-error it top) children))))
+  (-let* ((((&plist :id i :parents links :node-meta m) . children) tree)
+          (bs (if children (org-x-dag-bs :error "Children not allowed")
+                (funcall node-fun m)))
+          (top (org-x-dag-node i links nil m bs)))
+    (cons top (--mapcat (org-x-dag-bs-with-treetop-error it i) children))))
 
-;; TODO add a slot for the buffer parent (so that we know which are toplevel and not)
-(defun org-x-dag-bs-with-children (tree child-fun node-fun concat-fun)
+(defun org-x-dag-node (id parents buffer-parent node-meta bs)
+  (list :id id
+        :parents parents
+        :node-meta (list :hl-meta node-meta
+                         :buffer-parent buffer-parent
+                         :buffer-status bs)))
+
+(defmacro org-x-dag-node-fmap (node form)
+  (declare (indent 1))
+  ;; TODO not efficient (may or may not matter)
+  `(-let (((&plist :id i
+                   :parents ps
+                   :node-meta (&plist :hl-meta h
+                                      :buffer-parent p
+                                      :buffer-status it))
+           ,node))
+     (org-x-dag-node i ps p h ,form)))
+
+(defun org-x-dag-bs-with-children (tree parent child-fun node-fun concat-fun)
   (declare (indent 3))
   ;; TODO this is super inefficient, make a plist mapper function
   (-let* (((node . children) tree)
-          ((&plist :id i :parents ps :node-meta m) node)
-          ((shallow rest) (->> (-map child-fun children)
+          ((&plist :id i :parents links :node-meta m) node)
+          ((shallow rest) (->> (--map (funcall child-fun it i) children)
                                (apply #'-zip-lists)))
-          (shallow*
-           (--map (-let (((&plist :id ci :parents cps :node-meta cm) it))
-                    (list :id ci :parents (cons i cps) :node-meta cm))
-                  shallow)))
-    (list (->> (--map (plist-get it :node-meta) shallow)
+          (ps (if parent (cons parent links) links)))
+    (list (->> shallow
+               (--map (plist-get (plist-get it :node-meta) :buffer-status))
                (funcall node-fun m)
-               (org-x-dag-node i ps))
-          (funcall concat-fun shallow* rest))))
+               (org-x-dag-node i ps parent m))
+          (funcall concat-fun shallow rest))))
 
 ;; Tree a -> (Tree a -> (b, [d])) -> (a -> [b] -> c) -> (c, [d])
-(defun org-x-dag-bs-with-children-1 (tree child-fun node-fun)
-  (org-x-dag-bs-with-children tree child-fun node-fun
+(defun org-x-dag-bs-with-children-1 (tree parent child-fun node-fun)
+  (org-x-dag-bs-with-children tree parent child-fun node-fun
     (lambda (shallow deep)
       (append shallow (-flatten-n 1 deep)))))
 
 ;; Tree a -> (Tree a -> (b, ([d], [e]))) -> (a -> [b] -> c) -> (c, ([d], [e]))
-(defun org-x-dag-bs-with-children-2 (tree child-fun node-fun)
-  (org-x-dag-bs-with-children tree child-fun node-fun
+(defun org-x-dag-bs-with-children-2 (tree parent child-fun node-fun)
+  (org-x-dag-bs-with-children tree parent child-fun node-fun
     (lambda (shallow deep)
       (--reduce-from (-let (((a b) acc)
                             ((as bs) it))
@@ -1798,39 +1802,43 @@ used for optimization."
                      `(,shallow nil)
                      deep))))
 
-(defun org-x-dag-bs-action-subiter (tree)
+(defun org-x-dag-bs-action-subiter (tree parent)
   (org-x-dag-bs-with-children-1
    tree
+   parent
    #'org-x-dag-bs-action-subiter
    #'org-x-dag-bs-action-subiter-inner))
 
-(defun org-x-dag-bs-action-iter (tree)
+(defun org-x-dag-bs-action-iter (tree parent)
   (org-x-dag-bs-with-children-1
    tree
+   parent
    #'org-x-dag-bs-action-subiter
    (lambda (node child-bss)
      (org-x-dag-node-fmap node
        (org-x-dag-bs-fmap (org-x-dag-bs-action-iter-inner it child-bss)
          `(:sp-proj it))))))
 
-(defun org-x-dag-bs-action-project (tree)
+(defun org-x-dag-bs-action-project (tree parent)
   (if (org-x-dag-node-is-iterator-p (car tree))
-      (-let (((iter subiters) (org-x-dag-bs-action-iter tree)))
+      (-let (((iter subiters) (org-x-dag-bs-action-iter tree nil)))
         `(,iter (nil ,subiters)))
     (org-x-dag-bs-with-children-2
      tree
+     parent
      #'org-x-dag-bs-action-project
      #'org-x-dag-bs-action-project-inner)))
 
 ;; TODO need to check for created timestamps
 (defun org-x-dag-bs-action (node-tree)
   ;; TODO these types might not line up properly
-  (-let (((p (ps is)) (org-x-dag-bs-action-project node-tree)))
+  (-let (((p (ps is)) (org-x-dag-bs-action-project node-tree nil)))
     `(,p ,@ps ,@is)))
 
-(defun org-x-dag-bs-epg-outer (tree)
+(defun org-x-dag-bs-epg-outer (tree parent)
   (org-x-dag-bs-with-children-1
    tree
+   parent
    #'org-x-dag-bs-epg-outer
    #'org-x-dag-bs-epg-inner))
 
@@ -1838,7 +1846,7 @@ used for optimization."
   (--map (org-x-dag-node-fmap it (org-x-dag-bs-fmap it `(,key ,it))) nodes))
 
 (defun org-x-dag-bs-epg (tree)
-  (-let (((n ns) (org-x-dag-bs-epg-outer tree)))
+  (-let (((n ns) (org-x-dag-bs-epg-outer tree nil)))
     (org-x-dag-bs-prefix :endpoint `(,n ,@ns))))
 
 (defun org-x-dag-bs-toplevel-goal-inner (type-name node-data child-bss)
@@ -1854,16 +1862,17 @@ used for optimization."
      (t
       (org-x-dag-bs-error-kw type-name todo)))))
 
-(defun org-x-dag-bs-toplevel-goal-outer (type-name tree)
+(defun org-x-dag-bs-toplevel-goal-outer (type-name tree parent)
   (org-x-dag-bs-with-children-1
    tree
-   (lambda (tree)
-     (org-x-dag-bs-toplevel-goal-outer type-name tree))
+   parent
+   (lambda (tree parent)
+     (org-x-dag-bs-toplevel-goal-outer type-name tree parent))
    (lambda (node-data child-bss)
      (org-x-dag-bs-toplevel-goal-inner type-name node-data child-bss))))
 
 (defun org-x-dag-bs-toplevel-goal (type-name type-key tree)
-  (-let (((n ns) (org-x-dag-bs-toplevel-goal-outer type-name tree)))
+  (-let (((n ns) (org-x-dag-bs-toplevel-goal-outer type-name tree nil)))
     (org-x-dag-bs-prefix type-key `(,n ,@ns))))
 
 (defun org-x-dag-bs-ltg (tree)
