@@ -1218,10 +1218,9 @@ A date like (YEAR MONTH DAY).")
 
 (defun org-x-dag-get-local-properties (bounds prop-pairs)
   (when bounds
-    (-let (((_ beg end _) bounds)
-           (cur))
+    (-let (((_ beg end _) bounds))
       (save-excursion
-        (let (acc)
+        (let (acc cur)
           (while prop-pairs
             (goto-char beg)
             (setq cur (car prop-pairs))
@@ -1267,7 +1266,6 @@ A date like (YEAR MONTH DAY).")
 (defconst org-x-dag-prop-drawer-re
   (concat
    "^[\t ]*:PROPERTIES:[\t ]*\n"
-   ;; "\\([\t ]*:\\S-+:\\(?: .*\\)?[\t ]*\n\\)"
    "\\(\\(.\\|\n\\)*?\\)"
    "[\t ]*:END:[\t ]*$"))
 
@@ -1311,78 +1309,88 @@ used for optimization."
      (org-x-dag-node i ps ,form)))
 
 (defun org-x-dag-get-buffer-nodes (file-meta kws target-props)
-  (let ((line-re (org-x-dag-line-regexp kws))
-        (pps (--map (cons it (org-re-property it nil t)) target-props))
-        (id-prop (org-re-property "ID" nil t))
-        cur-path this-point this-key this-level this-todo has-todo this-parent
-        this-tags this-meta all-tags this-file-links this-links this-parent-key acc)
-    (goto-char (point-min))
-    ;; If not on a headline, check for a property drawer with links in it
-    (unless (= ?* (following-char))
-      (->> (org-x-dag-next-headline)
-           (org-x-dag-get-parent-links nil)
-           (setq this-file-links)))
-    ;; loop through all headlines
-    (while (re-search-forward line-re nil t)
+  (goto-char (point-min))
+  (let* ((line-re (org-x-dag-line-regexp kws))
+         (first-hl (org-x-dag-next-headline))
+         ;; If not on a headline, check for a property drawer with links in it
+         (this-file-links (unless (= ?* (following-char))
+                            (org-x-dag-get-parent-links first-hl nil)))
+         (pps (--map (cons it (org-re-property it nil t)) target-props))
+         (id-prop (org-re-property "ID" nil t))
+         ;; stack vars
+         bare-stack node-level bury-level
+         ;; data vars
+         this-id this-level this-todo this-tags this-pblock acc)
+    (when first-hl
+      (goto-char first-hl))
+    (while (looking-at line-re)
       ;; Keep track of how 'deep' we are in a given org-tree using a stack. The
       ;; stack will have members like (LEVEL KEY TAGS) where LEVEL is the level
       ;; of the headline and KEY is the node key if it has a keyword, and TAGS
       ;; is a list of tags for the headlines. Only add a node to the accumulator
       ;; if it has a keyword and an ID property, and only include its parent
       ;; headline if the parent also has a keyword.
-      (setq this-point (car (match-data))
+      (setq this-point (car (match-data t))
             this-level (length (match-string 1))
             this-todo (match-string 2)
-            this-title (-if-let (s (match-string 3)) (s-trim s) "")
-            this-tags (-some-> (match-string-no-properties 4)
-                        (split-string ":" t))
-            next-pos (or (org-x-dag-next-headline) (point-max))
-            this-key nil
-            this-links nil)
-      ;; Adjust the stack so that the top headline is the parent of the
-      ;; current headline
-      (while (and cur-path (<= this-level (nth 0 (car cur-path))))
-        (!cdr cur-path))
-      (setq this-parent (car cur-path)
-            this-parent-key (nth 1 this-parent))
-      ;; Add the current headline to accumulator if it is a node, but only if
-      ;; its parent is a node or none of its parents are nodes
-      (when (and this-todo
-                 (or this-parent-key (--none-p (nth 1 it) cur-path))
-                 (setq
-                  this-prop-bounds (org-x-dag-property-block next-pos)
-                  this-key (org-x-dag-get-local-property this-prop-bounds id-prop)))
-        ;; If parent is not a node and we want tag inheritance, store all
-        ;; tags above this headline (including file tags)
-        (setq this-links (or (-> (nth 3 this-prop-bounds)
-                                 (org-x-dag-get-parent-links next-pos))
-                             (unless this-parent-key
-                               (-some->> (--first (nth 3 it) cur-path)
-                                 (nth 3)
-                                 (append this-file-links))))
-              this-node
-              (list :id this-key
-                    :parents this-links
-                    :node-meta
-                    (list :point this-point
-                          :level this-level
-                          :todo this-todo
-                          :title this-title
-                          :tags (if (and (not this-parent-key) org-use-tag-inheritance)
-                                    (->> cur-path
-                                         (--mapcat (nth 2 it))
-                                         (append this-tags org-file-tags))
-                                  this-tags)
-                          :planning (->> (car this-prop-bounds)
-                                         (org-x-dag-parse-this-planning))
-                          :props (-> this-prop-bounds
-                                     (org-x-dag-get-local-properties pps)))))
-        (!cons this-node acc))
-      ;; Add current headline to stack
-      ;; TODO this isn't necessary for non-node children of nodes
-      (!cons (list this-level this-key this-tags this-links) cur-path)
-      ;; Since we know the next headline's position already, skip ahead to
-      ;; save some work
+            this-title (match-string 3)
+            this-tags (match-string-no-properties 4)
+            next-pos (or (org-x-dag-next-headline) (point-max)))
+      (unless (and bury-level (< bury-level this-level))
+        ;; Adjust the stack so that the top headline is the parent of the
+        ;; current headline
+        (when (and node-level (<= this-level node-level))
+          (setq node-level nil))
+        (unless node-level
+          (while (and bare-stack (<= this-level (nth 0 (car bare-stack))))
+            (!cdr bare-stack)))
+        ;; Add the current headline to accumulator if it is a node, but only if
+        ;; its parent is a node or none of its parents are nodes
+        (cond
+         ((and this-todo
+               (setq this-pblock (org-x-dag-property-block next-pos)
+                     this-id (org-x-dag-get-local-property this-pblock id-prop)))
+          (setq bury-level nil
+                this-tags nil)
+          (when this-tags
+            (setq this-tags (split-string this-tags ":" t)))
+          (when (and (not node-level) bare-stack)
+            (setq this-tags (->> (car bare-stack)
+                                 (nth 1)
+                                 (append this-tags))))
+          (-> (list
+               :id this-id
+               :parents (or (-> (nth 3 this-pblock)
+                                (org-x-dag-get-parent-links next-pos))
+                            (unless node-level
+                              (nth 2 (car bare-stack))))
+               :node-meta
+               (list
+                :point this-point
+                :level this-level
+                :todo this-todo
+                :title (if this-title (s-trim-right this-title) "")
+                :tags this-tags
+                :planning (->> (car this-pblock)
+                               (org-x-dag-parse-this-planning))
+                :props (org-x-dag-get-local-properties this-pblock pps)))
+              (!cons acc))
+          (setq node-level this-level))
+         ;; Underneath a node but not on a node, therefore we are buried
+         (node-level
+          (setq bury-level this-level))
+         ;; Anything else means we are on a bare headline above any nodes
+         (t
+          (setq bury-level nil
+                node-level nil)
+          (when this-tags
+            (setq this-tags (split-string this-tags ":" t)))
+          (-> (list this-level
+                    (append this-tags (or (nth 1 (car bare-stack)) org-file-tags))
+                    (or (org-x-dag-get-parent-links nil next-pos)
+                        (nth 2 (car bare-stack))
+                        this-file-links))
+              (!cons bare-stack)))))
       (goto-char next-pos))
     (nreverse acc)))
 
