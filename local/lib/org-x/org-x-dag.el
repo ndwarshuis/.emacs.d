@@ -1606,6 +1606,9 @@ used for optimization."
     (-when-let (p (alist-get org-x-prop-parent-type props nil nil #'equal))
       (equal p org-x-prop-parent-type-iterator))))
 
+;; TODO these next two could be made more efficient by cutting out the
+;; earlystop form and returning error in the rank form (the trans form is
+;; still needed in case there is only one child)
 (defun org-x-dag-bs-action-subiter-complete-fold (child-bss type-name comp-key)
   (declare (indent 1))
   (org-x-dag-bs-fold-children child-bss `(,comp-key ,it-comptime)
@@ -1668,7 +1671,7 @@ used for optimization."
         (org-x-dag-bs :error "Sub-iterators with children cannot be scheduled"))
        ((and dead child-bss)
         (org-x-dag-bs :error "Sub-iterators with children cannot be deadlined"))
-       ((not (xor sched dead))
+       ((and (not child-bss) (not (xor sched dead)))
         (org-x-dag-bs :error "Sub-iterators must either be deadlined or scheduled"))
        ((org-x-dag-node-data-is-iterator-p node-data)
         (org-x-dag-bs :error "Iterators cannot be nested"))
