@@ -1259,8 +1259,8 @@ A date like (YEAR MONTH DAY).")
 (defun org-x-dag-line-regexp (kws)
   (let ((level-re "\\(\\*+\\)")
         (kw-re (format "\\(%s\\)?" (s-join "\\|" kws)))
-        (title-re "\\(.*?\\)?")
-        (tag-re "\\(?:\\([[:alnum:]_@#%%:]+\\):\\)?"))
+        (title-re "\\(?:[ ]*\\([^\n]+?\\)\\)??")
+        (tag-re "\\(?:[ ]*:\\([[:alnum:]_@#%%:]+\\):\\)?"))
     (format "^%s[ ]+%s%s%s[ ]*$" level-re kw-re title-re tag-re)))
 
 (defconst org-x-dag-prop-drawer-re
@@ -1350,8 +1350,7 @@ used for optimization."
          ((and this-todo
                (setq this-pblock (org-x-dag-property-block next-pos)
                      this-id (org-x-dag-get-local-property this-pblock id-prop)))
-          (setq bury-level nil
-                this-tags nil)
+          (setq bury-level nil)
           (when this-tags
             (setq this-tags (split-string this-tags ":" t)))
           (when (and (not node-level) bare-stack)
@@ -1369,7 +1368,7 @@ used for optimization."
                 :point this-point
                 :level this-level
                 :todo this-todo
-                :title (if this-title (s-trim-right this-title) "")
+                :title (or this-title "")
                 :tags this-tags
                 :planning (->> (car this-pblock)
                                (org-x-dag-parse-this-planning))
