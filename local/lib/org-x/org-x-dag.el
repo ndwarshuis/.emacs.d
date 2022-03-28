@@ -1301,7 +1301,9 @@ used for optimization."
          ;; stack vars
          bare-stack node-level bury-level
          ;; data vars
-         this-id this-level this-todo this-tags this-pblock pbeg pend acc)
+         this-id this-level this-todo this-tags this-links this-pblock pbeg pend
+         ;; return
+         acc acc-links)
     (when first-hl
       (goto-char first-hl))
     (while (looking-at line-re)
@@ -1333,7 +1335,11 @@ used for optimization."
                      pbeg (nth 1 this-pblock)
                      pend (nth 2 this-pblock)
                      this-id (org-x-dag-get-local-property pbeg pend id-prop)))
-          (setq bury-level nil)
+          (setq bury-level nil
+                this-links (or (org-x-dag-get-parent-links (nth 3 this-pblock)
+                                                        next-pos)
+                               (unless node-level
+                                 (nth 2 (car bare-stack)))))
           (when this-tags
             (setq this-tags (split-string this-tags ":")))
           (when (and (not node-level) bare-stack)
@@ -1342,20 +1348,18 @@ used for optimization."
                                  (append this-tags))))
           (-> (list
                :id this-id
-               :parents (or (org-x-dag-get-parent-links (nth 3 this-pblock)
-                                                        next-pos)
-                            (unless node-level
-                              (nth 2 (car bare-stack))))
+               :parents this-links
                :node-meta
-               (list
-                :point this-point
-                :level this-level
-                :todo this-todo
-                :title (or this-title "")
-                :tags this-tags
-                :planning (org-x-dag-parse-this-planning (nth 0 this-pblock))
-                :props (org-x-dag-get-local-properties pbeg pend pps)))
+               `(,@file-meta
+                 :point ,this-point
+                 :level ,this-level
+                 :todo ,this-todo
+                 :title ,(or this-title "")
+                 :tags ,this-tags
+                 :planning ,(org-x-dag-parse-this-planning (nth 0 this-pblock))
+                 :props ,(org-x-dag-get-local-properties pbeg pend pps)))
               (!cons acc))
+          (!cons (cons this-id this-links) acc-links)
           (setq node-level this-level))
          ;; Underneath a node but not on a node, therefore we are buried
          (node-level
@@ -1373,7 +1377,7 @@ used for optimization."
                         this-file-links))
               (!cons bare-stack)))))
       (goto-char next-pos))
-    (nreverse acc)))
+    (list (nreverse acc) acc-links)))
 
 (defun org-x-dag-buffer-nodes-to-tree (nodes)
   (cl-labels
@@ -1955,28 +1959,251 @@ used for optimization."
     (org-x-dag-bs-prefix :daily `(,n ,@ns))))
 
 (defun org-x-dag-get-file-nodes (file group)
-  (let* ((meta (list :file file
-                     :group group
-                     :category (f-base file)))
-         (def-props `(,org-x-prop-created))
-         (props (->> (pcase group
-                       (:action (list org-x-prop-parent-type
-                                      org-x-prop-time-shift
-                                      "ARCHIVE")))
-                     (append def-props)))
-         (bs-fun (pcase group
-                   (:action #'org-x-dag-bs-action)
-                   (:lifetime #'org-x-dag-bs-ltg)
-                   (:survival #'org-x-dag-bs-svg)
-                   (:endpoint #'org-x-dag-bs-epg)
-                   (:quarterly #'org-x-dag-bs-qtp)
-                   (:weekly #'org-x-dag-bs-wkp)
-                   (:daily #'org-x-dag-bs-dlp)))
-         (nodes
-          (org-x-with-file file
-            (org-x-dag-get-buffer-nodes meta org-todo-keywords-1 props))))
-    (->> (org-x-dag-buffer-nodes-to-tree nodes)
-         (-mapcat bs-fun))))
+  (-let* ((meta (list :file file
+                      :group group
+                      :category (f-base file)))
+          (def-props `(,org-x-prop-created))
+          (props (->> (pcase group
+                        (:action (list org-x-prop-parent-type
+                                       org-x-prop-time-shift
+                                       "ARCHIVE")))
+                      (append def-props)))
+          (bs-fun (pcase group
+                    (:action #'org-x-dag-bs-action)
+                    (:lifetime #'org-x-dag-bs-ltg)
+                    (:survival #'org-x-dag-bs-svg)
+                    (:endpoint #'org-x-dag-bs-epg)
+                    (:quarterly #'org-x-dag-bs-qtp)
+                    (:weekly #'org-x-dag-bs-wkp)
+                    (:daily #'org-x-dag-bs-dlp)))
+          ((nodes links)
+           (org-x-with-file file
+             (org-x-dag-get-buffer-nodes meta org-todo-keywords-1 props))))
+    (list (->> (org-x-dag-buffer-nodes-to-tree nodes)
+               (-mapcat bs-fun))
+          links)))
+
+;; network status
+
+(defun org-x-dag-id-link-group (adjlist id)
+  (-> (ht-get adjlist id)
+      (plist-get :node-meta)
+      (plist-get :hl-meta)
+      (plist-get :group)))
+
+(defun org-x-dag-plist-map (plist key fun)
+  (declare (indent 2))
+  (plist-set (funcall fun (plist-get plist key)) key))
+
+(defun org-x-dag-plist-cons (plist key x)
+  (declare (indent 2))
+  (org-x-dag-plist-map plist key
+    (lambda (xs)
+      (cons x xs))))
+
+(defmacro org-x-dag-each-links (links form)
+  (declare (indent 1))
+  `(--each links
+     (-let (((it . it-targets) it))
+       ,form)))
+
+(defmacro org-x-dag-each-link-parent (parent-ht links form)
+  (declare (indent 2))
+  `(-each links
+     (lambda (it-parent)
+       (->> (org-x-dag-bs-fmap (ht-get parent-ht it-parent) ,form)
+            (ht-set ht-parent parent)))))
+
+(defun org-x-dag-bs-error-links (msg links)
+  (->> (s-join ", " links)
+       (format "%s: %s" msg)
+       (org-x-dag-bs :error)))
+
+(defun org-x-dag-ns-toplevel (tbl adjlist links ns)
+  (let ((h (plist-get ns tbl)))
+    (org-x-dag-each-links links
+      (ht-set h it (org-x-dag-bs-error-links "Invalid links" it-targets)))
+    ns))
+
+(defun org-x-dag-ns-ltg (adjlist links ns)
+  (org-x-dag-ns-toplevel :lifetime adjlist links ns))
+
+(defun org-x-dag-ns-svg (adjlist links ns)
+  (org-x-dag-ns-toplevel :survival adjlist links ns))
+
+(defun org-x-dag-ns-epg (adjlist links ns)
+  (-let (((&plist :lifetime ht-l :endpoint ht-e) ns))
+    (org-x-dag-each-links links
+      (-let (((valid invalid)
+              (--split-with (eq :lifetime (org-x-dag-id-link-group it)) it-targets)))
+        (if invalid
+            (ht-set ht-e it (org-x-dag-bs-error-links "Invalid links" invalid))
+          (-let (((invalid valid)
+                  (--split-with (org-x-dag-bs-error-p (ht-get ht-l it)) valid)))
+            (if invalid
+                (->> invalid
+                     (org-x-dag-bs-error-links "Linked to invalid links")
+                     (ht-set ht-e it))
+              (->> (list :committed valid
+                         :fulfilled nil
+                         :planned nil)
+                   (org-x-dag-bs :valid)
+                   (ht-set ht-e it))
+              (org-x-dag-each-link-parent ht-l valid
+                (org-x-dag-plist-cons it :fulfilled parent)))))))
+    ;; TODO propagate links downward
+    ns))
+
+(defun org-x-dag-ns-qtp (adjlist links ns)
+  (-let (((&plist :lifetime ht-l :endpoint ht-e :quarterly ht-q) ns))
+    (org-x-dag-each-links links
+      (-let (((&plist :endpoint pe :lifetime pl :invalid i)
+              (--group-by (let ((g (org-x-dag-id-link-group it)))
+                            (if (member g '(:endpoint :lifetime)) g :invalid))
+                            it-targets)))
+        (if i (ht-set ht-q it (org-x-dag-bs-error-links "Invalid links" i))
+          (-let (((e- e+) (--split-with (org-x-dag-bs-error-p (ht-get ht-e it)) pe))
+                 ((l- l+) (--split-with (org-x-dag-bs-error-p (ht-get ht-l it)) pl)))
+            (if (or e- l-)
+                (->> `(,@e- ,@l-)
+                     (org-x-dag-bs-error-links "Linked to invalid links")
+                     (ht-set ht-e it))
+              (->> (list :committed `(,@e+ ,@l+) :planned nil)
+                   (org-x-dag-bs :valid)
+                   (ht-set ht-e it))
+              (org-x-dag-each-link-parent ht-e e+
+                (progn 
+                  (org-x-dag-each-link-parent ht-l (plist it :committed)
+                    (org-x-dag-plist-cons it :planned parent))
+                  (org-x-dag-plist-cons it :planned parent)))
+              (org-x-dag-each-link-parent ht-l l+
+                (org-x-dag-plist-cons it :planned parent)))))))
+    ;; TODO propagate links downward
+    ns))
+
+(defun org-x-dag-ns-wkp (adjlist links ns)
+  (-let (((&plist :weekly ht-w :quarterly ht-q) ns))
+    (org-x-dag-each-links links
+      (-let (((valid invalid)
+              (--split-with (eq :quarterly (org-x-dag-id-link-group it))
+                            it-targets)))
+        (if invalid
+            (ht-set ht-w it (org-x-dag-bs-error-links "Invalid links" invalid))
+          (-let (((invalid valid)
+                  (--split-with (org-x-dag-bs-error-p (ht-get ht-w it)) valid))
+            (if invalid
+                (->> invalid
+                     (org-x-dag-bs-error-links "Linked to invalid links")
+                     (ht-set ht-w it))
+              (->> (list :committed valid :planned nil)
+                   (org-x-dag-bs :valid)
+                   (ht-set ht-w it))
+              (org-x-dag-each-link-parent ht-q valid
+                (org-x-dag-plist-cons it :planned parent))))))))
+    ;; TODO propagate links downward
+    ns))
+
+(defun org-x-dag-ns-action (adjlist links ns)
+  (-let (((&plist :action ht-a :endpoint ht-e :lifetime ht-l :survival ht-s) ns))
+    (org-x-dag-each-links links
+      (-let (((&plist :endpoint pe :lifetime pl :survival ps :invalid i)
+              (--group-by (let ((g (org-x-dag-id-link-group it)))
+                            (if (member g '(:endpoint :lifetime :survival))
+                                g :invalid))
+                            it-targets)))
+        (if i (ht-set ht-w it (org-x-dag-bs-error-links "Invalid links" i))
+          (-let (((e- e+) (--split-with (org-x-dag-bs-error-p (ht-get ht-e it)) pe))
+                 ((l- l+) (--split-with (org-x-dag-bs-error-p (ht-get ht-l it)) pl))
+                 ((s- s+) (--split-with (org-x-dag-bs-error-p (ht-get ht-s it)) ps)))
+            (if (or e- l- s-)
+                (->> `(,@e- ,@l- ,@s-)
+                     (org-x-dag-bs-error-links "Linked to invalid links")
+                     (ht-set ht-w it))
+              (->> (list :scheduled `(,@e+ ,@l+ ,@s+) :planned nil)
+                   (org-x-dag-bs :valid)
+                   (ht-set ht-w it))
+              (org-x-dag-each-link-parent ht-e e+
+                (progn 
+                  (org-x-dag-each-link-parent ht-l (plist it :committed)
+                    (org-x-dag-plist-cons it :planned parent))
+                  (org-x-dag-plist-cons it :planned parent)))
+              (org-x-dag-each-link-parent ht-l l+
+                (org-x-dag-plist-cons it :fulfilled parent))
+              (org-x-dag-each-link-parent ht-s s+
+                (org-x-dag-plist-cons it :fulfilled parent)))))))
+    ;; TODO propagate links downward
+    ns))
+
+(defun org-x-dag-ns-daily (adjlist links ns)
+  (-let (((&plist :daily ht-d
+                  :action ht-a
+                  :quarterly ht-q
+                  :weekly ht-w)
+          ns))
+    (org-x-dag-each-links links
+      (-let (((&plist :action pa :weekly pw :invalid i)
+              (--group-by (let ((g (org-x-dag-id-link-group it)))
+                            (if (member g '(:action :weekly))
+                                g :invalid))
+                            it-targets)))
+        (if i (ht-set ht-d it (org-x-dag-bs-error-links "Invalid links" i))
+          (-let* ((as (ht-get ht-a it))
+                  (ws (ht-get ht-w it))
+                  ((w- w+) (-split-with #'org-x-dag-bs-error-p ws))
+                  ((a- a+) (-split-with #'org-x-dag-bs-error-p as)))
+            (if (or a- w-)
+                (->> `(,@a- ,@w-)
+                     (org-x-dag-bs-error-links "Linked to invalid links")
+                     (ht-set ht-d it))
+              (let ((qgoals (--mapcat (plist-get (ht-get ht-q it) :committed) w+))
+                    (agoals (--mapcat (plist-get (ht-get ht-a it) :committed) a+)))
+                (-if-let (gs (-intesection qgoals agoals))
+                    (progn
+                      (->> (list :scheduled w+
+                                 :committed gs
+                                 :active a+)
+                           (org-x-dag-bs :valid)
+                           (ht-set ht-d it))
+                      ;; TODO add the goals to their goal links? (this might be
+                      ;; useful later when displaying)
+                      (org-x-dag-each-link-parent ht-w w+
+                        (org-x-dag-plist-cons it :planned parent))
+                      (org-x-dag-each-link-parent ht-a a+
+                        (org-x-dag-plist-cons it :planned parent)))
+                  (ht-set ht-d it (org-x-dag-bs :error "Non overlapping goals")))))))))
+    ;; TODO propagate links downward
+    ns))
+
+(defun org-x-dag-get-network-status (adjlist links)
+  (cl-flet
+      ((link-group
+        (adjlist link)
+        (-> (ht-get adjlist (car id))
+            (plist-get :node-meta)
+            (plist-get :hl-meta)
+            (plist-get :group))))
+    (-let ((ns (--map (cons it (ht-create #'equal)) (list :action
+                                                          :endpoint
+                                                          :lifetime
+                                                          :survival
+                                                          :quarterly
+                                                          :weekly
+                                                          :daily)))
+           ((&plist :action a
+                    :endpoint e
+                    :lifetime l
+                    :survival s
+                    :quarterly q
+                    :weekly w
+                    :daily d)
+            links))
+      (->> (org-x-dag-ns-ltg adjlist l ns)
+           (org-x-dag-ns-svg adjlist s ns)
+           (org-x-dag-ns-epg adjlist e ns)
+           (org-x-dag-ns-qtp adjlist q ns)
+           (org-x-dag-ns-wkp adjlist w ns)
+           (org-x-dag-ns-action adjlist a ns)
+           (org-x-dag-ns-dlp adjlist d ns)))))
 
 ;;; DAG SYNCHRONIZATION/CONSTRUCTION
 
@@ -2025,11 +2252,11 @@ removed from, added to, or edited within the DAG respectively."
         (acc filedata)
         (-let* (((&plist :path :group) filedata)
                 ((acc-ids acc-filemaps acc-links) acc)
-                (ids (org-x-dag-get-file-nodes path group))
+                ((ids links) (org-x-dag-get-file-nodes path group))
                 (filemap (cons path (--map (plist-get :id it) ids))))
           `((,@ids ,@acc-ids)
-            (,filemap ,@acc-filemaps)))))
-            ;; (,@links ,@acc-links)))))
+            (,filemap ,@acc-filemaps)
+            (,@(--map (cons group it) links) ,@acc-links)))))
     (-reduce-from #'append-results nil files)))
 
 ;; TODO what about all the nodes that don't need to be updated?
