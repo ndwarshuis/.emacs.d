@@ -2168,16 +2168,26 @@ used for optimization."
     (org-x-dag-ns-with-valid ns adjlist :action links
       '((:survival) (:endpoint) (:lifetime))
       (lambda (id this-h res)
-        (-let (((&alist :survival s :endpoint e :lifetime l) res))
-          (->> (org-x-dag-bs :valid `(:committed (,@e ,@l ,@s)))
-               (ht-set this-h id))
-          (->> (--mapcat (org-x-dag-ht-get-maybe ht-e it :committed) e)
-               (org-x-dag-ht-add-links id ht-l :fulfilled))
-          (org-x-dag-ht-add-links id ht-e :fulfilled e)
+        (-let* (((&alist :survival s :endpoint e :lifetime l) res)
+                (this-ns
+                 (cond
+                  ((and s (or e l))
+                   (->> "Action has both survival and endpoint/lifetime links"
+                        (org-x-dag-bs :error)))
+                  (s
+                   (org-x-dag-bs :valid `(:committed ,s :survivalp t)))
+                  (t
+                   (org-x-dag-bs :valid `(:committed `(,@e ,@l) :survivalp nil))))))
+          (ht-set this-h this-ns)
           (org-x-dag-ht-add-links id ht-l :fulfilled l)
           (org-x-dag-ht-add-links id ht-s :fulfilled s))))
+          (org-x-dag-ht-add-links id ht-e :fulfilled e)
+          (->> (--mapcat (org-x-dag-ht-get-maybe ht-e it :committed) e)
+               (org-x-dag-ht-add-links id ht-l :fulfilled))
     ns))
 
+;; TODO check that actions that are linked here are not linked to survival
+;; goals here (since those can't be planned)
 (defun org-x-dag-ns-dlp (adjlist links ns)
   (cl-flet
       ((get-committed
@@ -2218,18 +2228,50 @@ used for optimization."
        (propagate
         (adjlist htbl id to-set)
         (--each (get-children adjlist id)
-          ;; TODO this needs to treat the node value like a functor
-          (let ((node (ht-get htbl it)))
-            (unless (org-x-dag-bs-error-p node)
-              (ht-set htbl it (org-x-dag-plist-map node :committed
-                                (lambda (x) (append x to-set)))))))))
+          (->> (-if-let (node (ht-get htbl it))
+                   (org-x-dag-bs-fmap node
+                     (org-x-dag-plist-map it :committed
+                       (lambda (x) (append x to-set))))
+                 (org-x-dag-bs :valid `(:committed ,to-set)))
+               (ht-set htbl it))
+          (propagate adjlist htbl it to-set))))
     (-let (((&alist :endpoint ht-e) ns))
       (-each (ht-keys ht-e)
         (lambda (id)
-          (let ((committed (plist-get (ht-get ht-e id) :committed)))
+          (-when-let (committed (org-x-dag-ht-get-maybe ht-e id :committed))
             (--each (get-children adjlist id)
               (propagate adjlist ht-e it committed)))))
       ns)))
+
+;; (defun org-x-dag-ht-propagate-action (adjlist ns)
+;;   (cl-labels
+;;       ((get-children
+;;         (adjlist id)
+;;         (->> (plist-get (ht-get adjlist id) :children)
+;;              (--filter (-> (ht-get adjlist it)
+;;                            (plist-get :node-meta)
+;;                            (plist-get :buffer-parent)
+;;                            (equal id)))))
+;;        (propagate
+;;         (adjlist htbl id to-set)
+;;         (--each (get-children adjlist id)
+;;           (->> (-if-let (node (ht-get htbl it))
+;;                    (org-x-dag-bs-fmap node
+;;                      (org-x-dag-plist-map it :committed
+;;                        (lambda (x) (append x to-set))))
+;;                  (org-x-dag-bs :valid `(:committed ,to-set)))
+;;                (ht-set htbl it))
+;;           (propagate adjlist htbl it to-set))))
+;;     (-let (((&alist :action ht-a) ns))
+;;       (-each (ht-keys ht-a)
+;;         (lambda (id)
+;;           (-when-let (committed (org-x-dag-ht-get-maybe ht-a id :committed))
+;;             (--each (get-children adjlist id)
+;;               (propagate adjlist ht-a it committed)))))
+;;           (-when-let (committed (org-x-dag-ht-get-maybe ht-a id :planned))
+;;             (--each (get-children adjlist id)
+;;               (propagate adjlist ht-a it committed)))))
+;;       ns)))
 
 (defun org-x-dag-get-network-status (adjlist links)
   (-let ((ns (->> '(:action :endpoint :lifetime :survival :quarterly :weekly :daily)
