@@ -2223,32 +2223,6 @@ used for optimization."
     (lambda (to-set)
       (list s-key to-set))))
 
-  ;; (cl-labels
-  ;;     ((get-children
-  ;;       (adjlist id)
-  ;;       (->> (plist-get (ht-get adjlist id) :children)
-  ;;            (--filter (-> (ht-get adjlist it)
-  ;;                          (plist-get :node-meta)
-  ;;                          (plist-get :buffer-parent)
-  ;;                          (equal id)))))
-  ;;      (propagate
-  ;;       (adjlist htbl id set-key to-set)
-  ;;       (--each (get-children adjlist id)
-  ;;         (->> (-if-let (node (ht-get htbl it))
-  ;;                  (org-x-dag-bs-fmap node
-  ;;                    (org-x-dag-plist-map it set-key
-  ;;                      (lambda (x) (append x to-set))))
-  ;;                (org-x-dag-bs :valid `(,set-key ,to-set)))
-  ;;              (ht-set htbl it))
-  ;;         (propagate adjlist htbl it set-key to-set))))
-  ;;   (let ((h (alist-get h-key ns)))
-  ;;     (-each (ht-keys h)
-  ;;       (lambda (id)
-  ;;         (-when-let (xs (org-x-dag-ht-get-maybe h id s-key))
-  ;;           (--each (get-children adjlist id)
-  ;;             (propagate adjlist h it s-key xs)))))
-  ;;     ns)))
-
 (defun org-x-dag-ht-propagate-up (adjlist h-key s-key ns)
   (cl-labels
       ((get-children
@@ -2295,6 +2269,7 @@ used for optimization."
                            (org-x-dag-plist-cons acc key link))
                          nil
                          links)))
+    ;; add all links to the network status object (ew side effects)
     (org-x-dag-ns-ltg adjlist l ns)
     (org-x-dag-ns-svg adjlist s ns)
     (org-x-dag-ns-epg adjlist e ns)
@@ -2302,6 +2277,7 @@ used for optimization."
     (org-x-dag-ns-wkp adjlist w ns)
     (org-x-dag-ns-action adjlist a ns)
     (org-x-dag-ns-dlp adjlist d ns)
+    ;; propagate network statuses across each buffer tree as needed
     (org-x-dag-ht-propagate-down adjlist :action :planned ns)
     (org-x-dag-ht-map-down adjlist :action ns
       (lambda (h id)
@@ -2322,8 +2298,8 @@ used for optimization."
     (org-x-dag-ht-propagate-down adjlist :endpoint :committed ns)
     (org-x-dag-ht-propagate-up adjlist :lifetime :fulfilled ns)
     (org-x-dag-ht-propagate-up adjlist :lifetime :planned ns)
-    (org-x-dag-ht-propagate-up adjlist :survival :planned ns)
-    (org-x-dag-ht-propagate-up adjlist :survival :fulfilled ns)))
+    (org-x-dag-ht-propagate-up adjlist :survival :fulfilled ns)
+    (org-x-dag-ht-propagate-up adjlist :survival :planned ns)))
 
 
 ;;; DAG SYNCHRONIZATION/CONSTRUCTION
