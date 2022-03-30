@@ -2018,40 +2018,10 @@ used for optimization."
        ,@body
        (!cdr links))))
 
-;; (defmacro org-x-dag-each-link-parent (parent-ht links form)
-;;   (declare (indent 2))
-;;   `(-each ,links
-;;      (lambda (it-parent)
-;;        (ht-set ,parent-ht it-parent))))
-
 (defun org-x-dag-bs-error-links (msg links)
   (->> (s-join ", " links)
        (format "%s: %s" msg)
        (org-x-dag-bs :error)))
-
-;; ;; TODO need to make two versions of this, one to propogogate the entire
-;; ;; status, and another to propogate the entire key
-;; ;; both cases will need to stop when they encounted a child that is already
-;; ;; 'filled' (eg either already an error or already has the key)
-;; (defun org-x-dag-ht-propagate-status (adjlist htbl ids)
-;;   (cl-labels
-;;       ((get-children
-;;         (adjlist id)
-;;         (->> (plist-get (ht-get adjlist id) :childre)
-;;              (--filter (-> (ht-get adjlist it)
-;;                            (plist-get :node-meta)
-;;                            (plist-get :buffer-parent)
-;;                            (equal id)))))
-;;        (propagate
-;;         (adjlist htbl id to-set)
-;;         (--each (get-children adjlist id)
-;;           (unless (ht-get htbl id)
-;;             (ht-set htbl id to-set)))))
-;;     (-each ids
-;;       (lambda (id)
-;;         (--each (get-children adjlist id)
-;;           (propagate adjlist htbl it id))))
-;;     htbl))
 
 (defun org-x-dag-id-is-buffer-leaf (adjlist id)
   (->> (plist-get (ht-get adjlist id) :children)
