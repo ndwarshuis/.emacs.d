@@ -2178,12 +2178,12 @@ used for optimization."
                    (org-x-dag-bs :valid `(:committed ,s :survivalp t)))
                   (t
                    (org-x-dag-bs :valid `(:committed `(,@e ,@l) :survivalp nil))))))
-          (ht-set this-h this-ns)
+          (ht-set this-h id this-ns)
           (org-x-dag-ht-add-links id ht-l :fulfilled l)
-          (org-x-dag-ht-add-links id ht-s :fulfilled s))))
+          (org-x-dag-ht-add-links id ht-s :fulfilled s)
           (org-x-dag-ht-add-links id ht-e :fulfilled e)
           (->> (--mapcat (org-x-dag-ht-get-maybe ht-e it :committed) e)
-               (org-x-dag-ht-add-links id ht-l :fulfilled))
+               (org-x-dag-ht-add-links id ht-l :fulfilled)))))
     ns))
 
 ;; TODO check that actions that are linked here are not linked to survival
@@ -2216,7 +2216,7 @@ used for optimization."
                      (ht-set ht-d id)))))))
       ns)))
 
-(defun org-x-dag-ht-propagate-endpoint (adjlist ns)
+(defun org-x-dag-ht-propagate-down (adjlist h-key s-key ns)
   (cl-labels
       ((get-children
         (adjlist id)
@@ -2226,52 +2226,54 @@ used for optimization."
                            (plist-get :buffer-parent)
                            (equal id)))))
        (propagate
-        (adjlist htbl id to-set)
+        (adjlist htbl id set-key to-set)
         (--each (get-children adjlist id)
           (->> (-if-let (node (ht-get htbl it))
                    (org-x-dag-bs-fmap node
-                     (org-x-dag-plist-map it :committed
+                     (org-x-dag-plist-map it set-key
                        (lambda (x) (append x to-set))))
-                 (org-x-dag-bs :valid `(:committed ,to-set)))
+                 (org-x-dag-bs :valid `(,set-key ,to-set)))
                (ht-set htbl it))
-          (propagate adjlist htbl it to-set))))
-    (-let (((&alist :endpoint ht-e) ns))
-      (-each (ht-keys ht-e)
+          (propagate adjlist htbl it set-key to-set))))
+    (let ((h (alist-get h-key ns)))
+      (-each (ht-keys h)
         (lambda (id)
-          (-when-let (committed (org-x-dag-ht-get-maybe ht-e id :committed))
+          (-when-let (xs (org-x-dag-ht-get-maybe h id s-key))
             (--each (get-children adjlist id)
-              (propagate adjlist ht-e it committed)))))
+              (propagate adjlist h it s-key xs)))))
       ns)))
 
-;; (defun org-x-dag-ht-propagate-action (adjlist ns)
-;;   (cl-labels
-;;       ((get-children
-;;         (adjlist id)
-;;         (->> (plist-get (ht-get adjlist id) :children)
-;;              (--filter (-> (ht-get adjlist it)
-;;                            (plist-get :node-meta)
-;;                            (plist-get :buffer-parent)
-;;                            (equal id)))))
-;;        (propagate
-;;         (adjlist htbl id to-set)
-;;         (--each (get-children adjlist id)
-;;           (->> (-if-let (node (ht-get htbl it))
-;;                    (org-x-dag-bs-fmap node
-;;                      (org-x-dag-plist-map it :committed
-;;                        (lambda (x) (append x to-set))))
-;;                  (org-x-dag-bs :valid `(:committed ,to-set)))
-;;                (ht-set htbl it))
-;;           (propagate adjlist htbl it to-set))))
-;;     (-let (((&alist :action ht-a) ns))
-;;       (-each (ht-keys ht-a)
-;;         (lambda (id)
-;;           (-when-let (committed (org-x-dag-ht-get-maybe ht-a id :committed))
-;;             (--each (get-children adjlist id)
-;;               (propagate adjlist ht-a it committed)))))
-;;           (-when-let (committed (org-x-dag-ht-get-maybe ht-a id :planned))
-;;             (--each (get-children adjlist id)
-;;               (propagate adjlist ht-a it committed)))))
-;;       ns)))
+(defun org-x-dag-ht-propagate-up (adjlist h-key s-key ns)
+  (cl-labels
+      ((get-children
+        (adjlist id)
+        (->> (plist-get (ht-get adjlist id) :children)
+             (--filter (-> (ht-get adjlist it)
+                           (plist-get :node-meta)
+                           (plist-get :buffer-parent)
+                           (equal id)))))
+       (propagate
+        (htbl id)
+        (-let* ((cs (get-children adjlist id))
+                (rs (--map (propagate htbl it) cs))
+                ;; TODO there isn't a better way to do this? (seems like I'm
+                ;; accessing either/maybe types too many times)
+                ((n* rs*) (-if-let (n (ht-get htbl id))
+                              (pcase n
+                                (`(:error ,_) (list n rs))
+                                (`(:valid ,v) 
+                                 (let ((p (org-x-dag-plist-map v s-key
+                                            (lambda (x) (append x rs)))))
+                                   (list (org-x-dag-bs :valid p)
+                                         (plist-get s-key p)))))
+                            (list (org-x-dag-bs :valid `(,s-key ,rs))
+                                  rs))))
+          (ht-set htbl id n*)
+          rs*)))
+    (let ((h (alist-get h-key ns)))
+      (--each (ht-keys h)
+        (propagate h it )))
+    ns))
 
 (defun org-x-dag-get-network-status (adjlist links)
   (-let ((ns (->> '(:action :endpoint :lifetime :survival :quarterly :weekly :daily)
@@ -2304,7 +2306,13 @@ used for optimization."
          (org-x-dag-ns-wkp adjlist w)
          (org-x-dag-ns-action adjlist a)
          (org-x-dag-ns-dlp adjlist d)
-         (org-x-dag-ht-propagate-endpoint adjlist))))
+         (org-x-dag-ht-propagate-down adjlist :action :planned)
+         (org-x-dag-ht-propagate-down adjlist :action :committed)
+         (org-x-dag-ht-propagate-down adjlist :endpoint :committed)
+         (org-x-dag-ht-propagate-up adjlist :lifetime :fulfilled)
+         (org-x-dag-ht-propagate-up adjlist :lifetime :planned)
+         (org-x-dag-ht-propagate-up adjlist :survival :planned)
+         (org-x-dag-ht-propagate-up adjlist :survival :fulfilled))))
 
 
 ;;; DAG SYNCHRONIZATION/CONSTRUCTION
