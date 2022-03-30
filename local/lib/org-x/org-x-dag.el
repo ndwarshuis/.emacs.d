@@ -183,13 +183,10 @@
 
 ;; variables to store state
 
-(defun org-x-dag-create (d m fis il if s c fs)
+(defun org-x-dag-create (d fis fls c fs)
   (list :dag d
-        :id->meta m
-        :id->status s
         :file->ids fis
-        :illegal-local il
-        :illegal-foreign if
+        :file->links fls
         :current-date c
         :files fs))
 
@@ -223,9 +220,6 @@
 
 (defun org-x-dag-empty ()
   (org-x-dag-create (dag-empty)
-                    (ht-create #'equal)
-                    (ht-create #'equal)
-                    (ht-create #'equal)
                     (ht-create #'equal)
                     (ht-create #'equal)
                     (org-x-dag-current-date)
@@ -2265,8 +2259,9 @@ used for optimization."
                   :quarterly q
                   :weekly w
                   :daily d)
-          (--reduce-from (-let (((key . link) it))
-                           (org-x-dag-plist-cons acc key link))
+          (--reduce-from (-let* (((group . links) it)
+                                 (acc-links (plist-get acc group)))
+                           (plist-put acc group (append acc-links links)))
                          nil
                          links)))
     ;; add all links to the network status object (ew side effects)
@@ -2350,10 +2345,10 @@ removed from, added to, or edited within the DAG respectively."
         (-let* (((&plist :path :group) filedata)
                 ((acc-ids acc-filemaps acc-links) acc)
                 ((ids links) (org-x-dag-get-file-nodes path group))
-                (filemap (cons path (--map (plist-get :id it) ids))))
+                (filemap (cons path (--map (plist-get it :id) ids))))
           `((,@ids ,@acc-ids)
             (,filemap ,@acc-filemaps)
-            (,@(--map (cons group it) links) ,@acc-links)))))
+            ((,path ,group ,@links) ,@acc-links)))))
     (-reduce-from #'append-results nil files)))
 
 ;; TODO what about all the nodes that don't need to be updated?
@@ -2450,34 +2445,20 @@ removed from, added to, or edited within the DAG respectively."
 TO-REMOVE, TO-INSERT, and TO-UPDATE are lists of files to remove
 from, add to, and update with the DAG. FILE-STATE is a nested
 plist holding the files to be used in the DAG."
-  (-let* (((&plist :id->meta
-                   :file->ids
-                   :illegal-foreign if
-                   :illegal-local il
-                   :id->status)
-           org-x-dag)
+  (-let* (((&plist :file->links) org-x-dag)
           (files2rem (append to-update to-remove))
           (files2ins (append to-update to-insert))
           (ids2rem (org-x-dag-files->ids files2rem))
           ((ids2ins fms2ins links2ins) (org-x-dag-read-files files2ins)))
-    ;; (org-x-dag-update-ht ids2rem meta2ins id->meta)
     ;; (org-x-dag-update-ht files2rem fms2ins file->ids)
+    (org-x-dag-update-ht files2rem links2ins file->links)
     (org-x-dag-update-dag ids2ins ids2rem)
     (plist-put org-x-dag :files file-state)
-    ;; TODO not sure where to put this
     (let ((adjlist (dag-get-adjacency-list (plist-get org-x-dag :dag))))
-      (->> (org-x-dag-get-network-status adjlist links2ins)
+      (->> (plist-get org-x-dag :file->links)
+           (ht-values)
+           (org-x-dag-get-network-status adjlist)
            (plist-put org-x-dag :netstat)))))
-    ;; update illegal links after updating the adjlist, since we need that to
-    ;; figure out which links are illegal
-    ;; (-let (((illegal-foreign illegal-local) (org-x-dag-filter-links links2ins)))
-    ;;   (org-x-dag-update-ht files2rem illegal-foreign if)
-    ;;   (org-x-dag-update-ht files2rem illegal-local il))
-    ;; update node-level status after figuring out which are invalid via links
-    ;; (let ((status2ins (->> (-map #'car ids2ins)
-    ;;                        (--map (cons it (org-x-dag-id->0th-status it))))))
-    ;;   (org-x-dag-update-ht ids2rem status2ins id->status))))
-    
 
 (defun org-x-dag-sync (&optional force)
   "Sync the DAG with files from `org-x-dag-get-files'.
