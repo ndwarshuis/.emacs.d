@@ -301,14 +301,36 @@ that file as it currently sits on disk.")
 
 ;; id properties
 
-(defun org-x-dag-id->metaprop (id prop)
-  (-> (org-x-dag->metatable)
+(defun org-x-dag-id->node-meta (id)
+  (-> (org-x-dag->adjacency-list)
       (ht-get id)
+      (plist-get :node-meta)))
+
+(defun org-x-dag-id->hl-meta (id)
+  (-> (org-x-dag-id->node-meta id)
+      (plist-get :hl-meta)))
+
+(defun org-x-dag-id->bs (id)
+  (-> (org-x-dag-id->node-meta id)
+      (plist-get :buffer-status)))
+
+(defun org-x-dag-id->buffer-parent (id)
+  (-> (org-x-dag-id->node-meta id)
+      (plist-get :buffer-parent)))
+
+(defun org-x-dag-id->ns (id)
+  (let ((nst (plist-get org-x-dag :netstat)))
+    (-> (org-x-dag-id->hl-meta-prop id :group)
+        (alist-get nst)
+        (ht-get id))))
+
+(defun org-x-dag-id->hl-meta-prop (id prop)
+  (-> (org-x-dag-id->hl-meta id)
       (plist-get prop)))
 
 (defun org-x-dag-id->file (id)
   "Return file for ID."
-  (org-x-dag-id->metaprop id :file))
+  (org-x-dag-id->hl-meta-prop id :file))
 
 (defun org-x-dag-id->file-group (id)
   "Return file group for ID.
@@ -323,23 +345,23 @@ Return one of seven values: :lifetime, :survival, :endpoint,
 
 (defun org-x-dag-id->point (id)
   "Return point for ID."
-  (org-x-dag-id->metaprop id :point))
+  (org-x-dag-id->hl-meta-prop id :point))
 
 (defun org-x-dag-id->level (id)
   "Return level for ID."
-  (org-x-dag-id->metaprop id :level))
+  (org-x-dag-id->hl-meta-prop id :level))
 
 (defun org-x-dag-id->todo (id)
   "Return todo keyword for ID."
-  (org-x-dag-id->metaprop id :todo))
+  (org-x-dag-id->hl-meta-prop id :todo))
 
 (defun org-x-dag-id->title (id)
   "Return title for ID."
-  (org-x-dag-id->metaprop id :title))
+  (org-x-dag-id->hl-meta-prop id :title))
 
 (defun org-x-dag-id->local-tags (id)
   "Return local tags for ID."
-  (org-x-dag-id->metaprop id :tags))
+  (org-x-dag-id->hl-meta-prop id :tags))
 
 (defun org-x-dag-id->tags (parent-tags id)
   "Return all tags for ID.
@@ -353,7 +375,7 @@ highest in the tree."
   (cl-labels
       ((ascend
         (id tags)
-        (-if-let (parent (org-x-dag-id->metaprop id :buffer-parent))
+        (-if-let (parent (org-x-dag-id->hl-meta-prop id :buffer-parent))
             ;; tags in the front of the list have precedence over latter tags,
             ;; so putting parent tags at the end means child tags have
             ;; precedence
@@ -396,7 +418,7 @@ highest in the tree."
 
 (defun org-x-dag-id->buffer-parent (id)
   "Return the buffer parent id (if any) of ID."
-  (org-x-dag-id->metaprop id :buffer-parent))
+  (org-x-dag-id->hl-meta-prop id :buffer-parent))
 
 (defun org-x-dag-id->split-parents-2 (id)
   "Return the buffer and non-buffer parents of ID.
@@ -605,12 +627,11 @@ be uncommitted if it is also incubated."
 
 ;; files to ids
 
-(defun org-x-dag-files->ids (files)
-  (let ((filemap (plist-get org-x-dag :file->ids)))
-    (--mapcat (ht-get filemap it) files)))
-
 (defun org-x-dag-file->ids (file)
-  (org-x-dag-files->ids `(,file)))
+  (ht-get (plist-get org-x-dag :file->ids) file))
+
+(defun org-x-dag-files->ids (files)
+  (-mapcat #'org-x-dag-file->ids files))
 
 (defun org-x-dag->epg-ids ()
   (org-x-dag-file->ids (org-x-get-endpoint-goal-file)))
@@ -2445,12 +2466,12 @@ removed from, added to, or edited within the DAG respectively."
 TO-REMOVE, TO-INSERT, and TO-UPDATE are lists of files to remove
 from, add to, and update with the DAG. FILE-STATE is a nested
 plist holding the files to be used in the DAG."
-  (-let* (((&plist :file->links) org-x-dag)
+  (-let* (((&plist :file->ids :file->links) org-x-dag)
           (files2rem (append to-update to-remove))
           (files2ins (append to-update to-insert))
           (ids2rem (org-x-dag-files->ids files2rem))
           ((ids2ins fms2ins links2ins) (org-x-dag-read-files files2ins)))
-    ;; (org-x-dag-update-ht files2rem fms2ins file->ids)
+    (org-x-dag-update-ht files2rem fms2ins file->ids)
     (org-x-dag-update-ht files2rem links2ins file->links)
     (org-x-dag-update-dag ids2ins ids2rem)
     (plist-put org-x-dag :files file-state)
@@ -2526,7 +2547,7 @@ encountered will be returned."
     'mouse-face 'highlight))
 
 (defun org-x-dag-id->formatted-level (id)
-  (-> (org-x-dag-id->metaprop id :level)
+  (-> (org-x-dag-id->hl-meta-prop id :level)
       (org-reduced-level)
       (make-string ?\s)))
 
@@ -2695,9 +2716,9 @@ except it ignores inactive timestamps."
          (b (or (get-file-buffer f) (find-file-noselect f))))
     (set-marker (make-marker) p b)))
 
-(defun org-x-dag-format-tag-node (category tags id)
-  ;; ASSUME I don't use subtree-level categories
+(defun org-x-dag-format-tag-node (tags id)
   (-let* ((tags* (org-x-dag-prepare-tags tags))
+          (category (org-x-dag-id->hl-meta-prop id :category))
           (todo-state (org-x-dag-id->todo id))
           ;; TODO the only reason this format thing is here is to satisfy
           ;; `org-agenda-format-item' (which I should probably just rewrite)
@@ -2705,6 +2726,8 @@ except it ignores inactive timestamps."
           (level (org-x-dag-id->formatted-level id))
           (marker (org-agenda-new-marker (org-x-dag-id->marker id)))
           ((ts . ts-type) (org-x-dag-id->agenda-timestamp id))
+          ;; NOTE this depends on the buffer position only when using
+          ;; breadcrumbs (which I never do)
           (item (org-agenda-format-item "" head level category tags*))
           (priority (org-get-priority item)))
     (-> (org-x-dag-add-default-props item id)
@@ -2868,7 +2891,7 @@ except it ignores inactive timestamps."
   (org-x-headline-has-timestamp org-closed-time-regexp want-time))
 
 (defun org-x-dag-id->planning-timestamp (which id)
-  (-some->> (org-x-dag-id->metaprop id :planning)
+  (-some->> (org-x-dag-id->hl-meta-prop id :planning)
     (org-ml-get-property which)))
 
 (defun org-x-dag-id->planning-datetime (which id)
@@ -2880,7 +2903,7 @@ except it ignores inactive timestamps."
     (org-ml-time-to-unixtime)))
 
 (defun org-x-dag-id->node-property (prop id)
-  (alist-get prop (org-x-dag-id->metaprop id :props) nil nil #'equal))
+  (alist-get prop (org-x-dag-id->hl-meta-prop id :props) nil nil #'equal))
 
 (defun org-x-dag-id->node-property-equal-p (prop value id)
   (equal (org-x-dag-id->node-property prop id) value))
@@ -3195,27 +3218,36 @@ except it ignores inactive timestamps."
 (defun org-x-dag-scan-tasks ()
   (cl-flet
       ((format-key
-        (category is-standalone key)
-        (let ((tags (org-x-dag-id->tags nil key)))
-          (unless (or (member org-x-tag-incubated tags)
-                      ;; (not (eq (cadr (org-x-dag-id->goal-status 'current key)) :planned))
-                      (org-x-dag-id->planning-timestamp :scheduled key)
-                      (org-x-dag-id->planning-timestamp :deadline key))
-            (let* ((s (org-x-dag-id->task-status key))
-                   (p (alist-get s org-x-headline-task-status-priorities)))
-              (unless (= p -1)
-                (-> (org-x-dag-format-tag-node category tags key)
-                    (org-add-props nil
-                        'x-is-standalone is-standalone
-                        'x-status s))))))))
-    (org-x-dag-with-files (org-x-get-action-files)
-        (org-x-dag-id->is-toplevel-p it)
-      (-if-let (project-tasks (org-x-dag-get-task-nodes
-                                  (lambda (it) (not (member (org-x-dag-id->todo it)
-                                                       (list org-x-kw-canc org-x-kw-hold))))
-                                  it))
-          (--map (format-key it-category nil it) project-tasks)
-        (list (format-key it-category t it))))))
+        (id s)
+        (-let (((_ sched dead) s))
+          (pcase (org-x-dag-id->ns id)
+            (`(:valid ,ns)
+             (-let (((&plist :committed c) ns))
+               (when (and (not sched) (not dead) c)
+                 (let ((tags (org-x-dag-id->tags nil id))
+                       (bp (org-x-dag-id->buffer-parent id)))
+                   (-> (org-x-dag-format-tag-node tags id)
+                       (org-add-props nil
+                           'x-is-standalone (not bp)
+                           'x-status :task-active))))))))))
+    (->> (org-x-dag->action-files)
+         (org-x-dag-files->ids)
+         (--reduce-from (pcase (org-x-dag-id->bs it)
+                          (`(:valid (:sp-task :task-active ,s))
+                           (-if-let (new (format-key it s))
+                               (cons new acc)
+                             acc))
+                          (_ acc))
+                        nil))))
+                               
+    ;; (org-x-dag-with-files (org-x-dag->action-files)
+    ;;     (org-x-dag-id->is-toplevel-p it)
+    ;;   (-if-let (project-tasks (org-x-dag-get-task-nodes
+    ;;                               (lambda (it) (not (member (org-x-dag-id->todo it)
+    ;;                                                    (list org-x-kw-canc org-x-kw-hold))))
+    ;;                               it))
+    ;;       (--map (format-key it-category nil it) project-tasks)
+    ;;     (list (format-key it-category t it))))))
 
 ;; TODO wetter than Prince's dreams
 (defun org-x-dag-scan-tasks-with-goals ()
