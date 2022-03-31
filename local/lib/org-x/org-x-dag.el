@@ -416,10 +416,6 @@ highest in the tree."
   (->> (plist-get org-x-dag :dag)
        (dag-get-children id)))
 
-(defun org-x-dag-id->buffer-parent (id)
-  "Return the buffer parent id (if any) of ID."
-  (org-x-dag-id->hl-meta-prop id :buffer-parent))
-
 (defun org-x-dag-id->split-parents-2 (id)
   "Return the buffer and non-buffer parents of ID.
 
@@ -1330,7 +1326,7 @@ used for optimization."
       ;; headline if the parent also has a keyword.
       (setq this-point (car (match-data t))
             this-level (length (match-string 1))
-            this-todo (match-string 2)
+            this-todo (match-string-no-properties 2)
             this-title (match-string 3)
             this-tags (match-string-no-properties 4)
             next-pos (or (org-x-dag-next-headline) (point-max)))
@@ -1367,9 +1363,11 @@ used for optimization."
                :node-meta
                `(,@file-meta
                  :point ,this-point
+                 :effort ,(when this-title
+                            (get-text-property 0 'effort this-title))
                  :level ,this-level
                  :todo ,this-todo
-                 :title ,(or this-title "")
+                 :title ,(if this-title (substring-no-properties this-title) "")
                  :tags ,this-tags
                  :planning ,(org-x-dag-parse-this-planning (nth 0 this-pblock))
                  :props ,(org-x-dag-get-local-properties pbeg pend pps)))
@@ -1608,7 +1606,7 @@ used for optimization."
          (child-bss
           (org-x-dag-bs-error-kw "Project action" it-todo))
          (t
-          task-default))))))
+          (org-x-dag-bs :valid task-default)))))))
 
 (defun org-x-dag-node-data-is-iterator-p (node-data)
   (-let (((&plist :props) node-data))
@@ -2720,9 +2718,14 @@ except it ignores inactive timestamps."
   (-let* ((tags* (org-x-dag-prepare-tags tags))
           (category (org-x-dag-id->hl-meta-prop id :category))
           (todo-state (org-x-dag-id->todo id))
+          ;; (todo-state (--> (org-x-dag-id->todo id)
+          ;;                  (org-add-props it nil
+          ;;                    'face (org-get-todo-face it))))
           ;; TODO the only reason this format thing is here is to satisfy
           ;; `org-agenda-format-item' (which I should probably just rewrite)
-          (head (format "%s %s" todo-state (org-x-dag-id->title id)))
+          (effort (org-x-dag-id->hl-meta-prop id :effort))
+          (head (-> (format "%s %s" todo-state (org-x-dag-id->title id))
+                    (org-add-props nil 'effort effort)))
           (level (org-x-dag-id->formatted-level id))
           (marker (org-agenda-new-marker (org-x-dag-id->marker id)))
           ((ts . ts-type) (org-x-dag-id->agenda-timestamp id))
@@ -3219,7 +3222,7 @@ except it ignores inactive timestamps."
   (cl-flet
       ((format-key
         (id s)
-        (-let (((_ sched dead) s))
+        (-let (((todo sched dead) s))
           (pcase (org-x-dag-id->ns id)
             (`(:valid ,ns)
              (-let (((&plist :committed c) ns))
@@ -3229,16 +3232,20 @@ except it ignores inactive timestamps."
                    (-> (org-x-dag-format-tag-node tags id)
                        (org-add-props nil
                            'x-is-standalone (not bp)
-                           'x-status :task-active))))))))))
-    (->> (org-x-dag->action-files)
-         (org-x-dag-files->ids)
-         (--reduce-from (pcase (org-x-dag-id->bs it)
-                          (`(:valid (:sp-task :task-active ,s))
-                           (-if-let (new (format-key it s))
-                               (cons new acc)
-                             acc))
-                          (_ acc))
-                        nil))))
+                           'x-status :active))))))))))
+    ;; TODO this is silly and it adds 0.1 seconds to this function's runtime;
+    ;; it is only needed to get the todo keyword the right color
+    (with-temp-buffer
+      (org-mode)
+      (->> (org-x-dag->action-files)
+           (org-x-dag-files->ids)
+           (--reduce-from (pcase (org-x-dag-id->bs it)
+                            (`(:valid (:sp-task :task-active ,s))
+                             (-if-let (new (format-key it s))
+                                 (cons new acc)
+                               acc))
+                            (_ acc))
+                          nil)))))
                                
     ;; (org-x-dag-with-files (org-x-dag->action-files)
     ;;     (org-x-dag-id->is-toplevel-p it)
