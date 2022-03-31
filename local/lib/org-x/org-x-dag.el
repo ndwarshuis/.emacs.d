@@ -1549,7 +1549,7 @@ used for optimization."
               (task-default `(:sp-task :task-active (,it-todo ,sched ,dead))))
         (cond
          ((equal it-todo org-x-kw-hold)
-          (new-proj :proj-held))
+          (new-proj '(:proj-held)))
          ((and sched child-bss)
           (org-x-dag-bs :error "Projects cannot be scheduled"))
          ((equal it-todo org-x-kw-todo)
@@ -1592,16 +1592,17 @@ used for optimization."
                    `(:sp-iter :iter-complete ,_))
                (org-x-dag-bs :error "Active projects must have at least one active child"))
               (`(:sp-proj . ,s) (new-proj s))
-              (`(:sp-iter :iter-active ,_) (new-proj :proj-active))
-              (`(:sp-iter :iter-empty) (new-proj :proj-stuck))
+              (`(:sp-iter :iter-active ,_) (new-proj '(:proj-active)))
+              (`(:sp-iter :iter-empty) (new-proj '(:proj-stuck)))
               (`(:sp-task :task-active (,c-todo ,c-sched ,_))
                (cond
                 ((equal c-todo org-x-kw-todo) (->> (if c-sched :proj-active
                                                      :proj-stuck)
+                                                   (list)
                                                    (new-proj)))
-                ((equal c-todo org-x-kw-next) (new-proj :proj-active))
-                ((equal c-todo org-x-kw-wait) (new-proj :proj-wait))
-                ((equal c-todo org-x-kw-hold) (new-proj :proj-hold))
+                ((equal c-todo org-x-kw-next) (new-proj '(:proj-active)))
+                ((equal c-todo org-x-kw-wait) (new-proj '(:proj-wait)))
+                ((equal c-todo org-x-kw-hold) (new-proj '(:proj-hold)))
                 (t (org-x-dag-bs-error-kw "Task action" c-todo)))))))
          (child-bss
           (org-x-dag-bs-error-kw "Project action" it-todo))
@@ -3148,29 +3149,33 @@ except it ignores inactive timestamps."
 
 (defun org-x-dag-scan-projects ()
   (cl-flet*
-      ((format-result
-        (cat result)
-        (-let* (((&plist :key :status :tags) result)
-                (priority (alist-get status org-x-project-status-priorities)))
-          (when (>= priority 0)
-            (-> (org-x-dag-format-tag-node cat tags key)
-                (org-add-props nil
-                    'x-toplevelp (org-x-dag-id->is-toplevel-p key)
-                    'x-status status
-                    'x-priority priority)))))
-       (format-key
-        (cat key)
-        (let ((tags (org-x-dag-id->tags nil key)))
-          ;; TODO don't hardcode these things
-          (unless (or (not (eq (cadr (org-x-dag-id->goal-status 'current key)) :planned))
-                      (org-x-dag-id->is-iterator-p key))
-            (-some->> (org-x-dag-id->buffer-children key)
-              (org-x-dag-headline-get-project-status key tags)
-              (--map (format-result cat it)))))))
-    (org-x-dag-with-files (org-x-dag->action-files)
-        (and (org-x-dag-id->is-toplevel-p it)
-             (not (org-x-dag-id->is-done-p it)))
-      (format-key it-category it))))
+      ((format-key
+        (id status-data)
+        ;; NOTE in the future there might be more than just the car to this
+        (let ((status (car status-data)))
+          (unless (eq status :proj-complete)
+            (pcase (org-x-dag-id->ns id)
+              (`(:valid ,v)
+               (when (plist-get v :committed)
+                 (let ((tags (org-x-dag-id->tags nil id))
+                       (priority (cl-case status
+                                   (:proj-active 4)
+                                   (:proj-wait 3)
+                                   (:proj-hold 2)
+                                   (:proj-stuck 1))))
+                   (-> (org-x-dag-format-tag-node tags id)
+                       (org-add-props nil
+                           'x-toplevelp (org-x-dag-id->is-toplevel-p id)
+                           'x-status status
+                           'x-priority priority))))))))))
+    (with-temp-buffer
+      (org-mode)
+      (->> (org-x-dag->action-files)
+           (org-x-dag-files->ids)
+           (--map (pcase (org-x-dag-id->bs it)
+                    (`(:valid (:sp-proj . ,s))
+                     (format-key it s))))
+           (-non-nil)))))
 
 (defun org-x-dag--item-add-goal-ids (item ids)
   (if ids
