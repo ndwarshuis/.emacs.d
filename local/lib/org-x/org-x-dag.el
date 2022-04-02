@@ -249,17 +249,6 @@ that file as it currently sits on disk.")
 
 ;; functions to construct nodes within state
 
-(defun org-x-dag-build-meta (file point level todo title tags planning props parent)
-  (list :file file
-        :point point
-        :level level
-        :todo todo
-        :title title
-        :tags tags
-        :planning planning
-        :props props
-        :buffer-parent parent))
-
 ;; state lookup functions
 ;;
 ;; all functions with `org-x-dag->' or `org-x-dag-id->' depend on the value of
@@ -315,7 +304,7 @@ that file as it currently sits on disk.")
       (plist-get :buffer-status)))
 
 (defun org-x-dag-id->buffer-parent (id)
-  (-> (org-x-dag-id->node-meta id)
+  (-> (org-x-dag-id->hl-meta id)
       (plist-get :buffer-parent)))
 
 (defun org-x-dag-id->ns (id)
@@ -375,7 +364,7 @@ highest in the tree."
   (cl-labels
       ((ascend
         (id tags)
-        (-if-let (parent (org-x-dag-id->hl-meta-prop id :buffer-parent))
+        (-if-let (parent (org-x-dag-id->buffer-parent id))
             ;; tags in the front of the list have precedence over latter tags,
             ;; so putting parent tags at the end means child tags have
             ;; precedence
@@ -1300,19 +1289,27 @@ used for optimization."
     (when (and (< (point) prop-beg) (looking-at org-planning-line-re))
       (org-element-planning-parser prop-beg))))
 
+(defun org-x-dag-nreverse-tree (tree)
+  (--each tree
+    (setcdr it (org-x-dag-nreverse-tree (cdr it))))
+  (nreverse tree))
+
 (defun org-x-dag-get-buffer-nodes (file-meta kws target-props)
   (goto-char (point-min))
   (let* ((line-re (org-x-dag-line-regexp kws))
-         (first-hl (org-x-dag-next-headline))
-         ;; If not on a headline, check for a property drawer with links in it
-         (this-file-links (unless (= ?* (following-char))
-                            (org-x-dag-get-parent-links nil first-hl)))
          (pps (--map (cons it (org-re-property it nil t)) target-props))
          (id-prop (org-re-property "ID" nil t))
+         (first-hl (unless (= ?* (following-char))
+                     (org-x-dag-next-headline)))
+         ;; If not on a headline, check for a property drawer with links in it
+         (this-file-links (when first-hl
+                            (org-x-dag-get-parent-links nil first-hl)))
          ;; stack vars
-         bare-stack node-level bury-level
+         bare-stack node-stack bury-level
          ;; data vars
-         this-id this-level this-todo this-tags this-links this-pblock pbeg pend
+         this-id this-level this-todo this-tags this-links this-pblock
+         this-parent this-buffer-parent
+         pbeg pend
          ;; return
          acc acc-links)
     (when first-hl
@@ -1333,9 +1330,9 @@ used for optimization."
       (unless (and bury-level (< bury-level this-level))
         ;; Adjust the stack so that the top headline is the parent of the
         ;; current headline
-        (when (and node-level (<= this-level node-level))
-          (setq node-level nil))
-        (unless node-level
+        (while (and node-stack (<= this-level (nth 0 (car node-stack))))
+          (!cdr node-stack))
+        (unless node-stack
           (while (and bare-stack (<= this-level (nth 0 (car bare-stack))))
             (!cdr bare-stack)))
         ;; Add the current headline to accumulator if it is a node, but only if
@@ -1347,41 +1344,50 @@ used for optimization."
                      pend (nth 2 this-pblock)
                      this-id (org-x-dag-get-local-property pbeg pend id-prop)))
           (setq bury-level nil
+                this-buffer-parent (nth 2 (car node-stack))
                 this-links (or (org-x-dag-get-parent-links (nth 3 this-pblock)
                                                         next-pos)
-                               (unless node-level
+                               (unless node-stack
                                  (nth 2 (car bare-stack)))))
           (when this-tags
             (setq this-tags (split-string this-tags ":")))
-          (when (and (not node-level) bare-stack)
+          (when (and (not node-stack) bare-stack)
             (setq this-tags (->> (car bare-stack)
                                  (nth 1)
                                  (append this-tags))))
-          (-> (list
-               :id this-id
-               :parents this-links
-               :node-meta
-               `(,@file-meta
-                 :point ,this-point
-                 :effort ,(when this-title
-                            (get-text-property 0 'effort this-title))
-                 :level ,this-level
-                 :todo ,this-todo
-                 :title ,(if this-title (substring-no-properties this-title) "")
-                 :tags ,this-tags
-                 :planning ,(org-x-dag-parse-this-planning (nth 0 this-pblock))
-                 :props ,(org-x-dag-get-local-properties pbeg pend pps)))
-              (!cons acc))
+          (->> (list :point this-point
+                     :buffer-parent this-buffer-parent
+                     :effort (when this-title
+                               (get-text-property 0 'effort this-title))
+                     :level this-level
+                     :todo this-todo
+                     :title (if this-title (substring-no-properties this-title) "")
+                     :tags this-tags
+                     :planning (org-x-dag-parse-this-planning (nth 0 this-pblock))
+                     :props (org-x-dag-get-local-properties pbeg pend pps))
+               (append file-meta)
+               (list :id this-id
+                     :parents (if this-buffer-parent
+                                  `(,this-buffer-parent ,@this-links)
+                                this-links)
+                     :node-meta)
+               (list)
+               (setq this-node))
+          (if node-stack
+              (-> (setq this-parent (nth 1 (car node-stack)))
+                  (setcdr (cons this-node (cdr this-parent))))
+            (!cons this-node acc))
+          (!cons (list this-level this-node this-id) node-stack)
           (when this-links
-            (!cons (cons this-id this-links) acc-links))
-          (setq node-level this-level))
+            (!cons (cons this-id this-links) acc-links)))
          ;; Underneath a node but not on a node, therefore we are buried
-         (node-level
+         (node-stack
           (setq bury-level this-level))
          ;; Anything else means we are on a bare headline above any nodes
          (t
           (setq bury-level nil
-                node-level nil)
+                ;; node-level nil)
+                node-stack nil)
           (when this-tags
             (setq this-tags (split-string this-tags ":")))
           (-> (list this-level
@@ -1391,7 +1397,7 @@ used for optimization."
                         this-file-links))
               (!cons bare-stack)))))
       (goto-char next-pos))
-    (list (nreverse acc) acc-links)))
+    (list (org-x-dag-nreverse-tree acc) acc-links)))
 
 (defun org-x-dag-buffer-nodes-to-tree (nodes)
   (cl-labels
@@ -1449,27 +1455,27 @@ used for optimization."
   (declare (indent 2))
   (let ((err (org-x-dag-bs :error "Child error")))
     `(-if-let ((x . xs) ,bss)
+         ;; (if (org-x-dag-bs-error-p x) (progn (print x) ',err)
          (if (org-x-dag-bs-error-p x) ',err
-           (let ((acc x) r)
-             (while xs
+           (let ((acc (cadr x)) r final)
+             (while (and (not final) xs)
                (setq x (car xs))
                (if (org-x-dag-bs-error-p x)
-                   (setq acc ',err
-                         xs nil)
-                 (setq it x
+                   (setq final ',err)
+                 (setq it (cadr x)
                        r ,rank-form)
                  (unless r
                    (error "You forgot the difference between Maybe and Either"))
                  (if (org-x-dag-bs-error-p r)
-                     (setq acc r
-                           xs nil)
-                   (when r
-                     (setq acc x))
+                     (setq final r)
+                   (when (cadr r)
+                     (setq acc (cadr x)))
                    (if ,stop-form
-                       (setq acc (org-x-dag-bs :valid acc)
-                             xs nil)
+                       (setq final (org-x-dag-bs :valid acc))
                      (!cdr xs)))))
-             (org-x-dag-bs>>= acc ,trans-form)))
+             (when (not final)
+               (setq final (org-x-dag-bs :valid acc)))
+             (org-x-dag-bs>>= final ,trans-form)))
        (org-x-dag-bs :valid ,default))))
 
 (defun org-x-dag-bs-error-kw (type-name kw)
@@ -1529,7 +1535,8 @@ used for optimization."
                (`((:sp-task :task-complete ,_) ,_) t)
                (`(,_ (:sp-proj :proj-complete ,_)) nil)
                (`(,_ (:sp-iter :iter-complete ,_)) nil)
-               (`(,_ (:sp-task :task-complete ,_)) nil))
+               (`(,_ (:sp-task :task-complete ,_)) nil)
+               (e (error "Unmatched pattern: %S" e)))
              (org-x-dag-bs :valid))
         (pcase acc
           (`(:sp-proj :proj-complete ,_) nil)
@@ -1617,43 +1624,54 @@ used for optimization."
 ;; TODO these next two could be made more efficient by cutting out the
 ;; earlystop form and returning error in the rank form (the trans form is
 ;; still needed in case there is only one child)
-(defun org-x-dag-bs-action-subiter-complete-fold (child-bss type-name comp-key)
-  (declare (indent 1))
-  (org-x-dag-bs-fold-children child-bss `(,comp-key ,it-comptime)
-    (->> (pcase `(,si-a ,si-b)
+(defun org-x-dag-bs-action-subiter-complete-fold (child-bss comptime type-name comp-key)
+  (declare (indent 2))
+  (org-x-dag-bs-fold-children child-bss `(,comp-key ,comptime)
+    (->> (pcase `(,acc ,it)
            (`((:si-complete ,_) (:si-complete ,_)) nil)
            (`((:si-complete ,_) ,_) t)
-           (`(,_ (:si-complete ,_)) nil))
+           (`(,_ (:si-complete ,_)) nil)
+           (e (error "Unmatched pattern: %S" e)))
          (org-x-dag-bs :valid))
     (pcase acc
       (`(:si-complete ,_) nil)
       (_ t))
     (pcase it
       (`(:si-complete ,_)
-       (org-x-dag-bs :valid `(,comp-key ,it-comptime)))
+       (org-x-dag-bs :valid `(,comp-key ,comptime)))
       (_
        (->> (format "Completed %s cannot have active children" type-name)
             (org-x-dag-bs :error))))))
 
 (defun org-x-dag-bs-action-subiter-todo-fold (child-bss type-name active-key default)
   (org-x-dag-bs-fold-children child-bss default
-    (pcase `(,si-a ,si-b)
-      (`((:si-active (,ts-a ,dead-a)) (:si-active (,ts-b ,dead-b)))
-       (let ((dt-a (org-ml-timestamp-get-start-time ts-a))
-             (dt-b (org-ml-timestamp-get-start-time ts-b)))
+    (pcase `(,acc ,it)
+      (`((:si-active ,a) (:si-active ,b))
+       (-let (((&plist :sched as :dead ad) a)
+              ((&plist :sched bs :dead bd) b))
          (cond
-          ((not (eq dead-a dead-b))
-           (->> "All sub-iter timestamps must be scheduled or deadlined"
+          ((or (xor as bs) (xor ad bd))
+           (->> "All sub-iters must have the same planning configuration"
                 (org-x-dag-bs :error)))
-          ((xor (org-ml-time-is-long dt-a) (org-ml-time-is-long dt-b))
-           (->> "All sub-iter timestamps must be long or short"
+          ((and as bs (xor (org-ml-time-is-long as) (org-ml-time-is-long bs)))
+           (->> "Sub-iters must have scheduled timestamp with same length"
                 (org-x-dag-bs :error)))
+          ((and ad bd (xor (org-ml-time-is-long ad) (org-ml-time-is-long bd)))
+           (->> "Sub-iters must have deadline timestamp with same length"
+                (org-x-dag-bs :error)))
+          ;; ASSUME this won't fail since the datetimes are assumed to be the
+          ;; same length as per rules above
+          ((and ad bd)
+           (->> (org-x-dag-datetime< (org-ml-timestamp-get-start-time ad)
+                                     (org-ml-timestamp-get-start-time bd))
+                (org-x-dag-bs :valid)))
           (t
-           ;; ASSUME this won't fail since the datetimes are assumed to be the
-           ;; same length as per rules above
-           (org-x-dag-bs :valid (org-x-dag-datetime< dt-a dt-b))))))
+           (->> (org-x-dag-datetime< (org-ml-timestamp-get-start-time as)
+                                     (org-ml-timestamp-get-start-time bs))
+                (org-x-dag-bs :valid))))))
       (`((:si-active ,_) ,_) (org-x-dag-bs :valid nil))
-      (`(,_ (:si-active ,_)) (org-x-dag-bs :valid t)))
+      (`(,_ (:si-active ,_)) (org-x-dag-bs :valid t))
+      (`(,_ ,_) (org-x-dag-bs :valid nil)))
     (pcase acc
       (`(:si-active ,_) t)
       (_ nil))
@@ -1665,12 +1683,12 @@ used for optimization."
        (org-x-dag-bs :valid `(,active-key ,ts-data))))))
 
 (defun org-x-dag-node-is-iterator-p (node)
-  (org-x-dag-node-data-is-iterator-p (plist-get node :node-data)))
+  (org-x-dag-node-data-is-iterator-p (plist-get node :node-meta)))
 
 (defun org-x-dag-bs-action-subiter-inner (node-data child-bss)
-  (org-x-dag-bs-action-with-closed node "sub-iterators"
+  (org-x-dag-bs-action-with-closed node-data "sub-iterators"
     `(:si-complete ,it-comptime)
-    (org-x-dag-bs-action-subiter-complete-fold child-bss
+    (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
       "sub-iterators" :si-complete)
     (-let (((sched dead) (-some->> it-planning
                            (org-ml-get-properties '(:scheduled :deadline)))))
@@ -1679,21 +1697,21 @@ used for optimization."
         (org-x-dag-bs :error "Sub-iterators with children cannot be scheduled"))
        ((and dead child-bss)
         (org-x-dag-bs :error "Sub-iterators with children cannot be deadlined"))
-       ((and (not child-bss) (not (xor sched dead)))
-        (org-x-dag-bs :error "Sub-iterators must either be deadlined or scheduled"))
+       ;; ((and (not child-bss) (not (xor sched dead)))
+       ;;  (org-x-dag-bs :error "Sub-iterators must either be deadlined or scheduled"))
        ((org-x-dag-node-data-is-iterator-p node-data)
         (org-x-dag-bs :error "Iterators cannot be nested"))
        ((equal it-todo org-x-kw-todo)
         (org-x-dag-bs-action-subiter-todo-fold child-bss
           "sub-iterator" :si-active
-          `(:si-active ,(or sched dead) ,(and dead t))))
+          `(:si-active (:sched ,sched :dead ,dead))))
        (t
         (org-x-dag-bs-error-kw "Sub-iterator" it-todo))))))
 
 (defun org-x-dag-bs-action-iter-inner (node-data child-bss)
   (org-x-dag-bs-action-with-closed node-data "iterators"
     `(:iter-complete ,it-comptime)
-    (org-x-dag-bs-action-subiter-complete-fold child-bss
+    (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
       "iterators" :iter-complete)
     (cond
      ((and child-bss (-some->> it-planning (org-ml-get-property :scheduled)))
@@ -1756,28 +1774,26 @@ used for optimization."
      (t
       (org-x-dag-bs-error-kw "Endpoint goal" it-todo)))))
 
-(defun org-x-dag-bs-with-treetop-error (tree parent-id)
+(defun org-x-dag-bs-with-treetop-error (tree)
   (declare (indent 3))
   (-let* (((node . children) tree)
-          ((&plist :id i :parents links :node-meta m) node)
-          (ps (cons parent-id links))
+          ((&plist :id i :parents ps :node-meta m) node)
           (this (->> (org-x-dag-bs :error "Children not allowed")
-                     (org-x-dag-node i ps parent-id m))))
-    (cons this (--mapcat (org-x-dag-bs-with-treetop-error it i) children))))
+                     (org-x-dag-node i ps m))))
+    (cons this (--mapcat (org-x-dag-bs-with-treetop-error it) children))))
 
 (defun org-x-dag-bs-with-treetop (tree node-fun)
   (declare (indent 3))
-  (-let* ((((&plist :id i :parents links :node-meta m) . children) tree)
+  (-let* ((((&plist :id i :parents ps :node-meta m) . children) tree)
           (bs (if children (org-x-dag-bs :error "Children not allowed")
                 (funcall node-fun m)))
-          (top (org-x-dag-node i links nil m bs)))
-    (cons top (--mapcat (org-x-dag-bs-with-treetop-error it i) children))))
+          (top (org-x-dag-node i ps m bs)))
+    (cons top (--mapcat (org-x-dag-bs-with-treetop-error it) children))))
 
-(defun org-x-dag-node (id parents buffer-parent node-meta bs)
+(defun org-x-dag-node (id parents node-meta bs)
   (list :id id
         :parents parents
         :node-meta (list :hl-meta node-meta
-                         :buffer-parent buffer-parent
                          :buffer-status bs)))
 
 (defmacro org-x-dag-node-fmap (node form)
@@ -1786,34 +1802,32 @@ used for optimization."
   `(-let (((&plist :id i
                    :parents ps
                    :node-meta (&plist :hl-meta h
-                                      :buffer-parent p
                                       :buffer-status it))
            ,node))
-     (org-x-dag-node i ps p h ,form)))
+     (org-x-dag-node i ps h ,form)))
 
-(defun org-x-dag-bs-with-children (tree parent child-fun node-fun concat-fun)
+(defun org-x-dag-bs-with-children (tree child-fun node-fun concat-fun)
   (declare (indent 3))
   ;; TODO this is super inefficient, make a plist mapper function
   (-let* (((node . children) tree)
-          ((&plist :id i :parents links :node-meta m) node)
-          ((shallow rest) (->> (--map (funcall child-fun it i) children)
-                               (apply #'-zip-lists)))
-          (ps (if parent (cons parent links) links)))
+          ((&plist :id i :parents ps :node-meta m) node)
+          ((shallow rest) (->> (--map (funcall child-fun it) children)
+                               (apply #'-zip-lists))))
     (list (->> shallow
                (--map (plist-get (plist-get it :node-meta) :buffer-status))
                (funcall node-fun m)
-               (org-x-dag-node i ps parent m))
+               (org-x-dag-node i ps m))
           (funcall concat-fun shallow rest))))
 
 ;; Tree a -> (Tree a -> (b, [d])) -> (a -> [b] -> c) -> (c, [d])
-(defun org-x-dag-bs-with-children-1 (tree parent child-fun node-fun)
-  (org-x-dag-bs-with-children tree parent child-fun node-fun
+(defun org-x-dag-bs-with-children-1 (tree child-fun node-fun)
+  (org-x-dag-bs-with-children tree child-fun node-fun
     (lambda (shallow deep)
       (append shallow (-flatten-n 1 deep)))))
 
 ;; Tree a -> (Tree a -> (b, ([d], [e]))) -> (a -> [b] -> c) -> (c, ([d], [e]))
-(defun org-x-dag-bs-with-children-2 (tree parent child-fun node-fun)
-  (org-x-dag-bs-with-children tree parent child-fun node-fun
+(defun org-x-dag-bs-with-children-2 (tree child-fun node-fun)
+  (org-x-dag-bs-with-children tree child-fun node-fun
     (lambda (shallow deep)
       (--reduce-from (-let (((a b) acc)
                             ((as bs) it))
@@ -1821,43 +1835,43 @@ used for optimization."
                      `(,shallow nil)
                      deep))))
 
-(defun org-x-dag-bs-action-subiter (tree parent)
+(defun org-x-dag-bs-action-subiter (tree)
   (org-x-dag-bs-with-children-1
    tree
-   parent
    #'org-x-dag-bs-action-subiter
    #'org-x-dag-bs-action-subiter-inner))
 
-(defun org-x-dag-bs-action-iter (tree parent)
+(defun org-x-dag-bs-action-iter (tree)
   (org-x-dag-bs-with-children-1
    tree
-   parent
    #'org-x-dag-bs-action-subiter
-   (lambda (node child-bss)
-     (org-x-dag-node-fmap node
-       (org-x-dag-bs-fmap (org-x-dag-bs-action-iter-inner it child-bss)
-         `(:sp-proj it))))))
+   (lambda (node-data child-bss)
+     (org-x-dag-bs-fmap (org-x-dag-bs-action-iter-inner node-data child-bss)
+       (cons :sp-proj it)))))
 
-(defun org-x-dag-bs-action-project (tree parent)
+(defun org-x-dag-bs-action-project (tree)
   (if (org-x-dag-node-is-iterator-p (car tree))
-      (-let (((iter subiters) (org-x-dag-bs-action-iter tree nil)))
+      (-let (((iter subiters) (org-x-dag-bs-action-iter tree)))
         `(,iter (nil ,subiters)))
     (org-x-dag-bs-with-children-2
      tree
-     parent
      #'org-x-dag-bs-action-project
      #'org-x-dag-bs-action-project-inner)))
 
 ;; TODO need to check for created timestamps
 (defun org-x-dag-bs-action (node-tree)
-  ;; TODO these types might not line up properly
-  (-let (((p (ps is)) (org-x-dag-bs-action-project node-tree nil)))
-    `(,p ,@ps ,@is)))
+  (cl-flet
+      ((lift-subiter
+        (node)
+        (org-x-dag-node-fmap node
+          (org-x-dag-bs-fmap it
+            (cons :sp-subiter it)))))
+    (-let (((p (ps is)) (org-x-dag-bs-action-project node-tree)))
+      `(,p ,@ps ,@(-map #'lift-subiter is)))))
 
-(defun org-x-dag-bs-epg-outer (tree parent)
+(defun org-x-dag-bs-epg-outer (tree)
   (org-x-dag-bs-with-children-1
    tree
-   parent
    #'org-x-dag-bs-epg-outer
    #'org-x-dag-bs-epg-inner))
 
@@ -1865,7 +1879,7 @@ used for optimization."
   (--map (org-x-dag-node-fmap it (org-x-dag-bs-fmap it `(,key ,it))) nodes))
 
 (defun org-x-dag-bs-epg (tree)
-  (-let (((n ns) (org-x-dag-bs-epg-outer tree nil)))
+  (-let (((n ns) (org-x-dag-bs-epg-outer tree)))
     (org-x-dag-bs-prefix :endpoint `(,n ,@ns))))
 
 (defun org-x-dag-bs-toplevel-goal-inner (type-name node-data child-bss)
@@ -1881,17 +1895,16 @@ used for optimization."
      (t
       (org-x-dag-bs-error-kw type-name todo)))))
 
-(defun org-x-dag-bs-toplevel-goal-outer (type-name tree parent)
+(defun org-x-dag-bs-toplevel-goal-outer (type-name tree)
   (org-x-dag-bs-with-children-1
    tree
-   parent
-   (lambda (tree parent)
-     (org-x-dag-bs-toplevel-goal-outer type-name tree parent))
+   (lambda (tree)
+     (org-x-dag-bs-toplevel-goal-outer type-name tree))
    (lambda (node-data child-bss)
      (org-x-dag-bs-toplevel-goal-inner type-name node-data child-bss))))
 
 (defun org-x-dag-bs-toplevel-goal (type-name type-key tree)
-  (-let (((n ns) (org-x-dag-bs-toplevel-goal-outer type-name tree nil)))
+  (-let (((n ns) (org-x-dag-bs-toplevel-goal-outer type-name tree)))
     (org-x-dag-bs-prefix type-key `(,n ,@ns))))
 
 (defun org-x-dag-bs-ltg (tree)
@@ -1994,9 +2007,7 @@ used for optimization."
           ((nodes links)
            (org-x-with-file file
              (org-x-dag-get-buffer-nodes meta org-todo-keywords-1 props))))
-    (list (->> (org-x-dag-buffer-nodes-to-tree nodes)
-               (-mapcat bs-fun))
-          links)))
+    `(,(-mapcat bs-fun nodes) ,links)))
 
 ;; network status
 
@@ -2037,13 +2048,6 @@ used for optimization."
        (format "%s: %s" msg)
        (org-x-dag-bs :error)))
 
-(defun org-x-dag-id-is-buffer-leaf (adjlist id)
-  (->> (plist-get (ht-get adjlist id) :children)
-       (--none-p (-> (ht-get adjlist it)
-                     (plist-get :node-meta)
-                     (plist-get :buffer-parent)
-                     (equal id)))))
-
 (defun org-x-dag-ns-toplevel (tbl adjlist links ns)
   (let ((h (alist-get tbl ns)))
     (org-x-dag-each-links links
@@ -2077,7 +2081,7 @@ used for optimization."
         (cond
          ((org-x-dag-bs-error-p (ht-get h id))
           :error)
-         ((and checkleafp (not (org-x-dag-id-is-buffer-leaf adjlist id)))
+         ((and checkleafp (not (org-x-dag-get-children adjlist id)))
           :non-leaf)
          (t :valid)))
        (reduce-valid
@@ -2204,6 +2208,7 @@ used for optimization."
   (->> (plist-get (ht-get adjlist id) :children)
        (--filter (-> (ht-get adjlist it)
                      (plist-get :node-meta)
+                     (plist-get :hl-meta)
                      (plist-get :buffer-parent)
                      (equal id)))))
 
@@ -2239,16 +2244,9 @@ used for optimization."
 
 (defun org-x-dag-ht-propagate-up (adjlist h-key s-key ns)
   (cl-labels
-      ((get-children
-        (adjlist id)
-        (->> (plist-get (ht-get adjlist id) :children)
-             (--filter (-> (ht-get adjlist it)
-                           (plist-get :node-meta)
-                           (plist-get :buffer-parent)
-                           (equal id)))))
-       (propagate
+      ((propagate
         (htbl id)
-        (-let* ((cs (get-children adjlist id))
+        (-let* ((cs (org-x-dag-get-children adjlist id))
                 (rs (--map (propagate htbl it) cs))
                 ;; TODO there isn't a better way to do this? (seems like I'm
                 ;; accessing either/maybe types too many times)
@@ -3194,20 +3192,22 @@ except it ignores inactive timestamps."
          (-mapcat #'split-parent-goals))))
 
 (defun org-x-dag-scan-iterators ()
-  (cl-flet*
-      ((format-result
-        (tags cat key)
-        (-let ((status (org-x-dag-headline-get-iterator-status key)))
-          (-> (org-x-dag-format-tag-node cat tags key)
-              (org-add-props nil
-                  'x-status status)))))
-    ;; TODO this will only scan toplevel iterators
-    (org-x-dag-with-files (org-x-dag->action-files)
-        (org-x-dag-id->is-toplevel-p it)
-      (let ((tags (org-x-dag-id->tags nil it)))
-        (when (eq (cadr (org-x-dag-id->goal-status 'current id)) :planned)
-          (when (org-x-dag-id->is-iterator-p it)
-            (list (format-result tags it-category it))))))))
+  (cl-flet
+      ((format-id
+        (id status-data)
+        (let ((status (car status-data)))
+          (when (memq status '(:iter-empty :iter-active))
+            (let ((tags (org-x-dag-id->tags nil id)))
+              (-> (org-x-dag-format-tag-node tags id)
+                  (org-add-props nil
+                      'x-status status)))))))
+    (with-temp-buffer
+      (org-mode)
+      (->> (org-x-dag->action-files)
+           (org-x-dag-files->ids)
+           (--map (pcase (org-x-dag-id->bs it)
+                    (`(:valid (:sp-proj . ,s)) (format-id it s))))
+           (-non-nil)))))
   
 (defun org-x-dag-get-task-nodes (pred id)
   (declare (indent 2))
@@ -3375,30 +3375,24 @@ except it ignores inactive timestamps."
 (defun org-x-dag-scan-archived ()
   (cl-flet
       ((format-key
-        (category key)
-        (let ((tags (org-x-dag-id->tags nil key)))
-          ;; TODO is this what I actually want?
-          (when (memq (cadr (org-x-dag-id->goal-status 'current key)) '(:planned :committed))
-            (-let (((is-archivable is-project)
-                    (-if-let (children (org-x-dag-id->buffer-children key))
-                        (-> (org-x-dag-headline-get-project-status key tags children)
-                            (alist-get org-x-project-status-priorities)
-                            (eq :archivable)
-                            (list t))
-                      (-> (org-x-dag-id->task-status id)
-                          (alist-get org-x-headline-task-status-priorities)
-                          (eq :archivable)
-                          (list t)))))
-              (when is-archivable
-                (-> (org-x-dag-format-tag-node category tags key)
+        (id bs)
+        (-when-let ((comptime is-project)
+                    (pcase bs
+                      (`(:sp-proj :proj-complete ,c) `(,c t))
+                      (`(:sp-task :task-complete ,c) `(,c nil))))
+          (-let ((epoch (plist-get comptime :epoch)))
+            (when (org-x-dag-time-is-archivable-p epoch)
+              (let ((tags (org-x-dag-id->tags nil id)))
+                (-> (org-x-dag-format-tag-node tags id)
                     (org-add-props nil
                         'x-project-p is-project))))))))
-    (org-x-dag-with-files (org-x-get-action-files)
-        (org-x-dag-id->is-toplevel-p it)
-      (if (org-x-dag->is-iterator-p it)
-          (->> (org-x-dag-id->buffer-children it)
-               (--map (format-key it-category it)))
-        (list (format-key it-category it))))))
+    (with-temp-buffer
+      (org-mode)
+      (->> (org-x-dag->action-files)
+           (org-x-dag-files->ids)
+           (--map (pcase (org-x-dag-id->bs it)
+                    (`(:valid ,v) (format-key it v))))
+           (-non-nil)))))
 
 (defun org-x-dag--classify-goal-link (which which-goal id)
   (let ((f (org-x-dag-id->file id)))
