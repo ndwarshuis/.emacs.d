@@ -1553,7 +1553,10 @@ used for optimization."
       ;; undone form
       (-let* (((sched dead) (-some->> it-planning
                               (org-ml-get-properties '(:scheduled :deadline))))
-              (task-default `(:sp-task :task-active (,it-todo ,sched ,dead))))
+              (task-default (->> (list :todo it-todo
+                                       :sched sched
+                                       :dead dead)
+                                 (list :sp-task :task-active))))
         (cond
          ((equal it-todo org-x-kw-hold)
           (new-proj '(:proj-held)))
@@ -1562,12 +1565,15 @@ used for optimization."
          ((equal it-todo org-x-kw-todo)
           (org-x-dag-bs-fold-children child-bss task-default
             (->> (pcase `(,acc ,it)
+                   (`((:sp-task :task-active ,a) (:sp-task :task-active ,b))
+                    (and (not (plist-get a :sched)) (plist-get b :sched)))
+
                    (`((:sp-proj :proj-active) ,_) nil)
                    (`((:sp-iter :iter-active ,_) ,_) nil)
-                   (`((:sp-task :task-active, _) ,_) nil)
+                   (`((:sp-task :task-active ,d) ,_) (not (plist-get d :sched)))
                    (`(,_ (:sp-proj :proj-active)) t)
                    (`(,_ (:sp-iter :iter-active ,_)) t)
-                   (`(,_ (:sp-task :task-active ,_)) t)
+                   (`(,_ (:sp-task :task-active ,d)) (plist-get d :sched))
 
                    (`((:sp-proj :proj-wait) ,_) nil)
                    (`(,_ (:sp-proj :proj-wait)) t)
@@ -1589,7 +1595,7 @@ used for optimization."
             (pcase acc
               (`(:sp-proj :proj-active) t)
               (`(:sp-iter :iter-active ,_) t)
-              (`(:sp-task :task-active ,_) t)
+              (`(:sp-task :task-active ,d) (plist-get d :sched))
               (_ nil))
 
             ;; child -> parent translation
@@ -1601,16 +1607,17 @@ used for optimization."
               (`(:sp-proj . ,s) (new-proj s))
               (`(:sp-iter :iter-active ,_) (new-proj '(:proj-active)))
               (`(:sp-iter :iter-empty) (new-proj '(:proj-stuck)))
-              (`(:sp-task :task-active (,c-todo ,c-sched ,_))
-               (cond
-                ((equal c-todo org-x-kw-todo) (->> (if c-sched :proj-active
-                                                     :proj-stuck)
-                                                   (list)
-                                                   (new-proj)))
-                ((equal c-todo org-x-kw-next) (new-proj '(:proj-active)))
-                ((equal c-todo org-x-kw-wait) (new-proj '(:proj-wait)))
-                ((equal c-todo org-x-kw-hold) (new-proj '(:proj-hold)))
-                (t (org-x-dag-bs-error-kw "Task action" c-todo)))))))
+              (`(:sp-task :task-active ,d)
+               (-let (((&plist :todo o :sched s) d))
+                 (cond
+                  ((equal o org-x-kw-todo) (->> (if s :proj-active
+                                                  :proj-stuck)
+                                                (list)
+                                                (new-proj)))
+                  ((equal o org-x-kw-next) (new-proj '(:proj-active)))
+                  ((equal o org-x-kw-wait) (new-proj '(:proj-wait)))
+                  ((equal o org-x-kw-hold) (new-proj '(:proj-hold)))
+                  (t (org-x-dag-bs-error-kw "Task action" o))))))))
          (child-bss
           (org-x-dag-bs-error-kw "Project action" it-todo))
          (t
@@ -2217,12 +2224,12 @@ used for optimization."
   (cl-labels
       ((propagate
         (adjlist htbl id to-set)
+        (->> (-if-let (node (ht-get htbl id))
+                 (org-x-dag-bs-fmap node
+                   (funcall set-fun it to-set))
+               (org-x-dag-bs :valid (funcall def-fun to-set)))
+             (ht-set htbl id))
         (--each (org-x-dag-get-children adjlist id)
-          (->> (-if-let (node (ht-get htbl it))
-                   (org-x-dag-bs-fmap node
-                     (funcall set-fun it to-set))
-                 (org-x-dag-bs :valid (funcall def-fun to-set)))
-               (ht-set htbl it))
           (propagate adjlist htbl it to-set))))
     (let ((h (alist-get h-key ns)))
       (-each (ht-keys h)
@@ -3151,16 +3158,15 @@ except it ignores inactive timestamps."
         (id status-data)
         ;; NOTE in the future there might be more than just the car to this
         (let ((status (car status-data)))
-          (unless (eq status :proj-complete)
+          (-when-let (priority (cl-case status
+                                 (:proj-active 4)
+                                 (:proj-wait 3)
+                                 (:proj-hold 2)
+                                 (:proj-stuck 1)))
             (pcase (org-x-dag-id->ns id)
               (`(:valid ,v)
                (when (plist-get v :committed)
-                 (let ((tags (org-x-dag-id->tags nil id))
-                       (priority (cl-case status
-                                   (:proj-active 4)
-                                   (:proj-wait 3)
-                                   (:proj-hold 2)
-                                   (:proj-stuck 1))))
+                 (let ((tags (org-x-dag-id->tags nil id)))
                    (-> (org-x-dag-format-tag-node tags id)
                        (org-add-props nil
                            'x-toplevelp (org-x-dag-id->is-toplevel-p id)
@@ -3227,7 +3233,7 @@ except it ignores inactive timestamps."
   (cl-flet
       ((format-key
         (id s)
-        (-let (((todo sched dead) s))
+        (-let (((&plist :todo :sched :dead) s))
           (pcase (org-x-dag-id->ns id)
             (`(:valid ,ns)
              (-let (((&plist :committed c) ns))
