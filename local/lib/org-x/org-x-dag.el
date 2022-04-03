@@ -3184,17 +3184,6 @@ except it ignores inactive timestamps."
       (--map (org-add-props (copy-seq item) nil 'x-goal-id it) ids)
     (list (org-add-props item nil 'x-goal-id nil))))
 
-(defun org-x-dag-scan-projects-with-goals ()
-  (cl-flet
-      ((split-parent-goals
-        (s)
-        (let ((id (get-text-property 1 'x-id s)))
-          (-if-let (goal-ids (org-x-dag-id->linked-parents id))
-              (org-x-dag--item-add-goal-ids s goal-ids)))))
-    (->> (org-x-dag-scan-projects)
-         (--filter (org-x-dag-id->is-toplevel-p (get-text-property 1 'x-id it)))
-         (-mapcat #'split-parent-goals))))
-
 (defun org-x-dag-scan-iterators ()
   (org-x-dag-with-action-ids
     (either-from-right (org-x-dag-id->bs it) nil
@@ -3261,6 +3250,21 @@ except it ignores inactive timestamps."
                      'x-is-standalone (not bp)
                      'x-status :active)
                  (org-x-dag--item-add-goal-ids goal-ids)))))))))
+
+(defun org-x-dag-scan-projects-with-goals ()
+  (org-x-dag-with-action-ids
+    (either-from-right* (org-x-dag-id->bs it) nil
+      (lambda (bs)
+        (pcase bs
+          (`(:sp-proj . ,s)
+           (unless (eq (car s) :proj-complete)
+             (let ((goal-ids (-when-let (ns (org-x-dag-id->ns it))
+                               (either-from-right ns nil
+                                 (unless (plist-get it :survivalp)
+                                   (plist-get it :committed)))))
+                   (tags (org-x-dag-id->tags nil it)))
+               (-> (org-x-dag-format-tag-node tags it)
+                   (org-x-dag--item-add-goal-ids goal-ids))))))))))
 
 (defun org-x-dag-scan-survival-tasks ()
   (cl-flet
