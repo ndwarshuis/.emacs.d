@@ -26,6 +26,7 @@
 (require 'org-ml)
 (require 'dash)
 (require 'dag)
+(require 'either)
 (require 'ht)
 
 ;;; DATE/TIME FUNCTIONS
@@ -1424,64 +1425,38 @@ used for optimization."
         (!cons (car res) acc))
       acc)))
 
-;; type BS a = Either String a
-(defmacro org-x-dag-bs (key data)
-  (pcase key
-    ((or :error :valid) `(list ,key ,data))
-    (e (error "Invalid status key: %s" key))))
-
-(defmacro org-x-dag-bs>>= (bs form)
-  (declare (indent 1))
-  `(pcase ,bs
-     (`(:error ,_) ,bs)
-     (`(:valid ,it) ,form)
-     (e (error "Learn to use monads, dummy; this isn't one: %s" e))))
-
-(defmacro org-x-dag-bs-fmap (bs form)
-  (declare (indent 1))
-  (let ((b (make-symbol "--bs")))
-    `(let ((,b ,bs))
-       (pcase ,b
-         (`(:error ,_) ,b)
-         (`(:valid ,it) (org-x-dag-bs :valid ,form))
-         (e (error "Learn to use functors, dummy; this isn't one: %s" e))))))
-
-(defun org-x-dag-bs-error-p (bs)
-  (eq (car bs) :error))
-
 ;; [Status a] -> b -> (a -> a -> Status Bool) -> (a -> Bool) -> (a -> Status b)
 ;; -> Status b
 (defmacro org-x-dag-bs-fold-children (bss default rank-form stop-form trans-form)
   (declare (indent 2))
-  (let ((err (org-x-dag-bs :error "Child error")))
+  (let ((err (either :left "Child error")))
     `(if ,bss
          (-let (((x . xs) ,bss))
-           ;; (if (org-x-dag-bs-error-p x) (progn (print x) ',err)
-           (if (org-x-dag-bs-error-p x) ',err
+           ;; (if (org-x-dag-bs-is-left-p x) (progn (print x) ',err)
+           (if (either-is-left-p x) ',err
              (let ((acc (cadr x)) r final)
                (while (and (not final) xs)
                  (setq x (car xs))
-                 (if (org-x-dag-bs-error-p x)
+                 (if (either-is-left-p x)
                      (setq final ',err)
                    (setq it (cadr x)
                          r ,rank-form)
                    (unless r
                      (error "You forgot the difference between Maybe and Either"))
-                   (if (org-x-dag-bs-error-p r)
+                   (if (either-is-left-p r)
                        (setq final r)
                      (when (cadr r)
                        (setq acc (cadr x)))
                      (if ,stop-form
-                         (setq final (org-x-dag-bs :valid acc))
+                         (setq final (either :right acc))
                        (!cdr xs)))))
                (when (not final)
-                 (setq final (org-x-dag-bs :valid acc)))
-               (org-x-dag-bs>>= final ,trans-form))))
-       (org-x-dag-bs :valid ,default))))
+                 (setq final (either :right acc)))
+               (either>>= final ,trans-form))))
+       (either :right ,default))))
 
 (defun org-x-dag-bs-error-kw (type-name kw)
-  (->> (format "%ss cannot have keyword '%s" type-name kw)
-       (org-x-dag-bs :error)))
+  (either :left (format "%ss cannot have keyword '%s" type-name kw)))
 
 (defmacro org-x-dag-bs-action-with-closed (node-data type-name canc-bs-form
                                                      done-form open-form)
@@ -1499,17 +1474,16 @@ used for optimization."
              (cond
               ((equal it-todo org-x-kw-canc)
                (let ((it-comptime (complete-time ,c t)))
-                 (org-x-dag-bs :valid ,canc-bs-form)))
+                 (either :right ,canc-bs-form)))
               ((equal it-todo org-x-kw-done)
                (let ((it-comptime (complete-time ,c nil)))
                  ,done-form))
               (t
                (->> (format "Closed %s must be marked CANC/DONE" ,type-name)
-                    (org-x-dag-bs :error))))
+                    (either :left))))
            (cond
             ((member it-todo org-x-done-keywords)
-             (->> (format "DONE/CANC %s must be closed" ,type-name)
-                  (org-x-dag-bs :error)))
+             (either :left (format "DONE/CANC %s must be closed" ,type-name)))
             (t
              ,open-form)))))))
 
@@ -1517,7 +1491,7 @@ used for optimization."
   (cl-flet
       ((new-proj
         (status)
-        (org-x-dag-bs :valid `(:sp-proj ,@status)))
+        (either :right `(:sp-proj ,@status)))
        (is-next
         (task-data)
         (-let (((&plist :todo :sched) task-data))
@@ -1542,7 +1516,7 @@ used for optimization."
                (`(,_ (:sp-iter :iter-complete ,_)) nil)
                (`(,_ (:sp-task :task-complete ,_)) nil)
                (e (error "Unmatched pattern: %S" e)))
-             (org-x-dag-bs :valid))
+             (either :right))
         (pcase acc
           (`(:sp-proj :proj-complete ,_) nil)
           (`(:sp-iter :iter-complete ,_) nil)
@@ -1552,8 +1526,8 @@ used for optimization."
           ((or `(:sp-proj :proj-complete ,_)
                `(:sp-iter :iter-complete ,_)
                `(:sp-task :task-complete ,_))
-           (org-x-dag-bs :valid `(:sp-proj :proj-complete ,it-comptime)))
-          (_ (org-x-dag-bs :error "Completed projects cannot have active children"))))
+           (either :right `(:sp-proj :proj-complete ,it-comptime)))
+          (_ (either :left "Completed projects cannot have active children"))))
 
       ;; undone form
       (-let* (((sched dead) (-some->> it-planning
@@ -1566,7 +1540,7 @@ used for optimization."
          ((and child-bss (equal it-todo org-x-kw-hold))
           (new-proj '(:proj-held)))
          ((and child-bss sched)
-          (org-x-dag-bs :error "Projects cannot be scheduled"))
+          (either :left "Projects cannot be scheduled"))
          ((equal it-todo org-x-kw-todo)
           (org-x-dag-bs-fold-children child-bss task-default
             (->> (pcase `(,acc ,it)
@@ -1612,7 +1586,7 @@ used for optimization."
                    ;; any pair that makes it this far is completed in both, which means
                    ;; neither takes precedence, which means choose the left one
                    (`(,_ ,_) nil))
-                 (org-x-dag-bs :valid))
+                 (either :right))
 
             ;; early stop
             (pcase acc
@@ -1626,7 +1600,7 @@ used for optimization."
               ((or `(:sp-proj :proj-complete ,_)
                    `(:sp-task :task-complete ,_)
                    `(:sp-iter :iter-complete ,_))
-               (org-x-dag-bs :error "Active projects must have at least one active child"))
+               (either :left "Active projects must have at least one active child"))
               (`(:sp-proj . ,s) (new-proj s))
               (`(:sp-iter :iter-active ,_) (new-proj '(:proj-active)))
               (`(:sp-iter :iter-empty) (new-proj '(:proj-stuck)))
@@ -1644,7 +1618,7 @@ used for optimization."
          (child-bss
           (org-x-dag-bs-error-kw "Project action" it-todo))
          (t
-          (org-x-dag-bs :valid task-default)))))))
+          (either :right task-default)))))))
 
 (defun org-x-dag-node-data-is-iterator-p (node-data)
   (-let (((&plist :props) node-data))
@@ -1662,16 +1636,16 @@ used for optimization."
            (`((:si-complete ,_) ,_) t)
            (`(,_ (:si-complete ,_)) nil)
            (e (error "Unmatched pattern: %S" e)))
-         (org-x-dag-bs :valid))
+         (either :right))
     (pcase acc
       (`(:si-complete ,_) nil)
       (_ t))
     (pcase it
       (`(:si-complete ,_)
-       (org-x-dag-bs :valid `(,comp-key ,comptime)))
+       (either :right `(,comp-key ,comptime)))
       (_
        (->> (format "Completed %s cannot have active children" type-name)
-            (org-x-dag-bs :error))))))
+            (either :left))))))
 
 (defun org-x-dag-bs-action-subiter-todo-fold (child-bss type-name active-key default)
   (org-x-dag-bs-fold-children child-bss default
@@ -1682,35 +1656,35 @@ used for optimization."
          (cond
           ((or (xor as bs) (xor ad bd))
            (->> "All sub-iters must have the same planning configuration"
-                (org-x-dag-bs :error)))
+                (either :left)))
           ((and as bs (xor (org-ml-time-is-long as) (org-ml-time-is-long bs)))
            (->> "Sub-iters must have scheduled timestamp with same length"
-                (org-x-dag-bs :error)))
+                (either :left)))
           ((and ad bd (xor (org-ml-time-is-long ad) (org-ml-time-is-long bd)))
            (->> "Sub-iters must have deadline timestamp with same length"
-                (org-x-dag-bs :error)))
+                (either :left)))
           ;; ASSUME this won't fail since the datetimes are assumed to be the
           ;; same length as per rules above
           ((and ad bd)
            (->> (org-x-dag-datetime< (org-ml-timestamp-get-start-time ad)
                                      (org-ml-timestamp-get-start-time bd))
-                (org-x-dag-bs :valid)))
+                (either :right)))
           (t
            (->> (org-x-dag-datetime< (org-ml-timestamp-get-start-time as)
                                      (org-ml-timestamp-get-start-time bs))
-                (org-x-dag-bs :valid))))))
-      (`((:si-active ,_) ,_) (org-x-dag-bs :valid nil))
-      (`(,_ (:si-active ,_)) (org-x-dag-bs :valid t))
-      (`(,_ ,_) (org-x-dag-bs :valid nil)))
+                (either :right))))))
+      (`((:si-active ,_) ,_) (either :right nil))
+      (`(,_ (:si-active ,_)) (either :right t))
+      (`(,_ ,_) (either :right nil)))
     (pcase acc
       (`(:si-active ,_) t)
       (_ nil))
     (pcase it
       (`(:si-complete ,_)
        (->> (format "Active %s must have at least one active child" type-name)
-            (org-x-dag-bs :error)))
+            (either :left)))
       (`(:si-active ,ts-data)
-       (org-x-dag-bs :valid `(,active-key ,ts-data))))))
+       (either :right `(,active-key ,ts-data))))))
 
 (defun org-x-dag-node-is-iterator-p (node)
   (org-x-dag-node-data-is-iterator-p (plist-get node :node-meta)))
@@ -1724,13 +1698,13 @@ used for optimization."
                            (org-ml-get-properties '(:scheduled :deadline)))))
       (cond
        ((and sched child-bss)
-        (org-x-dag-bs :error "Sub-iterators with children cannot be scheduled"))
+        (either :left "Sub-iterators with children cannot be scheduled"))
        ((and dead child-bss)
-        (org-x-dag-bs :error "Sub-iterators with children cannot be deadlined"))
+        (either :left "Sub-iterators with children cannot be deadlined"))
        ;; ((and (not child-bss) (not (xor sched dead)))
-       ;;  (org-x-dag-bs :error "Sub-iterators must either be deadlined or scheduled"))
+       ;;  (either :left "Sub-iterators must either be deadlined or scheduled"))
        ((org-x-dag-node-data-is-iterator-p node-data)
-        (org-x-dag-bs :error "Iterators cannot be nested"))
+        (either :left "Iterators cannot be nested"))
        ((equal it-todo org-x-kw-todo)
         (org-x-dag-bs-action-subiter-todo-fold child-bss
           "sub-iterator" :si-active
@@ -1745,7 +1719,7 @@ used for optimization."
       "iterators" :iter-complete)
     (cond
      ((and child-bss (-some->> it-planning (org-ml-get-property :scheduled)))
-      (org-x-dag-bs :error "Iterators cannot be scheduled"))
+      (either :left "Iterators cannot be scheduled"))
      ;; TODO also check for timeshift and archive props
      ((equal it-todo org-x-kw-todo)
       (org-x-dag-bs-action-subiter-todo-fold child-bss
@@ -1762,17 +1736,17 @@ used for optimization."
              (`((:complete ,_) (:complete ,_)) nil)
              (`(,_ (:complete ,_)) nil)
              (`((:complete ,_) ,_) t))
-           (org-x-dag-bs :valid))
+           (either :right))
       (pcase acc
         (`(:complete ,_) nil)
         (_ t))
       (pcase it
         (`(:complete ,_)
-         (org-x-dag-bs :valid `(:complete ,it-comptime)))
-        (_ (org-x-dag-bs :error "Completed EPGs cannot have active children"))))
+         (either :right `(:complete ,it-comptime)))
+        (_ (either :left "Completed EPGs cannot have active children"))))
     (cond
      ((-some->> it-planning (org-ml-get-property :scheduled))
-      (org-x-dag-bs :error "EPGs cannot be scheduled"))
+      (either :left "EPGs cannot be scheduled"))
      ((equal it-todo org-x-kw-todo)
       (let ((dead (-some->> it-planning (org-ml-get-property :deadline))))
         (org-x-dag-bs-fold-children child-bss `(:active ,dead)
@@ -1780,7 +1754,7 @@ used for optimization."
                  (`((:active ,_) (:active ,_)) nil)
                  (`(,_ (:active ,_)) t)
                  (`((:active ,_) ,_) nil))
-               (org-x-dag-bs :valid))
+               (either :right))
           nil
           (pcase it
             (`(:active ,c-dead)
@@ -1794,13 +1768,13 @@ used for optimization."
                               (org-ml-time-to-unixtime))))
                (cond
                 ((and c-epoch p-epoch (<= c-epoch p-epoch))
-                 (org-x-dag-bs :valid `(:active ,dead)))
+                 (either :right `(:active ,dead)))
                 ((not dead)
-                 (org-x-dag-bs :valid `(:active ,c-dead)))
+                 (either :right `(:active ,c-dead)))
                 (t
-                 (org-x-dag-bs :error "Child deadlines must be before parent deadlines")))))
+                 (either :left "Child deadlines must be before parent deadlines")))))
             (_
-             (org-x-dag-bs :error "Active EPGs must have at least one active child"))))))
+             (either :left "Active EPGs must have at least one active child"))))))
      (t
       (org-x-dag-bs-error-kw "Endpoint goal" it-todo)))))
 
@@ -1808,14 +1782,14 @@ used for optimization."
   (declare (indent 3))
   (-let* (((node . children) tree)
           ((&plist :id i :parents ps :node-meta m) node)
-          (this (->> (org-x-dag-bs :error "Children not allowed")
+          (this (->> (either :left "Children not allowed")
                      (org-x-dag-node i ps m))))
     (cons this (--mapcat (org-x-dag-bs-with-treetop-error it) children))))
 
 (defun org-x-dag-bs-with-treetop (tree node-fun)
   (declare (indent 3))
   (-let* ((((&plist :id i :parents ps :node-meta m) . children) tree)
-          (bs (if children (org-x-dag-bs :error "Children not allowed")
+          (bs (if children (either :left "Children not allowed")
                 (funcall node-fun m)))
           (top (org-x-dag-node i ps m bs)))
     (cons top (--mapcat (org-x-dag-bs-with-treetop-error it) children))))
@@ -1876,7 +1850,7 @@ used for optimization."
    tree
    #'org-x-dag-bs-action-subiter
    (lambda (node-data child-bss)
-     (org-x-dag-bs-fmap (org-x-dag-bs-action-iter-inner node-data child-bss)
+     (either<$> (org-x-dag-bs-action-iter-inner node-data child-bss)
        (cons :sp-proj it)))))
 
 (defun org-x-dag-bs-action-project (tree)
@@ -1894,8 +1868,7 @@ used for optimization."
       ((lift-subiter
         (node)
         (org-x-dag-node-fmap node
-          (org-x-dag-bs-fmap it
-            (cons :sp-subiter it)))))
+          (either<$> it (cons :sp-subiter it)))))
     (-let (((p (ps is)) (org-x-dag-bs-action-project node-tree)))
       `(,p ,@ps ,@(-map #'lift-subiter is)))))
 
@@ -1906,7 +1879,7 @@ used for optimization."
    #'org-x-dag-bs-epg-inner))
 
 (defun org-x-dag-bs-prefix (key nodes)
-  (--map (org-x-dag-node-fmap it (org-x-dag-bs-fmap it `(,key ,it))) nodes))
+  (--map (org-x-dag-node-fmap it (either<$> it `(,key ,it))) nodes))
 
 (defun org-x-dag-bs-epg (tree)
   (-let (((n ns) (org-x-dag-bs-epg-outer tree)))
@@ -1916,12 +1889,11 @@ used for optimization."
   (-let (((&plist :planning :todo) node-data))
     (cond
      (planning
-      (->> (format "%ss cannot have planning elements" type-name)
-           (org-x-dag-bs :error)))
-     ((-any #'org-x-dag-bs-error-p child-bss)
-      (org-x-dag-bs :error "Child error"))
+      (either :left (format "%ss cannot have planning elements" type-name)))
+     ((either-lefts child-bss)
+      (either :left "Child error"))
      ((equal todo org-x-kw-todo)
-      (org-x-dag-bs :valid '(:active)))
+      (either :right '(:active)))
      (t
       (org-x-dag-bs-error-kw type-name todo)))))
 
@@ -1948,10 +1920,10 @@ used for optimization."
 (defun org-x-dag-bs-qtp-inner (node-data)
   (org-x-dag-bs-action-with-closed node-data "quarterly plan"
     `(:complete ,it-comptime)
-    (org-x-dag-bs :valid `(:complete ,it-comptime))
+    (either :right `(:complete ,it-comptime))
     (cond
      ((-some->> it-planning (org-ml-get-properties :scheduled))
-      (org-x-dag-bs :error "QTPs cannot be scheduled"))
+      (either :left "QTPs cannot be scheduled"))
      ((equal it-todo org-x-kw-todo)
       (-if-let (dead (-some->> it-planning (org-ml-get-properties :deadline)))
           (-let* (((&plist :tags) node-data)
@@ -1960,47 +1932,47 @@ used for optimization."
                                 (org-x-dag-datetime-split)
                                 (car))))
             (if (org-x-dag-datetime< tag-date dead-dt)
-                (org-x-dag-bs :valid `(:active ,dead))
+                (either :right `(:active ,dead))
               (->> "QTP deadlines must be due after the quarter starts"
-                   (org-x-dag-bs :error))))
-        (org-x-dag-bs :valid '(:active nil))))
+                   (either :left))))
+        (either :right '(:active nil))))
      (t
       (org-x-dag-bs-error-kw "QTP" it-todo)))))
 
 (defun org-x-dag-bs-wkp-inner (node-data)
   (org-x-dag-bs-action-with-closed node-data "weekly plan"
     `(:complete ,it-comptime)
-    (org-x-dag-bs :valid `(:complete ,it-comptime))
+    (either :right `(:complete ,it-comptime))
     (cond
      ((-some->> it-planning (org-ml-get-properties :scheduled))
-      (org-x-dag-bs :error "WKPs cannot be scheduled"))
+      (either :left "WKPs cannot be scheduled"))
      ((-some->> it-planning (org-ml-get-properties :deadline))
-      (org-x-dag-bs :error "WKPs cannot be deadlined"))
+      (either :left "WKPs cannot be deadlined"))
      ((equal it-todo org-x-kw-todo)
-      (org-x-dag-bs :valid `(:active)))
+      (either :right `(:active)))
      (t
       (org-x-dag-bs-error-kw "WKP" it-todo)))))
 
 (defun org-x-dag-bs-dlp-inner (node-data)
   (org-x-dag-bs-action-with-closed node-data "daily metablock"
     `(:complete ,it-comptime)
-    (org-x-dag-bs :valid `(:complete ,it-comptime))
+    (either :right `(:complete ,it-comptime))
     (cond
      ((-some->> it-planning (org-ml-get-properties :deadline))
-      (org-x-dag-bs :error "Daily metablocks cannot be deadlined"))
+      (either :left "Daily metablocks cannot be deadlined"))
      ((equal it-todo org-x-kw-todo)
       (-if-let ((sched-date sched-time) (-some->> it-planning
                                           (org-ml-get-property :scheduled)
                                           (org-ml-timestamp-get-start-time)
                                           (org-x-dag-datetime-split)))
           (if (not sched-time)
-              (org-x-dag-bs :error "Daily metablocks must have scheduled time")
+              (either :left "Daily metablocks must have scheduled time")
             (-let* (((&plist :tags) node-data)
                     (tag-date (org-x-dag-daily-tags-to-date tags)))
               (if (org-x-dag-datetime= tag-date sched-date)
-                  (org-x-dag-bs :valid `(:active))
-                (org-x-dag-bs :error "Daily metablocks must be scheduled within their date"))))
-        (org-x-dag-bs :error "Daily metablocks must be scheduled")))
+                  (either :right `(:active))
+                (either :left "Daily metablocks must be scheduled within their date"))))
+        (either :left "Daily metablocks must be scheduled")))
      (t
       (org-x-dag-bs-error-kw "Daily metablock" it-todo)))))
 
@@ -2076,7 +2048,7 @@ used for optimization."
 (defun org-x-dag-bs-error-links (msg links)
   (->> (s-join ", " links)
        (format "%s: %s" msg)
-       (org-x-dag-bs :error)))
+       (either :left)))
 
 (defun org-x-dag-ns-toplevel (tbl adjlist links ns)
   (let ((h (alist-get tbl ns)))
@@ -2094,9 +2066,9 @@ used for optimization."
   (let (r)
     (--each targets
       (->> (if (setq r (ht-get htbl it))
-               (org-x-dag-bs-fmap r
+               (either<$> r
                  (org-x-dag-plist-cons it key id))
-             (org-x-dag-bs :valid `(,key (,id))))
+             (either :right `(,key (,id))))
            (ht-set htbl it)))))
 
 (defun org-x-dag-ns-with-valid (ns adjlist cur-key links keypairs valid-fun)
@@ -2109,7 +2081,7 @@ used for optimization."
        (parent-group
         (h checkleafp adjlist id)
         (cond
-         ((org-x-dag-bs-error-p (ht-get h id))
+         ((either-is-left-p (ht-get h id))
           :error)
          ((and checkleafp (not (org-x-dag-get-children adjlist id)))
           :non-leaf)
@@ -2149,14 +2121,13 @@ used for optimization."
       '((:lifetime))
       (lambda (id this-h res)
         (-let (((&alist :lifetime l) res))
-          (ht-set this-h id (org-x-dag-bs :valid `(:committed ,l)))
+          (ht-set this-h id (either :right `(:committed ,l)))
           (org-x-dag-ht-add-links id ht-l :fulfilled l))))
     ns))
 
 (defun org-x-dag-ht-get-maybe (htbl id key)
-  (pcase (ht-get htbl id)
-    (`(:error ,_) nil)
-    (`(:valid ,c) (plist-get c key))))
+  (either-from-right (ht-get htbl id) nil
+    (plist-get it key)))
 
 (defun org-x-dag-ns-qtp (adjlist links ns)
   (-let (((&alist :lifetime ht-l :endpoint ht-e :quarterly ht-q) ns))
@@ -2164,7 +2135,7 @@ used for optimization."
       '((:lifetime) (:endpoint))
       (lambda (id this-h res)
         (-let (((&alist :lifetime l :endpoint e) res))
-          (ht-set this-h id (org-x-dag-bs :valid `(:committed (,@e ,@l))))
+          (ht-set this-h id (either :right `(:committed (,@e ,@l))))
           (->> (--mapcat (org-x-dag-ht-get-maybe ht-e it :committed) e)
                (org-x-dag-ht-add-links id ht-l :planned))
           (org-x-dag-ht-add-links id ht-e :planned e)
@@ -2177,7 +2148,7 @@ used for optimization."
       '((:quarterly))
       (lambda (id this-h res)
         (-let (((&alist :quarterly q) res))
-          (ht-set this-h id (org-x-dag-bs :valid `(:committed ,q)))
+          (ht-set this-h id (either :right `(:committed ,q)))
           (org-x-dag-ht-add-links id ht-q :planned q))))
     ns))
 
@@ -2191,11 +2162,11 @@ used for optimization."
                  (cond
                   ((and s (or e l))
                    (->> "Action has both survival and endpoint/lifetime links"
-                        (org-x-dag-bs :error)))
+                        (either :left)))
                   (s
-                   (org-x-dag-bs :valid `(:committed ,s :survivalp t)))
+                   (either :right `(:committed ,s :survivalp t)))
                   (t
-                   (org-x-dag-bs :valid `(:committed (,@e ,@l) :survivalp nil))))))
+                   (either :right `(:committed (,@e ,@l) :survivalp nil))))))
           (ht-set this-h id this-ns)
           (org-x-dag-ht-add-links id ht-l :fulfilled l)
           (org-x-dag-ht-add-links id ht-s :fulfilled s)
@@ -2224,13 +2195,13 @@ used for optimization."
                     (->> (list :scheduled w
                                :committed (-uniq gs)
                                :active a)
-                         (org-x-dag-bs :valid)
+                         (either :right)
                          (ht-set this-h id))
                     ;; TODO add the goals to their goal links? (this might be
                     ;; useful later when displaying)
                     (org-x-dag-ht-add-links id ht-w :planned w)
                     (org-x-dag-ht-add-links id ht-a :planned a))
-                (->> (org-x-dag-bs :error "Non overlapping goals")
+                (->> (either :left "Non overlapping goals")
                      (ht-set ht-d id)))))))
       ns)))
 
@@ -2248,9 +2219,9 @@ used for optimization."
       ((propagate
         (adjlist htbl id to-set)
         (->> (-if-let (node (ht-get htbl id))
-                 (org-x-dag-bs-fmap node
+                 (either<$> node
                    (funcall set-fun it to-set))
-               (org-x-dag-bs :valid (funcall def-fun to-set)))
+               (either :right (funcall def-fun to-set)))
              (ht-set htbl id))
         (--each (org-x-dag-get-children adjlist id)
           (propagate adjlist htbl it to-set))))
@@ -2281,15 +2252,12 @@ used for optimization."
                 ;; TODO there isn't a better way to do this? (seems like I'm
                 ;; accessing either/maybe types too many times)
                 ((n* rs*) (-if-let (n (ht-get htbl id))
-                              (pcase n
-                                (`(:error ,_) (list n rs))
-                                (`(:valid ,v) 
-                                 (let ((p (org-x-dag-plist-map v s-key
-                                            (lambda (x) (append x rs)))))
-                                   (list (org-x-dag-bs :valid p)
-                                         (plist-get s-key p)))))
-                            (list (org-x-dag-bs :valid `(,s-key ,rs))
-                                  rs))))
+                              (either-from n
+                                `(,n ,rs)
+                                (let ((p (org-x-dag-plist-map it s-key
+                                           (lambda (x) (append x rs)))))
+                                  `(,(either :right p) ,(plist-get s-key p))))
+                            (list (either :right `(,s-key ,rs)) rs))))
           (ht-set htbl id n*)
           rs*)))
     (let ((h (alist-get h-key ns)))
@@ -2324,12 +2292,9 @@ used for optimization."
     (org-x-dag-ht-propagate-down adjlist :action :planned ns)
     (org-x-dag-ht-map-down adjlist :action ns
       (lambda (h id)
-        (pcase (ht-get h id)
-          (`(:error ,_) nil)
-          (`(:valid ,c)
-           (-when-let (committed (plist-get c :committed))
-             (let ((survivalp (plist-get c :survivalp)))
-               (list committed survivalp))))))
+        (either-from-right (ht-get h id) nil
+          (-when-let (committed (plist-get it :committed))
+            `(,committed ,(plist-get it :survivalp)))))
       (lambda (plist to-set)
         (-let (((committed survivalp) to-set))
           (-> (plist-put plist :survivalp survivalp)
@@ -3156,6 +3121,20 @@ except it ignores inactive timestamps."
 ;;
 ;; Not sure what to call these, they convert the DAG to a list of agenda strings
 
+(defmacro org-x-dag-with-file-ids (files id-form)
+  (declare (indent 1))
+  `(with-temp-buffer
+    ;; TODO this is silly and it adds 0.1 seconds to this function's runtime;
+    ;; it is only needed to get the todo keyword the right color
+    (org-mode)
+    (->> (org-x-dag-files->ids ,files)
+         (--mapcat ,id-form))))
+
+(defmacro org-x-dag-with-action-ids (id-form)
+  (declare (indent 0))
+  `(org-x-dag-with-file-ids (org-x-dag->action-files)
+     ,id-form))
+
 (defmacro org-x-dag-with-files (files pre-form form)
   (declare (indent 2))
   (let* ((lookup-form '(ht-get file->ids it-file))
@@ -3176,34 +3155,29 @@ except it ignores inactive timestamps."
          (-non-nil (-mapcat #'proc-file ,files))))))
 
 (defun org-x-dag-scan-projects ()
-  (cl-flet*
-      ((format-key
-        (id status-data)
-        ;; NOTE in the future there might be more than just the car to this
-        (let ((status (car status-data)))
-          (print status)
-          (-when-let (priority (cl-case status
-                                 (:proj-active 4)
-                                 (:proj-wait 3)
-                                 (:proj-hold 2)
-                                 (:proj-stuck 1)))
-            (pcase (org-x-dag-id->ns id)
-              (`(:valid ,v)
-               (when (plist-get v :committed)
-                 (let ((tags (org-x-dag-id->tags nil id)))
-                   (-> (org-x-dag-format-tag-node tags id)
-                       (org-add-props nil
-                           'x-toplevelp (org-x-dag-id->is-toplevel-p id)
-                           'x-status status
-                           'x-priority priority))))))))))
-    (with-temp-buffer
-      (org-mode)
-      (->> (org-x-dag->action-files)
-           (org-x-dag-files->ids)
-           (--map (pcase (org-x-dag-id->bs it)
-                    (`(:valid (:sp-proj . ,s))
-                     (format-key it s))))
-           (-non-nil)))))
+  (org-x-dag-with-action-ids
+    (either-from-right* (org-x-dag-id->bs it) nil
+      (lambda (bs)
+        (pcase bs
+          (`(:sp-proj . ,status-data)
+           ;; NOTE in the future there might be more than just the car to this
+           (let ((status (car status-data)))
+             (-when-let (priority (cl-case status
+                                    (:proj-active 4)
+                                    (:proj-wait 3)
+                                    (:proj-hold 2)
+                                    (:proj-stuck 1)))
+               (-when-let (ns (org-x-dag-id->ns it))
+                 (either-from-right* ns nil
+                   (lambda (it-ns)
+                     (when (plist-get it-ns :committed)
+                       (let ((tags (org-x-dag-id->tags nil it)))
+                         (-> (org-x-dag-format-tag-node tags it)
+                             (org-add-props nil
+                                 'x-toplevelp (org-x-dag-id->is-toplevel-p it)
+                                 'x-status status
+                                 'x-priority priority)
+                             (list)))))))))))))))
 
 (defun org-x-dag--item-add-goal-ids (item ids)
   (if ids
@@ -3222,22 +3196,18 @@ except it ignores inactive timestamps."
          (-mapcat #'split-parent-goals))))
 
 (defun org-x-dag-scan-iterators ()
-  (cl-flet
-      ((format-id
-        (id status-data)
-        (let ((status (car status-data)))
-          (when (memq status '(:iter-empty :iter-active))
-            (let ((tags (org-x-dag-id->tags nil id)))
-              (-> (org-x-dag-format-tag-node tags id)
-                  (org-add-props nil
-                      'x-status status)))))))
-    (with-temp-buffer
-      (org-mode)
-      (->> (org-x-dag->action-files)
-           (org-x-dag-files->ids)
-           (--map (pcase (org-x-dag-id->bs it)
-                    (`(:valid (:sp-proj . ,s)) (format-id it s))))
-           (-non-nil)))))
+  (org-x-dag-with-action-ids
+    (either-from-right (org-x-dag-id->bs it) nil
+      (lambda (bs)
+        (pcase bs
+          (`(:sp-proj . ,status-data)
+           (let ((status (car status-data)))
+             (when (memq status '(:iter-empty :iter-active))
+               (let ((tags (org-x-dag-id->tags nil it)))
+                 (-> (org-x-dag-format-tag-node tags it)
+                     (org-add-props nil
+                         'x-status status)
+                     (list)))))))))))
   
 (defun org-x-dag-get-task-nodes (pred id)
   (declare (indent 2))
@@ -3254,79 +3224,43 @@ except it ignores inactive timestamps."
 
 ;; TODO this includes tasks underneath cancelled headlines
 (defun org-x-dag-scan-tasks ()
-  (cl-flet
-      ((format-key
-        (id s)
-        (-let (((&plist :todo :sched :dead) s))
-          (pcase (org-x-dag-id->ns id)
-            (`(:valid ,ns)
-             (-let (((&plist :committed c) ns))
-               (when (and (not sched) (not dead) c)
-                 (let ((tags (org-x-dag-id->tags nil id))
-                       (bp (org-x-dag-id->buffer-parent id)))
-                   (-> (org-x-dag-format-tag-node tags id)
-                       (org-add-props nil
-                           'x-is-standalone (not bp)
-                           'x-status :active))))))))))
-    ;; TODO this is silly and it adds 0.1 seconds to this function's runtime;
-    ;; it is only needed to get the todo keyword the right color
-    (with-temp-buffer
-      (org-mode)
-      (->> (org-x-dag->action-files)
-           (org-x-dag-files->ids)
-           (--reduce-from (pcase (org-x-dag-id->bs it)
-                            (`(:valid (:sp-task :task-active ,s))
-                             (-if-let (new (format-key it s))
-                                 (cons new acc)
-                               acc))
-                            (_ acc))
-                          nil)))))
-                               
-    ;; (org-x-dag-with-files (org-x-dag->action-files)
-    ;;     (org-x-dag-id->is-toplevel-p it)
-    ;;   (-if-let (project-tasks (org-x-dag-get-task-nodes
-    ;;                               (lambda (it) (not (member (org-x-dag-id->todo it)
-    ;;                                                    (list org-x-kw-canc org-x-kw-hold))))
-    ;;                               it))
-    ;;       (--map (format-key it-category nil it) project-tasks)
-    ;;     (list (format-key it-category t it))))))
+  (org-x-dag-with-action-ids
+    (either-from-right* (org-x-dag-id->bs it) nil
+      (lambda (bs)
+        (pcase bs
+          (`(:sp-task :task-active ,s)
+           (-let (((&plist :todo :sched :dead) s))
+             (-when-let (ns (org-x-dag-id->ns it))
+               (either-from-right* ns nil
+                 (lambda (it-ns)
+                   (-let (((&plist :committed c) it-ns))
+                     (when (and (not sched) (not dead) c)
+                       (let ((tags (org-x-dag-id->tags nil it))
+                             (bp (org-x-dag-id->buffer-parent it)))
+                         (-> (org-x-dag-format-tag-node tags it)
+                             (org-add-props nil
+                                 'x-is-standalone (not bp)
+                                 'x-status :active)
+                             (list)))))))))))))))
 
-;; TODO wetter than Prince's dreams
 (defun org-x-dag-scan-tasks-with-goals ()
-  (cl-flet*
-      ((classify-parent
-        (id)
-        (cond
-         ((or (org-x-dag-id->is-goal-p :lifetime id)
-              (org-x-dag-id->is-goal-p :endpoint id))
-          :non-survival)
-         ((org-x-dag-id->is-goal-p :survival id)
-          :survival)
-         (t
-          :ignore)))
-       (format-key
-        (category is-standalone key)
-        (-let (((goal-ids goal-status) (org-x-dag-id->goal-status 'current key)))
-          (when (memq goal-status '(:planned :committed))
-            (let* ((s (org-x-dag-id->task-status key))
-                   (p (alist-get s org-x-headline-task-status-priorities))
-                   (tags (org-x-dag-id->tags nil key)))
-              (unless (= p -1)
-                ;; ASSUME only ids with at least one valid goal will get this
-                ;; far
-                (-> (org-x-dag-format-tag-node category tags key)
-                    (org-add-props nil
-                        'x-is-standalone is-standalone
-                        'x-status s)
-                    (org-x-dag--item-add-goal-ids goal-ids))))))))
-    (org-x-dag-with-files (org-x-get-action-files)
-        (org-x-dag-id->is-toplevel-p it)
-      (-if-let (project-tasks (org-x-dag-get-task-nodes
-                                  (lambda (it) (not (member (org-x-dag-id->todo it)
-                                                       (list org-x-kw-canc org-x-kw-hold))))
-                                  it))
-          (--mapcat (format-key it-category nil it) project-tasks)
-        (format-key it-category t it)))))
+  (org-x-dag-with-action-ids
+    (either-from-right* (org-x-dag-id->bs it) nil
+      (lambda (bs)
+        (pcase bs
+          (`(:sp-task :task-active ,s)
+           (-let (((&plist :todo) s)
+                  (goal-ids (-when-let (ns (org-x-dag-id->ns it))
+                              (either-from-right ns nil
+                                (unless (plist-get it :survivalp)
+                                  (plist-get it :committed)))))
+                  (tags (org-x-dag-id->tags nil it))
+                  (bp (org-x-dag-id->buffer-parent it)))
+             (-> (org-x-dag-format-tag-node tags it)
+                 (org-add-props nil
+                     'x-is-standalone (not bp)
+                     'x-status :active)
+                 (org-x-dag--item-add-goal-ids goal-ids)))))))))
 
 (defun org-x-dag-scan-survival-tasks ()
   (cl-flet
@@ -3403,26 +3337,20 @@ except it ignores inactive timestamps."
 ;;       (list (format-key it-category it)))))
 
 (defun org-x-dag-scan-archived ()
-  (cl-flet
-      ((format-key
-        (id bs)
-        (-when-let ((comptime is-project)
-                    (pcase bs
-                      (`(:sp-proj :proj-complete ,c) `(,c t))
-                      (`(:sp-task :task-complete ,c) `(,c nil))))
-          (-let ((epoch (plist-get comptime :epoch)))
-            (when (org-x-dag-time-is-archivable-p epoch)
-              (let ((tags (org-x-dag-id->tags nil id)))
-                (-> (org-x-dag-format-tag-node tags id)
-                    (org-add-props nil
-                        'x-project-p is-project))))))))
-    (with-temp-buffer
-      (org-mode)
-      (->> (org-x-dag->action-files)
-           (org-x-dag-files->ids)
-           (--map (pcase (org-x-dag-id->bs it)
-                    (`(:valid ,v) (format-key it v))))
-           (-non-nil)))))
+  (org-x-dag-with-action-ids
+    (either-from-right* (org-x-dag-id->bs it) nil
+      (lambda (bs)
+       (-when-let ((comptime is-project)
+                   (pcase bs
+                     (`(:sp-proj :proj-complete ,c) `(,c t))
+                     (`(:sp-task :task-complete ,c) `(,c nil))))
+         (-let ((epoch (plist-get comptime :epoch)))
+           (when (org-x-dag-time-is-archivable-p epoch)
+             (let ((tags (org-x-dag-id->tags nil it)))
+               (-> (org-x-dag-format-tag-node tags it)
+                   (org-add-props nil
+                       'x-project-p is-project)
+                   (list))))))))))
 
 (defun org-x-dag--classify-goal-link (which which-goal id)
   (let ((f (org-x-dag-id->file id)))
