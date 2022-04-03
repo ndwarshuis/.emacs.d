@@ -56,35 +56,27 @@ left/right slot."
          (`(:right ,it) (either :right ,form))
          (e (error "Learn to use functors, dummy; this isn't one: %s" e))))))
 
-(defmacro either-from-right (either default &rest body)
-  "Apply BODY to the right slot of EITHER.
+(defun either-from-right (either default)
+  "Return contents of EITHER if right or DEFAULT."
+  (pcase either
+    (`(:left ,_) default)
+    (`(:right ,x) x)
+    (e (error "Not an either: %s" e))))
 
-If EITHER is right, return result of FORM where the right slot is
-bound to 'it'. Return DEFAULT otherwise."
-  (declare (indent 2))
-  `(pcase ,either
-     (`(:left ,_) ,default)
-     (`(:right ,it) ,@body)
-     (e (error "Not an either: %s" e))))
+(defun either-from-left (either default)
+  "Return contents of EITHER if left or DEFAULT."
+  (pcase either
+    (`(:left ,x) x)
+    (`(:right ,_) default)
+    (e (error "Not an either: %s" e))))
 
-(defmacro either-from-left (either default &rest body)
-  "Apply BODY to the left slot of EITHER.
+;; (defun either-from-right* (either default fun)
+;;   (declare (indent 2))
+;;   (either-from-right either default (funcall fun it)))
 
-If EITHER is left, return result of FORM where the left slot is
-bound to 'it'. Return DEFAULT otherwise."
-  (declare (indent 2))
-  `(pcase ,either
-     (`(:left ,it) ,@body)
-     (`(:right ,_) ,default)
-     (e (error "Not an either: %s" e))))
-
-(defun either-from-right* (either default fun)
-  (declare (indent 2))
-  (either-from-right either default (funcall fun it)))
-
-(defun either-from-left* (either default fun)
-  (declare (indent 2))
-  (either-from-left either default (funcall fun it)))
+;; (defun either-from-left* (either default fun)
+;;   (declare (indent 2))
+;;   (either-from-left either default (funcall fun it)))
 
 (defmacro either-from (either left-form right-form)
   "Apply forms to the left or right slot of EITHER.

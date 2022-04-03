@@ -2126,8 +2126,7 @@ used for optimization."
     ns))
 
 (defun org-x-dag-ht-get-maybe (htbl id key)
-  (either-from-right (ht-get htbl id) nil
-    (plist-get it key)))
+  (either-from (ht-get htbl id) nil (plist-get it key)))
 
 (defun org-x-dag-ns-qtp (adjlist links ns)
   (-let (((&alist :lifetime ht-l :endpoint ht-e :quarterly ht-q) ns))
@@ -2292,7 +2291,8 @@ used for optimization."
     (org-x-dag-ht-propagate-down adjlist :action :planned ns)
     (org-x-dag-ht-map-down adjlist :action ns
       (lambda (h id)
-        (either-from-right (ht-get h id) nil
+        (either-from (ht-get h id)
+          nil
           (-when-let (committed (plist-get it :committed))
             `(,committed ,(plist-get it :survivalp)))))
       (lambda (plist to-set)
@@ -2668,16 +2668,16 @@ FUTURE-LIMIT in a list."
           (future-limit (org-x-dag-datetime-shift sel-datetime warn-shift warn-shifttype)))
     (org-x-dag-unfold-timestamp sel-datetime d r future-limit)))
 
-(defun org-x-dag-headline-get-planning ()
-  (let ((end (save-excursion (outline-next-heading))))
-    (save-excursion
-      (when (re-search-forward org-planning-line-re end t)
-        ;; TODO this is rather slow since I'm using a general org-ml parsing
-        ;; function; I'm also not even using the match results from the planning
-        ;; line re, which might be useful
-        (-let* ((pl (org-ml-parse-this-element)))
-          (->> (org-ml-get-properties '(:deadline :scheduled) pl)
-               (--map (-some-> it (org-x-dag-partition-timestamp)))))))))
+;; (defun org-x-dag-headline-get-planning ()
+;;   (let ((end (save-excursion (outline-next-heading))))
+;;     (save-excursion
+;;       (when (re-search-forward org-planning-line-re end t)
+;;         ;; TODO this is rather slow since I'm using a general org-ml parsing
+;;         ;; function; I'm also not even using the match results from the planning
+;;         ;; line re, which might be useful
+;;         (-let* ((pl (org-ml-parse-this-element)))
+;;           (->> (org-ml-get-properties '(:deadline :scheduled) pl)
+;;                (--map (-some-> it (org-x-dag-partition-timestamp)))))))))
 
 (defun org-x-dag-id->agenda-timestamp (id)
   "Retrieve timestamp information of ID for sorting agenda views.
@@ -2743,8 +2743,9 @@ except it ignores inactive timestamps."
             ;; misc
             'type (concat "tagsmatch" ts-type)))))
 
-(defun org-x-dag-format-item (id extra category tags time)
+(defun org-x-dag-format-item (id extra tags time)
   (let* ((tags* (org-x-dag-prepare-tags tags))
+         (category (org-x-dag-id->hl-meta-prop id :category))
          (level (org-x-dag-id->formatted-level id))
          (todo-state (org-x-dag-id->todo id))
          (head (format "%s %s" todo-state (org-x-dag-id->title id)))
@@ -2772,7 +2773,7 @@ except it ignores inactive timestamps."
    'ts-date (org-x-dag-date-to-absolute ts-date)
    'type type))
 
-(defun org-x-dag-format-scheduled-node (sel-date pos datetime category tags id)
+(defun org-x-dag-format-scheduled-node (sel-date pos datetime tags id)
   (-let* (((this-date this-time) (org-x-dag-datetime-split datetime))
           (diff (org-x-dag-date-diff this-date sel-date))
           (pastp (< diff 0))
@@ -2789,10 +2790,10 @@ except it ignores inactive timestamps."
                          `(,sel-date "scheduled")))
           (props (org-x-dag-planning-props id face pos date this-date type)))
     ;; NOTE: I don't care about habits, no need to consider them
-    (-> (org-x-dag-format-item id extra category tags this-time)
+    (-> (org-x-dag-format-item id extra tags this-time)
         (org-add-props props))))
 
-(defun org-x-dag-format-deadline-node (sel-date pos datetime category tags id)
+(defun org-x-dag-format-deadline-node (sel-date pos datetime tags id)
   (-let* (((this-date this-time) (org-x-dag-datetime-split datetime))
           (diff (org-x-dag-date-diff this-date sel-date))
           (pastp (< diff 0))
@@ -2812,7 +2813,7 @@ except it ignores inactive timestamps."
           ((date type) (if futurep `(,sel-date "upcoming-deadline")
                          `(,this-date "deadline")))
           (props (org-x-dag-planning-props id face pos date this-date type)))
-    (-> (org-x-dag-format-item id extra category tags this-time)
+    (-> (org-x-dag-format-item id extra tags this-time)
         (org-add-props props))))
 
 ;;; ID FUNCTIONS
@@ -3156,28 +3157,24 @@ except it ignores inactive timestamps."
 
 (defun org-x-dag-scan-projects ()
   (org-x-dag-with-action-ids
-    (either-from-right* (org-x-dag-id->bs it) nil
-      (lambda (bs)
-        (pcase bs
-          (`(:sp-proj . ,status-data)
-           ;; NOTE in the future there might be more than just the car to this
-           (let ((status (car status-data)))
-             (-when-let (priority (cl-case status
-                                    (:proj-active 4)
-                                    (:proj-wait 3)
-                                    (:proj-hold 2)
-                                    (:proj-stuck 1)))
-               (-when-let (ns (org-x-dag-id->ns it))
-                 (either-from-right* ns nil
-                   (lambda (it-ns)
-                     (when (plist-get it-ns :committed)
-                       (let ((tags (org-x-dag-id->tags nil it)))
-                         (-> (org-x-dag-format-tag-node tags it)
-                             (org-add-props nil
-                                 'x-toplevelp (org-x-dag-id->is-toplevel-p it)
-                                 'x-status status
-                                 'x-priority priority)
-                             (list)))))))))))))))
+    (pcase (either-from-right (org-x-dag-id->bs it) nil)
+      (`(:sp-proj . ,status-data)
+       ;; NOTE in the future there might be more than just the car to this
+       (let ((status (car status-data)))
+         (-when-let (priority (cl-case status
+                                (:proj-active 4)
+                                (:proj-wait 3)
+                                (:proj-hold 2)
+                                (:proj-stuck 1)))
+           (-when-let ((&plist :committed) (-when-let (ns (org-x-dag-id->ns it))
+                                             (either-from-right ns nil)))
+             (let ((tags (org-x-dag-id->tags nil it)))
+               (-> (org-x-dag-format-tag-node tags it)
+                   (org-add-props nil
+                       'x-toplevelp (org-x-dag-id->is-toplevel-p it)
+                       'x-status status
+                       'x-priority priority)
+                   (list))))))))))
 
 (defun org-x-dag--item-add-goal-ids (item ids)
   (if ids
@@ -3186,17 +3183,15 @@ except it ignores inactive timestamps."
 
 (defun org-x-dag-scan-iterators ()
   (org-x-dag-with-action-ids
-    (either-from-right (org-x-dag-id->bs it) nil
-      (lambda (bs)
-        (pcase bs
-          (`(:sp-proj . ,status-data)
-           (let ((status (car status-data)))
-             (when (memq status '(:iter-empty :iter-active))
-               (let ((tags (org-x-dag-id->tags nil it)))
-                 (-> (org-x-dag-format-tag-node tags it)
-                     (org-add-props nil
-                         'x-status status)
-                     (list)))))))))))
+    (pcase (either-from-right (org-x-dag-id->bs it) nil)
+      (`(:sp-proj . ,status-data)
+       (let ((status (car status-data)))
+         (when (memq status '(:iter-empty :iter-active))
+           (let ((tags (org-x-dag-id->tags nil it)))
+             (-> (org-x-dag-format-tag-node tags it)
+                 (org-add-props nil
+                     'x-status status)
+                 (list)))))))))
   
 (defun org-x-dag-get-task-nodes (pred id)
   (declare (indent 2))
@@ -3214,57 +3209,51 @@ except it ignores inactive timestamps."
 ;; TODO this includes tasks underneath cancelled headlines
 (defun org-x-dag-scan-tasks ()
   (org-x-dag-with-action-ids
-    (either-from-right* (org-x-dag-id->bs it) nil
-      (lambda (bs)
-        (pcase bs
-          (`(:sp-task :task-active ,s)
-           (-let (((&plist :todo :sched :dead) s))
-             (-when-let (ns (org-x-dag-id->ns it))
-               (either-from-right* ns nil
-                 (lambda (it-ns)
-                   (-let (((&plist :committed c) it-ns))
-                     (when (and (not sched) (not dead) c)
-                       (let ((tags (org-x-dag-id->tags nil it))
-                             (bp (org-x-dag-id->buffer-parent it)))
-                         (-> (org-x-dag-format-tag-node tags it)
-                             (org-add-props nil
-                                 'x-is-standalone (not bp)
-                                 'x-status :active)
-                             (list)))))))))))))))
+    (pcase (either-from-right (org-x-dag-id->bs it) nil)
+      (`(:sp-task :task-active ,s)
+       (-let (((&plist :todo :sched :dead) s))
+         (-let (((&plist :committed c) (-when-let (ns (org-x-dag-id->ns it))
+                                         (either-from-right ns nil))))
+           (when (and (not sched) (not dead) c)
+             (let ((tags (org-x-dag-id->tags nil it))
+                   (bp (org-x-dag-id->buffer-parent it)))
+               (-> (org-x-dag-format-tag-node tags it)
+                   (org-add-props nil
+                       'x-is-standalone (not bp)
+                       'x-status :active)
+                   (list))))))))))
 
 (defun org-x-dag-scan-tasks-with-goals ()
   (org-x-dag-with-action-ids
-    (either-from-right* (org-x-dag-id->bs it) nil
-      (lambda (bs)
-        (pcase bs
-          (`(:sp-task :task-active ,s)
-           (-let (((&plist :todo) s)
-                  (goal-ids (-when-let (ns (org-x-dag-id->ns it))
-                              (either-from-right ns nil
-                                (unless (plist-get it :survivalp)
-                                  (plist-get it :committed)))))
-                  (tags (org-x-dag-id->tags nil it))
-                  (bp (org-x-dag-id->buffer-parent it)))
-             (-> (org-x-dag-format-tag-node tags it)
-                 (org-add-props nil
-                     'x-is-standalone (not bp)
-                     'x-status :active)
-                 (org-x-dag--item-add-goal-ids goal-ids)))))))))
+    (pcase (either-from-right (org-x-dag-id->bs it) nil)
+      (`(:sp-task :task-active ,s)
+       (-let (((&plist :todo) s)
+              (goal-ids (-when-let (ns (org-x-dag-id->ns it))
+                          (either-from ns
+                            nil
+                            (unless (plist-get it :survivalp)
+                              (plist-get it :committed)))))
+              (tags (org-x-dag-id->tags nil it))
+              (bp (org-x-dag-id->buffer-parent it)))
+         (-> (org-x-dag-format-tag-node tags it)
+             (org-add-props nil
+                 'x-is-standalone (not bp)
+                 'x-status :active)
+             (org-x-dag--item-add-goal-ids goal-ids)))))))
 
 (defun org-x-dag-scan-projects-with-goals ()
   (org-x-dag-with-action-ids
-    (either-from-right* (org-x-dag-id->bs it) nil
-      (lambda (bs)
-        (pcase bs
-          (`(:sp-proj . ,s)
-           (unless (eq (car s) :proj-complete)
-             (let ((goal-ids (-when-let (ns (org-x-dag-id->ns it))
-                               (either-from-right ns nil
-                                 (unless (plist-get it :survivalp)
-                                   (plist-get it :committed)))))
-                   (tags (org-x-dag-id->tags nil it)))
-               (-> (org-x-dag-format-tag-node tags it)
-                   (org-x-dag--item-add-goal-ids goal-ids))))))))))
+    (pcase (either-from-right (org-x-dag-id->bs it) nil)
+      (`(:sp-proj . ,s)
+       (unless (eq (car s) :proj-complete)
+         (let ((goal-ids (-when-let (ns (org-x-dag-id->ns it))
+                           (either-from ns
+                             nil
+                             (unless (plist-get it :survivalp)
+                               (plist-get it :committed)))))
+               (tags (org-x-dag-id->tags nil it)))
+           (-> (org-x-dag-format-tag-node tags it)
+               (org-x-dag--item-add-goal-ids goal-ids))))))))
 
 (defun org-x-dag-scan-survival-tasks ()
   (cl-flet
@@ -3342,19 +3331,17 @@ except it ignores inactive timestamps."
 
 (defun org-x-dag-scan-archived ()
   (org-x-dag-with-action-ids
-    (either-from-right* (org-x-dag-id->bs it) nil
-      (lambda (bs)
-       (-when-let ((comptime is-project)
-                   (pcase bs
-                     (`(:sp-proj :proj-complete ,c) `(,c t))
-                     (`(:sp-task :task-complete ,c) `(,c nil))))
-         (-let ((epoch (plist-get comptime :epoch)))
-           (when (org-x-dag-time-is-archivable-p epoch)
-             (let ((tags (org-x-dag-id->tags nil it)))
-               (-> (org-x-dag-format-tag-node tags it)
-                   (org-add-props nil
-                       'x-project-p is-project)
-                   (list))))))))))
+    (-when-let ((comptime is-project)
+                (pcase (either-from-right (org-x-dag-id->bs it) nil)
+                  (`(:sp-proj :proj-complete ,c) `(,c t))
+                  (`(:sp-task :task-complete ,c) `(,c nil))))
+      (-let ((epoch (plist-get comptime :epoch)))
+        (when (org-x-dag-time-is-archivable-p epoch)
+          (let ((tags (org-x-dag-id->tags nil it)))
+            (-> (org-x-dag-format-tag-node tags it)
+                (org-add-props nil
+                    'x-project-p is-project)
+                (list))))))))
 
 (defun org-x-dag--classify-goal-link (which which-goal id)
   (let ((f (org-x-dag-id->file id)))
@@ -3448,32 +3435,33 @@ except it ignores inactive timestamps."
 (defun org-x-dag-scan-agenda (sel-date)
   (cl-flet*
       ((format-timestamps
-        (todayp sel-date cat id pts get-datetimes-fun format-datetime-fun)
-        (-when-let (datetimes (funcall get-datetimes-fun sel-date pts))
-          (let ((tags (org-x-dag-id->tags nil id)))
+        (todayp sel-date id ts get-datetimes-fun format-datetime-fun)
+        (let ((pts (org-x-dag-partition-timestamp ts)))
+          (-when-let (datetimes (funcall get-datetimes-fun sel-date pts))
             ;; TODO this will show all tasks regardless of if they have a
             ;; goal/plan or not
-            (-let (((&plist :pos) pts)
+            (-let ((tags (org-x-dag-id->tags nil id))
+                   ((&plist :pos) pts)
                    (donep (org-x-dag-id->is-done-p id)))
               (--> datetimes
                    (--remove (and donep (not (org-x-dag-datetime= (-take 3 it) sel-date))) it)
                    (if (not todayp) (--remove (org-x-dag-datetime< (-take 3 it) sel-date) it) it)
-                   (--map (funcall format-datetime-fun sel-date pos it cat tags id) it))))))
-       (format-id
-        (todayp cat id)
-        (append
-         (-when-let (dead (org-x-dag-id->planning-timestamp :deadline id))
-           (format-timestamps todayp sel-date cat id dead
-                              #'org-x-dag-get-deadlines-at
-                              #'org-x-dag-format-deadline-node))
-         (-when-let (sched(org-x-dag-id->planning-timestamp :scheduled id))
-           (format-timestamps todayp sel-date cat id sched
-                              #'org-x-dag-get-scheduled-at
-                              #'org-x-dag-format-scheduled-node)))))
-    (org-x-dag-with-files (org-x-dag->action-files)
-        nil
-      (let ((todayp (= (org-x-dag-date-to-absolute sel-date) (org-today))))
-        (format-id todayp it-category it)))))
+                   (--map (funcall format-datetime-fun sel-date pos it tags id) it)))))))
+    (let ((todayp (= (org-x-dag-date-to-absolute sel-date) (org-today))))
+      ;; TODO this won't show daily nodes
+      (org-x-dag-with-action-ids
+        (pcase (either-from-right (org-x-dag-id->bs it) nil)
+          (`(:sp-task :task-active ,s)
+           (-let (((&plist :sched :dead) s))
+             (append
+              (when dead
+                (format-timestamps todayp sel-date it dead
+                                   #'org-x-dag-get-deadlines-at
+                                   #'org-x-dag-format-deadline-node))
+              (when sched
+                (format-timestamps todayp sel-date it sched
+                                   #'org-x-dag-get-scheduled-at
+                                   #'org-x-dag-format-scheduled-node))))))))))
 
 (defun org-x-dag-scan-quarterly-plan ()
   (let ((week-file (list (org-x-get-weekly-plan-file)))
