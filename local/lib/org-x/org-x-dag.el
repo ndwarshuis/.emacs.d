@@ -1454,28 +1454,29 @@ used for optimization."
 (defmacro org-x-dag-bs-fold-children (bss default rank-form stop-form trans-form)
   (declare (indent 2))
   (let ((err (org-x-dag-bs :error "Child error")))
-    `(-if-let ((x . xs) ,bss)
-         ;; (if (org-x-dag-bs-error-p x) (progn (print x) ',err)
-         (if (org-x-dag-bs-error-p x) ',err
-           (let ((acc (cadr x)) r final)
-             (while (and (not final) xs)
-               (setq x (car xs))
-               (if (org-x-dag-bs-error-p x)
-                   (setq final ',err)
-                 (setq it (cadr x)
-                       r ,rank-form)
-                 (unless r
-                   (error "You forgot the difference between Maybe and Either"))
-                 (if (org-x-dag-bs-error-p r)
-                     (setq final r)
-                   (when (cadr r)
-                     (setq acc (cadr x)))
-                   (if ,stop-form
-                       (setq final (org-x-dag-bs :valid acc))
-                     (!cdr xs)))))
-             (when (not final)
-               (setq final (org-x-dag-bs :valid acc)))
-             (org-x-dag-bs>>= final ,trans-form)))
+    `(if ,bss
+         (-let (((x . xs) ,bss))
+           ;; (if (org-x-dag-bs-error-p x) (progn (print x) ',err)
+           (if (org-x-dag-bs-error-p x) ',err
+             (let ((acc (cadr x)) r final)
+               (while (and (not final) xs)
+                 (setq x (car xs))
+                 (if (org-x-dag-bs-error-p x)
+                     (setq final ',err)
+                   (setq it (cadr x)
+                         r ,rank-form)
+                   (unless r
+                     (error "You forgot the difference between Maybe and Either"))
+                   (if (org-x-dag-bs-error-p r)
+                       (setq final r)
+                     (when (cadr r)
+                       (setq acc (cadr x)))
+                     (if ,stop-form
+                         (setq final (org-x-dag-bs :valid acc))
+                       (!cdr xs)))))
+               (when (not final)
+                 (setq final (org-x-dag-bs :valid acc)))
+               (org-x-dag-bs>>= final ,trans-form))))
        (org-x-dag-bs :valid ,default))))
 
 (defun org-x-dag-bs-error-kw (type-name kw)
@@ -1516,7 +1517,11 @@ used for optimization."
   (cl-flet
       ((new-proj
         (status)
-        (org-x-dag-bs :valid `(:sp-proj ,@status))))
+        (org-x-dag-bs :valid `(:sp-proj ,@status)))
+       (is-next
+        (task-data)
+        (-let (((&plist :todo :sched) task-data))
+          (or sched (equal todo org-x-kw-next)))))
     ;; rankings
     ;; *-active > proj-wait > proj-held > (proj-stuck == iter-empty) > *-complete
     (org-x-dag-bs-action-with-closed node-data "projects"
@@ -1558,22 +1563,38 @@ used for optimization."
                                        :dead dead)
                                  (list :sp-task :task-active))))
         (cond
-         ((equal it-todo org-x-kw-hold)
+         ((and child-bss (equal it-todo org-x-kw-hold))
           (new-proj '(:proj-held)))
-         ((and sched child-bss)
+         ((and child-bss sched)
           (org-x-dag-bs :error "Projects cannot be scheduled"))
          ((equal it-todo org-x-kw-todo)
           (org-x-dag-bs-fold-children child-bss task-default
             (->> (pcase `(,acc ,it)
                    (`((:sp-task :task-active ,a) (:sp-task :task-active ,b))
-                    (and (not (plist-get a :sched)) (plist-get b :sched)))
+                    (and (not (is-next a)) (is-next b)))
 
-                   (`((:sp-proj :proj-active) ,_) nil)
+                   (`(,(or `(:sp-proj :proj-active)
+                           `(:sp-proj :proj-wait)
+                           `(:sp-proj :proj-held)
+                           `(:sp-proj :proj-stuck)
+                           `(:sp-iter :iter-active)
+                           `(:sp-iter :iter-empty))
+                      (:sp-task :task-active ,d))
+                    (is-next d))
+
+                   (`((:sp-task :task-active ,d)
+                      ,(or `(:sp-proj :proj-active)
+                           `(:sp-proj :proj-wait)
+                           `(:sp-proj :proj-held)
+                           `(:sp-proj :proj-stuck)
+                           `(:sp-iter :iter-active)
+                           `(:sp-iter :iter-empty)))
+                    (not (is-next d)))
+
                    (`((:sp-iter :iter-active ,_) ,_) nil)
-                   (`((:sp-task :task-active ,d) ,_) (not (plist-get d :sched)))
+                   (`((:sp-proj :proj-active) ,_) nil)
                    (`(,_ (:sp-proj :proj-active)) t)
                    (`(,_ (:sp-iter :iter-active ,_)) t)
-                   (`(,_ (:sp-task :task-active ,d)) (plist-get d :sched))
 
                    (`((:sp-proj :proj-wait) ,_) nil)
                    (`(,_ (:sp-proj :proj-wait)) t)
@@ -1583,8 +1604,10 @@ used for optimization."
 
                    (`((:sp-proj :proj-stuck) ,_) nil)
                    (`((:sp-iter :iter-empty) ,_) nil)
+                   (`((:sp-task :task-active ,_) ,_) nil)
                    (`(,_ (:sp-proj :proj-stuck)) t)
                    (`(,_ (:sp-iter :iter-empty)) t)
+                   (`(,_ (:sp-task :task-active ,_)) t)
 
                    ;; any pair that makes it this far is completed in both, which means
                    ;; neither takes precedence, which means choose the left one
@@ -1595,7 +1618,7 @@ used for optimization."
             (pcase acc
               (`(:sp-proj :proj-active) t)
               (`(:sp-iter :iter-active ,_) t)
-              (`(:sp-task :task-active ,d) (plist-get d :sched))
+              (`(:sp-task :task-active ,d) (is-next d))
               (_ nil))
 
             ;; child -> parent translation
@@ -3158,6 +3181,7 @@ except it ignores inactive timestamps."
         (id status-data)
         ;; NOTE in the future there might be more than just the car to this
         (let ((status (car status-data)))
+          (print status)
           (-when-let (priority (cl-case status
                                  (:proj-active 4)
                                  (:proj-wait 3)
@@ -3477,21 +3501,17 @@ except it ignores inactive timestamps."
 (defun org-x-dag-scan-errors ()
   (cl-flet
       ((format-id
-        (category id)
-        (-when-let (error-type
-                    (if (org-x-dag-id->is-iterator-p id)
-                        (unless (org-x-dag-id->node-property "ARCHIVE" id)
-                          :missing-archive)
-                      (-if-let (created (org-x-dag-id->node-property org-x-prop-created))
-                          (when (<= (float-time) (org-2ft created))
-                            :future-created)
-                        :missing-created)))
-          (-> (org-x-dag-format-tag-node category nil id)
-              (org-add-props nil
-                  'x-error error-type)))))
-    (org-x-dag-with-files (org-x-dag->files)
-        (not (org-x-dag-id->is-done-p it))
-      (list (format-id it-category it)))))
+        (id msg)
+        (-> (org-x-dag-format-tag-node nil id)
+            (org-add-props nil
+                'x-error msg))))
+    (with-temp-buffer
+      (org-mode)
+      (->> (org-x-dag->action-files)
+           (org-x-dag-files->ids)
+           (--map (pcase (org-x-dag-id->bs it)
+                    (`(:error ,msg) (format-id it msg))))
+           (-non-nil)))))
 
 (defun org-x-dag-scan-agenda (sel-date)
   (cl-flet*
