@@ -1853,7 +1853,7 @@ used for optimization."
    #'org-x-dag-bs-action-subiter
    (lambda (node-data child-bss)
      (either<$> (org-x-dag-bs-action-iter-inner node-data child-bss)
-       (cons :sp-proj it)))))
+       (cons :sp-iter it)))))
 
 (defun org-x-dag-bs-action-project (tree)
   (if (org-x-dag-node-is-iterator-p (car tree))
@@ -2220,8 +2220,7 @@ used for optimization."
       ((propagate
         (adjlist htbl id to-set)
         (->> (-if-let (node (ht-get htbl id))
-                 (either<$> node
-                   (funcall set-fun it to-set))
+                 (either<$> node (funcall set-fun it to-set))
                (either :right (funcall def-fun to-set)))
              (ht-set htbl id))
         (--each (org-x-dag-get-children adjlist id)
@@ -2239,10 +2238,10 @@ used for optimization."
     (lambda (h id)
       (org-x-dag-ht-get-maybe h id s-key))
     (lambda (plist to-set)
-      (org-x-dag-plist-map plist s-key
+      (org-x-dag-plist-map (-copy plist) s-key
         (lambda (x) (append x to-set))))
     (lambda (to-set)
-      (list s-key to-set))))
+      (list s-key (-copy to-set)))))
 
 (defun org-x-dag-ht-propagate-up (adjlist h-key s-key ns)
   (cl-labels
@@ -2299,7 +2298,10 @@ used for optimization."
             `(,committed ,(plist-get it :survivalp)))))
       (lambda (plist to-set)
         (-let (((committed survivalp) to-set))
-          (-> (plist-put plist :survivalp survivalp)
+          ;; copy is needed here for some reason, otherwise other parts of the
+          ;; hash table are affected
+          (-> (-copy plist)
+              (plist-put :survivalp survivalp)
               (org-x-dag-plist-map :committed
                   (lambda (x) (append x committed))))))
       (lambda (to-set)
@@ -3311,30 +3313,65 @@ except it ignores inactive timestamps."
              (not (org-x-dag-id->is-done-p it)))
       (format-key it-category it))))
 
-;; (defun org-x-dag-scan-incubated ()
-;;   (cl-flet
-;;       ((format-key
-;;         (category key)
-;;         (let ((tags (org-x-dag-id->tags nil key)))
-;;           (when (member org-x-tag-incubated tags)
-;;             (org-x-dag-with-id key
-;;               (let* ((sch (org-x-dag-headline-is-scheduled-p t))
-;;                      (dead (org-x-dag-headline-is-deadlined-p t))
-;;                      (is-project (org-x-dag-id->buffer-children key)))
-;;                 (-> (org-x-dag-format-tag-node category tags key)
-;;                     (org-add-props nil
-;;                         'x-project-p is-project
-;;                         'x-scheduled sch
-;;                         'x-deadlined dead))))))))
-;;   (org-x-dag-with-action-ids
-;;     (-when-let ((comptime is-project)
-;;                 (pcase (either-from-right (org-x-dag-id->bs it) nil)
-;;                   (`(:sp-proj :proj-complete ,c) `(,c t))
-;;                   (`(:sp-task :task-complete ,c) `(,c nil))))
-;;     (org-x-dag-with-files (org-x-dag->action-files)
-;;         (and (org-x-dag-id->is-toplevel-p it)
-;;              (not (org-x-dag-id->is-done-p it)))
-;;       (list (format-key it-category it)))))
+(defun org-x-dag-id->is-active-iterator-child-p (id)
+  (-> (org-x-dag-id->buffer-parent id)
+      (org-x-dag-id->bs)
+      (either-from-right nil)
+      (cadr)
+      (eq :iter-active)))
+
+(defun org-x-dag-scan-incubated ()
+  (org-x-dag-with-action-ids
+    (-when-let (type (pcase (either-from-right (org-x-dag-id->bs it) nil)
+                       (`(:sp-proj :proj-complete ,_) nil)
+                       (`(:sp-task :task-complete ,_) nil)
+                       (`(:sp-iter :iter-complete ,_) nil)
+                       (`(:sp-subiter :si-complete ,_) nil)
+                       (`(:sp-proj . ,_) :proj)
+                       (`(:sp-task . ,_ ) :task)
+                       (`(:sp-iter . ,_) :iter)
+                       (`(:sp-subiter . ,_) :subiter)))
+      (-let (((&plist :committed c :planned p :survivalp s)
+              (-some-> (org-x-dag-id->ns it)
+                (either-from-right  nil))))
+        (when (not p)
+          (let ((tags (org-x-dag-id->tags nil it))
+                (toplevelp (pcase type
+                             ((or :proj :task)
+                              (org-x-dag-id->is-toplevel-p it))
+                             (:subiter
+                              (org-x-dag-id->is-active-iterator-child-p it)))))
+            (-> (org-x-dag-format-tag-node tags it)
+                (org-add-props nil
+                    'x-type type
+                    'x-toplevelp toplevelp
+                    'x-survivalp s
+                    'x-committedp (and c t))
+                (list))))))))
+
+  ;; (cl-flet
+  ;;     ((format-key
+  ;;       (category key)
+  ;;       (let ((tags (org-x-dag-id->tags nil key)))
+  ;;         (when (member org-x-tag-incubated tags)
+  ;;           (org-x-dag-with-id key
+  ;;             (let* ((sch (org-x-dag-headline-is-scheduled-p t))
+  ;;                    (dead (org-x-dag-headline-is-deadlined-p t))
+  ;;                    (is-project (org-x-dag-id->buffer-children key)))
+  ;;               (-> (org-x-dag-format-tag-node category tags key)
+  ;;                   (org-add-props nil
+  ;;                       'x-project-p is-project
+  ;;                       'x-scheduled sch
+  ;;                       'x-deadlined dead))))))))
+  ;; (org-x-dag-with-action-ids
+  ;;   (-when-let ((comptime is-project)
+  ;;               (pcase (either-from-right (org-x-dag-id->bs it) nil)
+  ;;                 (`(:sp-proj :proj-complete ,c) `(,c t))
+  ;;                 (`(:sp-task :task-complete ,c) `(,c nil))))
+  ;;   (org-x-dag-with-files (org-x-dag->action-files)
+  ;;       (and (org-x-dag-id->is-toplevel-p it)
+  ;;            (not (org-x-dag-id->is-done-p it)))
+  ;;     (list (format-key it-category it)))))
 
 (defun org-x-dag-scan-archived ()
   (org-x-dag-with-action-ids
@@ -3349,11 +3386,7 @@ except it ignores inactive timestamps."
                           (org-x-dag-id->is-toplevel-p it))
                      (eq type :iter)
                      (and (eq type :subiter)
-                          (-> (org-x-dag-id->buffer-parent it)
-                              (org-x-dag-id->bs)
-                              (either-from-right nil)
-                              (cadr)
-                              (eq :iter-active)))))
+                          (org-x-dag-id->is-active-iterator-child-p it))))
         (-let ((epoch (plist-get comptime :epoch)))
           (when (org-x-dag-time-is-archivable-p epoch)
             (let ((tags (org-x-dag-id->tags nil it)))
@@ -3950,6 +3983,40 @@ except it ignores inactive timestamps."
                                    ((and (not lc) (not ac) "Missing goal/action"))
                                    ((and lc (not ac)) "Branch"))))))
                 (if subtext (format "%s (%s)" type subtext) type))))))))))
+
+(defun org-x-dag-agenda-incubated ()
+  (interactive)
+  (let ((match ''org-x-dag-scan-incubated))
+    (nd/org-agenda-call "Incubated-0" nil #'org-x-dag-show-nodes match nil
+      `((org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-let* ((type (get-text-property 1 'x-type line))
+                      (toplevelp (get-text-property 1 'x-toplevelp line))
+                      (survivalp (get-text-property 1 'x-survivalp line))
+                      (committedp (get-text-property 1 'x-committedp line))
+                      ((rank type)
+                       (pcase type
+                         (:task
+                          (if toplevelp '(1 "Standalone Task")
+                            '(2 "Task")))
+                         (:proj
+                          (if toplevelp '(3 "Toplevel Project")
+                            '(4 "Project")))
+                         (:iter
+                          '(5 "Iterator"))
+                         (:subiter
+                          (if toplevelp '(6 "Parent Subiterator")
+                            '(7 "Subiterator")))))
+                      ((srank stype) (cond
+                                      ((and committedp survivalp)
+                                       '(1 "Survival"))
+                                      (committedp
+                                       '(2 "Non-Survival"))
+                                      (t
+                                       '(3 "Uncommitted")))))
+                (format "%d.%d %s (%s)" srank rank type stype))))))))))
 
 (provide 'org-x-dag)
 ;;; org-x-dag.el ends here
