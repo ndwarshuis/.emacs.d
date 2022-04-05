@@ -1499,7 +1499,9 @@ used for optimization."
     ;; rankings
     ;; *-active > proj-wait > proj-held > (proj-stuck == iter-empty) > *-complete
     (org-x-dag-bs-action-with-closed node-data "projects"
-      `(:sp-proj :proj-complete ,it-comptime)
+      (if child-bss
+          `(:sp-proj :proj-complete ,it-comptime)
+        `(:sp-task :task-complete ,it-comptime))
 
       ;; done form
       (org-x-dag-bs-fold-children child-bss `(:sp-task :task-complete ,it-comptime)
@@ -3324,6 +3326,11 @@ except it ignores inactive timestamps."
 ;;                         'x-project-p is-project
 ;;                         'x-scheduled sch
 ;;                         'x-deadlined dead))))))))
+;;   (org-x-dag-with-action-ids
+;;     (-when-let ((comptime is-project)
+;;                 (pcase (either-from-right (org-x-dag-id->bs it) nil)
+;;                   (`(:sp-proj :proj-complete ,c) `(,c t))
+;;                   (`(:sp-task :task-complete ,c) `(,c nil))))
 ;;     (org-x-dag-with-files (org-x-dag->action-files)
 ;;         (and (org-x-dag-id->is-toplevel-p it)
 ;;              (not (org-x-dag-id->is-done-p it)))
@@ -3331,17 +3338,29 @@ except it ignores inactive timestamps."
 
 (defun org-x-dag-scan-archived ()
   (org-x-dag-with-action-ids
-    (-when-let ((comptime is-project)
-                (pcase (either-from-right (org-x-dag-id->bs it) nil)
-                  (`(:sp-proj :proj-complete ,c) `(,c t))
-                  (`(:sp-task :task-complete ,c) `(,c nil))))
-      (-let ((epoch (plist-get comptime :epoch)))
-        (when (org-x-dag-time-is-archivable-p epoch)
-          (let ((tags (org-x-dag-id->tags nil it)))
-            (-> (org-x-dag-format-tag-node tags it)
-                (org-add-props nil
-                    'x-project-p is-project)
-                (list))))))))
+    (-let (((comptime type)
+            (pcase (either-from-right (org-x-dag-id->bs it) nil)
+              (`(:sp-proj :proj-complete ,c) `(,c :proj))
+              (`(:sp-task :task-complete ,c) `(,c :task))
+              (`(:sp-iter :iter-complete ,c) `(,c :iter))
+              (`(:sp-subiter :si-complete ,c) `(,c :subiter)))))
+      (when (and comptime
+                 (or (and (memq type '(:proj :task))
+                          (org-x-dag-id->is-toplevel-p it))
+                     (eq type :iter)
+                     (and (eq type :subiter)
+                          (-> (org-x-dag-id->buffer-parent it)
+                              (org-x-dag-id->bs)
+                              (either-from-right nil)
+                              (cadr)
+                              (eq :iter-active)))))
+        (-let ((epoch (plist-get comptime :epoch)))
+          (when (org-x-dag-time-is-archivable-p epoch)
+            (let ((tags (org-x-dag-id->tags nil it)))
+              (-> (org-x-dag-format-tag-node tags it)
+                  (org-add-props nil
+                      'x-type type)
+                  (list)))))))))
 
 (defun org-x-dag--classify-goal-link (which which-goal id)
   (let ((f (org-x-dag-id->file id)))
