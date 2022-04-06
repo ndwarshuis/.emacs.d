@@ -3844,6 +3844,14 @@ except it ignores inactive timestamps."
     ;; TODO this won't work on the toplevel section
     (org-x-dag-this-headline-choose-id t legal "an action file" ids)))
 
+(defun org-x-dag-link-action-to-daily-metablock ()
+  (interactive)
+  (let ((ids (->> (org-x-dag->action-files)
+                  (org-x-dag-files->ids)))
+        (legal (list (org-x-dag->planning-file :daily))))
+    ;; TODO this won't work on the toplevel section
+    (org-x-dag-this-headline-choose-id t legal "the daily metablock file" ids)))
+
 ;;; AGENDA VIEWS
 
 (defun org-x-dag-agenda-run-series (name files cmds)
