@@ -1963,17 +1963,18 @@ used for optimization."
      ((-some->> it-planning (org-ml-get-properties :deadline))
       (either :left "Daily metablocks cannot be deadlined"))
      ((equal it-todo org-x-kw-todo)
-      (-if-let ((sched-date sched-time) (-some->> it-planning
-                                          (org-ml-get-property :scheduled)
-                                          (org-ml-timestamp-get-start-time)
-                                          (org-x-dag-datetime-split)))
-          (if (not sched-time)
-              (either :left "Daily metablocks must have scheduled time")
-            (-let* (((&plist :tags) node-data)
-                    (tag-date (org-x-dag-daily-tags-to-date tags)))
-              (if (org-x-dag-datetime= tag-date sched-date)
-                  (either :right `(:active))
-                (either :left "Daily metablocks must be scheduled within their date"))))
+      (-if-let (sched (-some->> it-planning
+                        (org-ml-get-property :scheduled)))
+          (-let (((sched-date sched-time) (->> sched
+                                               (org-ml-timestamp-get-start-time)
+                                               (org-x-dag-datetime-split))))
+            (if (not sched-time)
+                (either :left "Daily metablocks must have scheduled time")
+              (-let* (((&plist :tags) node-data)
+                      (tag-date (org-x-dag-daily-tags-to-date tags)))
+                (if (org-x-dag-datetime= tag-date sched-date)
+                    (either :right `(:active (:sched ,sched)))
+                  (either :left "Daily metablocks must be scheduled within their date")))))
         (either :left "Daily metablocks must be scheduled")))
      (t
       (org-x-dag-bs-error-kw "Daily metablock" it-todo)))))
@@ -3498,22 +3499,32 @@ except it ignores inactive timestamps."
               (--> datetimes
                    (--remove (and donep (not (org-x-dag-datetime= (-take 3 it) sel-date))) it)
                    (if (not todayp) (--remove (org-x-dag-datetime< (-take 3 it) sel-date) it) it)
-                   (--map (funcall format-datetime-fun sel-date pos it tags id) it)))))))
-    (let ((todayp (= (org-x-dag-date-to-absolute sel-date) (org-today))))
-      ;; TODO this won't show daily nodes
-      (org-x-dag-with-action-ids
-        (pcase (either-from-right (org-x-dag-id->bs it) nil)
-          (`(:sp-task :task-active ,s)
-           (-let (((&plist :sched :dead) s))
-             (append
-              (when dead
-                (format-timestamps todayp sel-date it dead
-                                   #'org-x-dag-get-deadlines-at
-                                   #'org-x-dag-format-deadline-node))
-              (when sched
-                (format-timestamps todayp sel-date it sched
-                                   #'org-x-dag-get-scheduled-at
-                                   #'org-x-dag-format-scheduled-node))))))))))
+                   (--map (funcall format-datetime-fun sel-date pos it tags id) it))))))
+       (format-scheduleds
+        (todayp sel-date id ts)
+        (format-timestamps todayp sel-date id ts
+                           #'org-x-dag-get-scheduled-at
+                           #'org-x-dag-format-scheduled-node))
+       (format-deadlines
+        (todayp sel-date id ts)
+        (format-timestamps todayp sel-date id ts
+                           #'org-x-dag-get-deadlines-at
+                           #'org-x-dag-format-deadline-node)))
+    (let* ((todayp (= (org-x-dag-date-to-absolute sel-date) (org-today)))
+           (action (org-x-dag-with-action-ids
+                     (pcase (either-from-right (org-x-dag-id->bs it) nil)
+                       (`(:sp-task :task-active ,s)
+                        (-let (((&plist :sched :dead) s))
+                          (append
+                           (when dead
+                             (format-deadlines todayp sel-date it dead))
+                           (when sched
+                             (format-scheduleds todayp sel-date it sched))))))))
+           (daily (org-x-dag-with-file-ids (org-x-dag->planning-file :daily)
+                    (pcase (either-from-right (org-x-dag-id->bs it) nil)
+                      (`(:daily :active ,s)
+                       (format-scheduleds todayp sel-date it sched))))))
+      (append action daily))))
 
 (defun org-x-dag-scan-quarterly-plan ()
   (let ((week-file (list (org-x-get-weekly-plan-file)))
