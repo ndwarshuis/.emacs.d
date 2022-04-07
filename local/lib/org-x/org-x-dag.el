@@ -1076,6 +1076,9 @@ A date like (YEAR MONTH DAY).")
 (defun org-x-qtp-add-goal (quarter headline)
   (org-x-qtp-map-goals quarter (cons headline it)))
 
+(defun org-x-dag-headline-get-id (headline)
+  (org-ml-headline-get-node-property "ID" headline))
+
 (defun org-x-dag-headline-add-id (headline)
   (org-ml-headline-set-node-property "ID" (org-id-new) headline))
 
@@ -2088,21 +2091,21 @@ used for optimization."
         (let ((g (org-x-dag-id-link-group adjlist id)))
           (if (member g keys) g :invalid)))
        (parent-group
-        (h checkleafp adjlist id)
+        (h permitleafp adjlist id)
         (cond
          ((either-is-left-p (ht-get h id))
           :error)
-         ((and checkleafp (not (org-x-dag-get-children adjlist id)))
+         ((and (not permitleafp) (org-x-dag-get-children adjlist id))
           :non-leaf)
          (t :valid)))
        (reduce-valid
         (grouped-targets acc keypair)
-        (-let* (((key . checkleafp) keypair)
+        (-let* (((key . permitleafp) keypair)
                 ((acc-keyed acc-error acc-non-leaf) acc)
                 (h (alist-get key ns))
                 ((&alist :valid v :error e :non-leaf n)
                  (->> (alist-get key grouped-targets)
-                      (--group-by (parent-group h checkleafp adjlist it)))))
+                      (--group-by (parent-group h permitleafp adjlist it)))))
           `(((,key ,@v) ,@acc-keyed)
             (,@e ,@acc-error)
             (,@n ,@acc-non-leaf)))))
@@ -2135,7 +2138,8 @@ used for optimization."
     ns))
 
 (defun org-x-dag-ht-get-maybe (htbl id key)
-  (either-from (ht-get htbl id) nil (plist-get it key)))
+  (-when-let (x (ht-get htbl id))
+    (either-from x nil (plist-get it key))))
 
 (defun org-x-dag-ns-qtp (adjlist links ns)
   (-let (((&alist :lifetime ht-l :endpoint ht-e :quarterly ht-q) ns))
@@ -2196,9 +2200,9 @@ used for optimization."
         (lambda (id this-h res)
           (-let (((&alist :action a :weekly w) res))
             (let ((qgoals (->> (get-committed ht-w w)
-                               (get-commited ht-q)))
+                               (get-committed ht-q)))
                   (agoals (get-committed ht-a a)))
-              (-if-let (gs (-intesection qgoals agoals))
+              (-if-let (gs (-intersection qgoals agoals))
                   (progn
                     (->> (list :scheduled w
                                :committed (-uniq gs)
@@ -2210,7 +2214,7 @@ used for optimization."
                     (org-x-dag-ht-add-links id ht-w :planned w)
                     (org-x-dag-ht-add-links id ht-a :planned a))
                 (->> (either :left "Non overlapping goals")
-                     (ht-set ht-d id)))))))
+                     (ht-set this-h id)))))))
       ns)))
 
 (defun org-x-dag-get-children (adjlist id)
@@ -3654,28 +3658,37 @@ except it ignores inactive timestamps."
 ARG and INTERACTIVE are passed to `org-store-link'."
   (interactive)
   (cl-flet
-      ((to-menu-line
-        (node)
-        (let ((ts (->> (org-x-metablock-get-timestamp node)
-                       (org-ml-get-property :raw-value)))
-              (title (org-ml-get-property :raw-value node)))
-          (format "%s | %s" ts title))))
-    (-if-let (hls (org-x-get-future-metablox))
+      ((is-valid-daily-node
+        (hl)
+        (-when-let (n (->> (org-x-dag-headline-get-id hl)
+                           (org-x-dag-id->ns)))
+          (either-is-right-p n)))
+       (to-menu-line
+        (hl)
+        (let* ((time (-some->> (org-ml-headline-get-planning hl)
+                       (org-ml-get-property :scheduled)
+                       (org-ml-timestamp-get-start-time)
+                       (org-x-dag-datetime-split)
+                       (nth 1)))
+               (stime (if time (apply #'format "%02d:%02d" time) "--:--"))
+               (title (org-ml-get-property :raw-value hl)))
+          (format "%s | %s" stime title))))
+    ;; TODO add filter for valid daily nodes
+    (-if-let (hls (->> (plist-get org-x-dag :selected-date)
+                       (org-x-dag-dlp-get)))
+                       ;; (-filter #'is-valid-daily-node)))
         (-if-let (desc (-some->> (org-ml-parse-this-headline)
                          (org-ml-get-property :raw-value)))
-            (-if-let (path (org-id-store-link))
+            (-if-let (path (org-id-get-create))
                 (let* ((lines (-map #'to-menu-line hls))
-                       (col (-zip-pair lines hls))
+                       (col (->> (-zip-pair lines hls)
+                                 (--sort (string< (car it) (car other)))))
                        (sel (completing-read "Metablock: " col nil t))
-                       (target (alist-get sel col nil nil #'equal))
-                       (link (org-ml-build-link path desc))
-                       ;; ASSUME there will be one paragraph at the end holding
-                       ;; the timestamp
-                       (para (car (org-ml-match '(:last section paragraph) target))))
-                  (org-x-with-file (org-x-get-daily-plan-file)
+                       (target (alist-get sel col nil nil #'equal)))
+                  (org-x-with-file (org-x-dag->planning-file :daily)
                     (org-ml~update* nil
-                      (org-ml-map-children* (-snoc it link) it)
-                      para))
+                      (org-x-dag-headline-add-parent-link path it)
+                      target))
                   (message "Successfully added '%s' to block '%s'" desc sel))
               (message "Could not get link to store"))
           (message "Could not get link description (not on headline?)"))
