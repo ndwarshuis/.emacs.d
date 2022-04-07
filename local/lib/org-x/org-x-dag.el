@@ -532,13 +532,6 @@ This means the ID has a closed timestamp in the past."
   (-when-let (c (org-x-dag-id->planning-epoch :closed id))
     (<= c (float-time))))
 
-(defun org-x-dag-id->is-archivable-p (id)
-  "Return t if ID is archivable.
-This means the ID has be closed for longer than
-`org-x-archive-delay'."
-  (-when-let (c (org-x-dag-id->planning-epoch :closed id))
-    (org-x-dag-time-is-archivable-p c)))
-
 (defun org-x-dag-id->id-survival-p (id)
   "Return t if ID has a parent survival goal."
   (let ((f (org-x-dag->goal-file :survival)))
@@ -905,14 +898,14 @@ A date like (YEAR MONTH DAY).")
 (defun org-x-dag-build-planning-headline (title tag level subheadlines)
   (apply #'org-ml-build-headline!
          :title-text title
-         :tag (list tag)
+         :tags (list tag)
          :level level
          subheadlines))
 
 (defun org-x-dag-build-year-headline (year subheadlines)
   (let ((title (number-to-string year))
         (tag (org-x-dag-format-year-tag year)))
-    (org-x-dag-build-planning-headline tag title 1 subheadlines)))
+    (org-x-dag-build-planning-headline title tag 1 subheadlines)))
 
 (defun org-x-dag-build-quarter-headline (quarter subheadlines)
   (let ((title (format "Quarter %d" quarter))
@@ -932,8 +925,9 @@ A date like (YEAR MONTH DAY).")
     (org-x-dag-build-planning-headline title tag 2 subheadlines)))
 
 (defun org-x-dag-build-day-headline (date subheadlines)
-  (let ((title (format "%d-%02d-%02d" y m d))
-        (tag (org-x-dag-format-day-tag d)))
+  (-let* (((y m d) date)
+          (title (format "%d-%02d-%02d" y m d))
+          (tag (org-x-dag-format-day-tag d)))
     (org-x-dag-build-planning-headline title tag 3 subheadlines)))
 
 (defun org-x-dag-build-day-of-week-headline (daynum subheadlines)
@@ -1156,14 +1150,15 @@ A date like (YEAR MONTH DAY).")
 
 ;; TODO not DRY
 (defun org-x-dag-dlp-get (date)
-  (org-x-with-file (org-x-get-weekly-plan-file)
+  (org-x-with-file (org-x-dag->planning-file :daily)
     (-let (((y m d) date))
       (->> (org-ml-parse-subtrees 'all)
            (org-x-dag-headlines-find-year y)
            (org-ml-headline-get-subheadlines)
-           (org-x-dag-headlines-find-week m)
+           (org-x-dag-headlines-find-month m)
            (org-ml-headline-get-subheadlines)
-           (org-x-dag-headlines-find-day d)))))
+           (org-x-dag-headlines-find-day d)
+           (org-ml-headline-get-subheadlines)))))
 
 (defun org-x-dag-dlp-set (date headlines)
   (cl-flet*
@@ -1205,7 +1200,7 @@ A date like (YEAR MONTH DAY).")
        (org-x-dag-dlp-set ,d ,form))))
 
 (defun org-x-dag-dlp-add (date headline)
-  (org-x-dag-dlp-map date (cons headline it)))
+  (org-x-dag-dlp-map date (-snoc it headline)))
 
 (defun org-x-dag-dlp-add-task (date title ids time)
   (let ((datetime `(,@date ,@time)))
@@ -2386,57 +2381,6 @@ removed from, added to, or edited within the DAG respectively."
                  (dag-edit-nodes to-remove to-insert dag))))
     (plist-put org-x-dag :dag dag*)))
 
-;; (defun org-x-dag-id->parent-class (id parent)
-;;   (-let* (((cfile cgroup) (org-x-dag-id->file-group id))
-;;           ((pfile pgroup) (org-x-dag-id->file-group parent)))
-;;     (cl-case cgroup
-;;       ;; the only allowed links are local
-;;       ((:lifetime :survival)
-;;        (unless (equal cfile pfile)
-;;          :ill-foreign))
-;;       ;; should only link locally or a lifetime goal
-;;       (:endpoint
-;;        (unless (or (equal cfile pfile) (eq pgroup :lifetime))
-;;          :ill-foreign))
-;;       ;; should only link to an endpoint or lifetime goal
-;;       (:quarterly
-;;        (cond
-;;         ((memq pgroup '(:endpoint :lifetime)) nil)
-;;         ((equal pfile cfile) :ill-local)
-;;         (t :ill-foreign)))
-;;       ;; should only link to a quarterly plan
-;;       (:weekly
-;;        (cond
-;;         ((eq pgroup :quarterly) nil)
-;;         ((equal pfile cfile) :ill-local)
-;;         (t :ill-foreign)))
-;;       ;; should only link to a weekly plan or an action
-;;       (:daily
-;;        (cond
-;;         ((memq pgroup '(nil :weekly)) nil)
-;;         ((equal pfile cfile) :ill-local)
-;;         (t :ill-foreign)))
-;;       ;; actions can only be linked to goal files, and nothing else
-;;       (t
-;;        (cond
-;;         ((memq pgroup '(:lifetime :endpoint :survival)) nil)
-;;         ((equal pfile cfile) :ill-local)
-;;         (t :ill-foreign))))))
-
-;; ;; TODO this will also include broken links, which isn't totally wrong but these
-;; ;; should be filtered out as including them is suboptimal (note: I figureed out
-;; ;; they were here because the broken links dag code is wrong)
-;; (defun org-x-dag-filter-links (relations)
-;;   (cl-flet
-;;       ((flatten-relation
-;;         (rel)
-;;         (-let (((c . ps) rel))
-;;           (--map (list c it) ps))))
-;;     (-let (((&alist :ill-foreign :ill-local)
-;;             (->> (-mapcat #'flatten-relation relations)
-;;                  (--group-by (apply #'org-x-dag-id->parent-class it)))))
-;;       (list ill-foreign ill-local))))
-
 (defun org-x-dag-id->illegal-parents (which id)
   (ht-get (plist-get org-x-dag which) id))
 
@@ -2920,212 +2864,10 @@ except it ignores inactive timestamps."
                                        org-x-prop-parent-type-iterator
                                        id))
 
-;; (defun org-x-dag-is-created-p (want-time)
-;;   (save-excursion
-;;     (-when-let (ts (org-x-dag-get-local-property org-x-prop-created))
-;;       (if want-time (org-2ft ts) t))))
-
-;; (defun org-x-dag-headline-is-iterator-p ()
-;;   (save-excursion
-;;     (->> (org-x-dag-get-local-property org-x-prop-parent-type)
-;;          (equal org-x-prop-parent-type-iterator))))
-
-(defconst org-x-headline-task-status-priorities
-  '((:archivable . -1)
-    (:complete . -1)
-    (:expired . 0)
-    (:done-unclosed . 0)
-    (:undone-closed . 0)
-    (:active . 1)
-    (:inert . 2)))
-
-(defconst org-x-project-status-priorities
-  '((:archivable . -1)
-    (:complete . -1)
-    (:scheduled-project . 0)
-    (:invalid-todostate . 0)
-    (:undone-complete . 0)
-    (:done-incomplete . 0)
-    (:stuck . 0)
-    (:wait . 1)
-    (:held . 2)
-    (:active . 3)
-    (:inert . 4)))
-
 (defun org-x-dag-time-is-archivable-p (epochtime)
   (< (* 60 60 24 org-x-archive-delay) (- (float-time) epochtime)))
 
-(defun org-x-dag-id->is-archivable-p (id)
-  (-some->> (org-x-dag-id->planning-timestamp :closed id)
-    (org-ml-timestamp-get-start-time)
-    (org-ml-time-to-unixtime)
-    (org-x-dag-time-is-archivable-p)))
-
 ;;; STATUS DETERMINATION
-
-;; (defmacro org-x-dag-with-id (key &rest body)
-;;   (declare (indent 1))
-;;   `(progn
-;;      (goto-char (org-x-dag-id->point ,key))
-;;      ,@body))
-
-;; (defmacro org-x-dag-with-id-in-file (id &rest body)
-;;   (declare (indent 1))
-;;   `(org-x-with-file (org-x-dag-id->file ,id)
-;;      (org-x-dag-with-id ,id ,@body)))
-
-(defun org-x-headline-get-task-status-0 (kw)
-  (if (member kw org-x-done-keywords)
-      (-if-let (c (org-x-dag-headline-is-closed-p t))
-          (if (org-x-dag-time-is-archivable-p c)
-              :archivable
-            :complete)
-        :done-unclosed)
-    (cond
-     ((org-x-headline-is-expired-p) :expired)
-     ((org-x-headline-is-inert-p) :inert)
-     ((org-x-dag-headline-is-closed-p nil) :undone-closed)
-     (t :active))))
-
-(defun org-x-dag-get-max-index (ys xs)
-  "Return the member of XS that has the highest index in YS."
-  (--max-by (> (-elem-index it ys) (-elem-index other ys)) xs))
-
-(defmacro org-x-dag-descend-into-project (keys parent-tags codetree task-form
-                                               callback)
-  (declare (indent 2))
-  (let ((allowed-codes (-map #'car codetree))
-        (trans-tbl (--mapcat (-let (((a . bs) it))
-                               (--map (cons it a) bs))
-                             codetree)))
-    `(cl-flet
-         ((get-project-or-task-status
-           (key)
-           (-if-let (children (org-x-dag-id->buffer-children key))
-               (let* ((tags (org-x-dag-id->tags ,parent-tags key))
-                      (child-results (funcall ,callback key tags children))
-                      ;; ASSUME the car of the results will be the toplevel
-                      ;; key/status pair for this (sub)project
-                      (top-status (plist-get (car child-results) :status))
-                      (top-status* (if (member top-status ',allowed-codes)
-                                       top-status
-                                     (alist-get top-status ',trans-tbl))))
-                 (cons top-status* child-results))
-             (let ((it-kw (org-x-dag-id->todo key)))
-               (-> ,task-form
-                   (nth ',allowed-codes)
-                   (list))))))
-       (let* ((results (-map #'get-project-or-task-status ,keys))
-              (status (->> (-map #'car results)
-                           (org-x-dag-get-max-index ',allowed-codes))))
-         (cons status (-mapcat #'cdr results))))))
-
-(defun org-x-dag-headline-get-project-status (id tags children)
-  ;; ASSUME children will always be at least 1 long
-  (let ((keyword (org-x-dag-id->todo id)))
-    (-let (((status . child-results)
-            (cond
-             ((org-x-dag-id->planning-timestamp :scheduled id)
-              (list :scheduled-project))
-             ((equal keyword org-x-kw-hold)
-              ;; (list (if (org-x-headline-is-inert-p) :inert :held)))
-              (list :held))
-             ((member keyword org-x--project-invalid-todostates)
-              (list :invalid-todostate))
-             ((equal keyword org-x-kw-canc)
-              (list (if (org-x-id->is-archivable-p id) :archivable :complete)))
-             ((equal keyword org-x-kw-done)
-              (org-x-dag-descend-into-project children tags
-                ((:archivable)
-                 (:complete)
-                 (:done-incomplete :stuck :inert :held :wait :active
-                                   :scheduled-project :invalid-todostate
-                                   :undone-complete))
-                (if (member it-kw org-x-done-keywords)
-                    (if (org-x-dag-id->is-archivable-p id) 0 1)
-                  2)
-                #'org-x-dag-headline-get-project-status))
-             ((equal keyword org-x-kw-todo)
-              (org-x-dag-descend-into-project children tags
-                ((:undone-complete :complete :archivable)
-                 (:stuck :scheduled-project :invalid-todostate
-                         :done-incomplete)
-                 (:held)
-                 (:wait)
-                 ;; (:inert)
-                 (:active))
-                (cond
-                 ;; ((and (not (member it-kw org-x-done-keywords))
-                 ;;       (org-x-headline-is-inert-p))
-                 ;;  4)
-                 ((equal it-kw org-x-kw-todo)
-                  (if (org-x-dag-id->planning-timestamp :scheduled id) 4 1))
-                 ((equal it-kw org-x-kw-hold)
-                  2)
-                 ((equal it-kw org-x-kw-wait)
-                  3)
-                 ((equal it-kw org-x-kw-next)
-                  4)
-                 (t 0))
-                #'org-x-dag-headline-get-project-status))
-             (t (error "Invalid keyword detected: %s" keyword)))))
-      (cons (list :key key :status status :tags tags) child-results))))
-
-(defun org-x-dag-headline-get-iterator-project-status (id children)
-  (let* ((kw (org-x-dag-id->todo id))
-         (status
-          (cond
-           ((or (member kw org-x--project-invalid-todostates)
-                (org-x-dag-id->planning-timestamp :scheduled id))
-            (list :project-error))
-           ((equal kw org-x-kw-canc)
-            (list :empt))
-           ;; TODO this is a bit awkward since I don't care about the child statuses
-           ;; and I don't care about tags
-           ((equal kw org-x-kw-done)
-            (org-x-dag-descend-into-project children nil
-              ((:empt)
-               (:project-error :unscheduled :actv))
-              (if (member it-kw org-x-done-keywords) 0 1)
-              ;; TODO this has an argument mismatch
-              #'org-x-dag-headline-get-iterator-project-status))
-           ((equal kw org-x-kw-todo)
-            (org-x-dag-descend-into-project children nil
-              ((:unscheduled :project-error)
-               (:empt)
-               (:actv))
-              ;; TODO this triggers a compiler warning because I don't use
-              ;; `it-kw'
-              (let ((ts (org-x-dag-id->planning-timestamp :scheduled id)))
-                (cond
-                 ((not ts) 0)
-                 ((> org-x-iterator-active-future-offset (- ts (float-time))) 1)
-                 (t 2)))
-              #'org-x-dag-headline-get-iterator-project-status))
-           (t (error "Invalid keyword detected: %s" kw)))))
-    status))
-
-(defun org-x-dag-headline-get-iterator-task-status (id)
-  (if (org-x-dag-id->is-done-p id) :empt
-    (-if-let (ts (or (org-x-dag-id->planning-timestamp :scheduled id)
-                     (org-x-dag-id->planning-timestamp :deadline id)))
-        (if (< org-x-iterator-active-future-offset (- ts (float-time)))
-            :actv
-          :empt)
-      :unscheduled)))
-
-(defun org-x-dag-headline-get-iterator-status (id)
-  (cl-flet
-      ((get-status
-        (id)
-        (-if-let (children (org-x-dag-id->buffer-children id))
-            (->> children
-                 (org-x-dag-headline-get-iterator-project-status id)
-                 (car))
-          (org-x-dag-headline-get-iterator-task-status id))))
-    (->> (org-x-dag-id->buffer-children key)
-         (-map #'get-status)
-         (org-x-dag-get-max-index org-x--iter-statuscodes))))
 
 ;;; SCANNERS
 ;;
@@ -3264,59 +3006,59 @@ except it ignores inactive timestamps."
            (-> (org-x-dag-format-tag-node tags it)
                (org-x-dag--item-add-goal-ids goal-ids))))))))
 
-(defun org-x-dag-scan-survival-tasks ()
-  (cl-flet
-      ((format-key
-        (category is-standalone key)
-        (-let (((goal-ids goal-status) (org-x-dag-id->goal-status 'current key)))
-          (when (eq goal-status :survival)
-            (let* ((s (org-x-dag->task-status key))
-                   (p (alist-get s org-x-headline-task-status-priorities))
-                   (tags (org-x-dag-id->tags nil key)))
-              (unless (= p -1)
-                (-> (org-x-dag-format-tag-node category tags key)
-                    (org-add-props nil
-                        'x-is-standalone is-standalone
-                        'x-status s)
-                    (org-x-dag--item-add-goal-ids goal-ids))))))))
-    (org-x-dag-with-files (org-x-dag->action-files)
-        (and (org-x-dag-id->is-toplevel-p it)
-             (not (org-x-dag-id->is-iterator-p it)))
-      (-if-let (project-tasks (org-x-dag-get-task-nodes
-                                  (lambda (it) (not (member (org-x-dag-id->todo it)
-                                                       (list org-x-kw-canc org-x-kw-hold))))
-                                  it))
-          (--mapcat (format-key it-category nil it) project-tasks)
-        (format-key it-category t it)))))
+;; (defun org-x-dag-scan-survival-tasks ()
+;;   (cl-flet
+;;       ((format-key
+;;         (category is-standalone key)
+;;         (-let (((goal-ids goal-status) (org-x-dag-id->goal-status 'current key)))
+;;           (when (eq goal-status :survival)
+;;             (let* ((s (org-x-dag->task-status key))
+;;                    (p (alist-get s org-x-headline-task-status-priorities))
+;;                    (tags (org-x-dag-id->tags nil key)))
+;;               (unless (= p -1)
+;;                 (-> (org-x-dag-format-tag-node category tags key)
+;;                     (org-add-props nil
+;;                         'x-is-standalone is-standalone
+;;                         'x-status s)
+;;                     (org-x-dag--item-add-goal-ids goal-ids))))))))
+;;     (org-x-dag-with-files (org-x-dag->action-files)
+;;         (and (org-x-dag-id->is-toplevel-p it)
+;;              (not (org-x-dag-id->is-iterator-p it)))
+;;       (-if-let (project-tasks (org-x-dag-get-task-nodes
+;;                                   (lambda (it) (not (member (org-x-dag-id->todo it)
+;;                                                        (list org-x-kw-canc org-x-kw-hold))))
+;;                                   it))
+;;           (--mapcat (format-key it-category nil it) project-tasks)
+;;         (format-key it-category t it)))))
 
-(defun org-x-dag-scan-survival-projects ()
-  (cl-flet*
-      ((format-result
-        (cat result)
-        (-let* (((&plist :key :status :tags) result)
-                (priority (alist-get status org-x-project-status-priorities)))
-          (when (>= priority 0)
-            (-let (((goal-ids goal-status) (org-x-dag-id->goal-status 'current key)))
-              (when (eq goal-status :survival)
-                (-> (org-x-dag-format-tag-node cat tags key)
-                    (org-add-props nil
-                        'x-toplevelp (org-x-dag-id->is-toplevel-p key)
-                        'x-status status
-                        'x-priority priority)
-                    (org-x-dag--item-add-goal-ids goal-ids)))))))
-       (format-key
-        (cat key)
-        (let ((tags (org-x-dag-id->tags nil key)))
-          ;; TODO don't hardcode these things
-          (-some->> (org-x-dag-id->buffer-children key)
-            (org-x-dag-headline-get-project-status key tags)
-            (--mapcat (format-result cat it))))))
-    ;; TODO this is hella-inefficient, just get the child links from the
-    ;; survival goal file and start from there
-    (org-x-dag-with-files (org-x-dag->action-files)
-        (and (org-x-dag-id->is-toplevel-p it)
-             (not (org-x-dag-id->is-done-p it)))
-      (format-key it-category it))))
+;; (defun org-x-dag-scan-survival-projects ()
+;;   (cl-flet*
+;;       ((format-result
+;;         (cat result)
+;;         (-let* (((&plist :key :status :tags) result)
+;;                 (priority (alist-get status org-x-project-status-priorities)))
+;;           (when (>= priority 0)
+;;             (-let (((goal-ids goal-status) (org-x-dag-id->goal-status 'current key)))
+;;               (when (eq goal-status :survival)
+;;                 (-> (org-x-dag-format-tag-node cat tags key)
+;;                     (org-add-props nil
+;;                         'x-toplevelp (org-x-dag-id->is-toplevel-p key)
+;;                         'x-status status
+;;                         'x-priority priority)
+;;                     (org-x-dag--item-add-goal-ids goal-ids)))))))
+;;        (format-key
+;;         (cat key)
+;;         (let ((tags (org-x-dag-id->tags nil key)))
+;;           ;; TODO don't hardcode these things
+;;           (-some->> (org-x-dag-id->buffer-children key)
+;;             (org-x-dag-headline-get-project-status key tags)
+;;             (--mapcat (format-result cat it))))))
+;;     ;; TODO this is hella-inefficient, just get the child links from the
+;;     ;; survival goal file and start from there
+;;     (org-x-dag-with-files (org-x-dag->action-files)
+;;         (and (org-x-dag-id->is-toplevel-p it)
+;;              (not (org-x-dag-id->is-done-p it)))
+;;       (format-key it-category it))))
 
 (defun org-x-dag-id->is-active-iterator-child-p (id)
   (-> (org-x-dag-id->buffer-parent id)
@@ -3801,7 +3543,6 @@ except it ignores inactive timestamps."
            (mapper (->> (append present noexist toadd)
                         (--map (apply #'make-cell it))
                         (--sort (plist-get (cdr it) :presentp)))))
-      (print (-map #'cdr mapper))
       (alist-get (completing-read "Node: " mapper) mapper nil nil #'equal))))
 
 (defun org-x-dag-this-headline-choose-id (toplevel-allowed? legal-files msg ids)
@@ -3857,6 +3598,32 @@ except it ignores inactive timestamps."
                   (--remove (org-x-dag-id->ns-key :survivalp it))))
         (legal (list (org-x-dag->planning-file :daily))))
     (org-x-dag-this-headline-choose-id t legal "the daily metablock file" ids)))
+
+(defun org-x-dag-read-string-until (prompt pred msg)
+  (declare (indent 1))
+  (let (ret)
+    (while (not (setq ret (funcall pred (read-string prompt))))
+      (message msg)
+      (sleep-for 0.5))
+    ret))
+
+(defun org-x-dag-add-daily-metablock ()
+  (interactive)
+  (-let* ((title (org-x-dag-read-string-until "Metablock title: "
+                   (lambda (it) (when (< 0 (length it)) it))
+                   "Title cannot be blank"))
+          (date (->> (org-read-date nil t)
+                     (decode-time)
+                     (-drop 3)
+                     (-take 3)
+                     (reverse)))
+          (time-re "\\([0-1][0-9]\\|2[0-3]\\):\\([0-6][0-9]\\)")
+          (time (org-x-dag-read-string-until "Time: "
+                  (lambda (it)
+                    (-when-let ((HH MM) (cdr (s-match time-re it)))
+                      (list (string-to-number HH) (string-to-number MM))))
+                  "Time must be like HH:MM (24 hour)")))
+    (org-x-dag-dlp-add-task date title nil time)))
 
 ;;; AGENDA VIEWS
 
@@ -3958,22 +3725,22 @@ except it ignores inactive timestamps."
                        (substring-no-properties))
                 "0. Unlinked")))))))))
 
-;; TODO this is just toplevel projects (for now)
-;; TODO wetter than Seattle
-(defun org-x-dag-agenda-survival-projects ()
-  (interactive)
-  (let ((match ''org-x-dag-scan-survival-projects)
-        (files (org-x-get-action-files)))
-    (nd/org-agenda-call "Survival Projects" nil #'org-x-dag-show-nodes match files
-      `((org-agenda-todo-ignore-with-date t)
-        (org-agenda-sorting-strategy '(user-defined-up category-keep))
-        (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (-if-let (i (get-text-property 1 'x-goal-id line))
-                  (->> (org-x-dag-id->title i)
-                       (substring-no-properties))
-                "0. Unlinked")))))))))
+;; ;; TODO this is just toplevel projects (for now)
+;; ;; TODO wetter than Seattle
+;; (defun org-x-dag-agenda-survival-projects ()
+;;   (interactive)
+;;   (let ((match ''org-x-dag-scan-survival-projects)
+;;         (files (org-x-get-action-files)))
+;;     (nd/org-agenda-call "Survival Projects" nil #'org-x-dag-show-nodes match files
+;;       `((org-agenda-todo-ignore-with-date t)
+;;         (org-agenda-sorting-strategy '(user-defined-up category-keep))
+;;         (org-super-agenda-groups
+;;          '((:auto-map
+;;             (lambda (line)
+;;               (-if-let (i (get-text-property 1 'x-goal-id line))
+;;                   (->> (org-x-dag-id->title i)
+;;                        (substring-no-properties))
+;;                 "0. Unlinked")))))))))
 
 (defun org-x-dag-agenda-goals ()
   (interactive)
