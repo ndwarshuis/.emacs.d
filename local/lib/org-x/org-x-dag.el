@@ -119,6 +119,11 @@
         (calendar-absolute-from-gregorian `(,m1 ,d1 ,y1))))
     (_ (error "Invalid date format(s): %S or %S" date0 date1))))
 
+;; date <-> epoch
+
+(defun org-x-dag-date-to-epoch (date)
+  (float-time (encode-time `(0 0 0 ,@(reverse date) nil -1 nil))))
+
 ;; date <-> week
 
 (defun org-x-dag-date-to-week-number (date)
@@ -184,11 +189,12 @@
 
 ;; variables to store state
 
-(defun org-x-dag-create (d fis fls c fs)
+(defun org-x-dag-create (d fis fls c s fs)
   (list :dag d
         :file->ids fis
         :file->links fls
         :current-date c
+        :selected-date s
         :files fs))
 
 (defun org-x-dag-read-file-paths ()
@@ -223,6 +229,7 @@
   (org-x-dag-create (dag-empty)
                     (ht-create #'equal)
                     (ht-create #'equal)
+                    (org-x-dag-current-date)
                     (org-x-dag-current-date)
                     nil))
 
@@ -649,9 +656,9 @@ be uncommitted if it is also incubated."
 
 (defun org-x-dag-daily-tags-to-date (tags)
   (-let (((y m d) (reverse tags)))
-    (org-x-dag-week-number-to-date (list (org-x-dag-tag-to-year y)
-                                         (org-x-dag-tag-to-month m)
-                                         (org-x-dag-tag-to-day d)))))
+    (list (org-x-dag-tag-to-year y)
+          (org-x-dag-tag-to-month m)
+          (org-x-dag-tag-to-day d))))
 
 (defun org-x-dag-date-to-quarter-tags (date)
   (-let (((y q) (org-x-dag-date-to-quarter date)))
@@ -1959,7 +1966,7 @@ used for optimization."
     `(:complete ,it-comptime)
     (either :right `(:complete ,it-comptime))
     (cond
-     ((-some->> it-planning (org-ml-get-properties :deadline))
+     ((-some->> it-planning (org-ml-get-property :deadline))
       (either :left "Daily metablocks cannot be deadlined"))
      ((equal it-todo org-x-kw-todo)
       (-if-let (sched (-some->> it-planning
@@ -3519,6 +3526,21 @@ except it ignores inactive timestamps."
 
 ;;; INTERACTIVE FUNCTIONS
 
+(defun org-x-dag-set-date ()
+  (interactive)
+  (let ((date (->> (org-read-date nil t)
+                   (decode-time)
+                   (-drop 3)
+                   (-take 3)
+                   (reverse))))
+    (plist-put org-x-dag :selected-date date)
+    (apply #'message "Org-DAG date set to %d-%02d-%02d" date)))
+
+(defun org-x-dag-show-date ()
+  (interactive)
+  (->> (plist-get org-x-dag :selected-date)
+       (apply #'message "Org-DAG date is %d-%02d-%02d")))
+
 (defun org-x-dag-add-id-to-this-headline (id)
   (org-ml-update-this-headline*
     (org-x-dag-headline-add-parent-link id it)))
@@ -3612,7 +3634,9 @@ except it ignores inactive timestamps."
   (-let* ((title (org-x-dag-read-string-until "Metablock title: "
                    (lambda (it) (when (< 0 (length it)) it))
                    "Title cannot be blank"))
-          (date (->> (org-read-date nil t)
+          (date (->> (plist-get org-x-dag :selected-date)
+                     (org-x-dag-date-to-epoch)
+                     (org-read-date nil t nil nil)
                      (decode-time)
                      (-drop 3)
                      (-take 3)
@@ -3624,6 +3648,38 @@ except it ignores inactive timestamps."
                       (list (string-to-number HH) (string-to-number MM))))
                   "Time must be like HH:MM (24 hour)")))
     (org-x-dag-dlp-add-task date title nil time)))
+
+(defun org-x-dag-id-store-link-metablock ()
+  "Make and ID for the current headline and store it in the org link ring.
+ARG and INTERACTIVE are passed to `org-store-link'."
+  (interactive)
+  (cl-flet
+      ((to-menu-line
+        (node)
+        (let ((ts (->> (org-x-metablock-get-timestamp node)
+                       (org-ml-get-property :raw-value)))
+              (title (org-ml-get-property :raw-value node)))
+          (format "%s | %s" ts title))))
+    (-if-let (hls (org-x-get-future-metablox))
+        (-if-let (desc (-some->> (org-ml-parse-this-headline)
+                         (org-ml-get-property :raw-value)))
+            (-if-let (path (org-id-store-link))
+                (let* ((lines (-map #'to-menu-line hls))
+                       (col (-zip-pair lines hls))
+                       (sel (completing-read "Metablock: " col nil t))
+                       (target (alist-get sel col nil nil #'equal))
+                       (link (org-ml-build-link path desc))
+                       ;; ASSUME there will be one paragraph at the end holding
+                       ;; the timestamp
+                       (para (car (org-ml-match '(:last section paragraph) target))))
+                  (org-x-with-file (org-x-get-daily-plan-file)
+                    (org-ml~update* nil
+                      (org-ml-map-children* (-snoc it link) it)
+                      para))
+                  (message "Successfully added '%s' to block '%s'" desc sel))
+              (message "Could not get link to store"))
+          (message "Could not get link description (not on headline?)"))
+      (message "No metablocks available"))))
 
 ;;; AGENDA VIEWS
 
