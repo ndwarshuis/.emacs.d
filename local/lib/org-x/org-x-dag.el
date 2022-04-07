@@ -314,6 +314,10 @@ that file as it currently sits on disk.")
         (alist-get nst)
         (ht-get id))))
 
+(defun org-x-dag-id->ns-key (key id)
+  (-when-let (n (org-x-dag-id->ns id))
+    (plist-get (either-from-right n nil) key)))
+
 (defun org-x-dag-id->hl-meta-prop (id prop)
   (-> (org-x-dag-id->hl-meta id)
       (plist-get prop)))
@@ -3846,10 +3850,12 @@ except it ignores inactive timestamps."
 
 (defun org-x-dag-link-action-to-daily-metablock ()
   (interactive)
+  ;; TODO there are lots of ids here that I likely don't need
+  ;; TODO show the path
   (let ((ids (->> (org-x-dag->action-files)
-                  (org-x-dag-files->ids)))
+                  (org-x-dag-files->ids)
+                  (--remove (org-x-dag-id->ns-key :survivalp it))))
         (legal (list (org-x-dag->planning-file :daily))))
-    ;; TODO this won't work on the toplevel section
     (org-x-dag-this-headline-choose-id t legal "the daily metablock file" ids)))
 
 ;;; AGENDA VIEWS
