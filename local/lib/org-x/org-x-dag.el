@@ -902,45 +902,46 @@ A date like (YEAR MONTH DAY).")
 
 ;; headline builders
 
-(defun org-x-dag-build-planning-headline (title tag level subheadlines)
+(defun org-x-dag-build-planning-headline (title tag level section subheadlines)
   (apply #'org-ml-build-headline!
          :title-text title
          :tags (list tag)
          :level level
+         :section-children section
          subheadlines))
 
 (defun org-x-dag-build-year-headline (year subheadlines)
   (let ((title (number-to-string year))
         (tag (org-x-dag-format-year-tag year)))
-    (org-x-dag-build-planning-headline title tag 1 subheadlines)))
+    (org-x-dag-build-planning-headline title tag 1 nil subheadlines)))
 
-(defun org-x-dag-build-quarter-headline (quarter subheadlines)
+(defun org-x-dag-build-quarter-headline (quarter section subheadlines)
   (let ((title (format "Quarter %d" quarter))
         (tag (org-x-dag-format-quarter-tag quarter)))
-    (org-x-dag-build-planning-headline title tag 2 subheadlines)))
+    (org-x-dag-build-planning-headline title tag 2 section subheadlines)))
 
 (defun org-x-dag-build-week-headline (year weeknum subheadlines)
   (-let* (((_ m d) (org-x-dag-week-number-to-date year weeknum))
           (m* (calendar-month-name m))
           (title (format "%s %s" m* d))
           (tag (org-x-dag-format-week-tag weeknum)))
-    (org-x-dag-build-planning-headline title tag 2 subheadlines)))
+    (org-x-dag-build-planning-headline title tag 2 nil subheadlines)))
 
 (defun org-x-dag-build-month-headline (month subheadlines)
   (let ((title (calendar-month-name month))
         (tag (org-x-dag-format-month-tag month)))
-    (org-x-dag-build-planning-headline title tag 2 subheadlines)))
+    (org-x-dag-build-planning-headline title tag 2 nil subheadlines)))
 
 (defun org-x-dag-build-day-headline (date subheadlines)
   (-let* (((y m d) date)
           (title (format "%d-%02d-%02d" y m d))
           (tag (org-x-dag-format-day-tag d)))
-    (org-x-dag-build-planning-headline title tag 3 subheadlines)))
+    (org-x-dag-build-planning-headline title tag 3 nil subheadlines)))
 
 (defun org-x-dag-build-day-of-week-headline (daynum subheadlines)
   (let ((title (elt calendar-day-name-array daynum))
         (tag (alist-get daynum org-x-dag-weekly-tags)))
-    (org-x-dag-build-planning-headline title tag 3 subheadlines)))
+    (org-x-dag-build-planning-headline title tag 3 nil subheadlines)))
 
 ;; id headline builders
 
@@ -978,14 +979,15 @@ A date like (YEAR MONTH DAY).")
                                  :paragraph (symbol-name it)))
                  (apply #'org-ml-build-plain-list)
                  (org-ml-build-drawer org-x-drwr-categories)
-                 (org-ml-build-section)))
+                 (list)))
           (subtrees (--map (apply #'org-ml-build-headline!
                                   :level 3
                                   :title-text (plist-get (cdr it) :desc)
                                   :tags `(,(plist-get (cdr it) :tag))
                                   (alist-get (car it) goals))
                            org-x-life-categories)))
-    (if sec (cons sec goals) subtrees)))
+    (list sec subtrees)))
+    ;; (if sec (cons sec goals) subtrees)))
 
 (defun org-x-dag-qtp-from-children (children)
   ;; ignore properties, planning, etc
@@ -1015,20 +1017,21 @@ A date like (YEAR MONTH DAY).")
 (defun org-x-dag-qtp-set (quarter qt-plan)
   (cl-flet
       ((build-yr-headline
-        (year qnum children)
-        (->> (org-x-dag-build-quarter-headline qnum children)
+        (year qnum section children)
+        (->> (org-x-dag-build-quarter-headline qnum section children)
              (list)
              (org-x-dag-build-year-headline year))))
-    (org-x-with-file (org-x-qtp-get-file)
+    (org-x-with-file (org-x-dag->planning-file :quarterly)
       (-let* (((year qnum) quarter)
               (sts (org-ml-parse-subtrees 'all))
-              (children (org-x-dag-qtp-to-children qt-plan)))
+              ((section subhls) (org-x-dag-qtp-to-children qt-plan)))
         (-if-let (st-yr (org-x-dag-headlines-find-year year sts))
             (-if-let (st-qt (->> (org-ml-headline-get-subheadlines st-yr)
                                  (org-x-dag-headlines-find-quarter qnum)))
                 (org-ml-update* (org-ml-set-children children it) st-qt)
               (org-ml-update*
-                (-snoc it (org-x-dag-build-quarter-headline qnum children))
+                (->> (org-x-dag-build-quarter-headline qnum section subhls)
+                     (-snoc it))
                 st-yr))
           (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
             (org-ml-insert end (build-yr-headline year qnum children))))))))
@@ -3693,6 +3696,27 @@ ARG and INTERACTIVE are passed to `org-store-link'."
               (message "Could not get link to store"))
           (message "Could not get link description (not on headline?)"))
       (message "No metablocks available"))))
+
+(defun org-x-dag-qtp-new ()
+  (interactive)
+  (-let* ((cur-q (->> (plist-get org-x-dag :selected-date)
+                      (org-x-dag-date-to-quarter)))
+          ((last-plan last-q)
+           (->> cur-q
+                (--unfold
+                 (if (not it) nil
+                   (let ((plan (org-x-dag-qtp-get it)))
+                     `((,plan ,it) .
+                       ,(unless (or (plist-get plan :categories)
+                                    (plist-get plan :goals))
+                          (org-x-dag-shift-quarter it -1 'quarter))))))
+                (-last-item))))
+    (if (equal cur-q last-q)
+        (apply #'message "Quarterly plan already initialized for %d-Q%d" cur-q)
+      (let ((c (plist-get last-plan :categories)))
+        (org-x-dag-qtp-set cur-q `(:categories ,c :goals nil))
+        (apply #'message "Created new quaterly plan for %d-Q%d" cur-q)))))
+                           
 
 ;;; AGENDA VIEWS
 
