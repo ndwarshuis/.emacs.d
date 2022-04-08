@@ -3552,17 +3552,32 @@ except it ignores inactive timestamps."
   (org-ml-update-this-headline*
     (org-x-dag-headline-add-parent-link id it)))
 
+(defun org-x-dag-id->path (id)
+  (cl-labels
+      ((get-parents
+        (acc id)
+        (-if-let (p (org-x-dag-id->buffer-parent id))
+            (get-parents (cons id acc) p)
+          (cons id acc))))
+    (get-parents nil id)))
+
 (defun org-x-dag-read-id (ids cur-ids)
   (cl-flet
       ((make-cell
         (id type)
-        (-let ((title (org-x-dag-id->title id))
+        (-let ((title (->> (org-x-dag-id->path id)
+                           (--map (org-x-dag-id->title it))
+                           (s-join "/")
+                           (s-prepend "/")))
+               (group (pcase (org-x-dag-id->hl-meta-prop id :group)
+                        (:endpoint "EPG")
+                        (:lifetime "LTG")))
                (presentp (not (eq type 'toadd)))
                (prefix (pcase type
                          (`present ?*)
                          (`noexist ?!)
                          (`toadd ?\s))))
-          (list (format "%c %s" prefix title)
+          (list (format "%c %s | %s" prefix group title)
                 :id id
                 :title title
                 :presentp presentp))))
@@ -3607,8 +3622,11 @@ except it ignores inactive timestamps."
 
 (defun org-x-dag-link-goal-to-qtp ()
   (interactive)
-  (let ((ids (append (org-x-dag->ltg-ids) (org-x-dag->epg-ids)))
-        (legal (list (org-x-qtp-get-file))))
+  (let ((ids (->> (list (org-x-dag->goal-file :endpoint)
+                        (org-x-dag->goal-file :lifetime))
+                  (org-x-dag-files->ids)
+                  (-filter #'org-x-dag-id->is-buffer-leaf-p)))
+        (legal (list (org-x-dag->planning-file :quarterly))))
     (org-x-dag-this-headline-choose-id nil legal "quarterly plan file" ids)))
 
 (defun org-x-dag-link-action-to-goal ()
