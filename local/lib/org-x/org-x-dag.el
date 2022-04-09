@@ -682,8 +682,9 @@ be uncommitted if it is also incubated."
 ;;     (org-x-dag-filter-ids-tags target-tags (funcall id-getter))))
 
 (defun org-x-dag-date->tagged-ids (ids tag-getter date)
-  (let ((target-tags (funcall tag-getter date)))
-    (org-x-dag-filter-ids-tags target-tags ids)))
+  (--filter (equal date (funcall tag-getter (org-x-dag-id->tags nil it))) ids))
+  ;; (let ((target-tags (funcall tag-getter date)))
+  ;; (org-x-dag-filter-ids-tags target-tags ids))
 
 ;; (defun org-x-dag-date->qtp-ids (date)
 ;;   (org-x-dag-date->tagged-ids #'org-x-dag->qtp-ids
@@ -701,14 +702,15 @@ be uncommitted if it is also incubated."
 ;; (defun org-x-dag->wkp-current-ids (date)
 ;;   (org-x-dag-date->wkp-ids (org-x-dag->current-date)))
 
+(defun org-x-dag->dlp-ids ()
+  (org-x-dag-file->ids (org-x-dag->planning-file :daily)))
 
-;; (defun org-x-dag->dlp-ids ()
-;;   (org-x-dag-file->ids (org-x-get-daily-plan-file)))
-
-;; (defun org-x-dag-date->dlp-ids (date)
-;;   (org-x-dag-date->tagged-ids #'org-x-dag->dlp-ids
-;;                               #'org-x-dag-date-to-daily-tags
-;;                               date))
+(defun org-x-dag-date->dlp-ids (date)
+  (org-x-dag-date->tagged-ids
+   (org-x-dag->dlp-ids)
+   #'org-x-dag-daily-tags-to-date
+   ;; #'org-x-dag-date-to-daily-tags
+   date))
 
 ;; (defun org-x-dag->dlp-current-ids (date)
 ;;   (org-x-dag-date->dlp-ids (org-x-dag->current-date)))
@@ -730,8 +732,8 @@ be uncommitted if it is also incubated."
 (defun org-x-dag->wkp-ids (which)
   (org-x-dag-which->ids :weekly #'org-x-dag-date-to-week-tags which))
 
-(defun org-x-dag->dlp-ids (which)
-  (org-x-dag-which->ids :daily #'org-x-dag-date-to-daily-tags which))
+;; (defun org-x-dag->dlp-ids (which)
+;;   (org-x-dag-which->ids :daily #'org-x-dag-date-to-daily-tags which))
 
 (defun org-x-dag-partition-child-ids (files ids)
   (->> (org-x-dag-files->ids files)
@@ -3589,7 +3591,7 @@ except it ignores inactive timestamps."
                         (--sort (plist-get (cdr it) :presentp)))))
       (alist-get (completing-read "Node: " mapper) mapper nil nil #'equal))))
 
-(defun org-x-dag-this-headline-choose-id (toplevel-allowed? legal-files msg ids)
+(defun org-x-dag-this-headline-add-link (toplevel-allowed? legal-files msg ids)
   (cl-flet
       ((update-nodes
         (link-getter remover adder ids children)
@@ -3614,11 +3616,50 @@ except it ignores inactive timestamps."
                         #'org-x-dag-headline-add-parent-link
                         ids it))))))
 
+(defun org-x-dag-this-headline-put-link (collection)
+  (-if-let (desc (-some->> (org-ml-parse-this-headline)
+                   (org-ml-get-property :raw-value)))
+      (-if-let (path (org-id-get-create))
+          (let ((id (-> (completing-read "Metablock: " collection nil t)
+                        (alist-get collection nil nil #'equal))))
+            (org-x-with-file (org-x-dag-id->file id)
+              (goto-char (org-x-dag-id->point id))
+              (org-ml-update-this-headline*
+                (org-x-dag-headline-add-parent-link path it)))
+            (->> (org-x-dag-id->title id)
+                 (message "Successfully added '%s' to headline '%s'" desc)))
+        (message "Could not make/get link for current headline"))
+    (message "Not on a headline")))
+
+(defun org-x-dag-id-store-link-metablock ()
+  "Make and ID for the current headline and store it in the org link ring.
+ARG and INTERACTIVE are passed to `org-store-link'."
+  (interactive)
+  (cl-flet
+      ((is-valid-daily-node
+        (id)
+        (-some-> (org-x-dag-id->ns id)
+          (either-is-right-p)))
+       (to-menu-line
+        (id)
+        (print (org-x-dag-id->planning-datetime :scheduled id))
+        (let* ((time (-some->> (org-x-dag-id->planning-datetime :scheduled id)
+                       (org-x-dag-datetime-split)
+                       (nth 1)))
+               (stime (if time (apply #'format "%02d:%02d" time) "--:--"))
+               (title (org-x-dag-id->title id)))
+          (cons (format "%s | %s" stime title) id))))
+    (-if-let (collection (->> (plist-get org-x-dag :selected-date)
+                              (org-x-dag-date->dlp-ids)
+                              (-map #'to-menu-line)))
+        (org-x-dag-this-headline-put-link collection)
+      (message "No metablocks available"))))
+
 (defun org-x-dag-link-ltg-to-epg ()
   (interactive)
   (let ((ids (org-x-dag->ltg-ids))
         (legal (list (org-x-get-endpoint-goal-file))))
-    (org-x-dag-this-headline-choose-id nil legal "endpoint goal file" ids)))
+    (org-x-dag-this-headline-add-link nil legal "endpoint goal file" ids)))
 
 (defun org-x-dag-link-goal-to-qtp ()
   (interactive)
@@ -3627,14 +3668,14 @@ except it ignores inactive timestamps."
                   (org-x-dag-files->ids)
                   (-filter #'org-x-dag-id->is-buffer-leaf-p)))
         (legal (list (org-x-dag->planning-file :quarterly))))
-    (org-x-dag-this-headline-choose-id nil legal "quarterly plan file" ids)))
+    (org-x-dag-this-headline-add-link nil legal "quarterly plan file" ids)))
 
 (defun org-x-dag-link-action-to-goal ()
   (interactive)
   (let ((ids (append (org-x-dag->ltg-ids) (org-x-dag->epg-ids)))
         (legal (org-x-dag->action-files)))
     ;; TODO this won't work on the toplevel section
-    (org-x-dag-this-headline-choose-id t legal "an action file" ids)))
+    (org-x-dag-this-headline-add-link t legal "an action file" ids)))
 
 (defun org-x-dag-link-action-to-daily-metablock ()
   (interactive)
@@ -3644,7 +3685,7 @@ except it ignores inactive timestamps."
                   (org-x-dag-files->ids)
                   (--remove (org-x-dag-id->ns-key :survivalp it))))
         (legal (list (org-x-dag->planning-file :daily))))
-    (org-x-dag-this-headline-choose-id t legal "the daily metablock file" ids)))
+    (org-x-dag-this-headline-add-link t legal "the daily metablock file" ids)))
 
 (defun org-x-dag-read-string-until (prompt pred msg)
   (declare (indent 1))
@@ -3673,47 +3714,6 @@ except it ignores inactive timestamps."
                       (list (string-to-number HH) (string-to-number MM))))
                   "Time must be like HH:MM (24 hour)")))
     (org-x-dag-dlp-add-task date title nil time)))
-
-(defun org-x-dag-id-store-link-metablock ()
-  "Make and ID for the current headline and store it in the org link ring.
-ARG and INTERACTIVE are passed to `org-store-link'."
-  (interactive)
-  (cl-flet
-      ((is-valid-daily-node
-        (hl)
-        (-when-let (n (->> (org-x-dag-headline-get-id hl)
-                           (org-x-dag-id->ns)))
-          (either-is-right-p n)))
-       (to-menu-line
-        (hl)
-        (let* ((time (-some->> (org-ml-headline-get-planning hl)
-                       (org-ml-get-property :scheduled)
-                       (org-ml-timestamp-get-start-time)
-                       (org-x-dag-datetime-split)
-                       (nth 1)))
-               (stime (if time (apply #'format "%02d:%02d" time) "--:--"))
-               (title (org-ml-get-property :raw-value hl)))
-          (format "%s | %s" stime title))))
-    ;; TODO add filter for valid daily nodes
-    (-if-let (hls (->> (plist-get org-x-dag :selected-date)
-                       (org-x-dag-dlp-get)))
-                       ;; (-filter #'is-valid-daily-node)))
-        (-if-let (desc (-some->> (org-ml-parse-this-headline)
-                         (org-ml-get-property :raw-value)))
-            (-if-let (path (org-id-get-create))
-                (let* ((lines (-map #'to-menu-line hls))
-                       (col (->> (-zip-pair lines hls)
-                                 (--sort (string< (car it) (car other)))))
-                       (sel (completing-read "Metablock: " col nil t))
-                       (target (alist-get sel col nil nil #'equal)))
-                  (org-x-with-file (org-x-dag->planning-file :daily)
-                    (org-ml~update* nil
-                      (org-x-dag-headline-add-parent-link path it)
-                      target))
-                  (message "Successfully added '%s' to block '%s'" desc sel))
-              (message "Could not get link to store"))
-          (message "Could not get link description (not on headline?)"))
-      (message "No metablocks available"))))
 
 (defun org-x-dag-qtp-new ()
   (interactive)
