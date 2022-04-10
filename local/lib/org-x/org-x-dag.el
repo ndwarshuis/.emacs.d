@@ -3868,5 +3868,150 @@ except it ignores inactive timestamps."
                                        '(3 "Uncommitted")))))
                 (format "%d.%d %s (%s)" srank rank type stype))))))))))
 
+(defun org-x-dag-agenda-timeblock-0 ()
+  "Show the timeblock agenda view.
+
+In the order of display
+1. morning tasks (to do immediately after waking)
+2. daily calendar (for thing that begin today at a specific time)
+3. evening tasks (to do immediately before sleeping)"
+  (interactive)
+  (let ((org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
+        (org-super-agenda-groups
+         `(,(nd/org-def-super-agenda-pred "Morning routine"
+              (org-x-headline-has-property org-x-prop-routine
+                                           org-x-prop-routine-morning)
+              :order 0)
+           ,(nd/org-def-super-agenda-pred "Evening routine"
+              (org-x-headline-has-property org-x-prop-routine
+                                           org-x-prop-routine-evening)
+              :order 3)
+           (:name "Calendar" :order 1 :time-grid t)
+           (:discard (:anything t)))))
+    (org-x-dag-show-daily-nodes)))
+
+(defun org-x-dag-agenda-goals-0 ()
+  (interactive)
+  (let ((match ''org-x-dag-scan-goals))
+    (nd/org-agenda-call "Goals-0" nil #'org-x-dag-show-nodes match nil
+      `((org-agenda-todo-ignore-with-date t)
+        (org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-let* (((&plist :type :childlessp :toplevelp :parentlessp)
+                       (get-text-property 1 'x-goal-status line))
+                      (type* (cl-case type
+                               (ltg "Lifetime")
+                               (epg "Endpoint")))
+                      (subtext (cond
+                                ((and (eq type 'epg) parentlessp) "Parentless")
+                                (childlessp "Childless")
+                                ((not toplevelp) "Branch"))))
+                (if subtext (format "%s (%s)" type* subtext) type*))))))))))
+
+(defun org-x-dag-agenda-tasks-0 ()
+  "Show the tasks agenda view.
+
+Distinguish between independent and project tasks, as well as
+tasks that are inert (which I may move to the incubator during a
+review phase)"
+  (interactive)
+  (let ((match ''org-x-dag-scan-tasks)
+        (files (org-x-get-action-files)))
+    (nd/org-agenda-call "Tasks-0" nil #'org-x-dag-show-nodes match files
+      `((org-agenda-skip-function #'org-x-task-skip-function)
+        (org-agenda-todo-ignore-with-date t)
+        (org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-let* ((i (get-text-property 1 'x-is-standalone line))
+                      (s (get-text-property 1 'x-status line))
+                      (s* (if (and (not i) (eq s :inert)) :active s))
+                      ((level1 subtitle) (if i '(1 "α") '(0 "σ")))
+                      (p (alist-get s* nd/org-headline-task-status-priorities)))
+                (nd/org-mapper-title level1 p s* subtitle))))))))))
+
+(defun org-x-dag-agenda-projects-0 ()
+  "Show the projects agenda view."
+  (interactive)
+  (let ((match ''org-x-dag-scan-projects)
+        (files (org-x-get-action-and-incubator-files)))
+    (nd/org-agenda-call "Projects-0" nil #'org-x-dag-show-nodes match files
+      `((org-agenda-sorting-strategy '(category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-let* ((i (get-text-property 1 'x-toplevelp line))
+                      (s (get-text-property 1 'x-status line))
+                      (p (get-text-property 1 'x-priority line))
+                      ((level1 subtitle) (if i '(0 "τ") '(1 "σ"))))
+                (nd/org-mapper-title level1 p s subtitle))))))))))
+
+(defun org-x-dag-agenda-incubator-0 ()
+  "Show the incubator agenda view."
+  (interactive)
+  (let ((match ''org-x-dag-scan-incubated))
+    (nd/org-agenda-call "Incubator-0" nil #'org-x-dag-show-nodes match nil
+      `((org-agenda-sorting-strategy '(category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (let ((p (get-text-property 1 'x-project-p line))
+                    (s (get-text-property 1 'x-scheduled line))
+                    (d (get-text-property 1 'x-deadlined line)))
+                (cond
+                 ((and s (not p))
+                  (if (< (float-time) s) "Future Scheduled" "Past Scheduled"))
+                 ((and d (not p))
+                  (if (< (float-time) d) "Future Deadline" "Past Deadline"))
+                 (p "Toplevel Projects")
+                 (t "Standalone Tasks")))))))))))
+
+(defun org-x-dag-agenda-iterators-0 ()
+  "Show the iterator agenda view."
+  (interactive)
+  (let ((files (org-x-get-action-files))
+        (match ''org-x-dag-scan-iterators))
+    (nd/org-agenda-call "Iterators-0" nil #'org-x-dag-show-nodes match files
+      `((org-agenda-sorting-strategy '(category-keep))
+        (org-super-agenda-groups
+         ',(nd/org-def-super-agenda-automap
+             (cl-case (org-x-headline-get-iterator-status)
+               (:uninit "0. Uninitialized")
+               (:project-error "0. Project Error")
+               (:unscheduled "0. Unscheduled")
+               (:empt "1. Empty")
+               (:actv "2. Active")
+               (t "3. Other"))))))))
+
+(defun org-x-dag-agenda-errors-0 ()
+  "Show the critical errors agenda view."
+  (interactive)
+  (let ((match ''org-x-dag-scan-errors))
+    (nd/org-agenda-call "Errors-0" nil #'org-x-dag-show-nodes match nil
+      `((org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (get-text-property 1 'x-error line)))))))))
+
+(defun org-x-dag-agenda-archive-0 ()
+  "Show the archive agenda view."
+  (interactive)
+  (let ((files (org-x-get-action-files))
+        (match ''org-x-dag-scan-archived))
+    (nd/org-agenda-call "Archive-0" nil #'org-x-dag-show-nodes match files
+  ;; (nd/org-agenda-call-headlines "Archive-0" nil (org-x-get-action-files)
+    `((org-agenda-sorting-strategy '(category-keep))
+      (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (cl-case (get-text-property 1 'x-type line)
+                (:proj "Toplevel Projects")
+                (:task "Standalone Tasks")
+                (:iter "Closed Iterators")
+                (:subiter "Toplevel Subiterators"))))))))))
+
 (provide 'org-x-dag)
 ;;; org-x-dag.el ends here
