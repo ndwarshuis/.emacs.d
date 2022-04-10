@@ -649,6 +649,8 @@ This makes a nice glowy effect on the cursor when switching window focus. Very e
   (setq beacon-blink-duration 0.2
         beacon-blink-delay 0.1
         beacon-size 20))
+
+(blink-cursor-mode 0)
 #+END_SRC
 ** misc
 *** line wrap
