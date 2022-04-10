@@ -1823,7 +1823,9 @@ Additionally, using specialized file variables makes it much easier and faster t
       org-x-reference-files (list "reference/idea.org" "reference/questions.org")
       org-x-endpoint-goal-file "reference/goals/endpoint.org"
       org-x-lifetime-goal-file "reference/goals/lifetime.org"
+      org-x-survival-goal-file "reference/goals/survival.org"
       org-x-daily-plan-file "plans/daily.org"
+      org-x-weekly-plan-file "plans/weekly.org"
       org-x-quarterly-plan-file "plans/quarterly.org"
 
       org-refile-targets '((org-x-get-action-files :maxlevel . 9)
@@ -1866,10 +1868,15 @@ My org config became so huge that I decided to move it all to a separate library
 
 The advantage of doing it this way is that I can byte-compile and test independent of the other messy things in the main config. Furthermore, I can use it as a testing ground for new packages if I deem some functionality useful enough for more than just me.
 #+begin_src emacs-lisp
-(let ((dir (nd/expand-lib-directory "org-x")))
+(defun nd/load-and-compile (dir)
   (add-to-list 'load-path dir)
   (--each (directory-files dir t ".*\\.el$") (byte-recompile-file it nil 0)))
 
+(nd/load-and-compile (nd/expand-lib-directory "either"))
+(nd/load-and-compile (nd/expand-lib-directory "dag"))
+(nd/load-and-compile (nd/expand-lib-directory "org-x"))
+
+(require 'dag)
 (require 'org-x)
 #+end_src
 ** buffer interface
@@ -2392,7 +2399,7 @@ I use tags for agenda filtering (primarily for GTD contexts, see below). Each ta
 
         ;; a tag to make meetings suck less
         (,org-x-tag-meeting . ?g)
-        
+
         ;; life categories, used for gtd priorities
         (:startgroup)
         (,(org-x-life-category-tag 'env) . ?E)
@@ -2536,8 +2543,8 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
            :immediate-finish t)
 
           ("M" "metablock" entry (file+olp+datetree ,org-x-daily-plan-file)
-           ,(concat "* %^{Metablock Title}\n"
-                    "%^t\n"
+           ,(concat "* %(eval org-x-kw-todo) %^{Metablock Title}\n"
+                    "SCHEDULED: %^t\n"
                     "%^{Effort}p"
                     "%?"))
 
@@ -2575,7 +2582,9 @@ In some capture templates I want to automatically store a link to the entry so I
 Add the creation time upon completing a capture.
 #+begin_src emacs-lisp
 (add-hook 'org-capture-before-finalize-hook
-          (lambda (&optional _always &rest _args) (org-x-set-creation-time)))
+          (lambda (&optional _always &rest _args)
+            (org-id-get-create)
+            (org-x-set-creation-time)))
 #+end_src
 *** refile
 :PROPERTIES:
@@ -2687,7 +2696,9 @@ In these cases, it is nice to know what happened during each cycle, so force not
 Override the standard headline insertion function to add a timestamp for the time at which it was created.
 #+begin_src emacs-lisp
 (advice-add 'org-insert-heading :after
-            (lambda (&optional _always &rest _args) (org-x-set-creation-time)))
+            (lambda (&optional _always &rest _args)
+              (org-id-get-create)
+              (org-x-set-creation-time)))
 #+end_src
 *** agenda
 :PROPERTIES:
@@ -2749,11 +2760,6 @@ These are just some options to enable/disable some aesthetic things.
       org-agenda-start-on-weekday 0
       org-agenda-span 'day
       org-agenda-current-time-string "### -- NOW -- ###")
-#+END_SRC
-
-Based on my screen size and usage patterns, this seems to be a good value to enable the maximum habit history to be shown without compromising aesthetics.
-#+BEGIN_SRC emacs-lisp
-(setq org-habit-graph-column 50)
 #+END_SRC
 **** bulk actions
 :PROPERTIES:
