@@ -21,6 +21,8 @@
 
 ;;; Code:
 
+(require 'dash)
+
 (defmacro either (key data)
   "Make an either type.
 
@@ -28,7 +30,7 @@ KEY is either :left or :right and DATA is whatever goes in the
 left/right slot."
   (pcase key
     ((or :left :right) `(list ,key ,data))
-    (e (error "Invalid status key: %s" key))))
+    (_ (error "Invalid status key: %s" key))))
 
 (defmacro either>>= (either form)
   "Bind EITHER to FORM where the right slot is bound to 'it'."
