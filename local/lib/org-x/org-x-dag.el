@@ -635,8 +635,8 @@ be uncommitted if it is also incubated."
 (defun org-x-dag->current-date ()
   (plist-get org-x-dag :current-date))
 
-;; (defun org-x-dag->qtp-ids ()
-;;   (org-x-dag-file->ids (org-x-qtp-get-file)))
+(defun org-x-dag->qtp-ids ()
+  (org-x-dag-file->ids (org-x-dag->planning-file :quarterly)))
 
 ;; (defun org-x-dag->wkp-ids ()
 ;;   (org-x-dag-file->ids (org-x-get-weekly-plan-file)))
@@ -686,15 +686,15 @@ be uncommitted if it is also incubated."
   ;; (let ((target-tags (funcall tag-getter date)))
   ;; (org-x-dag-filter-ids-tags target-tags ids))
 
-;; (defun org-x-dag-date->qtp-ids (date)
-;;   (org-x-dag-date->tagged-ids #'org-x-dag->qtp-ids
-;;                               #'org-x-dag-date-to-quarter-tags
-;;                               date))
+(defun org-x-dag-date->qtp-ids (date)
+  (org-x-dag-date->tagged-ids (org-x-dag->qtp-ids)
+                              #'org-x-dag-quarter-tags-to-date
+                              date))
 
-;; (defun org-x-dag-date->wkp-ids (date)
-;;   (org-x-dag-date->tagged-ids #'org-x-dag->wkp-ids
-;;                               #'org-x-dag-date-to-week-tags
-;;                               date))
+(defun org-x-dag-date->wkp-ids (date)
+  (org-x-dag-date->tagged-ids (org-x-dag->wkp-ids)
+                              #'org-x-dag-week-tags-to-date
+                              date))
 
 ;; (defun org-x-dag->qtp-current-ids ()
 ;;   (org-x-dag-date->qtp-ids (org-x-dag->current-date)))
@@ -726,11 +726,11 @@ be uncommitted if it is also incubated."
         (`current (date-ids ids (org-x-dag->current-date)))
         (date (date-ids ids date))))))
 
-(defun org-x-dag->qtp-ids (which)
-  (org-x-dag-which->ids :quarterly #'org-x-dag-date-to-quarter-tags which))
+;; (defun org-x-dag->qtp-ids (which)
+;;   (org-x-dag-which->ids :quarterly #'org-x-dag-date-to-quarter-tags which))
 
-(defun org-x-dag->wkp-ids (which)
-  (org-x-dag-which->ids :weekly #'org-x-dag-date-to-week-tags which))
+;; (defun org-x-dag->wkp-ids (which)
+;;   (org-x-dag-which->ids :weekly #'org-x-dag-date-to-week-tags which))
 
 ;; (defun org-x-dag->dlp-ids (which)
 ;;   (org-x-dag-which->ids :daily #'org-x-dag-date-to-daily-tags which))
@@ -3554,7 +3554,7 @@ except it ignores inactive timestamps."
   (org-ml-update-this-headline*
     (org-x-dag-headline-add-parent-link id it)))
 
-(defun org-x-dag-id->path (id)
+(defun org-x-dag-id->buffer-lineage (id)
   (cl-labels
       ((get-parents
         (acc id)
@@ -3563,11 +3563,199 @@ except it ignores inactive timestamps."
           (cons id acc))))
     (get-parents nil id)))
 
+(defun org-x-dag-id->path (category? id)
+  (let ((path (->> (org-x-dag-id->buffer-lineage id)
+                   (-map #'org-x-dag-id->title)
+                   (s-join "/")
+                   (s-prepend))))
+    (if category?
+        (format "%s:%s" (org-x-dag-id->hl-meta-prop id :category) path)
+      path)))
+
+(defun org-x-dag-group-code (group)
+  (pcase group
+    (:lifetime "LTG")
+    (:survival "SVG")
+    (:endpoint "EPG")
+    (:action "ACT")
+    (:quarterly "QTP")
+    (:weekly "WKP")
+    (:daily "DLP")
+    (_ "???")))
+
+;; parent -> child linkers
+;;
+;; functions to set the current headline as a parent link for a child headline
+
+(defun org-x-dag--link-parent-to-child (parent-id-fun child-id-fun fmt-fun)
+  (cl-flet*
+      (;; (is-valid-node
+       ;;  (id)
+       ;;  (-some-> (org-x-dag-id->ns id)
+       ;;    (either-is-right-p)))
+       (to-menu-line
+        (this-id id)
+        (let* ((presentp (member this-id (org-x-dag-id->linked-parents id)))
+               (title (funcall fmt-fun id))
+               (line (format "%c %s" (if presentp ?* ?\s) title)))
+          `(,line :id ,id :presentp ,presentp)))
+       (choose-child-id
+        (this-id)
+        (-if-let (collection (->> (funcall child-id-fun it)
+                                  ;; (-filter #'is-valid-node)
+                                  (--map (to-menu-line this-id it))))
+            (-let* (((&plist :id :presentp)
+                     (-> (completing-read "Child: " collection nil t)
+                         (alist-get collection nil nil #'equal)))
+                    ((update-fun fmt)
+                     (if presentp
+                         (list #'org-x-dag-headline-remove-parent-link
+                               "Successfully removed '%s' from '%s'")
+                       (list #'org-x-dag-headline-add-parent-link
+                             "Successfully added '%s' to '%s'"))))
+              (org-x-with-file (org-x-dag-id->file id)
+                (goto-char (org-x-dag-id->point id))
+                (org-ml-update-this-headline*
+                  (funcall update-fun this-id it)))
+              (message fmt (org-x-dag-id->title id) (org-x-dag-id->title this-id)))
+          (message "No children available"))))
+    (if (org-on-heading-p)
+        (either-from (funcall parent-id-fun)
+          (message it)
+          (choose-child-id it))
+      (message "Not on a headline"))))
+
+(defun org-x-dag-link-parent-to-child ()
+  (interactive)
+  (cl-flet*
+      ;; parent id functions
+      ;;
+      ;; TODO might make sense to check for validity here so I don't link
+      ;; poisoned nodes together
+      ((id-getter
+        ()
+        (-if-let (id (org-id-get))
+            (either :right id)
+          (either :left "Not on a valid node")))
+       (leaf-id-getter
+        ()
+        (either>>= (id-getter)
+          (if (org-x-dag-id->is-buffer-leaf-p it)
+              (either :right it)
+            (either :left "Not on a leaf node"))))
+       (action-id-getter
+        ()
+        (either>>= (id-getter)
+          (cond
+           ((org-x-dag-id->ns-key :survivalp it)
+            (either :left "Action has survival goal parents"))
+           ((-some->> (org-x-dag-id->planning-datetime :scheduled it)
+              (org-x-dag-datetime-split)
+              (nth 1))
+            (either :left "Action has scheduled time"))
+           (t
+            (either :right it)))))
+
+       ;; child id functions
+       (action-qtp-getter
+        (_)
+        (let ((action (->> (org-x-dag->action-files)
+                           (org-x-dag-files->ids)
+                           ;; TODO could also remove DONE/CANC and things
+                           ;; underneath these
+                           (--remove (org-x-dag-id->ns-key :survivalp it))))
+              (qtp (-> (plist-get org-x-dag :selected-date)
+                       (org-x-dag-date-to-quarter)
+                       (org-x-dag-quarter-to-date)
+                       (org-x-dag-date->qtp-ids))))
+          (append epg action qtp)))
+       (svg-action-getter
+        (_)
+        (->> (org-x-dag->action-files)
+             (org-x-dag-files->ids)
+             ;; TODO could also remove DONE/CANC and things
+             ;; underneath these
+             (--remove (and (org-x-dag-id->ns-key :committed it)
+                            (not (org-x-dag-id->ns-key :survivalp it))))))
+       (epg-action-qtp-getter
+        (id)
+        `(,@(org-x-dag->epg-ids) ,@(funcall action-qtp-getter id)))
+       (wkp-getter
+        (_)
+        (-> (plist-get org-x-dag :selected-date)
+            (org-x-dag-date-to-week-number)
+            (org-x-dag-week-number-to-date)
+            (org-x-dag-date->wkp-ids)))
+       (dlp-getter
+        (_)
+        (-> (plist-get org-x-dag :selected-date)
+            (org-x-dag-date->dlp-ids)))
+       (add-group
+        (s id)
+        (let ((g (->> (org-x-dag-id->hl-meta-prop id :group)
+                      (org-x-dag-group-code))))
+          (format "%s | %s" g s)))
+
+       ;; formatters
+       (toplevel-formatter
+        (id)
+        (let ((title (if (eq group :quarterly)
+                         (org-x-dag-id->title id)
+                       (org-x-dag-id->path (eq group :action) id))))
+          (add-group title id)))
+       (toplevel-formatter
+        (id)
+        (org-x-dag-id->path t id))
+       (plan-formatter
+        (id)
+        (org-x-dag-id->title id)))
+
+    (org-x-dag-sync)
+    (let ((f (buffer-file-name)))
+      (cond
+       ((equal f (org-x-dag->goal-file :lifetime))
+        (org-x-dag--link-parent-to-child
+         #'leaf-id-getter
+         #'epg-action-qtp-getter
+         #'toplevel-formatter))
+       ((equal f (org-x-dag->goal-file :endpoint))
+        (org-x-dag--link-parent-to-child
+         #'leaf-id-getter
+         #'action-qtp-getter
+         #'toplevel-formatter))
+       ((equal f (org-x-dag->goal-file :survival))
+        (org-x-dag--link-parent-to-child
+         #'leaf-id-getter
+         #'svg-action-getter
+         #'svg-formatter))
+       ((member f (org-x-dag->action-files))
+        (org-x-dag--link-parent-to-child
+         #'action-id-getter
+         #'dlp-getter
+         #'plan-formatter))
+       ((equal f (org-x-dag->planning-file :quarterly))
+        (org-x-dag--link-parent-to-child
+         #'id-getter
+         #'wkp-getter
+         #'plan-formatter))
+       ((equal f (org-x-dag->planning-file :weekly))
+        (org-x-dag--link-parent-to-child
+         #'id-getter
+         #'dlp-getter
+         #'plan-formatter))
+       (t
+        (message "Cannot link child from parent in current file"))))))
+
+;; child -> parent linkers
+;;
+;; functions to retrieve a parent headline id and add it to the current
+;; headline's (or file's) parent links
+
 (defun org-x-dag-read-id (ids cur-ids)
   (cl-flet
       ((make-cell
         (id type)
-        (-let ((title (->> (org-x-dag-id->path id)
+        (-let ((title (->> (org-x-dag-id->parents id)
                            (--map (org-x-dag-id->title it))
                            (s-join "/")
                            (s-prepend "/")))
@@ -3616,52 +3804,13 @@ except it ignores inactive timestamps."
                         #'org-x-dag-headline-add-parent-link
                         ids it))))))
 
-(defun org-x-dag-this-headline-put-link (collection)
-  (-if-let (desc (-some->> (org-ml-parse-this-headline)
-                   (org-ml-get-property :raw-value)))
-      (-if-let (path (org-id-get-create))
-          (let ((id (-> (completing-read "Metablock: " collection nil t)
-                        (alist-get collection nil nil #'equal))))
-            (org-x-with-file (org-x-dag-id->file id)
-              (goto-char (org-x-dag-id->point id))
-              (org-ml-update-this-headline*
-                (org-x-dag-headline-add-parent-link path it)))
-            (->> (org-x-dag-id->title id)
-                 (message "Successfully added '%s' to headline '%s'" desc)))
-        (message "Could not make/get link for current headline"))
-    (message "Not on a headline")))
-
-(defun org-x-dag-id-store-link-metablock ()
-  "Make and ID for the current headline and store it in the org link ring.
-ARG and INTERACTIVE are passed to `org-store-link'."
-  (interactive)
-  (cl-flet
-      ((is-valid-daily-node
-        (id)
-        (-some-> (org-x-dag-id->ns id)
-          (either-is-right-p)))
-       (to-menu-line
-        (id)
-        (print (org-x-dag-id->planning-datetime :scheduled id))
-        (let* ((time (-some->> (org-x-dag-id->planning-datetime :scheduled id)
-                       (org-x-dag-datetime-split)
-                       (nth 1)))
-               (stime (if time (apply #'format "%02d:%02d" time) "--:--"))
-               (title (org-x-dag-id->title id)))
-          (cons (format "%s | %s" stime title) id))))
-    (-if-let (collection (->> (plist-get org-x-dag :selected-date)
-                              (org-x-dag-date->dlp-ids)
-                              (-map #'to-menu-line)))
-        (org-x-dag-this-headline-put-link collection)
-      (message "No metablocks available"))))
-
 (defun org-x-dag-link-ltg-to-epg ()
   (interactive)
   (let ((ids (org-x-dag->ltg-ids))
         (legal (list (org-x-get-endpoint-goal-file))))
     (org-x-dag-this-headline-add-link nil legal "endpoint goal file" ids)))
 
-(defun org-x-dag-link-goal-to-qtp ()
+(defun org-x-dag-link-qtp-to-goal ()
   (interactive)
   (let ((ids (->> (list (org-x-dag->goal-file :endpoint)
                         (org-x-dag->goal-file :lifetime))
@@ -3677,7 +3826,7 @@ ARG and INTERACTIVE are passed to `org-store-link'."
     ;; TODO this won't work on the toplevel section
     (org-x-dag-this-headline-add-link t legal "an action file" ids)))
 
-(defun org-x-dag-link-action-to-daily-metablock ()
+(defun org-x-dag-link-dlp-to-action ()
   (interactive)
   ;; TODO there are lots of ids here that I likely don't need
   ;; TODO show the path
@@ -3686,6 +3835,20 @@ ARG and INTERACTIVE are passed to `org-store-link'."
                   (--remove (org-x-dag-id->ns-key :survivalp it))))
         (legal (list (org-x-dag->planning-file :daily))))
     (org-x-dag-this-headline-add-link t legal "the daily metablock file" ids)))
+
+(defun org-x-dag-link-child-to-parent ()
+  (interactive)
+  (let ((f (buffer-file-name)))
+    (cond
+     ((equal f (org-x-dag->goal-file :endpoint)))
+     ((member f (org-x-dag->action-files)))
+     ((equal f (org-x-dag->planning-file :quarterly)))
+     ((equal f (org-x-dag->planning-file :weekly)))
+     ((equal f (org-x-dag->planning-file :daily)))
+     (t
+      (message "Cannot link parent from child in current file")))))
+
+;; add nodes
 
 (defun org-x-dag-read-string-until (prompt pred msg)
   (declare (indent 1))
