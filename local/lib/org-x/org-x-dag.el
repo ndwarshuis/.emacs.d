@@ -29,6 +29,9 @@
 (require 'either)
 (require 'ht)
 
+(require 'org-x-files)
+(require 'org-x-const)
+
 ;;; DATE/TIME FUNCTIONS
 
 ;; current state
@@ -68,6 +71,17 @@
        (org-x-dag-gregorian-to-date)))
 
 ;; datetime operations
+
+(defmacro org-x-dag-with-times (datetime0 datetime1 form)
+  ;; ASSUME all digits in this comparison are on the calendar/clock (eg day 32
+  ;; does not 'rollover' to day 1 on the next month)
+  (declare (indent 2))
+  `(if (or (and (org-ml-time-is-long ,datetime0)
+                (org-ml-time-is-long ,datetime1))
+           (not (or (org-ml-time-is-long ,datetime0)
+                    (org-ml-time-is-long ,datetime1))))
+       ,form
+     (error "Datetimes are invalid lengths: %S and %S" ,datetime0 ,datetime1)))
 
 (defun org-x-dag-datetime< (datetime0 datetime1)
   (org-x-dag-with-times datetime0 datetime1
@@ -2482,17 +2496,6 @@ encountered will be returned."
         :pos (org-ml-get-property :begin ts)
         :repeater (org-ml-timestamp-extract-modulus 'repeater ts)
         :warning (org-ml-timestamp-extract-modulus 'warning ts)))
-
-(defmacro org-x-dag-with-times (datetime0 datetime1 form)
-  ;; ASSUME all digits in this comparison are on the calendar/clock (eg day 32
-  ;; does not 'rollover' to day 1 on the next month)
-  (declare (indent 2))
-  `(if (or (and (org-ml-time-is-long ,datetime0)
-                (org-ml-time-is-long ,datetime1))
-           (not (or (org-ml-time-is-long ,datetime0)
-                    (org-ml-time-is-long ,datetime1))))
-       ,form
-     (error "Datetimes are invalid lengths: %S and %S" ,datetime0 ,datetime1)))
 
 (defun org-x-dag-repeater-get-next (sel-datetime datetime shift shifttype reptype)
   "Return the next timestamp repeater of DATETIME."
