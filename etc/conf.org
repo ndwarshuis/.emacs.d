@@ -2946,12 +2946,15 @@ original function being advised and ARGS are the arguments."
     (:inert . 4)))
 
 (defun org-x-agenda-run-series-advice (fun name settings)
-  (-if-let (org-agenda-files (->> (nth 1 settings)
-                                  (alist-get 'org-agenda-files)
-                                  (car)
-                                  (eval)))
-      (funcall fun name settings)
-    (funcall fun name settings)))
+  (nd/with-advice
+      nil
+      ;; ((#'org-agenda-list :override #'org-x-dag-show-daily-nodes))
+    (-if-let (org-agenda-files (->> (nth 1 settings)
+                                    (alist-get 'org-agenda-files)
+                                    (car)
+                                    (eval)))
+        (funcall fun name settings)
+      (funcall fun name settings))))
 
 (advice-add #'org-agenda-run-series :around #'org-x-agenda-run-series-advice)
 
