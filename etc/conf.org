@@ -2997,7 +2997,10 @@ In the order of display
               (org-x-headline-has-property org-x-prop-routine
                                            org-x-prop-routine-evening)
               :order 3)
-           (:name "Calendar" :order 1 :time-grid t)
+           (:name "Calendar" :order 1 :time-grid t
+                  :transformer (if (equal (get-text-property 1 'org-category it) "daily")
+                                   (propertize it 'face 'org-todo)
+                                 it))
            (:discard (:anything t))))))))
 
 (defun nd/org-agenda-goals ()
@@ -3167,7 +3170,7 @@ review phase)"
                 | org-x-kw-wait
                 | org-x-kw-hold
                 | org-x-kw-canc))
-        (files (org-x-get-action-and-incubator-files)))
+        (files (org-x-get-action-files)))
     (nd/org-agenda-call "Tasks" nil 'tags-todo match files
       `((org-agenda-skip-function #'org-x-task-skip-function)
         (org-agenda-todo-ignore-with-date t)
