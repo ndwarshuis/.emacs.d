@@ -168,7 +168,7 @@
     (list y (1+ (/ m 3)))))
 
 (defun org-x-dag-date-to-quarter-start (date)
-  (->> (org-x-dag-date-to-quarter)
+  (->> (org-x-dag-date-to-quarter date)
        (org-x-dag-quarter-to-date)))
 
 (defun org-x-dag-shift-quarter (quarter n unit)
@@ -477,59 +477,11 @@ Return value is a list like (BUFFER LOCAL FOREIGN)."
   `(let ((it-buffer it-foreign) (org-x-dag-id->split-children-2 ,id))
      ,@body))
 
-(defun org-x-dag-id->group-parent-links-by-file-p (id)
-  "Return parent links for ID grouped by file."
-  (org-x-dag-id->with-split-parents id
-    (-group-by #'org-x-dag-id->file it-foreign)))
-
-(defun org-x-dag-id->group-child-links-by-file-p (id)
-  "Return child links for ID grouped by file."
-  (org-x-dag-id->with-split-children id
-    (-group-by #'org-x-dag-id->file it-foreign)))
-
 (defun org-x-dag-id->all-buffer-children (id)
   "Return nested children of ID that are in the same buffer."
   (->> (org-x-dag-id->buffer-children id)
        (-mapcat #'org-x-dag-id->all-buffer-children)
        (cons id)))
-
-(defun org-x-dag-id->epg-status (id)
-  (-let* (((cbuffer clocal cforeign) (org-x-dag-id->split-children-3 id))
-          ((pbuffer plocal pforeign) (org-x-dag-id->split-parents-3 id))
-          ;; (deadline (org-x-dag-id->planning-timestamp :deadline id))
-          (leafp (not local)))
-    (list :leafp leafp
-          :toplevelp (org-x-dag-id->is-toplevel-p id)
-          ;; :deadline ;; past, current, out of range (if after parent deadline)
-          :committed ;; t if linked to the LTG
-          :planned ;; t if on a plan
-          :fulfilled ;; t if any child tasks
-          )))
-
-(defun org-x-dag-id->goal-status (which id)
-  (let* ((ps (org-x-dag-id->linked-parents id))
-         (ks (->> (-map #'org-x-dag-id->file ps)
-                  (--map (cond
-                          ((equal it (org-x-dag->goal-file :survival))
-                           :survival)
-                          ((member it `(,(org-x-dag->goal-file :endpoint)
-                                        ,(org-x-dag->goal-file :lifetime)))
-                           :non-survival)
-                          (t
-                           :other)))))
-         (status (cond
-                  ((null ks)
-                   :no-goals)
-                  ((memq :other ks)
-                   :invalid-goals)
-                  ((and (memq :non-survival ks) (memq :survival ks))
-                   :mixed-goals)
-                  ((memq :survival ks)
-                   :survival)
-                  (t
-                   (let ((gs (org-x-dag->qtp-goal-ids which)))
-                     (if (--any-p (member it gs) ps) :planned :committed))))))
-    (list ps status)))
 
 ;; id predicates/identities
 
@@ -549,13 +501,8 @@ This means the ID has a closed timestamp in the past."
     (->> (org-x-dag-id->linked-parents id)
          (--any-p (equal (org-x-dag-id->file it) f)))))
 
-(defun org-x-dag-id->is-incubated (which id)
-  "Return t if ID is incubated.
-
-This is defined as not having a linked parent that is a goal which
-is also referenced in WHICH quarterly plan."
-  (let ((q (org-x-dag->qtp-goal-ids which)))
-    (--none-p (member it q) (org-x-dag-id->linked-parents id))))
+;; (defun org-x-dag-id->is-incubated (which id)
+;;   "Return t if ID is incubated.
 
 (defun org-x-dag-id->is-uncommitted (id)
   "Return t if ID is uncommitted (not assigned a goal).
@@ -598,26 +545,6 @@ be uncommitted if it is also incubated."
   "Return t if ID is a plan defined by WHICH."
   (let ((f (org-x-dag->planning-file which)))
     (equal f (org-x-dag-id->file id))))
-
-(defun org-x-dag-id->parent-link-in-file-p (file id)
-  "Return t if ID has a parent link in FILE."
-  (org-x-dag-id->with-split-parents id
-    (--any-p (equal file (org-x-dag-id->file it)) it-foreign)))
-
-(defun org-x-dag-id->child-link-in-file-p (file id)
-  "Return t if ID has a child link in FILE."
-  (org-x-dag-id->with-split-children id
-    (--any-p (equal file (org-x-dag-id->file it)) it-foreign)))
-
-(defun org-x-dag-id->parent-link-in-files-p (files id)
-  "Return t if ID has a parent link in any of FILES."
-  (org-x-dag-id->with-split-parents id
-    (--any-p (member (org-x-dag-id->file it) files) it-foreign)))
-
-(defun org-x-dag-id->child-link-in-files-p (files id)
-  "Return t if ID has a child link in any of FILES."
-  (org-x-dag-id->with-split-children id
-    (--any-p (member (org-x-dag-id->file it) files) it-foreign)))
 
 ;; files to ids
 
@@ -748,23 +675,6 @@ be uncommitted if it is also incubated."
 
 (defun org-x-dag-id->has-parent-in-files-p (id files)
   (-intersection (org-x-dag-id->parents id) (org-x-dag-files->ids files)))
-
-(defun org-x-dag->dlp-action-ids (which)
-  (->> (org-x-dag->dlp-ids which)
-       (org-x-dag-partition-child-ids (org-x-dag->action-files))))
-
-(defun org-x-dag->wkp-qtp-ids (which)
-  (->> (org-x-dag->wkp-ids which)
-       (org-x-dag-partition-child-ids (list (org-x-qtp-get-file)))))
-
-(defun org-x-dag->qtp-goal-ids (which)
-  "Return all goal IDs associated with WHICH quarter."
-  (let ((fs `(,(org-x-dag->goal-file :endpoint)
-              ,(org-x-dag->goal-file :lifetime))))
-    (->> (org-x-dag->qtp-ids which)
-         (-mapcat #'org-x-dag-id->linked-parents)
-         (--filter (member (org-x-dag-id->file it) fs))
-         (-uniq))))
 
 ;; (defun org-x-dag-date->dlp-parent-ids (date)
 ;;   (let ((dlp-ids (org-x-dag-date->dlp-ids date)))
@@ -1034,13 +944,13 @@ A date like (YEAR MONTH DAY).")
         (-if-let (st-yr (org-x-dag-headlines-find-year year sts))
             (-if-let (st-qt (->> (org-ml-headline-get-subheadlines st-yr)
                                  (org-x-dag-headlines-find-quarter qnum)))
-                (org-ml-update* (org-ml-set-children children it) st-qt)
+                (org-ml-update* (org-ml-set-children subhls it) st-qt)
               (org-ml-update*
                 (->> (org-x-dag-build-quarter-headline qnum section subhls)
                      (-snoc it))
                 st-yr))
           (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
-            (org-ml-insert end (build-yr-headline year qnum children))))))))
+            (org-ml-insert end (build-yr-headline year qnum section subhls))))))))
 
 (defmacro org-x-dag-qtp-map (quarter form)
   (declare (indent 1))
@@ -1750,8 +1660,8 @@ used for optimization."
 
 (defun org-x-dag-bs-epg-inner (node child-bss)
   (org-x-dag-bs-action-with-closed node "endpoint goal"
-    `(:complete ,comp-time)
-    (org-x-dag-bs-fold-children child-bss `(:complete ,comp-time)
+    `(:complete ,it-comptime)
+    (org-x-dag-bs-fold-children child-bss `(:complete ,it-comptime)
       (->> (pcase `(,acc ,it)
              (`((:complete ,_) (:complete ,_)) nil)
              (`(,_ (:complete ,_)) nil)
@@ -1951,7 +1861,7 @@ used for optimization."
                   (dead-dt (->> (org-ml-timestamp-get-start-time dead)
                                 (org-x-dag-datetime-split)
                                 (car))))
-            (if (org-x-dag-datetime< tag-date dead-dt)
+            (if (org-x-dag-datetime< tag-dt dead-dt)
                 (either :right `(:active ,dead))
               (->> "QTP deadlines must be due after the quarter starts"
                    (either :left))))
@@ -2060,28 +1970,28 @@ used for optimization."
 (defmacro org-x-dag-each-links (links &rest body)
   (declare (indent 1))
   `(let (it it-targets)
-     (while links
-       (setq it (car (car links))
-             it-targets (cdr (car links)))
+     (while ,links
+       (setq it (car (car ,links))
+             it-targets (cdr (car ,links)))
        ,@body
-       (!cdr links))))
+       (!cdr ,links))))
 
 (defun org-x-dag-bs-error-links (msg links)
   (->> (s-join ", " links)
        (format "%s: %s" msg)
        (either :left)))
 
-(defun org-x-dag-ns-toplevel (tbl adjlist links ns)
+(defun org-x-dag-ns-toplevel (tbl links ns)
   (let ((h (alist-get tbl ns)))
     (org-x-dag-each-links links
       (ht-set h it (org-x-dag-bs-error-links "Invalid links" it-targets)))
     ns))
 
-(defun org-x-dag-ns-ltg (adjlist links ns)
-  (org-x-dag-ns-toplevel :lifetime adjlist links ns))
+(defun org-x-dag-ns-ltg (links ns)
+  (org-x-dag-ns-toplevel :lifetime links ns))
 
-(defun org-x-dag-ns-svg (adjlist links ns)
-  (org-x-dag-ns-toplevel :survival adjlist links ns))
+(defun org-x-dag-ns-svg (links ns)
+  (org-x-dag-ns-toplevel :survival links ns))
 
 (defun org-x-dag-ht-add-links (id htbl key targets)
   (let (r)
@@ -2148,10 +2058,10 @@ used for optimization."
 
 (defun org-x-dag-ht-get-maybe (htbl id key)
   (-when-let (x (ht-get htbl id))
-    (either-from x nil (plist-get it key))))
+    (either-from* x nil (plist-get it key))))
 
 (defun org-x-dag-ns-qtp (adjlist links ns)
-  (-let (((&alist :lifetime ht-l :endpoint ht-e :quarterly ht-q) ns))
+  (-let (((&alist :lifetime ht-l :endpoint ht-e) ns))
     (org-x-dag-ns-with-valid ns adjlist :quarterly links
       '((:lifetime) (:endpoint))
       (lambda (id this-h res)
@@ -2273,10 +2183,12 @@ used for optimization."
                 ;; accessing either/maybe types too many times)
                 ((n* rs*) (-if-let (n (ht-get htbl id))
                               (either-from n
-                                `(,n ,rs)
-                                (let ((p (org-x-dag-plist-map it s-key
-                                           (lambda (x) (append x rs)))))
-                                  `(,(either :right p) ,(plist-get s-key p))))
+                                (lambda ()
+                                  `(,n ,rs))
+                                (lambda (it)
+                                  (let ((p (org-x-dag-plist-map it s-key
+                                             (lambda (x) (append x rs)))))
+                                    `(,(either :right p) ,(plist-get s-key p)))))
                             (list (either :right `(,s-key ,rs)) rs))))
           (ht-set htbl id n*)
           rs*)))
@@ -2301,8 +2213,8 @@ used for optimization."
                          nil
                          links)))
     ;; add all links to the network status object (ew side effects)
-    (org-x-dag-ns-ltg adjlist l ns)
-    (org-x-dag-ns-svg adjlist s ns)
+    (org-x-dag-ns-ltg l ns)
+    (org-x-dag-ns-svg s ns)
     (org-x-dag-ns-epg adjlist e ns)
     (org-x-dag-ns-qtp adjlist q ns)
     (org-x-dag-ns-wkp adjlist w ns)
@@ -2312,7 +2224,7 @@ used for optimization."
     (org-x-dag-ht-propagate-down adjlist :action :planned ns)
     (org-x-dag-ht-map-down adjlist :action ns
       (lambda (h id)
-        (either-from (ht-get h id)
+        (either-from* (ht-get h id)
           nil
           (-when-let (committed (plist-get it :committed))
             `(,committed ,(plist-get it :survivalp)))))
@@ -2352,8 +2264,7 @@ removed from, added to, or edited within the DAG respectively."
         (alist-get path org-x-dag-sync-state nil nil #'equal))
        (get-file-md5
         (file-pair)
-        (-let (((path . group) file-pair)
-                (md5 ))
+        (-let (((path . group) file-pair))
           (list :path path
                 :group group
                 :md5 (org-x-dag-get-md5 path))))
@@ -2547,12 +2458,12 @@ encountered will be returned."
                    ('day (* 1440 value))
                    ('hour (* 60 value))
                    ('minute value)
-                   (_ (error)))
+                   (e (error "Invalid unit for long datetime: %s" e)))
                (pcase unit
                  ('week (* 7 value))
                  ('day value)
                  ((or 'hour 'minute) (message "WARNING: ..."))
-                 (_ (error)))))))
+                 (e (error "Invalid unit for short datetime: %s" e)))))))
        (convert-unit
         (unit)
         (if (memq unit '(year month)) 'month 'submonth)))
@@ -2982,7 +2893,7 @@ except it ignores inactive timestamps."
   (org-x-dag-with-action-ids
     (pcase (either-from-right (org-x-dag-id->bs it) nil)
       (`(:sp-task :task-active ,s)
-       (-let (((&plist :todo :sched :dead) s))
+       (-let (((&plist :sched :dead) s))
          (-let (((&plist :committed c) (-when-let (ns (org-x-dag-id->ns it))
                                          (either-from-right ns nil))))
            (when (and (not sched) (not dead) c)
@@ -2997,10 +2908,9 @@ except it ignores inactive timestamps."
 (defun org-x-dag-scan-tasks-with-goals ()
   (org-x-dag-with-action-ids
     (pcase (either-from-right (org-x-dag-id->bs it) nil)
-      (`(:sp-task :task-active ,s)
-       (-let (((&plist :todo) s)
-              (goal-ids (-when-let (ns (org-x-dag-id->ns it))
-                          (either-from ns
+      (`(:sp-task :task-active ,_)
+       (-let ((goal-ids (-when-let (ns (org-x-dag-id->ns it))
+                          (either-from* ns
                             nil
                             (unless (plist-get it :survivalp)
                               (plist-get it :committed)))))
@@ -3018,67 +2928,13 @@ except it ignores inactive timestamps."
       (`(:sp-proj . ,s)
        (unless (eq (car s) :proj-complete)
          (let ((goal-ids (-when-let (ns (org-x-dag-id->ns it))
-                           (either-from ns
+                           (either-from* ns
                              nil
                              (unless (plist-get it :survivalp)
                                (plist-get it :committed)))))
                (tags (org-x-dag-id->tags nil it)))
            (-> (org-x-dag-format-tag-node tags it)
                (org-x-dag--item-add-goal-ids goal-ids))))))))
-
-;; (defun org-x-dag-scan-survival-tasks ()
-;;   (cl-flet
-;;       ((format-key
-;;         (category is-standalone key)
-;;         (-let (((goal-ids goal-status) (org-x-dag-id->goal-status 'current key)))
-;;           (when (eq goal-status :survival)
-;;             (let* ((s (org-x-dag->task-status key))
-;;                    (p (alist-get s org-x-headline-task-status-priorities))
-;;                    (tags (org-x-dag-id->tags nil key)))
-;;               (unless (= p -1)
-;;                 (-> (org-x-dag-format-tag-node category tags key)
-;;                     (org-add-props nil
-;;                         'x-is-standalone is-standalone
-;;                         'x-status s)
-;;                     (org-x-dag--item-add-goal-ids goal-ids))))))))
-;;     (org-x-dag-with-files (org-x-dag->action-files)
-;;         (and (org-x-dag-id->is-toplevel-p it)
-;;              (not (org-x-dag-id->is-iterator-p it)))
-;;       (-if-let (project-tasks (org-x-dag-get-task-nodes
-;;                                   (lambda (it) (not (member (org-x-dag-id->todo it)
-;;                                                        (list org-x-kw-canc org-x-kw-hold))))
-;;                                   it))
-;;           (--mapcat (format-key it-category nil it) project-tasks)
-;;         (format-key it-category t it)))))
-
-;; (defun org-x-dag-scan-survival-projects ()
-;;   (cl-flet*
-;;       ((format-result
-;;         (cat result)
-;;         (-let* (((&plist :key :status :tags) result)
-;;                 (priority (alist-get status org-x-project-status-priorities)))
-;;           (when (>= priority 0)
-;;             (-let (((goal-ids goal-status) (org-x-dag-id->goal-status 'current key)))
-;;               (when (eq goal-status :survival)
-;;                 (-> (org-x-dag-format-tag-node cat tags key)
-;;                     (org-add-props nil
-;;                         'x-toplevelp (org-x-dag-id->is-toplevel-p key)
-;;                         'x-status status
-;;                         'x-priority priority)
-;;                     (org-x-dag--item-add-goal-ids goal-ids)))))))
-;;        (format-key
-;;         (cat key)
-;;         (let ((tags (org-x-dag-id->tags nil key)))
-;;           ;; TODO don't hardcode these things
-;;           (-some->> (org-x-dag-id->buffer-children key)
-;;             (org-x-dag-headline-get-project-status key tags)
-;;             (--mapcat (format-result cat it))))))
-;;     ;; TODO this is hella-inefficient, just get the child links from the
-;;     ;; survival goal file and start from there
-;;     (org-x-dag-with-files (org-x-dag->action-files)
-;;         (and (org-x-dag-id->is-toplevel-p it)
-;;              (not (org-x-dag-id->is-done-p it)))
-;;       (format-key it-category it))))
 
 (defun org-x-dag-id->is-active-iterator-child-p (id)
   (-> (org-x-dag-id->buffer-parent id)
@@ -3116,30 +2972,6 @@ except it ignores inactive timestamps."
                     'x-committedp (and c t))
                 (list))))))))
 
-  ;; (cl-flet
-  ;;     ((format-key
-  ;;       (category key)
-  ;;       (let ((tags (org-x-dag-id->tags nil key)))
-  ;;         (when (member org-x-tag-incubated tags)
-  ;;           (org-x-dag-with-id key
-  ;;             (let* ((sch (org-x-dag-headline-is-scheduled-p t))
-  ;;                    (dead (org-x-dag-headline-is-deadlined-p t))
-  ;;                    (is-project (org-x-dag-id->buffer-children key)))
-  ;;               (-> (org-x-dag-format-tag-node category tags key)
-  ;;                   (org-add-props nil
-  ;;                       'x-project-p is-project
-  ;;                       'x-scheduled sch
-  ;;                       'x-deadlined dead))))))))
-  ;; (org-x-dag-with-action-ids
-  ;;   (-when-let ((comptime is-project)
-  ;;               (pcase (either-from-right (org-x-dag-id->bs it) nil)
-  ;;                 (`(:sp-proj :proj-complete ,c) `(,c t))
-  ;;                 (`(:sp-task :task-complete ,c) `(,c nil))))
-  ;;   (org-x-dag-with-files (org-x-dag->action-files)
-  ;;       (and (org-x-dag-id->is-toplevel-p it)
-  ;;            (not (org-x-dag-id->is-done-p it)))
-  ;;     (list (format-key it-category it)))))
-
 (defun org-x-dag-scan-archived ()
   (org-x-dag-with-action-ids
     (-let (((comptime type)
@@ -3161,80 +2993,6 @@ except it ignores inactive timestamps."
                   (org-add-props nil
                       'x-type type)
                   (list)))))))))
-
-(defun org-x-dag--classify-goal-link (which which-goal id)
-  (let ((f (org-x-dag-id->file id)))
-    (cond
-     ((member f (org-x-dag->action-files))
-      :action)
-     ((equal f (org-x-dag->goal-file which))
-      :local)
-     ((and which-child (equal f (org-x-dag->goal-file which-child)))
-      :child-goal)
-     ((equal f (org-x-dag->planning-file :quarterly))
-      :plan)
-     (t
-      :other))))
-
-(defun org-x-dag--add-goal-status (item which local-children action-children
-                                        invalid-children &optional
-                                        goal-parents invalid-parents)
-  (org-add-props item nil
-    'x-goal-status (list :type which
-                         :local-children local-children
-                         :action-children action-children
-                         :invalid-children invalid-children
-                         :goal-parents goal-parents
-                         :invalid-parents invalid-parents)))
-
-(defun org-x-dag-scan-toplevel-goals (which which-goal)
-  (cl-flet
-      ((format-id
-        (category id)
-        (-let* (((buffer linked) (org-x-dag-id->split-children-2 id))
-                ((&alist :action :local :child-goal :plan :other)
-                 (--group-by
-                  (org-x-dag--classify-goal-link which which-child it)
-                  linked))
-                (tags (org-x-dag-id->tags nil id)))
-          (-> (org-x-dag-format-tag-node category tags id)
-              (org-x-dag--add-goal-status which
-                                          (append buffer local)
-                                          (append action child-goal)
-                                          other)))))
-    (org-x-dag-with-files (list (org-x-dag->goal-file which))
-        nil
-      (list (format-id it-category it)))))
-
-(defun org-x-dag-scan-epgs ()
-  (let ((parent-files `(,(org-x-dag->goal-file :lifetime))))
-    (cl-flet
-        ((format-id
-          (category id)
-          (-let* (((buffer-children linked-children)
-                   (org-x-dag-id->split-children-2 id))
-                  (linked-parents (org-x-dag-id->linked-parents id))
-                  ((&alist :action :local :plan :other)
-                   (--group-by (org-x-dag--classify-goal-link :endpoint it) linked-children))
-                  ((goal-parents other-parents)
-                   (--separate (member (org-x-dag-id->file it) parent-files)
-                               linked-parents))
-                  (tags (org-x-dag-id->tags nil id)))
-            (-> (org-x-dag-format-tag-node category tags id)
-                (org-x-dag--add-goal-status :endpoint
-                                            (append buffer-children local)
-                                            action
-                                            other
-                                            goal-parents
-                                            other-parents)))))
-      (org-x-dag-with-files (list (org-x-dag->goal-file :endpoint))
-          nil
-        (list (format-id it-category it))))))
-
-(defun org-x-dag-scan-goals ()
-  (append (org-x-dag-scan-toplevel-goals :lifetime :endpoint)
-          (org-x-dag-scan-toplevel-goals :survival nil)
-          (org-x-dag-scan-epgs)))
 
 (defun org-x-dag-scan-errors ()
   (cl-flet
@@ -3288,61 +3046,9 @@ except it ignores inactive timestamps."
                              (format-scheduleds todayp sel-date it sched))))))))
            (daily (org-x-dag-with-file-ids (org-x-dag->planning-file :daily)
                     (pcase (either-from-right (org-x-dag-id->bs it) nil)
-                      (`(:daily :active ,s)
+                      (`(:daily :active (:sched ,sched))
                        (format-scheduleds todayp sel-date it sched))))))
       (append action daily))))
-
-(defun org-x-dag-scan-quarterly-plan ()
-  (let ((week-file (list (org-x-get-weekly-plan-file)))
-        (current-quarter (->> (org-x-dag->current-date)
-                              (org-x-dag-date-to-quarter))))
-    (cl-flet
-        ((format-id
-          (id)
-          (let ((alloc (-some->> (org-x-dag-id->node-property org-x-prop-allocate id)
-                         (org-x-dag-allocation-fraction current-quarter)))
-                (assignedp (org-x-dag-id->has-child-in-files-p id week-file))
-                (bucket (org-x-dag-id->bucket nil id)))
-            (-> (org-x-dag-format-tag-node "goal" (list bucket) id)
-                (org-add-props nil
-                    'x-assignedp assignedp
-                    ;; override face
-                    'face (if assignedp 'org-warning 'default)
-                    'x-alloc (or alloc 0))))))
-      (org-x-with-file (org-x-dag->planning-file :quarterly)
-        (-map #'format-id (org-x-dag->qtp-ids 'current))))))
-
-(defun org-x-dag-scan-weekly-plan ()
-  (let ((daily-file (list (org-x-get-daily-plan-file))))
-    (cl-flet
-        ((format-id
-          (id)
-          ;; TODO this assigned thing needs to be limited in scope to the
-          ;; the current ids of the time period in question
-          (let* ((assignedp (org-x-dag-id->has-child-in-files-p id daily-file))
-                 (day (-some->> (org-x-dag-id->tags nil id)
-                        ;; TODO I guess this works...could be more precise
-                        (--filter (s-matches-p "[A-Z]\\{3\\}" it))
-                        (car)))
-                 (daynum (car (rassoc day org-x-dag-weekly-tags))))
-            (-> (org-x-dag-format-tag-node "goal" nil id)
-                (org-add-props nil
-                    'x-assignedp assignedp
-                    'x-day-of-week (format "%d. %s" daynum day)
-                    ;; override face
-                    'face (if assignedp 'org-warning 'default))))))
-      (org-x-with-file (org-x-dag->planning-file :weekly)
-        (-map #'format-id (org-x-dag->wkp-ids 'current))))))
-
-;; (cl-flet
-;;     ((format-id
-;;       (category id)
-;;       (-> (org-x-dag-format-tag-node category nil id)
-;;           (org-add-props nil))))
-;;   (org-x-dag-with-files (list (org-x-qtp-get-file))
-;;       nil
-;;     (org-x-dag-with-id it
-;;       (list (format-id it-category it))))))
 
 ;;; AGENDA VIEWS
 
@@ -3650,7 +3356,7 @@ except it ignores inactive timestamps."
                   (funcall update-fun this-id it)))
               (message fmt (org-x-dag-id->title id) (org-x-dag-id->title this-id)))
           (message "No children available"))))
-    (either-from (funcall parent-id-fun)
+    (either-from* (funcall parent-id-fun)
       (message it)
       (choose-child-id it))))
 
@@ -3697,7 +3403,7 @@ except it ignores inactive timestamps."
                        (org-x-dag-date-to-quarter)
                        (org-x-dag-quarter-to-date)
                        (org-x-dag-date->qtp-ids))))
-          (append epg action qtp)))
+          (append action qtp)))
        (svg-action-getter
         ()
         (->> (org-x-dag->action-files)
@@ -3818,7 +3524,7 @@ except it ignores inactive timestamps."
                 #'org-x-dag-tl-section-get-parent-links
                 "toplevel section"
                 sec)))
-    (either-from (funcall parse-fun)
+    (either-from* (funcall parse-fun)
       (message it)
       (if it (update-headline it) (update-tl-section it)))))
 

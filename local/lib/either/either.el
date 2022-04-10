@@ -80,10 +80,10 @@ left/right slot."
 ;;   (declare (indent 2))
 ;;   (either-from-left either default (funcall fun it)))
 
-(defmacro either-from (either left-form right-form)
+(defmacro either-from* (either left-form right-form)
   "Apply forms to the left or right slot of EITHER.
 
-Use LEFT-FORM or RIGHT-FORM is EITHER is left or right
+Use LEFT-FORM or RIGHT-FORM if EITHER is left or right
 respectively where 'it' is bound to whatever is in the the
 left/right slots."
   (declare (indent 1))
@@ -91,6 +91,17 @@ left/right slots."
      (`(:left ,it) ,left-form)
      (`(:right ,it) ,right-form)
      (e (error "Not an either: %s" e))))
+
+(defun either-from (either left-fun right-fun)
+  "Apply functions to the left or right slot of EITHER.
+
+Use LEFT-FUN or RIGHT-FUN if EITHER is left or right
+respectively where 'it' is bound to whatever is in the the
+left/right slots."
+  (declare (indent 1))
+  (either-from* either
+    (funcall left-fun it)
+    (funcall right-fun it)))
 
 (defun either-lefts (eithers)
   "Return all left values from EITHERS."
