@@ -250,6 +250,9 @@ org tag and a long name respectively for the category.")
 (defconst org-x-drwr-categories "X_CATEGORIES"
   "Drawer to hold ranked categories for a quarterly plan.")
 
+(defconst org-x-drwr-parent-links "X_PARENT_LINKS"
+  "Drawer to hold the parent links of for the DAG.")
+
 ;;; PUBLIC VARS
 
 (defconst org-x-archive-delay 30
