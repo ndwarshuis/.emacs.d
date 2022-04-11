@@ -15,6 +15,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#interactive][interactive]]
 - [[#user-interface][user interface]]
   - [[#theme][theme]]
+  - [[#frame][frame]]
   - [[#modeline][modeline]]
   - [[#remove-interface-bars][remove interface bars]]
   - [[#startup-screen][startup screen]]
@@ -473,6 +474,15 @@ Since I run emacs in [[https://www.gnu.org/software/emacs/manual/html_node/emacs
         (setq nd/theme-window-loaded t)
       (setq nd/theme-terminal-loaded t))))
 #+END_SRC
+** frame
+:PROPERTIES:
+:CREATED:  [2022-04-11 Mon 11:14]
+:ID:       d7980b2a-bd11-4c3c-838a-343837f83efe
+:END:
+#+begin_src emacs-lisp
+(setq frame-title-format
+      '(multiple-frames "%b" ("" invocation-name "@" system-name)))
+#+end_src
 ** modeline
 :PROPERTIES:
 :ID:       b2a59968-a880-4ac7-b7e1-ff9738d442bf
