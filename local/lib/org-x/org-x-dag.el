@@ -712,17 +712,6 @@ be uncommitted if it is also incubated."
        (-remove #'org-x-dag-id->buffer-children)
        (length)))
 
-(defun org-x-dag-rank-leaf-goals (quarter ids)
-  (cl-flet
-      ((score
-        (buckets id)
-        ;; TODO what happens when I don't have a bucket?
-        (let ((idx (-elem-index (org-x-dag-id->bucket t id) (reverse buckets)))
-              (ntasks (org-x-dag-goal-count-tasks id)))
-          (list idx ntasks))))
-    (let ((bs (org-x-qtp-get-buckets quarter)))
-      (org-x-dag-ids-rank (score bs it) ids))))
-
 ;; planning state
 
 ;; TODO might be less tedious to just set the date and have functions handy
@@ -1242,21 +1231,21 @@ used for optimization."
   (let* ((line-re (org-x-dag-line-regexp kws))
          (pps (--map (cons it (org-re-property it nil t)) target-props))
          (id-prop (org-re-property "ID" nil t))
-         (first-hl (unless (= ?* (following-char))
+         (next-pos (unless (= ?* (following-char))
                      (org-x-dag-next-headline)))
          ;; If not on a headline, check for a property drawer with links in it
-         (this-file-links (when first-hl
-                            (org-x-dag-get-parent-links nil first-hl)))
+         (this-file-links (when next-pos
+                            (org-x-dag-get-parent-links nil next-pos)))
          ;; stack vars
          bare-stack node-stack bury-level
          ;; data vars
          this-id this-level this-todo this-tags this-links this-pblock
-         this-parent this-buffer-parent
+         this-parent this-buffer-parent this-point this-title this-node
          pbeg pend
          ;; return
          acc acc-links)
-    (when first-hl
-      (goto-char first-hl))
+    (when next-pos
+      (goto-char next-pos))
     (while (looking-at line-re)
       ;; Keep track of how 'deep' we are in a given org-tree using a stack. The
       ;; stack will have members like (LEVEL KEY TAGS) where LEVEL is the level
@@ -1376,7 +1365,7 @@ used for optimization."
          (-let (((x . xs) ,bss))
            ;; (if (org-x-dag-bs-is-left-p x) (progn (print x) ',err)
            (if (either-is-left-p x) ',err
-             (let ((acc (cadr x)) r final)
+             (let ((acc (cadr x)) r final it)
                (while (and (not final) xs)
                  (setq x (car xs))
                  (if (either-is-left-p x)
@@ -2731,6 +2720,17 @@ except it ignores inactive timestamps."
          ,form)
      ,ids))
 
+(defun org-x-dag-rank-leaf-goals (quarter ids)
+  (cl-flet
+      ((score
+        (buckets id)
+        ;; TODO what happens when I don't have a bucket?
+        (let ((idx (-elem-index (org-x-dag-id->bucket t id) (reverse buckets)))
+              (ntasks (org-x-dag-goal-count-tasks id)))
+          (list idx ntasks))))
+    (let ((bs (org-x-qtp-get-buckets quarter)))
+      (org-x-dag-ids-rank (score bs it) ids))))
+
 ;; reductions
 
 ;; TODO this is a naive approach that will effectively expand the dag into
@@ -3697,6 +3697,15 @@ except it ignores inactive timestamps."
          (s `((org-agenda-overriding-header ,n) ,@settings)))
     (org-x-dag-agenda-run-series buffer-name files `((,type ,match ,s)))))
 
+(defun org-x-dag-org-mapper-title (level1 level2 status subtitle)
+  "Make an auto-mapper title.
+The title will have the form 'LEVEL1.LEVEL2 STATUS (SUBTITLE)'."
+  (let ((status* (->> (symbol-name status)
+                   (s-chop-prefix ":")
+                   (s-replace "-" " ")
+                   (s-titleize))))
+    (format "%s.%s %s (%s)" level1 level2 status* subtitle)))
+
 ;; TODO the tags in the far column are redundant
 (defun org-x-dag-agenda-quarterly-plan ()
   (interactive)
@@ -3740,7 +3749,7 @@ except it ignores inactive timestamps."
   (interactive)
   (let ((match ''org-x-dag-scan-tasks-with-goals)
         (files (org-x-get-action-files)))
-    (nd/org-agenda-call "Tasks by Goal" nil #'org-x-dag-show-nodes match files
+    (org-x-dag-agenda-call "Tasks by Goal" nil #'org-x-dag-show-nodes match files
       `((org-agenda-todo-ignore-with-date t)
         (org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
@@ -3755,7 +3764,7 @@ except it ignores inactive timestamps."
   (interactive)
   (let ((match ''org-x-dag-scan-survival-tasks)
         (files (org-x-get-action-files)))
-    (nd/org-agenda-call "Survival Tasks" nil #'org-x-dag-show-nodes match files
+    (org-x-dag-agenda-call "Survival Tasks" nil #'org-x-dag-show-nodes match files
       `((org-agenda-todo-ignore-with-date t)
         (org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
@@ -3772,7 +3781,7 @@ except it ignores inactive timestamps."
   (interactive)
   (let ((match ''org-x-dag-scan-projects-with-goals)
         (files (org-x-get-action-files)))
-    (nd/org-agenda-call "Projects by Goal" nil #'org-x-dag-show-nodes match files
+    (org-x-dag-agenda-call "Projects by Goal" nil #'org-x-dag-show-nodes match files
       `((org-agenda-todo-ignore-with-date t)
         (org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
@@ -3789,7 +3798,7 @@ except it ignores inactive timestamps."
 ;;   (interactive)
 ;;   (let ((match ''org-x-dag-scan-survival-projects)
 ;;         (files (org-x-get-action-files)))
-;;     (nd/org-agenda-call "Survival Projects" nil #'org-x-dag-show-nodes match files
+;;     (org-x-dag-agenda-call "Survival Projects" nil #'org-x-dag-show-nodes match files
 ;;       `((org-agenda-todo-ignore-with-date t)
 ;;         (org-agenda-sorting-strategy '(user-defined-up category-keep))
 ;;         (org-super-agenda-groups
@@ -3803,7 +3812,7 @@ except it ignores inactive timestamps."
 (defun org-x-dag-agenda-goals ()
   (interactive)
   (let ((match ''org-x-dag-scan-goals))
-    (nd/org-agenda-call "Goals-0" nil #'org-x-dag-show-nodes match nil
+    (org-x-dag-agenda-call "Goals-0" nil #'org-x-dag-show-nodes match nil
       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
          '((:auto-map
@@ -3837,7 +3846,7 @@ except it ignores inactive timestamps."
 (defun org-x-dag-agenda-incubated ()
   (interactive)
   (let ((match ''org-x-dag-scan-incubated))
-    (nd/org-agenda-call "Incubated-0" nil #'org-x-dag-show-nodes match nil
+    (org-x-dag-agenda-call "Incubated-0" nil #'org-x-dag-show-nodes match nil
       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
          '((:auto-map
@@ -3893,7 +3902,7 @@ In the order of display
 (defun org-x-dag-agenda-goals-0 ()
   (interactive)
   (let ((match ''org-x-dag-scan-goals))
-    (nd/org-agenda-call "Goals-0" nil #'org-x-dag-show-nodes match nil
+    (org-x-dag-agenda-call "Goals-0" nil #'org-x-dag-show-nodes match nil
       `((org-agenda-todo-ignore-with-date t)
         (org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
@@ -3919,7 +3928,7 @@ review phase)"
   (interactive)
   (let ((match ''org-x-dag-scan-tasks)
         (files (org-x-get-action-files)))
-    (nd/org-agenda-call "Tasks-0" nil #'org-x-dag-show-nodes match files
+    (org-x-dag-agenda-call "Tasks-0" nil #'org-x-dag-show-nodes match files
       `((org-agenda-skip-function #'org-x-task-skip-function)
         (org-agenda-todo-ignore-with-date t)
         (org-agenda-sorting-strategy '(user-defined-up category-keep))
@@ -3931,14 +3940,14 @@ review phase)"
                       (s* (if (and (not i) (eq s :inert)) :active s))
                       ((level1 subtitle) (if i '(1 "α") '(0 "σ")))
                       (p (alist-get s* nd/org-headline-task-status-priorities)))
-                (nd/org-mapper-title level1 p s* subtitle))))))))))
+                (org-x-dag-org-mapper-title level1 p s* subtitle))))))))))
 
 (defun org-x-dag-agenda-projects-0 ()
   "Show the projects agenda view."
   (interactive)
   (let ((match ''org-x-dag-scan-projects)
         (files (org-x-get-action-and-incubator-files)))
-    (nd/org-agenda-call "Projects-0" nil #'org-x-dag-show-nodes match files
+    (org-x-dag-agenda-call "Projects-0" nil #'org-x-dag-show-nodes match files
       `((org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
          '((:auto-map
@@ -3947,13 +3956,13 @@ review phase)"
                       (s (get-text-property 1 'x-status line))
                       (p (get-text-property 1 'x-priority line))
                       ((level1 subtitle) (if i '(0 "τ") '(1 "σ"))))
-                (nd/org-mapper-title level1 p s subtitle))))))))))
+                (org-x-dag-org-mapper-title level1 p s subtitle))))))))))
 
 (defun org-x-dag-agenda-incubator-0 ()
   "Show the incubator agenda view."
   (interactive)
   (let ((match ''org-x-dag-scan-incubated))
-    (nd/org-agenda-call "Incubator-0" nil #'org-x-dag-show-nodes match nil
+    (org-x-dag-agenda-call "Incubator-0" nil #'org-x-dag-show-nodes match nil
       `((org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
          '((:auto-map
@@ -3974,7 +3983,7 @@ review phase)"
   (interactive)
   (let ((files (org-x-get-action-files))
         (match ''org-x-dag-scan-iterators))
-    (nd/org-agenda-call "Iterators-0" nil #'org-x-dag-show-nodes match files
+    (org-x-dag-agenda-call "Iterators-0" nil #'org-x-dag-show-nodes match files
       `((org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
          ',(nd/org-def-super-agenda-automap
@@ -3990,7 +3999,7 @@ review phase)"
   "Show the critical errors agenda view."
   (interactive)
   (let ((match ''org-x-dag-scan-errors))
-    (nd/org-agenda-call "Errors-0" nil #'org-x-dag-show-nodes match nil
+    (org-x-dag-agenda-call "Errors-0" nil #'org-x-dag-show-nodes match nil
       `((org-super-agenda-groups
          '((:auto-map
             (lambda (line)
@@ -4001,8 +4010,8 @@ review phase)"
   (interactive)
   (let ((files (org-x-get-action-files))
         (match ''org-x-dag-scan-archived))
-    (nd/org-agenda-call "Archive-0" nil #'org-x-dag-show-nodes match files
-  ;; (nd/org-agenda-call-headlines "Archive-0" nil (org-x-get-action-files)
+    (org-x-dag-agenda-call "Archive-0" nil #'org-x-dag-show-nodes match files
+  ;; (org-x-dag-agenda-call-headlines "Archive-0" nil (org-x-get-action-files)
     `((org-agenda-sorting-strategy '(category-keep))
       (org-super-agenda-groups
          '((:auto-map
