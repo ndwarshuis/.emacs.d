@@ -3468,7 +3468,8 @@ review phase)"
                 (goto-char (org-x-dag-id->point id))
                 (org-ml-update-this-headline*
                   (funcall update-fun this-id it)))
-              (message fmt (org-x-dag-id->title id) (org-x-dag-id->title this-id)))
+              (->> (org-x-dag-id->title id)
+                   (message fmt (org-x-dag-id->title this-id))))
           (message "No children available"))))
     (either-from* (funcall parent-id-fun)
       (message it)
