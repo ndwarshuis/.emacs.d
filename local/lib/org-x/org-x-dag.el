@@ -173,6 +173,10 @@
         (- daynum)
         (org-x-dag-absolute-to-date))))
 
+(defun org-x-dag-date-to-day-number (date)
+  (->> (org-x-dag-date-to-gregorian date)
+       (calendar-day-number)))
+
 ;; date <-> quarter
 
 (defun org-x-dag-quarter-to-date (quarter)
@@ -1559,6 +1563,9 @@ If FORCE is non-nil, sync no matter what."
 
 (defun org-x-dag->current-date ()
   (plist-get org-x-dag :current-date))
+
+(defun org-x-dag->selected-date ()
+  (plist-get org-x-dag :selected-date))
 
 (defun org-x-dag->file-state ()
   (plist-get org-x-dag :files))
@@ -3064,7 +3071,7 @@ review phase)"
         (tag (alist-get daynum org-x-dag-weekly-tags)))
     (org-x-dag-build-planning-headline title tag 3 nil subheadlines)))
 
-;; id headline builders
+;; planning headline builders
 
 (defun org-x-dag-build-planning-id-headline (title level paragraph ids)
   (let ((sec (-some-> paragraph
@@ -3123,6 +3130,14 @@ review phase)"
                           (cons key (org-ml-headline-get-subheadlines it)))
                         subtrees)))
     (list :categories cats :goals goals)))
+
+(defun org-x-dag-qtp-get-headline (date)
+  (org-x-with-file (org-x-dag->planning-file :quarterly)
+    (-let (((y q) (org-x-dag-date-to-quarter date)))
+      (->> (org-ml-parse-subtrees 'all)
+           (org-x-dag-headlines-find-year y)
+           (org-ml-headline-get-subheadlines)
+           (org-x-dag-headlines-find-quarter q)))))
 
 (defun org-x-dag-qtp-get (quarter)
   (org-x-with-file (org-x-qtp-get-file)
@@ -3220,15 +3235,26 @@ review phase)"
            (org-x-dag-build-day-of-week-headline daynum hls))
          plan))
 
-(defun org-x-dag-wkp-get (week)
+(defun org-x-dag-wkp-get-week-headline (date)
   (org-x-with-file (org-x-get-weekly-plan-file)
-    (-let (((year weeknum) week))
+    (-let (((y _ _) date)
+           (w (org-x-dag-date-to-week-number date)))
       (->> (org-ml-parse-subtrees 'all)
-           (org-x-dag-headlines-find-year year)
+           (org-x-dag-headlines-find-year y)
            (org-ml-headline-get-subheadlines)
-           (org-x-dag-headlines-find-week weeknum)
-           (org-ml-headline-get-subheadlines)
-           (org-x-dag-weekly-headlines-to-alist)))))
+           (org-x-dag-headlines-find-week w)))))
+
+(defun org-x-dag-wkp-get-day-headline (date)
+  (-let ((n (org-x-dag-date-to-day-number)))
+    (->> (org-x-dag-wkp-get-week-headline date)
+         (org-ml-headline-get-subheadlines)
+         (org-x-dag-headlines-find-day-of-week n))))
+
+;; TODO these functions need to take dates and not 'week's (whatever those are)
+(defun org-x-dag-wkp-get (week)
+  (->> (org-x-dag-wkp-get-day-headline date)
+       (org-ml-headline-get-subheadlines)
+       (org-x-dag-weekly-headlines-to-alist)))
 
 (defun org-x-dag-wkp-set (week plan)
   (cl-flet*
@@ -3282,7 +3308,7 @@ review phase)"
        (org-x-dag-wkp-day-add week daynum)))
 
 ;; TODO not DRY
-(defun org-x-dag-dlp-get (date)
+(defun org-x-dag-dlp-get-headline (date)
   (org-x-with-file (org-x-dag->planning-file :daily)
     (-let (((y m d) date))
       (->> (org-ml-parse-subtrees 'all)
@@ -3290,8 +3316,11 @@ review phase)"
            (org-ml-headline-get-subheadlines)
            (org-x-dag-headlines-find-month m)
            (org-ml-headline-get-subheadlines)
-           (org-x-dag-headlines-find-day d)
-           (org-ml-headline-get-subheadlines)))))
+           (org-x-dag-headlines-find-day d)))))
+
+(defun org-x-dag-dlp-get (date)
+  (->> (org-x-dag-dlp-get-headline date)
+       (org-ml-headline-get-subheadlines)))
 
 (defun org-x-dag-dlp-set (date headlines)
   (cl-flet*
@@ -3342,6 +3371,8 @@ review phase)"
 
 ;;; INTERACTIVE FUNCTIONS
 
+;; current date
+
 (defun org-x-dag-set-date ()
   (interactive)
   (let ((date (->> (org-read-date nil t)
@@ -3356,6 +3387,41 @@ review phase)"
   (interactive)
   (->> (plist-get org-x-dag :selected-date)
        (apply #'message "Org-DAG date is %d-%02d-%02d")))
+
+;; planning navigation
+
+(defun org-x-dag--goto-current (what file-key hl-fun)
+  (declare (indent 2))
+  (-if-let (p (->> (org-x-dag->current-date)
+                   (funcall hl-fun)
+                   (org-ml-get-property :begin)))
+      (progn
+        (find-file (org-x-dag->planning-file file-key))
+        (goto-char p)
+        (org-reveal))
+    (message "%s does not exist for current date" what)))
+
+(defun org-x-dag-goto-current-quarterly-plan ()
+  (interactive)
+  (org-x-dag--goto-current "Quarterly plan" :quarterly
+    #'org-x-dag-qtp-get-headline))
+
+(defun org-x-dag-goto-current-weekly-plan ()
+  (interactive)
+  (org-x-dag--goto-current "Weekly plan (week)" :weekly
+    #'org-x-dag-wkp-get-week-headline))
+
+(defun org-x-dag-goto-current-weekly-plan-day ()
+  (interactive)
+  (org-x-dag--goto-current "Weekly plan (day)" :weekly
+    #'org-x-dag-wkp-get-day-headline))
+
+(defun org-x-dag-goto-current-daily-plan ()
+  (interactive)
+  (org-x-dag--goto-current "Daily plan" :daily
+    #'org-x-dag-dlp-get-headline))
+
+;; node navigation
 
 (defun org-x-dag-group-code (group)
   (pcase group
