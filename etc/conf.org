@@ -3711,17 +3711,7 @@ Initialize by running =nd/mu-init=.
 
         ;; compose
         mu4e-compose-signature-auto-include nil ;; sigs are annoying by default
-        mu4e-compose-signature
-        (string-join
-         '("Nathan Dwarshuis"
-           ""
-           "PhD Candidate - Biomedical Engineering - Krish Roy Lab"
-           "Georgia Institute of Technology and Emory University"
-           "ndwarshuis3@gatech.edu - (616) 307-4957"
-           ""
-           "NOTE - I do not use email on my mobile devices"
-           "Please use my phone number for urgent messages")
-         "\n")
+        mu4e-compose-signature "Thank you,\nNathan Dwarshuis"
 
         ;; aliases
         mail-personal-alias-file (no-littering-expand-etc-file-name
@@ -3750,11 +3740,6 @@ Initialize by running =nd/mu-init=.
          (nd/make-mu4e-context "gatech"
                                "gatech"
                                "ndwarshuis3@gatech.edu"
-                               "smtp.office365.com"
-                               'sent)
-         (nd/make-mu4e-context "emory"
-                               "emory"
-                               "ndwarsh@emory.edu"
                                "smtp.office365.com"
                                'sent)))
   
