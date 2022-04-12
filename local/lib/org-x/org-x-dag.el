@@ -3096,7 +3096,50 @@ review phase)"
     (->> (org-x-dag-build-planning-id-headline title 4 paragraph ids)
          (org-ml-headline-set-planning pl))))
 
-;; buffer manipulation
+;; crazy nested build-or-add-headline thing
+
+(defun org-x-dag-headline-get-nested (path find-funs)
+  (declare (indent 1))
+  (cl-labels
+      ((get-subheadlines
+        (find-funs hls)
+        (-let* (((next . rest) find-funs))
+          (-when-let (found (funcall next hls))
+            (if (not rest) found
+              (->> (org-ml-headline-get-subheadlines found)
+                   (get-subheadlines rest)))))))
+    (org-x-with-file path
+      (->> (org-ml-parse-subtrees 'all)
+           (get-subheadlines find-funs)))))
+
+(defun org-x-dag-headline-set-nested (path to-set hierachy-funs)
+  (declare (indent 2))
+  (cl-labels
+      ((update-subheadlines
+        (funs hls)
+        (-let ((((find-fun build-fun) . rest) funs))
+          (-if-let (hl (funcall find-fun hls))
+              (if rest (->> (org-ml-headline-get-subheadlines hl)
+                            (update-subheadlines rest))
+                (org-ml-update* (org-ml-set-children to-set it) hl)
+                (org-ml-get-property :begin hl))
+            (let ((end (1+ (org-ml-get-property :end (-last-item hls)))))
+              (->> (-map #'cadr funs)
+                   (reverse)
+                   (--reduce-from (list (funcall it acc)) to-set)
+                   (org-ml-insert end))
+              end)))))
+    (org-x-with-file path
+      (->> (org-ml-parse-subtrees 'all)
+           (update-subheadlines hierachy-funs)))))
+
+;; quarterly plan
+
+(defun org-x-dag-qtp-empty ()
+  (->> (-map #'cdr org-x-life-categories)
+       (--map (org-ml-build-headline! :level 3
+                                      :title-text (plist-get it :desc)
+                                      :tags `(,(plist-get it :tag))))))
 
 (defun org-x-dag-qtp-to-children (qt-plan)
   (-let* (((&plist :categories :goals) qt-plan)
@@ -3132,12 +3175,10 @@ review phase)"
     (list :categories cats :goals goals)))
 
 (defun org-x-dag-qtp-get-headline (date)
-  (org-x-with-file (org-x-dag->planning-file :quarterly)
-    (-let (((y q) (org-x-dag-date-to-quarter date)))
-      (->> (org-ml-parse-subtrees 'all)
-           (org-x-dag-headlines-find-year y)
-           (org-ml-headline-get-subheadlines)
-           (org-x-dag-headlines-find-quarter q)))))
+  (-let* (((y q) (org-x-dag-date-to-quarter date)))
+    (org-x-dag-headline-get-nested (org-x-dag->planning-file :quarterly)
+      (list (-partial #'org-x-dag-headlines-find-year y)
+            (-partial #'org-x-dag-headlines-find-quarter q)))))
 
 (defun org-x-dag-qtp-get (quarter)
   (org-x-with-file (org-x-qtp-get-file)
@@ -3149,80 +3190,97 @@ review phase)"
            (org-ml-get-children)
            (org-x-dag-qtp-from-children)))))
 
-(defun org-x-dag-qtp-set (quarter qt-plan)
-  (cl-flet
-      ((build-yr-headline
-        (year qnum section children)
-        (->> (org-x-dag-build-quarter-headline qnum section children)
-             (list)
-             (org-x-dag-build-year-headline year))))
-    (org-x-with-file (org-x-dag->planning-file :quarterly)
-      (-let* (((year qnum) quarter)
-              (sts (org-ml-parse-subtrees 'all))
-              ((section subhls) (org-x-dag-qtp-to-children qt-plan)))
-        (-if-let (st-yr (org-x-dag-headlines-find-year year sts))
-            (-if-let (st-qt (->> (org-ml-headline-get-subheadlines st-yr)
-                                 (org-x-dag-headlines-find-quarter qnum)))
-                (org-ml-update* (org-ml-set-children subhls it) st-qt)
-              (org-ml-update*
-                (->> (org-x-dag-build-quarter-headline qnum section subhls)
-                     (-snoc it))
-                st-yr))
-          (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
-            (org-ml-insert end (build-yr-headline year qnum section subhls))))))))
+(defun org-x-dag-qtp-set-headlines (date headlines)
+  (-let* (((y q) (org-x-dag-date-to-quarter date))
+          (path (org-x-dag->planning-file :quarterly))
+          (find-year (-partial #'org-x-dag-headlines-find-year y))
+          (find-quarter (-partial #'org-x-dag-headlines-find-quarter q))
+          (build-year (-partial #'org-x-dag-build-year-headline y))
+          (build-quarter (-partial #'org-x-dag-build-quarter-headline q nil)))
+    (org-x-dag-headline-set-nested path headlines
+      `((,find-year ,build-year)
+        (,find-quarter ,build-quarter)))))
 
-(defmacro org-x-dag-qtp-map (quarter form)
-  (declare (indent 1))
-  `(let ((it (org-x-dag-qtp-get ,quarter)))
-     (org-x-dag-qtp-set ,quarter ,form)))
+;; (defun org-x-dag-qtp-set (quarter qt-plan)
+;;   (cl-flet
+;;       ((build-yr-headline
+;;         (year qnum section children)
+;;         (->> (org-x-dag-build-quarter-headline qnum section children)
+;;              (list)
+;;              (org-x-dag-build-year-headline year))))
+;;     (org-x-with-file (org-x-dag->planning-file :quarterly)
+;;       (-let* (((year qnum) quarter)
+;;               (sts (org-ml-parse-subtrees 'all))
+;;               ((section subhls) (org-x-dag-qtp-to-children qt-plan)))
+;;         (-if-let (st-yr (org-x-dag-headlines-find-year year sts))
+;;             (-if-let (st-qt (->> (org-ml-headline-get-subheadlines st-yr)
+;;                                  (org-x-dag-headlines-find-quarter qnum)))
+;;                 (org-ml-update* (org-ml-set-children subhls it) st-qt)
+;;               (org-ml-update*
+;;                 (->> (org-x-dag-build-quarter-headline qnum section subhls)
+;;                      (-snoc it))
+;;                 st-yr))
+;;           (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
+;;             (org-ml-insert end (build-yr-headline year qnum section subhls))))))))
 
-(defun org-x-dag-qtp-get-key (key quarter)
-  (plist-get (org-x-dag-qtp-get quarter) key))
+;; (defmacro org-x-dag-qtp-map (quarter form)
+;;   (declare (indent 1))
+;;   `(let ((it (org-x-dag-qtp-get ,quarter)))
+;;      (org-x-dag-qtp-set ,quarter ,form)))
 
-(defun org-x-dag-qtp-set-key (quarter key xs)
-  (org-x-dag-qtp-map quarter
-    (plist-put it key xs)))
+;; (defun org-x-dag-qtp-get-key (key quarter)
+;;   (plist-get (org-x-dag-qtp-get quarter) key))
 
-(defun org-x-qtp-get-buckets (quarter)
-  (org-x-dag-qtp-get-key :categories quarter))
+;; (defun org-x-dag-qtp-set-key (quarter key xs)
+;;   (org-x-dag-qtp-map quarter
+;;     (plist-put it key xs)))
 
-(defun org-x-qtp-get-goals (quarter)
-  (org-x-dag-qtp-get-key :goals quarter))
+;; (defun org-x-qtp-get-buckets (quarter)
+;;   (org-x-dag-qtp-get-key :categories quarter))
 
-(defun org-x-qtp-get-goal-ids (quarter)
-  (->> (org-x-qtp-get-goals quarter)
-       (--map (org-ml-headline-get-node-property "ID" it))))
+;; (defun org-x-qtp-get-goals (quarter)
+;;   (org-x-dag-qtp-get-key :goals quarter))
 
-(defun org-x-qtp-get-goal-parent-ids (quarter)
-  (->> (org-x-qtp-get-goals quarter)
-       (-mapcat #'org-x-dag-headline-get-parent-links)))
+;; (defun org-x-qtp-get-goal-ids (quarter)
+;;   (->> (org-x-qtp-get-goals quarter)
+;;        (--map (org-ml-headline-get-node-property "ID" it))))
 
-(defun org-x-qtp-set-categories (quarter categories)
-  (org-x-dag-qtp-set-key quarter :categories categories))
+;; (defun org-x-qtp-get-goal-parent-ids (quarter)
+;;   (->> (org-x-qtp-get-goals quarter)
+;;        (-mapcat #'org-x-dag-headline-get-parent-links)))
 
-(defun org-x-qtp-set-goals (quarter goals)
-  (org-x-dag-qtp-set-key quarter :goals goals))
+;; (defun org-x-qtp-set-categories (quarter categories)
+;;   (org-x-dag-qtp-set-key quarter :categories categories))
 
-(defmacro org-x-qtp-map-categories (quarter form)
-  `(let ((it (org-x-qtp-get-buckets ,quarter)))
-     (org-x-qtp-set-categories ,quarter ,form)))
+;; (defun org-x-qtp-set-goals (quarter goals)
+;;   (org-x-dag-qtp-set-key quarter :goals goals))
 
-(defmacro org-x-qtp-map-goals (quarter form)
-  `(let ((it (org-x-qtp-get-goals ,quarter)))
-     (org-x-qtp-set-goals ,quarter ,form)))
+;; (defmacro org-x-qtp-map-categories (quarter form)
+;;   `(let ((it (org-x-qtp-get-buckets ,quarter)))
+;;      (org-x-qtp-set-categories ,quarter ,form)))
 
-(defun org-x-qtp-add-goal (quarter headline)
-  (org-x-qtp-map-goals quarter (cons headline it)))
+;; (defmacro org-x-qtp-map-goals (quarter form)
+;;   `(let ((it (org-x-qtp-get-goals ,quarter)))
+;;      (org-x-qtp-set-goals ,quarter ,form)))
 
-(defun org-x-dag-headline-get-id (headline)
-  (org-ml-headline-get-node-property "ID" headline))
+;; (defun org-x-qtp-add-goal (quarter headline)
+;;   (org-x-qtp-map-goals quarter (cons headline it)))
 
-(defun org-x-dag-headline-add-id (headline)
-  (org-ml-headline-set-node-property "ID" (org-id-new) headline))
+;; (defun org-x-dag-headline-get-id (headline)
+;;   (org-ml-headline-get-node-property "ID" headline))
 
-(defun org-x-qtp-add-goal-ids (quarter ids title allocation)
-  (->> (org-x-dag-build-qtp-headline title nil ids allocation)
-       (org-x-qtp-add-goal quarter)))
+;; (defun org-x-dag-headline-add-id (headline)
+;;   (org-ml-headline-set-node-property "ID" (org-id-new) headline))
+
+;; (defun org-x-qtp-add-goal-ids (quarter ids title allocation)
+;;   (->> (org-x-dag-build-qtp-headline title nil ids allocation)
+;;        (org-x-qtp-add-goal quarter)))
+
+;; weekly plan
+
+(defun org-x-dag-wkp-empty ()
+  (->> (-map #'car org-x-dag-weekly-tags)
+       (--map (org-x-dag-build-day-of-week-headline it nil))))
 
 (defun org-x-dag-weekly-headlines-to-alist (headlines)
   (->> (-map #'car org-x-dag-weekly-tags)
@@ -3236,13 +3294,11 @@ review phase)"
          plan))
 
 (defun org-x-dag-wkp-get-week-headline (date)
-  (org-x-with-file (org-x-get-weekly-plan-file)
-    (-let (((y _ _) date)
-           (w (org-x-dag-date-to-week-number date)))
-      (->> (org-ml-parse-subtrees 'all)
-           (org-x-dag-headlines-find-year y)
-           (org-ml-headline-get-subheadlines)
-           (org-x-dag-headlines-find-week w)))))
+  (-let (((y _ _) date)
+         (w (org-x-dag-date-to-week-number date)))
+    (org-x-dag-headline-get-nested (org-x-dag->planning-file :weekly)
+      (list (-partial #'org-x-dag-headlines-find-year y)
+            (-partial #'org-x-dag-headlines-find-week w)))))
 
 (defun org-x-dag-wkp-get-day-headline (date)
   (-let ((n (org-x-dag-date-to-day-number)))
@@ -3250,64 +3306,77 @@ review phase)"
          (org-ml-headline-get-subheadlines)
          (org-x-dag-headlines-find-day-of-week n))))
 
+(defun org-x-dag-wkp-set-headlines (date headlines)
+  (-let* (((y _ _) date)
+          (w (org-x-dag-date-to-week-number date))
+          (path (org-x-dag->planning-file :weekly))
+          (find-year (-partial #'org-x-dag-headlines-find-year y))
+          (find-week (-partial #'org-x-dag-headlines-find-week w))
+          (build-year (-partial #'org-x-dag-build-year-headline y))
+          (build-week (-partial #'org-x-dag-build-week-headline y w)))
+    (org-x-dag-headline-set-nested path headlines
+      `((,find-year ,build-year)
+        (,find-week ,build-week)))))
+
 ;; TODO these functions need to take dates and not 'week's (whatever those are)
 (defun org-x-dag-wkp-get (week)
   (->> (org-x-dag-wkp-get-day-headline date)
        (org-ml-headline-get-subheadlines)
        (org-x-dag-weekly-headlines-to-alist)))
 
-(defun org-x-dag-wkp-set (week plan)
-  (cl-flet*
-      ((build-yr-headline
-        (year weeknum children)
-        (->> (org-x-dag-build-week-headline year weeknum children)
-             (list)
-             (org-x-dag-build-year-headline year))))
-    (org-x-with-file (org-x-get-weekly-plan-file)
-      (-let* (((year weeknum) week)
-              (sts (org-ml-parse-subtrees 'all))
-              (children (org-x-dag-weekly-alist-to-headlines plan)))
-        (-if-let (st-yr (org-x-dag-headlines-find-year year sts))
-            (-if-let (st-wk (->> (org-ml-headline-get-subheadlines st-yr)
-                                 (org-x-dag-headlines-find-week weeknum)))
-                (org-ml-update* (org-ml-set-children children it) st-wk)
-              (org-ml-update*
-                (-snoc it (org-x-dag-build-week-headline year weeknum children))
-                st-yr))
-          (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
-            (org-ml-insert end (build-yr-headline year weeknum children))))))))
+;; (defun org-x-dag-wkp-set (week plan)
+;;   (cl-flet*
+;;       ((build-yr-headline
+;;         (year weeknum children)
+;;         (->> (org-x-dag-build-week-headline year weeknum children)
+;;              (list)
+;;              (org-x-dag-build-year-headline year))))
+;;     (org-x-with-file (org-x-get-weekly-plan-file)
+;;       (-let* (((year weeknum) week)
+;;               (sts (org-ml-parse-subtrees 'all))
+;;               (children (org-x-dag-weekly-alist-to-headlines plan)))
+;;         (-if-let (st-yr (org-x-dag-headlines-find-year year sts))
+;;             (-if-let (st-wk (->> (org-ml-headline-get-subheadlines st-yr)
+;;                                  (org-x-dag-headlines-find-week weeknum)))
+;;                 (org-ml-update* (org-ml-set-children children it) st-wk)
+;;               (org-ml-update*
+;;                 (-snoc it (org-x-dag-build-week-headline year weeknum children))
+;;                 st-yr))
+;;           (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
+;;             (org-ml-insert end (build-yr-headline year weeknum children))))))))
 
-(defmacro org-x-dag-wkp-map (week form)
-  (declare (indent 1))
-  (let ((w (make-symbol "--week")))
-    `(let* ((,w ,week)
-            (it (org-x-dag-wkp-get ,w)))
-       (org-x-dag-wkp-set ,w ,form))))
+;; (defmacro org-x-dag-wkp-map (week form)
+;;   (declare (indent 1))
+;;   (let ((w (make-symbol "--week")))
+;;     `(let* ((,w ,week)
+;;             (it (org-x-dag-wkp-get ,w)))
+;;        (org-x-dag-wkp-set ,w ,form))))
 
-(defun org-x-dag-wkp-day-get (week daynum)
-  (alist-get daynum (org-x-dag-wkp-get week)))
+;; (defun org-x-dag-wkp-day-get (week daynum)
+;;   (alist-get daynum (org-x-dag-wkp-get week)))
 
-(defun org-x-dag-wkp-day-set (week daynum headlines)
-  (org-x-dag-wkp-map week
-    (--replace-where (= daynum (car it)) (cons daynum headlines) it)))
+;; (defun org-x-dag-wkp-day-set (week daynum headlines)
+;;   (org-x-dag-wkp-map week
+;;     (--replace-where (= daynum (car it)) (cons daynum headlines) it)))
 
-(defmacro org-x-dag-wkp-day-map (week daynum form)
-  (declare (indent 2))
-  (let ((w (make-symbol "--week"))
-        (d (make-symbol "--daynum")))
-    `(let* ((,w ,week)
-            (,d ,daynum)
-            (it (org-x-dag-wkp-day-get ,w ,d)))
-       (org-x-dag-wkp-day-set ,w ,d ,form))))
+;; (defmacro org-x-dag-wkp-day-map (week daynum form)
+;;   (declare (indent 2))
+;;   (let ((w (make-symbol "--week"))
+;;         (d (make-symbol "--daynum")))
+;;     `(let* ((,w ,week)
+;;             (,d ,daynum)
+;;             (it (org-x-dag-wkp-day-get ,w ,d)))
+;;        (org-x-dag-wkp-day-set ,w ,d ,form))))
 
-(defun org-x-dag-wkp-day-add (week daynum headline)
-  (org-x-dag-wkp-day-map week daynum (cons headline it)))
+;; (defun org-x-dag-wkp-day-add (week daynum headline)
+;;   (org-x-dag-wkp-day-map week daynum (cons headline it)))
 
-(defun org-x-dag-wkp-add-goal (week daynum title ids desc)
-  (->> (org-x-dag-build-wkp-headline title desc ids)
-       (org-x-dag-wkp-day-add week daynum)))
+;; (defun org-x-dag-wkp-add-goal (week daynum title ids desc)
+;;   (->> (org-x-dag-build-wkp-headline title desc ids)
+;;        (org-x-dag-wkp-day-add week daynum)))
 
-;; TODO not DRY
+;; daily plan
+
 (defun org-x-dag-dlp-get-headline (date)
   (org-x-with-file (org-x-dag->planning-file :daily)
     (-let (((y m d) date))
@@ -3323,36 +3392,18 @@ review phase)"
        (org-ml-headline-get-subheadlines)))
 
 (defun org-x-dag-dlp-set (date headlines)
-  (cl-flet*
-      ((build-mo-headline
-        (date headlines)
-        (-let (((_ m _) date))
-          (->> (org-x-dag-build-day-headline date headlines)
-               (list)
-               (org-x-dag-build-month-headline m))))
-       (build-yr-headline
-        (date headlines)
-        (-let* (((y _ _) date))
-          (->> (build-mo-headline date headlines)
-               (list)
-               (org-x-dag-build-year-headline y)))))
-    (org-x-with-file (org-x-get-daily-plan-file)
-      (-let (((y m d) date)
-             (sts (org-ml-parse-subtrees 'all)))
-        (-if-let (st-yr (org-x-dag-headlines-find-year y sts))
-            (-if-let (st-mo (->> (org-ml-headline-get-subheadlines st-yr)
-                                 (org-x-dag-headlines-find-month m)))
-                (-if-let (st-day (->> (org-ml-headline-get-subheadlines st-mo)
-                                      (org-x-dag-headlines-find-day d)))
-                    (org-ml-update* (org-ml-set-children headlines it) st-day)
-                  (org-ml-update*
-                    (-snoc it (org-x-dag-build-day-headline date headlines))
-                    st-mo))
-              (org-ml-update*
-                (-snoc it (build-mo-headline date headlines))
-                st-yr))
-          (let ((end (1+ (org-ml-get-property :end (-last-item sts)))))
-            (org-ml-insert end (build-yr-headline date headlines))))))))
+  (-let* (((y m d) date)
+          (path (org-x-dag->planning-file :daily))
+          (find-year (-partial #'org-x-dag-headlines-find-year y))
+          (find-month (-partial #'org-x-dag-headlines-find-month m))
+          (find-day (-partial #'org-x-dag-headlines-find-day d))
+          (build-year (-partial #'org-x-dag-build-year-headline y))
+          (build-month (-partial #'org-x-dag-build-month-headline m))
+          (build-day (-partial #'org-x-dag-build-day-headline date)))
+    (org-x-dag-headline-set-nested path headlines
+      `((,find-year ,build-year)
+        (,find-month ,build-month)
+        (,find-day ,build-day)))))
 
 (defmacro org-x-dag-dlp-map (date form)
   (declare (indent 1))
@@ -3388,28 +3439,65 @@ review phase)"
   (->> (plist-get org-x-dag :selected-date)
        (apply #'message "Org-DAG date is %d-%02d-%02d")))
 
+;; blank plans
+
+(defmacro org-x-dag--new-plan-maybe (get-form new-form)
+  (declare (indent 0))
+  `(let ((it (org-x-dag->selected-date)))
+     (unless ,get-form
+       ,new-form)))
+
+(defun org-x-dag--new-qtp (date)
+  (org-x-dag-qtp-set-headlines date (org-x-dag-qtp-empty)))
+
+(defun org-x-dag--new-wkp (date)
+  (org-x-dag-wkp-set-headlines date (org-x-dag-wkp-empty)))
+
+(defun org-x-dag-new-qtp ()
+  (interactive)
+  (org-x-dag--new-plan-maybe
+    (org-x-dag-qtp-get-headline it)
+    (org-x-dag--new-qtp it)))
+
+(defun org-x-dag-new-wkp ()
+  (interactive)
+  (org-x-dag--new-plan-maybe
+    (org-x-dag-wkp-get-week-headline it)
+    (org-x-dag--new-wkp it)))
+
 ;; planning navigation
 
-(defun org-x-dag--goto-current (what file-key hl-fun)
+(defun org-x-dag--goto-current (what file-key hl-fun &optional create-fun)
   (declare (indent 2))
-  (-if-let (p (->> (org-x-dag->current-date)
-                   (funcall hl-fun)
-                   (org-ml-get-property :begin)))
-      (progn
+  (cl-flet
+      ((goto
+        (point)
         (find-file (org-x-dag->planning-file file-key))
-        (goto-char p)
-        (org-reveal))
-    (message "%s does not exist for current date" what)))
+        (goto-char point)
+        (org-reveal)))
+    (let ((d (org-x-dag->selected-date))
+          (msg ))
+      (-if-let (p (-some->> (funcall hl-fun d)
+                    (org-ml-get-property :begin)))
+          (goto p)
+        (let ((msg (format "%s does not exist for current date." what)))
+          (if create-fun
+              (when (yes-or-no-p (format "%s Make new?" msg))
+                (->> (funcall create-fun d)
+                     (goto)))
+            (message msg)))))))
 
 (defun org-x-dag-goto-current-quarterly-plan ()
   (interactive)
   (org-x-dag--goto-current "Quarterly plan" :quarterly
-    #'org-x-dag-qtp-get-headline))
+    #'org-x-dag-qtp-get-headline
+    #'org-x-dag--new-qtp))
 
 (defun org-x-dag-goto-current-weekly-plan ()
   (interactive)
   (org-x-dag--goto-current "Weekly plan (week)" :weekly
-    #'org-x-dag-wkp-get-week-headline))
+    #'org-x-dag-wkp-get-week-headline
+    #'org-x-dag--new-wkp))
 
 (defun org-x-dag-goto-current-weekly-plan-day ()
   (interactive)
@@ -3421,7 +3509,9 @@ review phase)"
   (org-x-dag--goto-current "Daily plan" :daily
     #'org-x-dag-dlp-get-headline))
 
-;; node navigation
+;; parent -> child linkers
+;;
+;; functions to set the current headline as a parent link for a child headline
 
 (defun org-x-dag-group-code (group)
   (pcase group
@@ -3433,10 +3523,6 @@ review phase)"
     (:weekly "WKP")
     (:daily "DLP")
     (_ "???")))
-
-;; parent -> child linkers
-;;
-;; functions to set the current headline as a parent link for a child headline
 
 (defun org-x-dag--link-parent-to-child (parent-id-fun child-id-fun fmt-fun)
   (cl-flet*
@@ -3774,25 +3860,27 @@ review phase)"
                   "Time must be like HH:MM (24 hour)")))
     (org-x-dag-dlp-add-task date title nil time)))
 
-(defun org-x-dag-qtp-new ()
-  (interactive)
-  (-let* ((cur-q (->> (plist-get org-x-dag :selected-date)
-                      (org-x-dag-date-to-quarter)))
-          ((last-plan last-q)
-           (->> cur-q
-                (--unfold
-                 (if (not it) nil
-                   (let ((plan (org-x-dag-qtp-get it)))
-                     `((,plan ,it) .
-                       ,(unless (or (plist-get plan :categories)
-                                    (plist-get plan :goals))
-                          (org-x-dag-shift-quarter it -1 'quarter))))))
-                (-last-item))))
-    (if (equal cur-q last-q)
-        (apply #'message "Quarterly plan already initialized for %d-Q%d" cur-q)
-      (let ((c (plist-get last-plan :categories)))
-        (org-x-dag-qtp-set cur-q `(:categories ,c :goals nil))
-        (apply #'message "Created new quaterly plan for %d-Q%d" cur-q)))))
+;; make blank plans
+
+;; (defun org-x-dag-qtp-new ()
+;;   (interactive)
+;;   (-let* ((cur-q (->> (plist-get org-x-dag :selected-date)
+;;                       (org-x-dag-date-to-quarter)))
+;;           ((last-plan last-q)
+;;            (->> cur-q
+;;                 (--unfold
+;;                  (if (not it) nil
+;;                    (let ((plan (org-x-dag-qtp-get it)))
+;;                      `((,plan ,it) .
+;;                        ,(unless (or (plist-get plan :categories)
+;;                                     (plist-get plan :goals))
+;;                           (org-x-dag-shift-quarter it -1 'quarter))))))
+;;                 (-last-item))))
+;;     (if (equal cur-q last-q)
+;;         (apply #'message "Quarterly plan already initialized for %d-Q%d" cur-q)
+;;       (let ((c (plist-get last-plan :categories)))
+;;         (org-x-dag-qtp-set cur-q `(:categories ,c :goals nil))
+;;         (apply #'message "Created new quaterly plan for %d-Q%d" cur-q)))))
 
 (provide 'org-x-dag)
 ;;; org-x-dag.el ends here
