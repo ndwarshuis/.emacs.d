@@ -978,7 +978,9 @@ Oh yes, and to get linting to work, also install r-lintr in the conda environmen
     (setq inferior-R-program "R"
           inferior-R-args "--quiet --no-save"
           ess-history-file "session.Rhistory"
-          ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/"))))
+          ess-history-directory (substitute-in-file-name "${XDG_CONFIG_HOME}/r/")
+          ;; always start from the current file
+          ess-startup-directory 'default-directory)))
 
 ;; ;; fast compile
 ;; (defun nd/ess-r-add-env (orig-fun inf-buf proc-name start-args)
