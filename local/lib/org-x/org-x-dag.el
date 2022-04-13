@@ -22,6 +22,7 @@
 ;;; Code:
 
 (require 'org)
+(require 'org-agenda)
 (require 'org-ml)
 (require 'dash)
 (require 'dag)
@@ -1822,10 +1823,11 @@ Return value is a list like (BUFFER NON-BUFFER)."
   (-mapcat #'org-x-dag-file->ids files))
 
 (defun org-x-dag->goal-ids (which)
-  (org-x-dag-file->ids (org-x-dag->goal-file which)))
+  (->> (org-x-dag->goal-file which)
+       (org-x-dag-file->ids)))
 
 (defun org-x-dag->planning-ids (which)
-  (->> (org-x-dag->goal-file which)
+  (->> (org-x-dag->planning-file which)
        (org-x-dag-file->ids)))
 
 (defun org-x-dag->epg-ids ()
@@ -1844,7 +1846,7 @@ Return value is a list like (BUFFER NON-BUFFER)."
   (org-x-dag->planning-ids :weekly))
 
 (defun org-x-dag->dlp-ids ()
-  (org-x-dag->planning-ids :weekly))
+  (org-x-dag->planning-ids :daily))
 
 (defun org-x-dag->action-ids ()
   (->> (org-x-dag->action-files)
@@ -3144,7 +3146,7 @@ review phase)"
   (cl-labels
       ((update-subheadlines
         (funs hls)
-        (-let ((((find-fun build-fun) . rest) funs))
+        (-let ((((find-fun _) . rest) funs))
           (-if-let (hl (funcall find-fun hls))
               (if rest (->> (org-ml-headline-get-subheadlines hl)
                             (update-subheadlines rest))
@@ -3293,11 +3295,11 @@ review phase)"
 ;; (defun org-x-qtp-add-goal (quarter headline)
 ;;   (org-x-qtp-map-goals quarter (cons headline it)))
 
-;; (defun org-x-dag-headline-get-id (headline)
-;;   (org-ml-headline-get-node-property "ID" headline))
+(defun org-x-dag-headline-get-id (headline)
+  (org-ml-headline-get-node-property "ID" headline))
 
-;; (defun org-x-dag-headline-add-id (headline)
-;;   (org-ml-headline-set-node-property "ID" (org-id-new) headline))
+(defun org-x-dag-headline-add-id (headline)
+  (org-ml-headline-set-node-property "ID" (org-id-new) headline))
 
 ;; (defun org-x-qtp-add-goal-ids (quarter ids title allocation)
 ;;   (->> (org-x-dag-build-qtp-headline title nil ids allocation)
@@ -3328,7 +3330,7 @@ review phase)"
             (-partial #'org-x-dag-headlines-find-week w)))))
 
 (defun org-x-dag-wkp-get-day-headline (date)
-  (-let ((n (org-x-dag-date-to-day-number)))
+  (-let ((n (org-x-dag-date-to-day-number date)))
     (->> (org-x-dag-wkp-get-week-headline date)
          (org-ml-headline-get-subheadlines)
          (org-x-dag-headlines-find-day-of-week n))))
@@ -3346,7 +3348,7 @@ review phase)"
         (,find-week ,build-week)))))
 
 ;; TODO these functions need to take dates and not 'week's (whatever those are)
-(defun org-x-dag-wkp-get (week)
+(defun org-x-dag-wkp-get (date)
   (->> (org-x-dag-wkp-get-day-headline date)
        (org-ml-headline-get-subheadlines)
        (org-x-dag-weekly-headlines-to-alist)))
@@ -3502,8 +3504,7 @@ review phase)"
         (find-file (org-x-dag->planning-file file-key))
         (goto-char point)
         (org-reveal)))
-    (let ((d (org-x-dag->selected-date))
-          (msg ))
+    (let ((d (org-x-dag->selected-date)))
       (-if-let (p (-some->> (funcall hl-fun d)
                     (org-ml-get-property :begin)))
           (goto p)
@@ -3634,11 +3635,11 @@ review phase)"
        ;; child id functions
        (action-qtp-getter
         ()
-        (let ((action (->> (org-x-dag->action-ids)
-                           ;; TODO could also remove DONE/CANC and things
-                           ;; underneath these
-                           (--remove (org-x-dag-id->ns-key :survivalp it))))
-              (append action (org-x-dag->current-qtp-ids)))))
+        (->> (org-x-dag->action-ids)
+             ;; TODO could also remove DONE/CANC and things
+             ;; underneath these
+             (--remove (org-x-dag-id->ns-key :survivalp it))
+             (append (org-x-dag->current-qtp-ids))))
        (svg-action-getter
         ()
         (->> (org-x-dag->action-ids)
