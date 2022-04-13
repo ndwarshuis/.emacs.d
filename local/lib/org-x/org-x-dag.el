@@ -300,6 +300,40 @@
           (org-x-dag-format-month-tag m)
           (org-x-dag-format-day-tag d))))
 
+;; allocation
+
+(pcase-defmacro regexp (capture regexp)
+  `(and x (let ,capture (s-match ,regexp x))))
+
+;; this function can also be used to check the format of an allocation during
+;; assignment
+(defun org-x-dag-allocation-fraction (quarter allocation)
+  (cl-flet
+      ((hhmm-to-mins
+        (H M)
+        (let ((H* (string-to-number H))
+              (M* (string-to-number M)))
+          (+ (* 60.0 H*) M*))))
+    (let* ((qt-days (-> (org-x-dag-shift-quarter quarter 1 'quarter)
+                        (org-x-dag-quarter-diff quarter)
+                        (float)))
+           (qt-mins (* qt-days 1440))
+           (hhmm-regexp "\\(2[0-4]\\|[0-1][0-9]\\|[0-9]\\):\\([0-6][0-9]\\)"))
+      (pcase allocation
+        ;; match 'X%' where X is a flat percent of the quarter
+        ((regexp `(,_ ,percent) "^\\([0-9]+\\)%$")
+         (/ (string-to-number percent) 100.0))
+        ;; match 'H:M' where H is hours and M is minutes (both clock digits)
+        ((regexp `(,_ ,H ,M) (format "^%s$" hhmm-regexp))
+         (/ (hhmm-to-mins H M) 1440.0))
+        ;; match 'H:M/Dd' where H/M are like above and D is number of days
+        ;; per quarter
+        ((regexp `(,_ ,H ,M ,d) (format "^%s/\\([0-9]+\\)d$" hhmm-regexp))
+         (let ((d* (string-to-number d))
+               (mins (hhmm-to-mins H M)))
+           (/ (* mins d*) qt-mins)))
+        (e (error "Invalid allocation: %s" e))))))
+
 ;;; Org-DAG Pipeline
 
 ;; global state
@@ -1413,6 +1447,17 @@ used for optimization."
   "Get the md5 checksum of PATH."
   (org-x-with-file path (buffer-hash)))
 
+(defun org-x-dag-group-code (group)
+  (pcase group
+    (:lifetime "LTG")
+    (:survival "SVG")
+    (:endpoint "EPG")
+    (:action "ACT")
+    (:quarterly "QTP")
+    (:weekly "WKP")
+    (:daily "DLP")
+    (_ "???")))
+
 (defun org-x-dag-read-file-paths ()
   (list :goal-files (list :lifetime (org-x-get-lifetime-goal-file)
                           :endpoint (org-x-get-endpoint-goal-file)
@@ -2472,421 +2517,11 @@ FUTURE-LIMIT in a list."
                        (format-scheduleds todayp sel-date it sched))))))
       (append action daily))))
 
-;;; AGENDA VIEWS
+;;; BUFFER MANIPULATION
 
-(defun org-x-dag-show-nodes (get-nodes)
-  (org-x-dag-sync)
-  (let* ((org-tags-match-list-sublevels org-tags-match-list-sublevels)
-         (completion-ignore-case t))
-    (catch 'exit
-      (org-agenda-prepare (concat "DAG-TAG"))
-      (org-compile-prefix-format 'tags)
-      (org-set-sorting-strategy 'tags)
-      (let ((org-agenda-redo-command `(org-x-dag-show-nodes ',get-nodes))
-            (rtnall (funcall get-nodes)))
-        (org-agenda--insert-overriding-header
-          (with-temp-buffer
-            (insert "Headlines with TAGS match: \n")
-            (add-text-properties (point-min) (1- (point))
-                                 (list 'face 'org-agenda-structure))
-            (buffer-string)))
-        (org-agenda-mark-header-line (point-min))
-        (when rtnall
-          (insert (org-agenda-finalize-entries rtnall 'tags) "\n"))
-        (goto-char (point-min))
-        (or org-agenda-multi (org-agenda-fit-window-to-buffer))
-        (add-text-properties
-         (point-min) (point-max)
-         `(org-agenda-type tags
-                           org-last-args (,get-nodes)
-                           org-redo-cmd ,org-agenda-redo-command
-                           org-series-cmd ,org-cmd))
-        (org-agenda-finalize)
-        (setq buffer-read-only t)))))
+;;; org-ml node functions
 
-;; make the signature exactly like `org-agenda-list' ...for now
-(defun org-x-dag-show-daily-nodes (&optional _ start-day _ _)
-  (org-x-dag-sync)
-  (-let ((completion-ignore-case t)
-         ;; TODO not sure if this if thing is actually necessary
-         ((arg start-day span with-hour) (or org-agenda-overriding-arguments
-                                     (list nil start-day 'day nil))))
-    (catch 'exit
-      (org-agenda-prepare "DAG-DAILY")
-      (org-compile-prefix-format 'agenda)
-      (org-set-sorting-strategy 'agenda)
-      (-let* ((today (org-today))
-              (sd (or start-day today))
-              (org-agenda-redo-command
-               `(org-x-dag-show-daily-nodes 'nil ,start-day ',span ,with-hour))
-              ((m d y) (calendar-gregorian-from-absolute sd))
-              (rtnall (org-x-dag-itemize-agenda `(,y ,m ,d))))
-        (setq-local org-starting-day sd)
-        (setq-local org-arg-loc arg)
-        ;; TODO just day (for now)
-        (setq-local org-agenda-current-span span)
-        (org-agenda--insert-overriding-header
-          (with-temp-buffer
-            (insert (format "Agenda for %d-%02d-%02d: \n" y m d))
-            (add-text-properties (point-min) (1- (point))
-                                 (list 'face 'org-agenda-structure))
-            (buffer-string)))
-        (org-agenda-mark-header-line (point-min))
-        ;; TODO handle time grid here somehow
-        (-some--> (org-agenda-add-time-grid-maybe rtnall 1 (= sd today))
-          (org-agenda-finalize-entries it 'agenda)
-          (insert it "\n"))
-        (goto-char (point-min))
-        (or org-agenda-multi (org-agenda-fit-window-to-buffer))
-        (add-text-properties
-         (point-min) (point-max)
-         `(org-agenda-type agenda
-                           org-last-args (,arg ,start-day ,span)
-                           org-redo-cmd ,org-agenda-redo-command
-                           org-series-cmd ,org-cmd))
-        (org-agenda-finalize)
-        (setq buffer-read-only t)))))
-
-;;; AGENDA VIEWS
-
-(defun org-x-dag-agenda-run-series (name files cmds)
-  (declare (indent 2))
-  (catch 'exit
-    (let ((org-agenda-buffer-name (format "*Agenda: %s*" name)))
-      (org-agenda-run-series name `((,@cmds) ((org-agenda-files ',files)))))))
-
-(defun org-x-dag-agenda-call (buffer-name header-name type match files settings)
-  (declare (indent 5))
-  (let* ((n (or header-name buffer-name))
-         (s `((org-agenda-overriding-header ,n) ,@settings)))
-    (org-x-dag-agenda-run-series buffer-name files `((,type ,match ,s)))))
-
-(defun org-x-dag-org-mapper-title (level1 level2 status subtitle)
-  "Make an auto-mapper title.
-The title will have the form 'LEVEL1.LEVEL2 STATUS (SUBTITLE)'."
-  (let ((status* (->> (symbol-name status)
-                   (s-chop-prefix ":")
-                   (s-replace "-" " ")
-                   (s-titleize))))
-    (format "%s.%s %s (%s)" level1 level2 status* subtitle)))
-
-;; TODO the tags in the far column are redundant
-(defun org-x-dag-agenda-quarterly-plan ()
-  (interactive)
-  (let ((match ''org-x-dag-scan-quarterly-plan)
-        (files (org-x-get-action-files))
-        (header (->> (org-x-dag->current-date)
-                     (org-x-dag-date-to-quarter)
-                     (apply #'format "Quarterly Plan: %d Q%d"))))
-    (org-x-dag-agenda-call "Quarterly Plan" nil #'org-x-dag-show-nodes match files
-      `((org-agenda-todo-ignore-with-date t)
-        (org-agenda-overriding-header ,header)
-        (org-agenda-sorting-strategy '(user-defined-up category-keep))
-        ;; TODO add allocation (somehow)
-        (org-agenda-prefix-format '((tags . "  ")))
-        (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (let ((bucket (car (get-text-property 1 'tags line))))
-                (--> (-map #'cdr org-x-life-categories)
-                     (--find (equal (plist-get it :tag) bucket) it)
-                     (plist-get it :desc)))))))))))
-
-(defun org-x-dag-agenda-weekly-plan ()
-  (interactive)
-  (let* ((match ''org-x-dag-scan-weekly-plan)
-         (files (org-x-get-action-files))
-         (date (org-x-dag->current-date))
-         (header (->> (org-x-dag-date-to-week-number date)
-                      (format "Weekly Plan: %d W%02d" (car date)))))
-    (org-x-dag-agenda-call "Weekly Plan" nil #'org-x-dag-show-nodes match files
-      `((org-agenda-todo-ignore-with-date t)
-        (org-agenda-overriding-header ,header)
-        (org-agenda-sorting-strategy '(user-defined-up category-keep))
-        (org-agenda-prefix-format '((tags . "  ")))
-        (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (get-text-property 1 'x-day-of-week line)))))))))
-
-(defun org-x-dag-agenda-tasks-by-goal ()
-  (interactive)
-  (let ((match ''org-x-dag-itemize-tasks-with-goals)
-        (files (org-x-get-action-files)))
-    (org-x-dag-agenda-call "Tasks by Goal" nil #'org-x-dag-show-nodes match files
-      `((org-agenda-todo-ignore-with-date t)
-        (org-agenda-sorting-strategy '(user-defined-up category-keep))
-        (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (-if-let (i (get-text-property 1 'x-goal-id line))
-                  (->> (org-x-dag-id->title i)
-                       (substring-no-properties))
-                "0. Unlinked")))))))))
-
-(defun org-x-dag-agenda-survival-tasks ()
-  (interactive)
-  (let ((match ''org-x-dag-scan-survival-tasks)
-        (files (org-x-get-action-files)))
-    (org-x-dag-agenda-call "Survival Tasks" nil #'org-x-dag-show-nodes match files
-      `((org-agenda-todo-ignore-with-date t)
-        (org-agenda-sorting-strategy '(user-defined-up category-keep))
-        (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (-if-let (i (get-text-property 1 'x-goal-id line))
-                  (->> (org-x-dag-id->title i)
-                       (substring-no-properties))
-                "0. Unlinked")))))))))
-
-;; TODO this is just toplevel projects (for now)
-;; TODO wetter than Seattle
-(defun org-x-dag-agenda-projects-by-goal ()
-  (interactive)
-  (let ((match ''org-x-dag-itemize-projects-with-goals)
-        (files (org-x-get-action-files)))
-    (org-x-dag-agenda-call "Projects by Goal" nil #'org-x-dag-show-nodes match files
-      `((org-agenda-todo-ignore-with-date t)
-        (org-agenda-sorting-strategy '(user-defined-up category-keep))
-        (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (-if-let (i (get-text-property 1 'x-goal-id line))
-                  (->> (org-x-dag-id->title i)
-                       (substring-no-properties))
-                "0. Unlinked")))))))))
-
-;; ;; TODO this is just toplevel projects (for now)
-;; ;; TODO wetter than Seattle
-;; (defun org-x-dag-agenda-survival-projects ()
-;;   (interactive)
-;;   (let ((match ''org-x-dag-scan-survival-projects)
-;;         (files (org-x-get-action-files)))
-;;     (org-x-dag-agenda-call "Survival Projects" nil #'org-x-dag-show-nodes match files
-;;       `((org-agenda-todo-ignore-with-date t)
-;;         (org-agenda-sorting-strategy '(user-defined-up category-keep))
-;;         (org-super-agenda-groups
-;;          '((:auto-map
-;;             (lambda (line)
-;;               (-if-let (i (get-text-property 1 'x-goal-id line))
-;;                   (->> (org-x-dag-id->title i)
-;;                        (substring-no-properties))
-;;                 "0. Unlinked")))))))))
-
-(defun org-x-dag-agenda-goals ()
-  (interactive)
-  (let ((match ''org-x-dag-scan-goals))
-    (org-x-dag-agenda-call "Goals-0" nil #'org-x-dag-show-nodes match nil
-      `((org-agenda-sorting-strategy '(user-defined-up category-keep))
-        (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (-let* (((&plist :type y
-                               :local-children lc
-                               :action-children ac
-                               :invalid-children ic
-                               :goal-parents gp
-                               :invalid-parents ip)
-                       (get-text-property 1 'x-goal-status line))
-                      (type (cl-case y
-                              (:endpoint "0. Endpoint")
-                              (:lifetime "1. Lifetime")
-                              (:survival "2. Survival")))
-                      (subtext (cl-case y
-                                 (:endpoint
-                                  (cond
-                                   (ip "Invalid parent links")
-                                   ((not gp) "Missing toplevel goal")
-                                   (ic "Invalid child links")
-                                   ((and (not lc) (not ac) "Missing action"))
-                                   ((and lc (not ac)) "Branch")))
-                                 ((:lifetime :survival)
-                                  (cond
-                                   (ic "Invalid child links")
-                                   ((and (not lc) (not ac) "Missing goal/action"))
-                                   ((and lc (not ac)) "Branch"))))))
-                (if subtext (format "%s (%s)" type subtext) type))))))))))
-
-(defun org-x-dag-agenda-incubated ()
-  (interactive)
-  (let ((match ''org-x-dag-itemize-incubated))
-    (org-x-dag-agenda-call "Incubated-0" nil #'org-x-dag-show-nodes match nil
-      `((org-agenda-sorting-strategy '(user-defined-up category-keep))
-        (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (-let* ((type (get-text-property 1 'x-type line))
-                      (toplevelp (get-text-property 1 'x-toplevelp line))
-                      (survivalp (get-text-property 1 'x-survivalp line))
-                      (committedp (get-text-property 1 'x-committedp line))
-                      ((rank type)
-                       (pcase type
-                         (:task
-                          (if toplevelp '(1 "Standalone Task")
-                            '(2 "Task")))
-                         (:proj
-                          (if toplevelp '(3 "Toplevel Project")
-                            '(4 "Project")))
-                         (:iter
-                          '(5 "Iterator"))
-                         (:subiter
-                          (if toplevelp '(6 "Parent Subiterator")
-                            '(7 "Subiterator")))))
-                      ((srank stype) (cond
-                                      ((and committedp survivalp)
-                                       '(1 "Survival"))
-                                      (committedp
-                                       '(2 "Non-Survival"))
-                                      (t
-                                       '(3 "Uncommitted")))))
-                (format "%d.%d %s (%s)" srank rank type stype))))))))))
-
-(defun org-x-dag-agenda-timeblock-0 ()
-  "Show the timeblock agenda view.
-
-In the order of display
-1. morning tasks (to do immediately after waking)
-2. daily calendar (for thing that begin today at a specific time)
-3. evening tasks (to do immediately before sleeping)"
-  (interactive)
-  (let ((org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
-        (org-super-agenda-groups
-         `(,(nd/org-def-super-agenda-pred "Morning routine"
-              (org-x-headline-has-property org-x-prop-routine
-                                           org-x-prop-routine-morning)
-              :order 0)
-           ,(nd/org-def-super-agenda-pred "Evening routine"
-              (org-x-headline-has-property org-x-prop-routine
-                                           org-x-prop-routine-evening)
-              :order 3)
-           (:name "Calendar" :order 1 :time-grid t)
-           (:discard (:anything t)))))
-    (org-x-dag-show-daily-nodes)))
-
-(defun org-x-dag-agenda-goals-0 ()
-  (interactive)
-  (let ((match ''org-x-dag-scan-goals))
-    (org-x-dag-agenda-call "Goals-0" nil #'org-x-dag-show-nodes match nil
-      `((org-agenda-todo-ignore-with-date t)
-        (org-agenda-sorting-strategy '(user-defined-up category-keep))
-        (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (-let* (((&plist :type :childlessp :toplevelp :parentlessp)
-                       (get-text-property 1 'x-goal-status line))
-                      (type* (cl-case type
-                               (ltg "Lifetime")
-                               (epg "Endpoint")))
-                      (subtext (cond
-                                ((and (eq type 'epg) parentlessp) "Parentless")
-                                (childlessp "Childless")
-                                ((not toplevelp) "Branch"))))
-                (if subtext (format "%s (%s)" type* subtext) type*))))))))))
-
-(defun org-x-dag-agenda-tasks-0 ()
-  "Show the tasks agenda view.
-
-Distinguish between independent and project tasks, as well as
-tasks that are inert (which I may move to the incubator during a
-review phase)"
-  (interactive)
-  (let ((match ''org-x-dag-itemize-tasks)
-        (files (org-x-get-action-files)))
-    (org-x-dag-agenda-call "Tasks-0" nil #'org-x-dag-show-nodes match files
-      `((org-agenda-skip-function #'org-x-task-skip-function)
-        (org-agenda-todo-ignore-with-date t)
-        (org-agenda-sorting-strategy '(user-defined-up category-keep))
-        (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (-let* ((i (get-text-property 1 'x-is-standalone line))
-                      (s (get-text-property 1 'x-status line))
-                      (s* (if (and (not i) (eq s :inert)) :active s))
-                      ((level1 subtitle) (if i '(1 "α") '(0 "σ")))
-                      (p (alist-get s* nd/org-headline-task-status-priorities)))
-                (org-x-dag-org-mapper-title level1 p s* subtitle))))))))))
-
-(defun org-x-dag-agenda-projects-0 ()
-  "Show the projects agenda view."
-  (interactive)
-  (let ((match ''org-x-dag-itemize-projects)
-        (files (org-x-get-action-and-incubator-files)))
-    (org-x-dag-agenda-call "Projects-0" nil #'org-x-dag-show-nodes match files
-      `((org-agenda-sorting-strategy '(category-keep))
-        (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (-let* ((i (get-text-property 1 'x-toplevelp line))
-                      (s (get-text-property 1 'x-status line))
-                      (p (get-text-property 1 'x-priority line))
-                      ((level1 subtitle) (if i '(0 "τ") '(1 "σ"))))
-                (org-x-dag-org-mapper-title level1 p s subtitle))))))))))
-
-(defun org-x-dag-agenda-incubator-0 ()
-  "Show the incubator agenda view."
-  (interactive)
-  (let ((match ''org-x-dag-itemize-incubated))
-    (org-x-dag-agenda-call "Incubator-0" nil #'org-x-dag-show-nodes match nil
-      `((org-agenda-sorting-strategy '(category-keep))
-        (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (let ((p (get-text-property 1 'x-project-p line))
-                    (s (get-text-property 1 'x-scheduled line))
-                    (d (get-text-property 1 'x-deadlined line)))
-                (cond
-                 ((and s (not p))
-                  (if (< (float-time) s) "Future Scheduled" "Past Scheduled"))
-                 ((and d (not p))
-                  (if (< (float-time) d) "Future Deadline" "Past Deadline"))
-                 (p "Toplevel Projects")
-                 (t "Standalone Tasks")))))))))))
-
-(defun org-x-dag-agenda-iterators-0 ()
-  "Show the iterator agenda view."
-  (interactive)
-  (let ((files (org-x-get-action-files))
-        (match ''org-x-dag-itemize-iterators))
-    (org-x-dag-agenda-call "Iterators-0" nil #'org-x-dag-show-nodes match files
-      `((org-agenda-sorting-strategy '(category-keep))
-        (org-super-agenda-groups
-         ',(nd/org-def-super-agenda-automap
-             (cl-case (org-x-headline-get-iterator-status)
-               (:uninit "0. Uninitialized")
-               (:project-error "0. Project Error")
-               (:unscheduled "0. Unscheduled")
-               (:empt "1. Empty")
-               (:actv "2. Active")
-               (t "3. Other"))))))))
-
-(defun org-x-dag-agenda-errors-0 ()
-  "Show the critical errors agenda view."
-  (interactive)
-  (let ((match ''org-x-dag-itemize-errors))
-    (org-x-dag-agenda-call "Errors-0" nil #'org-x-dag-show-nodes match nil
-      `((org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (get-text-property 1 'x-error line)))))))))
-
-(defun org-x-dag-agenda-archive-0 ()
-  "Show the archive agenda view."
-  (interactive)
-  (let ((files (org-x-get-action-files))
-        (match ''org-x-dag-itemize-archived))
-    (org-x-dag-agenda-call "Archive-0" nil #'org-x-dag-show-nodes match files
-  ;; (org-x-dag-agenda-call-headlines "Archive-0" nil (org-x-get-action-files)
-    `((org-agenda-sorting-strategy '(category-keep))
-      (org-super-agenda-groups
-         '((:auto-map
-            (lambda (line)
-              (cl-case (get-text-property 1 'x-type line)
-                (:proj "Toplevel Projects")
-                (:task "Standalone Tasks")
-                (:iter "Closed Iterators")
-                (:subiter "Toplevel Subiterators"))))))))))
-
-;;; PARENT LINK FUNCTONS
+;; parent link drawers
 
 (defun org-x-dag-build-parent-link-drawer (ids)
   (->> (-map #'org-x-dag-id->link-item ids)
@@ -2913,6 +2548,8 @@ review phase)"
                    (apply #'org-ml-build-plain-list)))
     (org-ml-set-children (list pl) drawer)))
 
+;; headline parent links
+
 (defun org-x-dag-section-get-parent-links (children)
   (->> (--find (org-x--is-drawer-with-name org-x-drwr-parent-links it) children)
        (org-x-dag-drawer-get-parent-links)))
@@ -2924,43 +2561,6 @@ review phase)"
           (-replace-at i d children)
         (-remove-at i children))
     (if ids (cons (org-x-dag-build-parent-link-drawer ids) children) children)))
-
-(defmacro org-x-dag-section-map-parent-links* (form children)
-  (let ((c (make-symbol "--headline")))
-    `(let* ((,c ,children)
-            (it (org-x-dag-section-get-parent-links ,c)))
-       (org-x-dag-section-set-parent-links ,form ,c))))
-
-(defun org-x-dag-section-add-parent-link (id children)
-  (org-x-dag-section-map-parent-links* (cons id it) children))
-
-(defun org-x-dag-section-remove-parent-link (id children)
-  (org-x-dag-section-map-parent-links*
-   (--remove-first (equal it id) it)
-   children))
-
-(defun org-x-dag-tl-section-get-parent-links (section)
-  (->> (org-ml-get-children section)
-       (org-x-dag-section-get-parent-links)))
-
-(defun org-x-dag-tl-section-set-parent-links (ids section)
-  (org-ml-map-children*
-    (org-x-dag-section-set-parent-links ids it)
-    section))
-
-(defmacro org-x-dag-tl-section-map-parent-links* (form children)
-  (let ((s (make-symbol "--section")))
-    `(let* ((,s ,children)
-            (it (org-x-dag-tl-section-get-parent-links ,s)))
-       (org-x-dag-tl-section-set-parent-links ,form ,s))))
-
-(defun org-x-dag-tl-section-add-parent-link (id section)
-  (org-x-dag-tl-section-map-parent-links* (cons id it) section))
-
-(defun org-x-dag-tl-section-remove-parent-link (id section)
-  (org-x-dag-tl-section-map-parent-links*
-   (--remove-first (equal it id) it)
-   section))
 
 (defun org-x-dag-headline-get-parent-links (headline)
   (->> headline
@@ -2987,46 +2587,30 @@ review phase)"
    (--remove-first (equal it id) it)
    headline))
 
-;;; ALLOCATION
+;; toplevel section parent links
 
-(pcase-defmacro regexp (capture regexp)
-  `(and x (let ,capture (s-match ,regexp x))))
+(defun org-x-dag-tl-section-get-parent-links (section)
+  (->> (org-ml-get-children section)
+       (org-x-dag-section-get-parent-links)))
 
-;; this function can also be used to check the format of an allocation during
-;; assignment
-(defun org-x-dag-allocation-fraction (quarter allocation)
-  (cl-flet
-      ((hhmm-to-mins
-        (H M)
-        (let ((H* (string-to-number H))
-              (M* (string-to-number M)))
-          (+ (* 60.0 H*) M*))))
-    (let* ((qt-days (-> (org-x-dag-shift-quarter quarter 1 'quarter)
-                        (org-x-dag-quarter-diff quarter)
-                        (float)))
-           (qt-mins (* qt-days 1440))
-           (hhmm-regexp "\\(2[0-4]\\|[0-1][0-9]\\|[0-9]\\):\\([0-6][0-9]\\)"))
-      (pcase allocation
-        ;; match 'X%' where X is a flat percent of the quarter
-        ((regexp `(,_ ,percent) "^\\([0-9]+\\)%$")
-         (/ (string-to-number percent) 100.0))
-        ;; match 'H:M' where H is hours and M is minutes (both clock digits)
-        ((regexp `(,_ ,H ,M) (format "^%s$" hhmm-regexp))
-         (/ (hhmm-to-mins H M) 1440.0))
-        ;; match 'H:M/Dd' where H/M are like above and D is number of days
-        ;; per quarter
-        ((regexp `(,_ ,H ,M ,d) (format "^%s/\\([0-9]+\\)d$" hhmm-regexp))
-         (let ((d* (string-to-number d))
-               (mins (hhmm-to-mins H M)))
-           (/ (* mins d*) qt-mins)))
-        (e (error "Invalid allocation: %s" e))))))
+(defun org-x-dag-tl-section-set-parent-links (ids section)
+  (org-ml-map-children*
+    (org-x-dag-section-set-parent-links ids it)
+    section))
 
-;;; PLANNING BUFFER MANIPULATION
+(defmacro org-x-dag-tl-section-map-parent-links* (form children)
+  (let ((s (make-symbol "--section")))
+    `(let* ((,s ,children)
+            (it (org-x-dag-tl-section-get-parent-links ,s)))
+       (org-x-dag-tl-section-set-parent-links ,form ,s))))
 
-;; use tags to encode date/time information in the buffer since it is really
-;; easy to look up tags in the DAG
+(defun org-x-dag-tl-section-add-parent-link (id section)
+  (org-x-dag-tl-section-map-parent-links* (cons id it) section))
 
-;; TODO this section is quite wet
+(defun org-x-dag-tl-section-remove-parent-link (id section)
+  (org-x-dag-tl-section-map-parent-links*
+   (--remove-first (equal it id) it)
+   section))
 
 ;; headline lookup
 
@@ -3100,6 +2684,14 @@ review phase)"
         (tag (alist-get daynum org-x-dag-weekly-tags)))
     (org-x-dag-build-planning-headline title tag 3 nil subheadlines)))
 
+;; headline ids
+
+(defun org-x-dag-headline-get-id (headline)
+  (org-ml-headline-get-node-property "ID" headline))
+
+(defun org-x-dag-headline-add-id (headline)
+  (org-ml-headline-set-node-property "ID" (org-id-new) headline))
+
 ;; planning headline builders
 
 (defun org-x-dag-build-planning-id-headline (title level paragraph ids)
@@ -3125,7 +2717,21 @@ review phase)"
     (->> (org-x-dag-build-planning-id-headline title 4 paragraph ids)
          (org-ml-headline-set-planning pl))))
 
-;; crazy nested build-or-add-headline thing
+;; empty plans
+
+(defun org-x-dag-qtp-empty ()
+  (->> (-map #'cdr org-x-life-categories)
+       (--map (org-ml-build-headline! :level 3
+                                      :title-text (plist-get it :desc)
+                                      :tags `(,(plist-get it :tag))))))
+
+(defun org-x-dag-wkp-empty ()
+  (->> (-map #'car org-x-dag-weekly-tags)
+       (--map (org-x-dag-build-day-of-week-headline it nil))))
+
+;;; stateful buffer function
+
+;; nested headline manipulation
 
 (defun org-x-dag-headline-get-nested (path find-funs)
   (declare (indent 1))
@@ -3163,12 +2769,6 @@ review phase)"
            (update-subheadlines hierachy-funs)))))
 
 ;; quarterly plan
-
-(defun org-x-dag-qtp-empty ()
-  (->> (-map #'cdr org-x-life-categories)
-       (--map (org-ml-build-headline! :level 3
-                                      :title-text (plist-get it :desc)
-                                      :tags `(,(plist-get it :tag))))))
 
 (defun org-x-dag-qtp-to-children (qt-plan)
   (-let* (((&plist :categories :goals) qt-plan)
@@ -3295,21 +2895,11 @@ review phase)"
 ;; (defun org-x-qtp-add-goal (quarter headline)
 ;;   (org-x-qtp-map-goals quarter (cons headline it)))
 
-(defun org-x-dag-headline-get-id (headline)
-  (org-ml-headline-get-node-property "ID" headline))
-
-(defun org-x-dag-headline-add-id (headline)
-  (org-ml-headline-set-node-property "ID" (org-id-new) headline))
-
 ;; (defun org-x-qtp-add-goal-ids (quarter ids title allocation)
 ;;   (->> (org-x-dag-build-qtp-headline title nil ids allocation)
 ;;        (org-x-qtp-add-goal quarter)))
 
 ;; weekly plan
-
-(defun org-x-dag-wkp-empty ()
-  (->> (-map #'car org-x-dag-weekly-tags)
-       (--map (org-x-dag-build-day-of-week-headline it nil))))
 
 (defun org-x-dag-weekly-headlines-to-alist (headlines)
   (->> (-map #'car org-x-dag-weekly-tags)
@@ -3451,7 +3041,7 @@ review phase)"
 
 ;;; INTERACTIVE FUNCTIONS
 
-;; current date
+;;; misc/navigation
 
 (defun org-x-dag-set-date ()
   (interactive)
@@ -3467,34 +3057,6 @@ review phase)"
   (interactive)
   (->> (plist-get org-x-dag :selected-date)
        (apply #'message "Org-DAG date is %d-%02d-%02d")))
-
-;; blank plans
-
-(defmacro org-x-dag--new-plan-maybe (get-form new-form)
-  (declare (indent 0))
-  `(let ((it (org-x-dag->selected-date)))
-     (unless ,get-form
-       ,new-form)))
-
-(defun org-x-dag--new-qtp (date)
-  (org-x-dag-qtp-set-headlines date (org-x-dag-qtp-empty)))
-
-(defun org-x-dag--new-wkp (date)
-  (org-x-dag-wkp-set-headlines date (org-x-dag-wkp-empty)))
-
-(defun org-x-dag-new-qtp ()
-  (interactive)
-  (org-x-dag--new-plan-maybe
-    (org-x-dag-qtp-get-headline it)
-    (org-x-dag--new-qtp it)))
-
-(defun org-x-dag-new-wkp ()
-  (interactive)
-  (org-x-dag--new-plan-maybe
-    (org-x-dag-wkp-get-week-headline it)
-    (org-x-dag--new-wkp it)))
-
-;; planning navigation
 
 (defun org-x-dag--goto-current (what file-key hl-fun &optional create-fun)
   (declare (indent 2))
@@ -3537,20 +3099,37 @@ review phase)"
   (org-x-dag--goto-current "Daily plan" :daily
     #'org-x-dag-dlp-get-headline))
 
+;;; DAG manipulation
+
+;; add blank plans
+
+(defmacro org-x-dag--new-plan-maybe (get-form new-form)
+  (declare (indent 0))
+  `(let ((it (org-x-dag->selected-date)))
+     (unless ,get-form
+       ,new-form)))
+
+(defun org-x-dag--new-qtp (date)
+  (org-x-dag-qtp-set-headlines date (org-x-dag-qtp-empty)))
+
+(defun org-x-dag--new-wkp (date)
+  (org-x-dag-wkp-set-headlines date (org-x-dag-wkp-empty)))
+
+(defun org-x-dag-new-qtp ()
+  (interactive)
+  (org-x-dag--new-plan-maybe
+    (org-x-dag-qtp-get-headline it)
+    (org-x-dag--new-qtp it)))
+
+(defun org-x-dag-new-wkp ()
+  (interactive)
+  (org-x-dag--new-plan-maybe
+    (org-x-dag-wkp-get-week-headline it)
+    (org-x-dag--new-wkp it)))
+
 ;; parent -> child linkers
 ;;
 ;; functions to set the current headline as a parent link for a child headline
-
-(defun org-x-dag-group-code (group)
-  (pcase group
-    (:lifetime "LTG")
-    (:survival "SVG")
-    (:endpoint "EPG")
-    (:action "ACT")
-    (:quarterly "QTP")
-    (:weekly "WKP")
-    (:daily "DLP")
-    (_ "???")))
 
 (defun org-x-dag--format-link-menu-line (id title-fun)
   (declare (indent 1))
@@ -3869,6 +3448,417 @@ review phase)"
 ;;       (let ((c (plist-get last-plan :categories)))
 ;;         (org-x-dag-qtp-set cur-q `(:categories ,c :goals nil))
 ;;         (apply #'message "Created new quaterly plan for %d-Q%d" cur-q)))))
+
+;;; agenda views
+
+;; agenda builders
+
+(defun org-x-dag-show-nodes (get-nodes)
+  (org-x-dag-sync)
+  (let* ((org-tags-match-list-sublevels org-tags-match-list-sublevels)
+         (completion-ignore-case t))
+    (catch 'exit
+      (org-agenda-prepare (concat "DAG-TAG"))
+      (org-compile-prefix-format 'tags)
+      (org-set-sorting-strategy 'tags)
+      (let ((org-agenda-redo-command `(org-x-dag-show-nodes ',get-nodes))
+            (rtnall (funcall get-nodes)))
+        (org-agenda--insert-overriding-header
+          (with-temp-buffer
+            (insert "Headlines with TAGS match: \n")
+            (add-text-properties (point-min) (1- (point))
+                                 (list 'face 'org-agenda-structure))
+            (buffer-string)))
+        (org-agenda-mark-header-line (point-min))
+        (when rtnall
+          (insert (org-agenda-finalize-entries rtnall 'tags) "\n"))
+        (goto-char (point-min))
+        (or org-agenda-multi (org-agenda-fit-window-to-buffer))
+        (add-text-properties
+         (point-min) (point-max)
+         `(org-agenda-type tags
+                           org-last-args (,get-nodes)
+                           org-redo-cmd ,org-agenda-redo-command
+                           org-series-cmd ,org-cmd))
+        (org-agenda-finalize)
+        (setq buffer-read-only t)))))
+
+;; make the signature exactly like `org-agenda-list' ...for now
+(defun org-x-dag-show-daily-nodes (&optional _ start-day _ _)
+  (org-x-dag-sync)
+  (-let ((completion-ignore-case t)
+         ;; TODO not sure if this if thing is actually necessary
+         ((arg start-day span with-hour) (or org-agenda-overriding-arguments
+                                     (list nil start-day 'day nil))))
+    (catch 'exit
+      (org-agenda-prepare "DAG-DAILY")
+      (org-compile-prefix-format 'agenda)
+      (org-set-sorting-strategy 'agenda)
+      (-let* ((today (org-today))
+              (sd (or start-day today))
+              (org-agenda-redo-command
+               `(org-x-dag-show-daily-nodes 'nil ,start-day ',span ,with-hour))
+              ((m d y) (calendar-gregorian-from-absolute sd))
+              (rtnall (org-x-dag-itemize-agenda `(,y ,m ,d))))
+        (setq-local org-starting-day sd)
+        (setq-local org-arg-loc arg)
+        ;; TODO just day (for now)
+        (setq-local org-agenda-current-span span)
+        (org-agenda--insert-overriding-header
+          (with-temp-buffer
+            (insert (format "Agenda for %d-%02d-%02d: \n" y m d))
+            (add-text-properties (point-min) (1- (point))
+                                 (list 'face 'org-agenda-structure))
+            (buffer-string)))
+        (org-agenda-mark-header-line (point-min))
+        ;; TODO handle time grid here somehow
+        (-some--> (org-agenda-add-time-grid-maybe rtnall 1 (= sd today))
+          (org-agenda-finalize-entries it 'agenda)
+          (insert it "\n"))
+        (goto-char (point-min))
+        (or org-agenda-multi (org-agenda-fit-window-to-buffer))
+        (add-text-properties
+         (point-min) (point-max)
+         `(org-agenda-type agenda
+                           org-last-args (,arg ,start-day ,span)
+                           org-redo-cmd ,org-agenda-redo-command
+                           org-series-cmd ,org-cmd))
+        (org-agenda-finalize)
+        (setq buffer-read-only t)))))
+
+;; agenda helper functions
+
+(defun org-x-dag-agenda-run-series (name files cmds)
+  (declare (indent 2))
+  (catch 'exit
+    (let ((org-agenda-buffer-name (format "*Agenda: %s*" name)))
+      ;; files are actually needed (I think) for `org-agenda-prepare' to run
+      (org-agenda-run-series name `((,@cmds) ((org-agenda-files ',files)))))))
+
+(defun org-x-dag-agenda-call (buffer-name header-name type match files settings)
+  (declare (indent 5))
+  (let* ((n (or header-name buffer-name))
+         (s `((org-agenda-overriding-header ,n) ,@settings)))
+    (org-x-dag-agenda-run-series buffer-name files `((,type ,match ,s)))))
+
+(defun org-x-dag-agenda-show-nodes (buffer-name itemizer files settings)
+  (declare (indent 3))
+  (org-x-dag-agenda-call buffer-name nil #'org-x-dag-show-nodes
+                         `(quote ,itemizer) files
+    settings))
+
+(defun org-x-dag-org-mapper-title (level1 level2 status subtitle)
+  "Make an auto-mapper title.
+The title will have the form 'LEVEL1.LEVEL2 STATUS (SUBTITLE)'."
+  (let ((status* (->> (symbol-name status)
+                   (s-chop-prefix ":")
+                   (s-replace "-" " ")
+                   (s-titleize))))
+    (format "%s.%s %s (%s)" level1 level2 status* subtitle)))
+
+;; agenda views
+
+(defun org-x-dag-agenda-timeblock ()
+  "Show the timeblock agenda view.
+
+In the order of display
+1. morning tasks (to do immediately after waking)
+2. daily calendar (for thing that begin today at a specific time)
+3. evening tasks (to do immediately before sleeping)"
+  (interactive)
+  (let ((org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
+        (org-super-agenda-groups
+         `(,(nd/org-def-super-agenda-pred "Morning routine"
+              (org-x-headline-has-property org-x-prop-routine
+                                           org-x-prop-routine-morning)
+              :order 0)
+           ,(nd/org-def-super-agenda-pred "Evening routine"
+              (org-x-headline-has-property org-x-prop-routine
+                                           org-x-prop-routine-evening)
+              :order 3)
+           (:name "Calendar" :order 1 :time-grid t)
+           (:discard (:anything t)))))
+    (org-x-dag-show-daily-nodes)))
+
+;; (defun org-x-dag-agenda-goals ()
+;;   (interactive)
+;;   (let ((files (->> (list :lifetime :endpoint :survival)
+;;                     (-map #'org-x-dag->goal-file))))
+;;     (org-x-dag-agenda-show-nodes "Goals" #'org-x-dag-scan-goals files
+;;       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
+;;         (org-super-agenda-groups
+;;          '((:auto-map
+;;             (lambda (line)
+;;               (-let* (((&plist :type :childlessp :toplevelp :parentlessp)
+;;                        (get-text-property 1 'x-goal-status line))
+;;                       (type* (cl-case type
+;;                                (ltg "Lifetime")
+;;                                (epg "Endpoint")))
+;;                       (subtext (cond
+;;                                 ((and (eq type 'epg) parentlessp) "Parentless")
+;;                                 (childlessp "Childless")
+;;                                 ((not toplevelp) "Branch"))))
+;;                 (if subtext (format "%s (%s)" type* subtext) type*))))))))))
+
+(defun org-x-dag-agenda-tasks ()
+  "Show the tasks agenda view.
+
+Distinguish between independent and project tasks, as well as
+tasks that are inert (which I may move to the incubator during a
+review phase)"
+  (interactive)
+  (let ((files (org-x-dag->action-files)))
+    (org-x-dag-agenda-show-nodes "Tasks" #'org-x-dag-itemize-tasks files
+      `((org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-let* ((i (get-text-property 1 'x-is-standalone line))
+                      (s (get-text-property 1 'x-status line))
+                      (s* (if (and (not i) (eq s :inert)) :active s))
+                      ((level1 subtitle) (if i '(1 "α") '(0 "σ")))
+                      (p (alist-get s* nd/org-headline-task-status-priorities)))
+                (org-x-dag-org-mapper-title level1 p s* subtitle))))))))))
+
+(defun org-x-dag-agenda-projects ()
+  "Show the projects agenda view."
+  (interactive)
+  (let ((files (org-x-dag->action-files)))
+    (org-x-dag-agenda-show-nodes "Projects" #'org-x-dag-itemize-projects files
+      `((org-agenda-sorting-strategy '(category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-let* ((i (get-text-property 1 'x-toplevelp line))
+                      (s (get-text-property 1 'x-status line))
+                      (p (get-text-property 1 'x-priority line))
+                      ((level1 subtitle) (if i '(0 "τ") '(1 "σ"))))
+                (org-x-dag-org-mapper-title level1 p s subtitle))))))))))
+
+(defun org-x-dag-agenda-incubator ()
+  "Show the incubator agenda view."
+  (interactive)
+  (org-x-dag-agenda-show-nodes "Incubator" #'org-x-dag-itemize-incubated nil
+    `((org-agenda-sorting-strategy '(category-keep))
+      (org-super-agenda-groups
+       '((:auto-map
+          (lambda (line)
+            (let ((p (get-text-property 1 'x-project-p line))
+                  (s (get-text-property 1 'x-scheduled line))
+                  (d (get-text-property 1 'x-deadlined line)))
+              (cond
+               ((and s (not p))
+                (if (< (float-time) s) "Future Scheduled" "Past Scheduled"))
+               ((and d (not p))
+                (if (< (float-time) d) "Future Deadline" "Past Deadline"))
+               (p "Toplevel Projects")
+               (t "Standalone Tasks"))))))))))
+
+(defun org-x-dag-agenda-iterators ()
+  "Show the iterator agenda view."
+  (interactive)
+  (let ((files (org-x-dag->action-files)))
+    (org-x-dag-agenda-show-nodes "Iterators-0" #'org-x-dag-itemize-iterators files
+      `((org-agenda-sorting-strategy '(category-keep))
+        (org-super-agenda-groups
+         ',(nd/org-def-super-agenda-automap
+             (cl-case (org-x-headline-get-iterator-status)
+               (:uninit "0. Uninitialized")
+               (:project-error "0. Project Error")
+               (:unscheduled "0. Unscheduled")
+               (:empt "1. Empty")
+               (:actv "2. Active")
+               (t "3. Other"))))))))
+
+(defun org-x-dag-agenda-errors ()
+  "Show the critical errors agenda view."
+  (interactive)
+  (org-x-dag-agenda-show-nodes "Errors" #'org-x-dag-itemize-errors nil
+    `((org-super-agenda-groups
+       '((:auto-map
+          (lambda (line)
+            (get-text-property 1 'x-error line))))))))
+
+(defun org-x-dag-agenda-archive ()
+  "Show the archive agenda view."
+  (interactive)
+  (let ((files (org-x-dag->action-files)))
+    (org-x-dag-agenda-show-nodes "Archive-0" #'org-x-dag-itemize-archived files
+    `((org-agenda-sorting-strategy '(category-keep))
+      (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (cl-case (get-text-property 1 'x-type line)
+                (:proj "Toplevel Projects")
+                (:task "Standalone Tasks")
+                (:iter "Closed Iterators")
+                (:subiter "Toplevel Subiterators"))))))))))
+
+;; ;; TODO the tags in the far column are redundant
+;; (defun org-x-dag-agenda-quarterly-plan ()
+;;   (interactive)
+;;   (let ((match #'org-x-dag-scan-quarterly-plan)
+;;         (files (org-x-dag->action-files))
+;;         (header (->> (org-x-dag->current-date)
+;;                      (org-x-dag-date-to-quarter)
+;;                      (apply #'format "Quarterly Plan: %d Q%d"))))
+;;     (org-x-dag-agenda-show-nodes "Quarterly Plan" match files
+;;       `((org-agenda-overriding-header ,header)
+;;         (org-agenda-sorting-strategy '(user-defined-up category-keep))
+;;         ;; TODO add allocation (somehow)
+;;         (org-agenda-prefix-format '((tags . "  ")))
+;;         (org-super-agenda-groups
+;;          '((:auto-map
+;;             (lambda (line)
+;;               (let ((bucket (car (get-text-property 1 'tags line))))
+;;                 (--> (-map #'cdr org-x-life-categories)
+;;                      (--find (equal (plist-get it :tag) bucket) it)
+;;                      (plist-get it :desc)))))))))))
+
+;; (defun org-x-dag-agenda-weekly-plan ()
+;;   (interactive)
+;;   (let* ((match #'org-x-dag-scan-weekly-plan)
+;;          (files (org-x-dag->action-files))
+;;          (date (org-x-dag->current-date))
+;;          (header (->> (org-x-dag-date-to-week-number date)
+;;                       (format "Weekly Plan: %d W%02d" (car date)))))
+;;     (org-x-dag-agenda-show-nodes "Weekly Plan" match files
+;;       `((org-agenda-overriding-header ,header)
+;;         (org-agenda-sorting-strategy '(user-defined-up category-keep))
+;;         (org-agenda-prefix-format '((tags . "  ")))
+;;         (org-super-agenda-groups
+;;          '((:auto-map
+;;             (lambda (line)
+;;               (get-text-property 1 'x-day-of-week line)))))))))
+
+(defun org-x-dag-agenda-tasks-by-goal ()
+  (interactive)
+  (let ((match #'org-x-dag-itemize-tasks-with-goals)
+        (files (org-x-dag->action-files)))
+    (org-x-dag-agenda-show-nodes "Tasks by Goal" match files
+      `((org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-if-let (i (get-text-property 1 'x-goal-id line))
+                  (->> (org-x-dag-id->title i)
+                       (substring-no-properties))
+                "0. Unlinked")))))))))
+
+;; (defun org-x-dag-agenda-survival-tasks ()
+;;   (interactive)
+;;   (let ((match #'org-x-dag-scan-survival-tasks)
+;;         (files (org-x-dag->action-files)))
+;;     (org-x-dag-agenda-show-nodes "Survival Tasks" match files
+;;       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
+;;         (org-super-agenda-groups
+;;          '((:auto-map
+;;             (lambda (line)
+;;               (-if-let (i (get-text-property 1 'x-goal-id line))
+;;                   (->> (org-x-dag-id->title i)
+;;                        (substring-no-properties))
+;;                 "0. Unlinked")))))))))
+
+;; TODO this is just toplevel projects (for now)
+;; TODO wetter than Seattle
+(defun org-x-dag-agenda-projects-by-goal ()
+  (interactive)
+  (let ((match #'org-x-dag-itemize-projects-with-goals)
+        (files (org-x-dag->action-files)))
+    (org-x-dag-agenda-show-nodes "Projects by Goal" match files
+      `((org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-if-let (i (get-text-property 1 'x-goal-id line))
+                  (->> (org-x-dag-id->title i)
+                       (substring-no-properties))
+                "0. Unlinked")))))))))
+
+;; ;; TODO this is just toplevel projects (for now)
+;; ;; TODO wetter than Seattle
+;; (defun org-x-dag-agenda-survival-projects ()
+;;   (interactive)
+;;   (let ((match ''org-x-dag-scan-survival-projects)
+;;         (files (org-x-get-action-files)))
+;;     (org-x-dag-agenda-call "Survival Projects" nil #'org-x-dag-show-nodes match files
+;;       `((org-agenda-todo-ignore-with-date t)
+;;         (org-agenda-sorting-strategy '(user-defined-up category-keep))
+;;         (org-super-agenda-groups
+;;          '((:auto-map
+;;             (lambda (line)
+;;               (-if-let (i (get-text-property 1 'x-goal-id line))
+;;                   (->> (org-x-dag-id->title i)
+;;                        (substring-no-properties))
+;;                 "0. Unlinked")))))))))
+
+;; (defun org-x-dag-agenda-goals ()
+;;   (interactive)
+;;   (let ((match #'org-x-dag-scan-goals))
+;;     (org-x-dag-agenda-show-nodes "Goals-0" match nil
+;;       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
+;;         (org-super-agenda-groups
+;;          '((:auto-map
+;;             (lambda (line)
+;;               (-let* (((&plist :type y
+;;                                :local-children lc
+;;                                :action-children ac
+;;                                :invalid-children ic
+;;                                :goal-parents gp
+;;                                :invalid-parents ip)
+;;                        (get-text-property 1 'x-goal-status line))
+;;                       (type (cl-case y
+;;                               (:endpoint "0. Endpoint")
+;;                               (:lifetime "1. Lifetime")
+;;                               (:survival "2. Survival")))
+;;                       (subtext (cl-case y
+;;                                  (:endpoint
+;;                                   (cond
+;;                                    (ip "Invalid parent links")
+;;                                    ((not gp) "Missing toplevel goal")
+;;                                    (ic "Invalid child links")
+;;                                    ((and (not lc) (not ac) "Missing action"))
+;;                                    ((and lc (not ac)) "Branch")))
+;;                                  ((:lifetime :survival)
+;;                                   (cond
+;;                                    (ic "Invalid child links")
+;;                                    ((and (not lc) (not ac) "Missing goal/action"))
+;;                                    ((and lc (not ac)) "Branch"))))))
+;;                 (if subtext (format "%s (%s)" type subtext) type))))))))))
+
+(defun org-x-dag-agenda-incubated ()
+  (interactive)
+  (let ((match #'org-x-dag-itemize-incubated))
+    (org-x-dag-agenda-show-nodes "Incubated-0" match nil
+      `((org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-let* ((type (get-text-property 1 'x-type line))
+                      (toplevelp (get-text-property 1 'x-toplevelp line))
+                      (survivalp (get-text-property 1 'x-survivalp line))
+                      (committedp (get-text-property 1 'x-committedp line))
+                      ((rank type)
+                       (pcase type
+                         (:task
+                          (if toplevelp '(1 "Standalone Task")
+                            '(2 "Task")))
+                         (:proj
+                          (if toplevelp '(3 "Toplevel Project")
+                            '(4 "Project")))
+                         (:iter
+                          '(5 "Iterator"))
+                         (:subiter
+                          (if toplevelp '(6 "Parent Subiterator")
+                            '(7 "Subiterator")))))
+                      ((srank stype) (cond
+                                      ((and committedp survivalp)
+                                       '(1 "Survival"))
+                                      (committedp
+                                       '(2 "Non-Survival"))
+                                      (t
+                                       '(3 "Uncommitted")))))
+                (format "%d.%d %s (%s)" srank rank type stype))))))))))
 
 (provide 'org-x-dag)
 ;;; org-x-dag.el ends here
