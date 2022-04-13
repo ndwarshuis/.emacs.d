@@ -35,6 +35,8 @@
 (require 's)
 (require 'ht)
 (require 'org)
+(require 'org-clock)
+(require 'org-agenda)
 (require 'org-id)
 (require 'org-x-agg)
 (require 'org-x-dag)
@@ -1235,7 +1237,7 @@ KW is the keyword of the parent."
   "Get the status of an iterator.
 Allowed statuscodes are in list `nd/get-iter-statuscodes.' where
  latter codes in the list trump earlier ones."
-  (let ((cur-status (first org-x--iter-statuscodes))
+  (let ((cur-status (car org-x--iter-statuscodes))
         (breaker-status (-last-item org-x--iter-statuscodes))
         (kw nil)
         (new-status nil)
