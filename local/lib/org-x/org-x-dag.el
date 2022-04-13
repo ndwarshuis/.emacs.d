@@ -1261,8 +1261,6 @@ used for optimization."
                (org-x-dag-ht-add-links id ht-l :fulfilled)))))
     ns))
 
-;; TODO check that actions that are linked here are not linked to survival
-;; goals here (since those can't be planned)
 (defun org-x-dag-ns-dlp (adjlist links ns)
   (cl-flet
       ((get-committed
@@ -1276,6 +1274,8 @@ used for optimization."
             (let ((qgoals (->> (get-committed ht-w w)
                                (get-committed ht-q)))
                   (agoals (get-committed ht-a a)))
+              ;; TODO this check doesn't matter for survival goals since
+              ;; those won't be on the quarterly plan
               (-if-let (gs (-intersection qgoals agoals))
                   (progn
                     (->> (list :scheduled w
@@ -1821,20 +1821,34 @@ Return value is a list like (BUFFER NON-BUFFER)."
 (defun org-x-dag-files->ids (files)
   (-mapcat #'org-x-dag-file->ids files))
 
+(defun org-x-dag->goal-ids (which)
+  (org-x-dag-file->ids (org-x-dag->goal-file which)))
+
+(defun org-x-dag->planning-ids (which)
+  (->> (org-x-dag->goal-file which)
+       (org-x-dag-file->ids)))
+
 (defun org-x-dag->epg-ids ()
-  (org-x-dag-file->ids (org-x-get-endpoint-goal-file)))
+  (org-x-dag->goal-ids :endpoint))
 
 (defun org-x-dag->ltg-ids ()
-  (org-x-dag-file->ids (org-x-get-lifetime-goal-file)))
+  (org-x-dag->goal-ids :lifetime))
 
 (defun org-x-dag->svg-ids ()
-  (org-x-dag-file->ids (org-x-get-survival-goal-file)))
+  (org-x-dag->goal-ids :survival))
 
 (defun org-x-dag->qtp-ids ()
-  (org-x-dag-file->ids (org-x-dag->planning-file :quarterly)))
+  (org-x-dag->planning-ids :quarterly))
 
 (defun org-x-dag->wkp-ids ()
-  (org-x-dag-file->ids (org-x-dag->planning-file :weekly)))
+  (org-x-dag->planning-ids :weekly))
+
+(defun org-x-dag->dlp-ids ()
+  (org-x-dag->planning-ids :weekly))
+
+(defun org-x-dag->action-ids ()
+  (->> (org-x-dag->action-files)
+       (org-x-dag-files->ids)))
 
 (defun org-x-dag-filter-ids-tags (tags ids)
   (--filter (-intersection (org-x-dag-id->tags nil it) tags) ids))
@@ -1852,14 +1866,25 @@ Return value is a list like (BUFFER NON-BUFFER)."
                               #'org-x-dag-weekly-tags-to-date
                               date))
 
-(defun org-x-dag->dlp-ids ()
-  (org-x-dag-file->ids (org-x-dag->planning-file :daily)))
-
 (defun org-x-dag-date->dlp-ids (date)
   (org-x-dag-date->tagged-ids
    (org-x-dag->dlp-ids)
    #'org-x-dag-daily-tags-to-date
    date))
+
+(defun org-x-dag->current-qtp-ids ()
+  (-> (org-x-dag->selected-date)
+      (org-x-dag-date-to-quarter-start)
+      (org-x-dag-date->qtp-ids)))
+
+(defun org-x-dag->current-wkp-ids ()
+  (-> (org-x-dag->selected-date)
+      (org-x-dag-date-to-week-start)
+      (org-x-dag-date->wkp-ids)))
+
+(defun org-x-dag->current-dlp-ids ()
+  (-> (org-x-dag->selected-date)
+      (org-x-dag-date->dlp-ids)))
 
 (defun org-x-dag-goal-count-tasks (id)
   (->> (org-x-dag-id->children id)
@@ -2216,18 +2241,17 @@ FUTURE-LIMIT in a list."
 
 ;; auxiliary macros
 
-(defmacro org-x-dag-with-file-ids (files id-form)
+(defmacro org-x-dag-with-ids (ids id-form)
   (declare (indent 1))
   `(with-temp-buffer
     ;; TODO this is silly and it adds 0.1 seconds to this function's runtime;
     ;; it is only needed to get the todo keyword the right color
     (org-mode)
-    (->> (org-x-dag-files->ids ,files)
-         (--mapcat ,id-form))))
+    (--mapcat ,id-form ,ids)))
 
 (defmacro org-x-dag-with-action-ids (id-form)
   (declare (indent 0))
-  `(org-x-dag-with-file-ids (org-x-dag->action-files)
+  `(org-x-dag-with-ids (org-x-dag->action-ids)
      ,id-form))
 
 (defmacro org-x-dag-with-files (files pre-form form)
@@ -2440,7 +2464,7 @@ FUTURE-LIMIT in a list."
                              (format-deadlines todayp sel-date it dead))
                            (when sched
                              (format-scheduleds todayp sel-date it sched))))))))
-           (daily (org-x-dag-with-file-ids (org-x-dag->planning-file :daily)
+           (daily (org-x-dag-with-ids (org-x-dag->dlp-ids)
                     (pcase (either-from-right (org-x-dag-id->bs it) nil)
                       (`(:daily :active (:sched ,sched))
                        (format-scheduleds todayp sel-date it sched))))))
@@ -3527,6 +3551,20 @@ review phase)"
     (:daily "DLP")
     (_ "???")))
 
+(defun org-x-dag--format-link-menu-line (id title-fun)
+  (declare (indent 1))
+  (let* ((group (org-x-dag-id->group id))
+         (s (funcall title-fun id group))
+         (g (org-x-dag-group-code group)))
+    (format "%s | %s" g s)))
+
+(defun org-x-dag--format-link-menu-line-expanded (id)
+  (org-x-dag--format-link-menu-line id
+    (lambda (id group)
+      (if (memq group '(:weekly :daily :quarterly))
+          (org-x-dag-id->title id)
+        (org-x-dag-id->path (eq group :action) id)))))
+
 (defun org-x-dag--link-parent-to-child (parent-id-fun child-id-fun fmt-fun)
   (cl-flet*
       (;; (is-valid-node
@@ -3586,8 +3624,6 @@ review phase)"
         ()
         (either>>= (id-getter)
           (cond
-           ((org-x-dag-id->ns-key :survivalp it)
-            (either :left "Action has survival goal parents"))
            ((-some->> (org-x-dag-id->planning-datetime :scheduled it)
               (org-x-dag-datetime-split)
               (nth 1))
@@ -3598,52 +3634,21 @@ review phase)"
        ;; child id functions
        (action-qtp-getter
         ()
-        (let ((action (->> (org-x-dag->action-files)
-                           (org-x-dag-files->ids)
+        (let ((action (->> (org-x-dag->action-ids)
                            ;; TODO could also remove DONE/CANC and things
                            ;; underneath these
                            (--remove (org-x-dag-id->ns-key :survivalp it))))
-              (qtp (-> (plist-get org-x-dag :selected-date)
-                       (org-x-dag-date-to-quarter)
-                       (org-x-dag-quarter-to-date)
-                       (org-x-dag-date->qtp-ids))))
-          (append action qtp)))
+              (append action (org-x-dag->current-qtp-ids)))))
        (svg-action-getter
         ()
-        (->> (org-x-dag->action-files)
-             (org-x-dag-files->ids)
+        (->> (org-x-dag->action-ids)
              ;; TODO could also remove DONE/CANC and things
              ;; underneath these
              (--remove (and (org-x-dag-id->ns-key :committed it)
                             (not (org-x-dag-id->ns-key :survivalp it))))))
        (epg-action-qtp-getter
         ()
-        `(,@(org-x-dag->epg-ids) ,@(action-qtp-getter)))
-       (wkp-getter
-        ()
-        (-> (plist-get org-x-dag :selected-date)
-            (org-x-dag-date-to-week-number)
-            (org-x-dag-date->wkp-ids)))
-       (dlp-getter
-        ()
-        (-> (plist-get org-x-dag :selected-date)
-            (org-x-dag-date->dlp-ids)))
-
-       ;; formatters
-       (toplevel-formatter
-        (id)
-        (let* ((group (org-x-dag-id->group id))
-               (s (if (eq group :quarterly)
-                      (org-x-dag-id->title id)
-                    (org-x-dag-id->path (eq group :action) id)))
-               (g (org-x-dag-group-code group)))
-          (format "%s | %s" g s)))
-       (svg-formatter
-        (id)
-        (org-x-dag-id->path t id))
-       (plan-formatter
-        (id)
-        (org-x-dag-id->title id)))
+        `(,@(org-x-dag->epg-ids) ,@(action-qtp-getter))))
 
     (org-x-dag-sync)
     (let ((f (buffer-file-name)))
@@ -3652,32 +3657,32 @@ review phase)"
         (org-x-dag--link-parent-to-child
          #'leaf-id-getter
          #'epg-action-qtp-getter
-         #'toplevel-formatter))
+         #'org-x-dag--format-link-menu-line-expanded))
        ((equal f (org-x-dag->goal-file :endpoint))
         (org-x-dag--link-parent-to-child
          #'leaf-id-getter
          #'action-qtp-getter
-         #'toplevel-formatter))
+         #'org-x-dag--format-link-menu-line-expanded))
        ((equal f (org-x-dag->goal-file :survival))
         (org-x-dag--link-parent-to-child
          #'leaf-id-getter
          #'svg-action-getter
-         #'svg-formatter))
+         (-partial #'org-x-dag-id->path t)))
        ((member f (org-x-dag->action-files))
         (org-x-dag--link-parent-to-child
          #'action-id-getter
-         #'dlp-getter
-         #'plan-formatter))
+         #'org-x-dag->current-dlp-ids
+         #'org-x-dag-id->title))
        ((equal f (org-x-dag->planning-file :quarterly))
         (org-x-dag--link-parent-to-child
          #'id-getter
-         #'wkp-getter
-         #'plan-formatter))
+         #'org-x-dag->current-wkp-ids
+         #'org-x-dag-id->title))
        ((equal f (org-x-dag->planning-file :weekly))
         (org-x-dag--link-parent-to-child
          #'id-getter
-         #'dlp-getter
-         #'plan-formatter))
+         #'org-x-dag->current-dlp-ids
+         #'org-x-dag-id->title))
        (t
         (message "Cannot link child from parent in current file"))))))
 
@@ -3735,7 +3740,9 @@ review phase)"
                 sec)))
     (either-from* (funcall parse-fun)
       (message it)
-      (if it (update-headline it) (update-tl-section it)))))
+      (if (org-ml-is-type 'headline it)
+          (update-headline it)
+        (update-tl-section it)))))
 
 (defun org-x-dag-link-child-to-parent ()
   (interactive)
@@ -3757,55 +3764,22 @@ review phase)"
           (parse-hl)))
 
        ;; parent id getters
-       (ltg-getter
-        ()
-        (->> (org-x-dag->goal-file :lifetime)
-             (org-x-dag-file->ids)))
        (tlg-getter
         ()
-        (->> (org-x-dag->goal-file :endpoint)
-             (org-x-dag-file->ids)
-             (append (ltg-getter))))
+        (append (org-x-dag->epg-ids) (org-x-dag->ltg-ids)))
        (goal-getter
         ()
-        (->> (org-x-dag->goal-file :survival)
-             (org-x-dag-file->ids)
-             (append (tlg-getter))))
-       (wkp-getter
-        ()
-        (->> (plist-get org-x-dag :selected-date)
-             (org-x-dag-date-to-quarter-start)
-             (org-x-dag-date->qtp-ids)))
+        (append (org-x-dag->svg-ids) (tlg-getter)))
        (dlp-getter
         ()
-        (let ((wkp-ids (->> (plist-get org-x-dag :selected-date)
-                            (org-x-dag-date-to-week-start)
-                            (org-x-dag-date->wkp-ids)))
-              (action-ids (->> (org-x-dag->action-files)
-                               (org-x-dag-files->ids))))
-          (append wkp-ids action-ids)))
+        (append (org-x-dag->current-wkp-ids) (org-x-dag->action-ids)))
        
        ;; formatters
-       (ltg-formatter
-        (id)
-        (org-x-dag-id->path t id))
        (goal-formatter
         (id)
-        (let* ((group (org-x-dag-id->group id))
-               (s (org-x-dag-id->path nil id))
-               (g (org-x-dag-group-code group)))
-          (format "%s | %s" g s)))
-       (plan-formatter
-        (id)
-        (org-x-dag-id->title id))
-       (dlp-formatter
-        (id)
-        (let* ((group (org-x-dag-id->group id))
-               (s (if (eq group :weekly)
-                      (org-x-dag-id->title id)
-                    (org-x-dag-id->path (eq group :action) id)))
-               (g (org-x-dag-group-code group)))
-          (format "%s | %s" g s))))
+        (org-x-dag--format-link-menu-line id
+          (lambda (id _)
+            (org-x-dag-id->path nil id)))))
 
     (org-x-dag-sync)
     (let ((f (buffer-file-name)))
@@ -3813,28 +3787,28 @@ review phase)"
        ((equal f (org-x-dag->goal-file :endpoint))
         (org-x-dag--link-child-to-parent
          #'parse-hl
-         #'ltg-getter
-         #'ltg-formatter))
+         #'org-x-dag->ltg-ids
+         (-partial #'org-x-dag-id->path t)))
        ((member f (org-x-dag->action-files))
-        (org-x-dag--link-child-to-parent 
-         #'parse-hl-sec 
-         #'goal-getter 
+        (org-x-dag--link-child-to-parent
+         #'parse-hl-sec
+         #'goal-getter
          #'goal-formatter))
        ((equal f (org-x-dag->planning-file :quarterly))
-        (org-x-dag--link-child-to-parent 
-         #'parse-hl 
-         #'tlg-getter 
+        (org-x-dag--link-child-to-parent
+         #'parse-hl
+         #'tlg-getter
          #'goal-formatter))
        ((equal f (org-x-dag->planning-file :weekly))
-        (org-x-dag--link-child-to-parent 
-         #'parse-hl 
-         #'wkp-getter 
-         #'plan-formatter))
+        (org-x-dag--link-child-to-parent
+         #'parse-hl
+         #'org-x-dag->current-qtp-ids
+         #'org-x-dag-id->title))
        ((equal f (org-x-dag->planning-file :daily))
-        (org-x-dag--link-child-to-parent 
-         #'parse-hl 
-         #'dlp-getter 
-         #'dlp-formatter))
+        (org-x-dag--link-child-to-parent
+         #'parse-hl
+         #'dlp-getter
+         #'org-x-dag--format-link-menu-line-expanded))
        (t
         (message "Cannot link parent from child in current file"))))))
 
