@@ -39,6 +39,9 @@
 (require 'org-x-agg)
 (require 'org-x-dag)
 
+(eval-when-compile
+  (require 'org-x-macs))
+
 ;;; INTERNAL CONSTANTS
   
 ;; TODO ;unscheduled should trump all
@@ -1986,46 +1989,7 @@ If ARG is non-nil use long timestamp format."
       (org-ml-headline-map-node-properties* (cons np it) it))))
 
 ;;; INTERACTIVE AGENDA FUNCTIONS
-
-;; lift buffer commands into agenda context
-
-(defmacro org-x-agenda-cmd-wrapper (update &rest body)
-  "Execute BODY in context of agenda buffer.
-Specifically, navigate to the original header, execute BODY, then
-update the agenda buffer. If UPDATE is 'update-headline', get the
-headline string and use it to update the agenda (this is only
-needed when the headline changes obviously). When update is
-'update-all', reload the entire buffer. When UPDATE is nil, do
-nothing."
-  (declare (indent 1))
-  (-let* ((newhead (make-symbol "newhead"))
-          (hdmarker (make-symbol "hdmarker"))
-          ((update-form get-head-form)
-           (cond
-            ((eq update 'update-headline)
-             (list `((org-agenda-change-all-lines ,newhead ,hdmarker))
-                   `((setq ,newhead (org-get-heading)))))
-            ((eq update 'update-all)
-             (list '((org-agenda-redo))
-                   nil)))))
-    `(progn
-       (org-agenda-check-no-diary)
-       (let* ((,hdmarker (or (org-get-at-bol 'org-hd-marker)
-                             (org-agenda-error)))
-              (buffer (marker-buffer ,hdmarker))
-              (pos (marker-position ,hdmarker))
-              (inhibit-read-only t)
-              ,newhead)
-         (org-with-remote-undo buffer
-           (with-current-buffer buffer
-             (widen)
-             (goto-char pos)
-             (org-show-context 'agenda)
-             ,@body
-             ,@get-head-form)
-           ,@update-form
-	       (beginning-of-line 1))))))
-  
+ 
 (defun org-x-agenda-toggle-checkbox ()
   "Toggle checkboxes in org agenda view using `org-toggle-checkbox'."
   (interactive)

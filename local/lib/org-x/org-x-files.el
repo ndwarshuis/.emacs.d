@@ -144,12 +144,5 @@ PATH must be relative to `org-directory' and end in '.org'."
   (append (org-x-get-action-files)
           (org-x-get-incubator-files)))
 
-(defmacro org-x-with-file (path &rest body)
-  "Open PATH and execute BODY."
-  (declare (indent 1))
-  `(with-current-buffer (find-file-noselect ,path)
-     (save-excursion
-       ,@body)))
-
 (provide 'org-x-files)
 ;;; org-x-files.el ends here

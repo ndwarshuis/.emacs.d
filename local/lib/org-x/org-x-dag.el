@@ -31,6 +31,9 @@
 (require 'org-x-files)
 (require 'org-x-const)
 
+(eval-when-compile
+  (require 'org-x-macs))
+
 ;;; DATE/TIME FUNCTIONS
 
 ;; current state
@@ -3678,6 +3681,11 @@ review phase)"
        (t
         (message "Cannot link child from parent in current file"))))))
 
+(defun org-x-dag-agenda-link-parent-to-child ()
+  (interactive)
+  (org-x-agenda-cmd-wrapper nil
+    (org-x-dag-link-parent-to-child)))
+
 ;; child -> parent linkers
 ;;
 ;; functions to retrieve a parent headline id and add it to the current
@@ -3829,6 +3837,11 @@ review phase)"
          #'dlp-formatter))
        (t
         (message "Cannot link parent from child in current file"))))))
+
+(defun org-x-dag-agenda-link-child-to-parent ()
+  (interactive)
+  (org-x-agenda-cmd-wrapper nil
+    (org-x-dag-link-child-to-parent)))
 
 ;; add nodes
 
