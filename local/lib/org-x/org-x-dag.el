@@ -2288,16 +2288,16 @@ FUTURE-LIMIT in a list."
 
 ;; auxiliary macros
 
-(defmacro org-x-dag-with-ids (ids id-form)
+(defmacro org-x-dag-with-ids (files id-form)
   (declare (indent 1))
   `(with-temp-buffer
     ;; TODO this is silly and it adds 0.1 seconds to this function's runtime;
     ;; it is only needed to get the todo keyword the right color
     (org-mode)
-    (--mapcat ,id-form ,ids)))
+    (--mapcat ,id-form (org-x-dag-files->ids ,files))))
 
 (defmacro org-x-dag-with-action-ids (id-form)
-  (declare (indent 0))
+  (declare (indent 1))
   `(org-x-dag-with-ids (org-x-dag->action-ids)
      ,id-form))
 
@@ -2323,8 +2323,8 @@ FUTURE-LIMIT in a list."
 ;; tasks/projects
 
 ;; TODO this includes tasks underneath cancelled headlines
-(defun org-x-dag-itemize-tasks ()
-  (org-x-dag-with-action-ids
+(defun org-x-dag-itemize-tasks (files)
+  (org-x-dag-with-ids files
     (pcase (either-from-right (org-x-dag-id->bs it) nil)
       (`(:sp-task :task-active ,s)
        (-let (((&plist :sched :dead) s))
@@ -2339,8 +2339,8 @@ FUTURE-LIMIT in a list."
                        'x-status :active)
                    (list))))))))))
 
-(defun org-x-dag-itemize-projects ()
-  (org-x-dag-with-action-ids
+(defun org-x-dag-itemize-projects (files)
+  (org-x-dag-with-ids files
     (pcase (either-from-right (org-x-dag-id->bs it) nil)
       (`(:sp-proj . ,status-data)
        ;; NOTE in the future there might be more than just the car to this
@@ -2360,8 +2360,8 @@ FUTURE-LIMIT in a list."
                        'x-priority priority)
                    (list))))))))))
 
-(defun org-x-dag-itemize-iterators ()
-  (org-x-dag-with-action-ids
+(defun org-x-dag-itemize-iterators (files)
+  (org-x-dag-with-ids files
     (pcase (either-from-right (org-x-dag-id->bs it) nil)
       (`(:sp-proj . ,status-data)
        (let ((status (car status-data)))
@@ -2372,8 +2372,8 @@ FUTURE-LIMIT in a list."
                      'x-status status)
                  (list)))))))))
 
-(defun org-x-dag-itemize-incubated ()
-  (org-x-dag-with-action-ids
+(defun org-x-dag-itemize-incubated (files)
+  (org-x-dag-with-ids files
     (-when-let (type (pcase (either-from-right (org-x-dag-id->bs it) nil)
                        (`(:sp-proj :proj-complete ,_) nil)
                        (`(:sp-task :task-complete ,_) nil)
@@ -2406,8 +2406,8 @@ FUTURE-LIMIT in a list."
       (--map (org-add-props (copy-seq item) nil 'x-goal-id it) ids)
     (list (org-add-props item nil 'x-goal-id nil))))
 
-(defun org-x-dag-itemize-tasks-with-goals ()
-  (org-x-dag-with-action-ids
+(defun org-x-dag-itemize-tasks-with-goals (files)
+  (org-x-dag-with-ids files
     (pcase (either-from-right (org-x-dag-id->bs it) nil)
       (`(:sp-task :task-active ,_)
        (-let ((goal-ids (-when-let (ns (org-x-dag-id->ns it))
@@ -2423,8 +2423,8 @@ FUTURE-LIMIT in a list."
                  'x-status :active)
              (org-x-dag--item-add-goal-ids goal-ids)))))))
 
-(defun org-x-dag-itemize-projects-with-goals ()
-  (org-x-dag-with-action-ids
+(defun org-x-dag-itemize-projects-with-goals (files)
+  (org-x-dag-with-ids files
     (pcase (either-from-right (org-x-dag-id->bs it) nil)
       (`(:sp-proj . ,s)
        (unless (eq (car s) :proj-complete)
@@ -2437,8 +2437,8 @@ FUTURE-LIMIT in a list."
            (-> (org-x-dag-format-tag-node tags it)
                (org-x-dag--item-add-goal-ids goal-ids))))))))
 
-(defun org-x-dag-itemize-archived ()
-  (org-x-dag-with-action-ids
+(defun org-x-dag-itemize-archived (files)
+  (org-x-dag-with-ids files
     (-let (((comptime type)
             (pcase (either-from-right (org-x-dag-id->bs it) nil)
               (`(:sp-proj :proj-complete ,c) `(,c :proj))
@@ -2459,7 +2459,7 @@ FUTURE-LIMIT in a list."
                       'x-type type)
                   (list)))))))))
 
-(defun org-x-dag-itemize-errors ()
+(defun org-x-dag-itemize-errors (files)
   (cl-flet
       ((format-id
         (id msg)
@@ -2468,8 +2468,7 @@ FUTURE-LIMIT in a list."
                 'x-error msg))))
     (with-temp-buffer
       (org-mode)
-      (->> (org-x-dag->action-files)
-           (org-x-dag-files->ids)
+      (->> (org-x-dag-files->ids files)
            (--map (pcase (org-x-dag-id->bs it)
                     (`(:error ,msg) (format-id it msg))))
            (-non-nil)))))
@@ -3454,15 +3453,17 @@ FUTURE-LIMIT in a list."
 ;; agenda builders
 
 (defun org-x-dag-show-nodes (get-nodes)
-  (org-x-dag-sync)
   (let* ((org-tags-match-list-sublevels org-tags-match-list-sublevels)
          (completion-ignore-case t))
     (catch 'exit
+      ;; this should be run before `org-x-dag-sync' as it refreshes properties
+      ;; like effort and statistics
       (org-agenda-prepare (concat "DAG-TAG"))
       (org-compile-prefix-format 'tags)
       (org-set-sorting-strategy 'tags)
+      (org-x-dag-sync)
       (let ((org-agenda-redo-command `(org-x-dag-show-nodes ',get-nodes))
-            (rtnall (funcall get-nodes)))
+            (rtnall (funcall get-nodes org-agenda-files)))
         (org-agenda--insert-overriding-header
           (with-temp-buffer
             (insert "Headlines with TAGS match: \n")
@@ -3485,7 +3486,6 @@ FUTURE-LIMIT in a list."
 
 ;; make the signature exactly like `org-agenda-list' ...for now
 (defun org-x-dag-show-daily-nodes (&optional _ start-day _ _)
-  (org-x-dag-sync)
   (-let ((completion-ignore-case t)
          ;; TODO not sure if this if thing is actually necessary
          ((arg start-day span with-hour) (or org-agenda-overriding-arguments
@@ -3494,6 +3494,7 @@ FUTURE-LIMIT in a list."
       (org-agenda-prepare "DAG-DAILY")
       (org-compile-prefix-format 'agenda)
       (org-set-sorting-strategy 'agenda)
+      (org-x-dag-sync)
       (-let* ((today (org-today))
               (sd (or start-day today))
               (org-agenda-redo-command
@@ -3638,21 +3639,22 @@ review phase)"
 (defun org-x-dag-agenda-incubator ()
   "Show the incubator agenda view."
   (interactive)
-  (org-x-dag-agenda-show-nodes "Incubator" #'org-x-dag-itemize-incubated nil
-    `((org-agenda-sorting-strategy '(category-keep))
-      (org-super-agenda-groups
-       '((:auto-map
-          (lambda (line)
-            (let ((p (get-text-property 1 'x-project-p line))
-                  (s (get-text-property 1 'x-scheduled line))
-                  (d (get-text-property 1 'x-deadlined line)))
-              (cond
-               ((and s (not p))
-                (if (< (float-time) s) "Future Scheduled" "Past Scheduled"))
-               ((and d (not p))
-                (if (< (float-time) d) "Future Deadline" "Past Deadline"))
-               (p "Toplevel Projects")
-               (t "Standalone Tasks"))))))))))
+  (let ((files (org-x-dag->action-files)))
+    (org-x-dag-agenda-show-nodes "Incubator" #'org-x-dag-itemize-incubated files
+      `((org-agenda-sorting-strategy '(category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (let ((p (get-text-property 1 'x-project-p line))
+                    (s (get-text-property 1 'x-scheduled line))
+                    (d (get-text-property 1 'x-deadlined line)))
+                (cond
+                 ((and s (not p))
+                  (if (< (float-time) s) "Future Scheduled" "Past Scheduled"))
+                 ((and d (not p))
+                  (if (< (float-time) d) "Future Deadline" "Past Deadline"))
+                 (p "Toplevel Projects")
+                 (t "Standalone Tasks")))))))))))
 
 (defun org-x-dag-agenda-iterators ()
   "Show the iterator agenda view."
@@ -3673,11 +3675,12 @@ review phase)"
 (defun org-x-dag-agenda-errors ()
   "Show the critical errors agenda view."
   (interactive)
-  (org-x-dag-agenda-show-nodes "Errors" #'org-x-dag-itemize-errors nil
-    `((org-super-agenda-groups
-       '((:auto-map
-          (lambda (line)
-            (get-text-property 1 'x-error line))))))))
+  (let ((files (org-x-dag->action-files)))
+    (org-x-dag-agenda-show-nodes "Errors" #'org-x-dag-itemize-errors files
+      `((org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (get-text-property 1 'x-error line)))))))))
 
 (defun org-x-dag-agenda-archive ()
   "Show the archive agenda view."
@@ -3828,8 +3831,9 @@ review phase)"
 
 (defun org-x-dag-agenda-incubated ()
   (interactive)
-  (let ((match #'org-x-dag-itemize-incubated))
-    (org-x-dag-agenda-show-nodes "Incubated-0" match nil
+  (let ((match #'org-x-dag-itemize-incubated)
+        (files (org-x-dag->action-files)))
+    (org-x-dag-agenda-show-nodes "Incubated-0" match files
       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
          '((:auto-map
