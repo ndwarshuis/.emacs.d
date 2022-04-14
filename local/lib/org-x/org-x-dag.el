@@ -1236,6 +1236,9 @@ used for optimization."
              (t
               (funcall valid-fun it cur-h valid)))))))))
 
+;; TODO this needs to eventually propagate deadlines; I want to be able to
+;; link epgs to other epgs, which means I won't be able to check deadline
+;; fidelity without links being established (which they are here)
 (defun org-x-dag-ns-epg (adjlist links ns)
   (-let (((&alist :lifetime ht-l) ns))
     (org-x-dag-ns-with-valid ns adjlist :endpoint links
