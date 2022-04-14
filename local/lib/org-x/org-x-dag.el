@@ -3518,7 +3518,7 @@ FUTURE-LIMIT in a list."
         (setq-local org-agenda-current-span span)
         (org-agenda--insert-overriding-header
           (with-temp-buffer
-            (insert (format "Agenda for %d-%02d-%02d: \n" y m d))
+            (insert (format "Agenda for %d-%02d-%02d\n" y m d))
             (add-text-properties (point-min) (1- (point))
                                  (list 'face 'org-agenda-structure))
             (buffer-string)))
@@ -3546,6 +3546,10 @@ FUTURE-LIMIT in a list."
     (let ((org-agenda-buffer-name (format "*Agenda: %s*" name)))
       ;; files are actually needed (I think) for `org-agenda-prepare' to run
       (org-agenda-run-series name `((,@cmds) ((org-agenda-files ',files)))))))
+
+(defun org-x-dag-agenda-call-inner (buffer-name type match files settings)
+  (declare (indent 4))
+  (org-x-dag-agenda-run-series buffer-name files `((,type ,match ,settings))))
 
 (defun org-x-dag-agenda-call (buffer-name header-name type match files settings)
   (declare (indent 5))
@@ -3596,7 +3600,7 @@ In the order of display
   (interactive)
   (let ((files (cons (org-x-dag->planning-file :daily)
                      (org-x-dag->action-files))))
-    (org-x-dag-agenda-call "Timeblock" nil 'agenda "" files
+    (org-x-dag-agenda-call-inner "Timeblock" 'agenda "" files
       `((org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
         (org-super-agenda-groups
          `(,(nd/org-def-super-agenda-pred "Morning routine"
