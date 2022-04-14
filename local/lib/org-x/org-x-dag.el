@@ -3341,7 +3341,7 @@ FUTURE-LIMIT in a list."
                       ((verb fun) (if presentp
                                       `("removed" ,rem-fun)
                                     `("added" ,add-fun))))
-                (org-ml~update nil fun node)
+                (org-ml~update* nil (funcall fun id it) node)
                 (message "Successfully %s '%s' from %s" verb title what))
             (message "No parents available"))))
        (update-headline
@@ -3408,7 +3408,7 @@ FUTURE-LIMIT in a list."
         (org-x-dag--link-child-to-parent
          #'parse-hl
          #'org-x-dag->ltg-ids
-         (-partial #'org-x-dag-id->path t)))
+         (-partial #'org-x-dag-id->path nil)))
        ((member f (org-x-dag->action-files))
         (org-x-dag--link-child-to-parent
          #'parse-hl-sec
