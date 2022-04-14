@@ -185,11 +185,11 @@
 
 (defun org-x-dag-quarter-to-date (quarter)
   (-let (((y q) quarter))
-    (list y (1+ (* q 3)) 1)))
+    (list y (1+ (* (1- q) 3)) 1)))
 
 (defun org-x-dag-date-to-quarter (date)
   (-let (((y m _) date))
-    (list y (1+ (/ m 3)))))
+    (list y (1+ (/ (1- m) 3)))))
 
 (defun org-x-dag-date-to-quarter-start (date)
   (->> (org-x-dag-date-to-quarter date)
