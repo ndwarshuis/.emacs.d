@@ -2401,6 +2401,35 @@ FUTURE-LIMIT in a list."
                     'x-committedp (and c t))
                 (list))))))))
 
+(defun org-x-dag-itemize-tl-goals (files)
+  (let ((plan-ids (org-x-dag->current-qtp-ids)))
+    (cl-flet
+        ((mk-item
+          (id type plannedp fulfilledp committedp)
+          (let ((tags (org-x-dag-id->tags nil id))
+                (leafp (org-x-dag-id->is-buffer-leaf-p id)))
+            (-> (org-x-dag-format-tag-node tags id)
+                (org-add-props nil
+                    'x-type type
+                    'x-leafp leafp
+                    'x-plannedp (-intersection plannedp plan-ids)
+                    'x-fulfilledp fulfilledp
+                    'x-committedp committedp)
+                (list)))))
+      (org-x-dag-with-ids files
+        (pcase (either-from-right (org-x-dag-id->bs it) nil)
+          (`(:lifetime :active)
+           (-when-let (ns (org-x-dag-id->ns it))
+             (-let (((&plist :planned p :fulfilled f)
+                     (either-from-right ns nil)))
+               (mk-item it :lifetime p f nil))))
+          ;; TODO not sure how I want to handle deadlines yet here
+          (`(:endpoint :active ,_)
+           (-when-let (ns (org-x-dag-id->ns it))
+             (-let (((&plist :planned p :fulfilled f :committed c)
+                     (either-from-right ns nil)))
+               (mk-item it :endpoint p f c)))))))))
+
 (defun org-x-dag--item-add-goal-ids (item ids)
   (if ids
       (--map (org-add-props (copy-seq item) nil 'x-goal-id it) ids)
@@ -3595,8 +3624,27 @@ The title will have the form 'LEVEL1.LEVEL2 STATUS (SUBTITLE)'."
                    (s-titleize))))
     (format "%s.%s %s (%s)" level1 level2 status* subtitle)))
 
+(defmacro org-x-dag-with-advice (adlist &rest body)
+  "Execute BODY with temporary advice in ADLIST.
+
+Each element of ADLIST should be a list of the form
+  (SYMBOL WHERE FUNCTION [PROPS])
+suitable for passing to `advice-add'.  The BODY is wrapped in an
+`unwind-protect' form, so the advice will be removed even in the
+event of an error or nonlocal exit."
+  (declare (debug ((&rest (&rest form)) body))
+           (indent 1))
+  `(progn
+     ,@(mapcar (lambda (adform)
+                 (cons 'advice-add adform))
+               adlist)
+     (unwind-protect (progn ,@body)
+       ,@(mapcar (lambda (adform)
+                   `(advice-remove ,(car adform) ,(nth 2 adform)))
+                 adlist))))
+
 (defun org-x-dag-run-series-advice (fun name settings)
-  (nd/with-advice
+  (org-x-dag-with-advice
       ((#'org-agenda-list :override #'org-x-dag-show-daily-nodes))
     ;; TODO why the if?
     (-if-let (org-agenda-files (->> (nth 1 settings)
@@ -3612,6 +3660,12 @@ The title will have the form 'LEVEL1.LEVEL2 STATUS (SUBTITLE)'."
     (if on? (advice-add f :around a) (advice-remove f a))))
 
 ;; agenda views
+
+;; TODO these functions can't bootstrap themselves in the sense that files won't
+;; be known until sync (which happens after `org-agenda-prepare'. The best
+;; (maybe?) way around this is to advice `org-agenda-files' (the function) to
+;; understand `org-agenda-files' (the variable) as pointing to a function which
+;; references files in the dag after the dag is initialized
 
 (defun org-x-dag-agenda-timeblock ()
   "Show the timeblock agenda view.
@@ -3641,25 +3695,36 @@ In the order of display
            (:name "Deadlined" :order 3 :deadline t)
            (:name "Scheduled" :order 4 :scheduled t)))))))
 
-;; (defun org-x-dag-agenda-goals ()
-;;   (interactive)
-;;   (let ((files (->> (list :lifetime :endpoint :survival)
-;;                     (-map #'org-x-dag->goal-file))))
-;;     (org-x-dag-agenda-show-nodes "Goals" #'org-x-dag-scan-goals files
-;;       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
-;;         (org-super-agenda-groups
-;;          '((:auto-map
-;;             (lambda (line)
-;;               (-let* (((&plist :type :childlessp :toplevelp :parentlessp)
-;;                        (get-text-property 1 'x-goal-status line))
-;;                       (type* (cl-case type
-;;                                (ltg "Lifetime")
-;;                                (epg "Endpoint")))
-;;                       (subtext (cond
-;;                                 ((and (eq type 'epg) parentlessp) "Parentless")
-;;                                 (childlessp "Childless")
-;;                                 ((not toplevelp) "Branch"))))
-;;                 (if subtext (format "%s (%s)" type* subtext) type*))))))))))
+(defun org-x-dag-agenda-goals ()
+  (interactive)
+  (let ((files (->> (list :lifetime :endpoint :survival)
+                    (-map #'org-x-dag->goal-file))))
+    (org-x-dag-agenda-show-nodes "Goals" #'org-x-dag-itemize-tl-goals files
+      `((org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-let* ((c (get-text-property 1 'x-committedp line))
+                      (f (get-text-property 1 'x-fulfilledp line))
+                      (p (get-text-property 1 'x-plannedp line))
+                      (l (get-text-property 1 'x-leafp line))
+                      (type (get-text-property 1 'x-type line))
+                      ((krank key) (pcase type
+                                     (:lifetime '(0 "Lifetime"))
+                                     (:endpoint '(1 "Endpoint"))))
+                      ((srank subtext)
+                       (cond
+                        ((and (eq type :endpoint) (not c) p f)
+                         '(0 "Uncommitted"))
+                        ((and p f)
+                         '(4 "Fulfilled | Planned"))
+                        ((and (not p) f)
+                         '(3 "Fulfilled | Unplanned"))
+                        ((and p (not f))
+                         '(2 "Unfulfilled | Planned"))
+                        (t
+                         '(1 "Unfulfilled | Unplanned")))))
+                (format "%d.%d %s (%s)" krank srank key subtext))))))))))
 
 (defun org-x-dag-agenda-tasks ()
   "Show the tasks agenda view.
