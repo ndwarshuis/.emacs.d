@@ -3044,9 +3044,10 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-dlp-add (date headline)
   (org-x-dag-dlp-map date (-snoc it headline)))
 
-(defun org-x-dag-dlp-add-task (date title ids time)
+(defun org-x-dag-dlp-add-task (date title ids time effort)
   (let ((datetime `(,@date ,@time)))
     (->> (org-x-dag-build-dlp-headline title nil ids datetime)
+         (org-ml-headline-set-node-property org-effort-property effort)
          (org-x-dag-dlp-add date))))
 
 ;;; INTERACTIVE FUNCTIONS
@@ -3409,33 +3410,55 @@ FUTURE-LIMIT in a list."
 
 ;; add nodes
 
-(defun org-x-dag-read-string-until (prompt pred msg)
+(defun org-x-dag-read-until (read-fun pred msg)
   (declare (indent 1))
   (let (ret)
-    (while (not (setq ret (funcall pred (read-string prompt))))
+    (while (not (setq ret (funcall pred (funcall read-fun))))
       (message msg)
       (sleep-for 0.5))
     ret))
+
+(defun org-x-dag-read-string-until (prompt pred msg)
+  (declare (indent 1))
+  (org-x-dag-read-until (-partial #'read-string prompt) pred msg))
+
+(defun org-x-dag-read-datetime (date)
+  (declare (indent 1))
+  (let* ((re (concat "\\([0-9]\\{4\\}\\)-\\([0-1][0-9]\\)-\\([0-3][0-9]\\)"
+                     " "
+                     "\\([0-1][0-9]\\|2[0-3]\\):\\([0-6][0-9]\\)"))
+         (pred
+          (lambda (s)
+            (-some->> (s-match re s)
+              (cdr)
+              (-map #'string-to-number))))
+         (msg "Must be datetime like YYYY-MM-DD HH:MM")
+         (epoch (org-x-dag-date-to-epoch date))
+         (read-fun (-partial #'org-read-date nil nil nil nil epoch)))
+    (org-x-dag-read-until read-fun pred msg)))
+
+(defun org-x-dag-read-effort ()
+  (declare (indent 1))
+  (let* ((pred
+          (lambda (s)
+            (condition-case nil
+                (when (org-duration-to-minutes s) s)
+              (error nil))))
+         (msg "Must be valid effort string")
+         (allowed (org-property-get-allowed-values nil org-effort-property t))
+         (read-fun (-partial #'completing-read "Effort: " allowed)))
+    (org-x-dag-read-until read-fun pred msg)))
 
 (defun org-x-dag-add-daily-metablock ()
   (interactive)
   (-let* ((title (org-x-dag-read-string-until "Metablock title: "
                    (lambda (it) (when (< 0 (length it)) it))
                    "Title cannot be blank"))
-          (date (->> (plist-get org-x-dag :selected-date)
-                     (org-x-dag-date-to-epoch)
-                     (org-read-date nil t nil nil)
-                     (decode-time)
-                     (-drop 3)
-                     (-take 3)
-                     (reverse)))
-          (time-re "\\([0-1][0-9]\\|2[0-3]\\):\\([0-6][0-9]\\)")
-          (time (org-x-dag-read-string-until "Time: "
-                  (lambda (it)
-                    (-when-let ((HH MM) (cdr (s-match time-re it)))
-                      (list (string-to-number HH) (string-to-number MM))))
-                  "Time must be like HH:MM (24 hour)")))
-    (org-x-dag-dlp-add-task date title nil time)))
+          ((date time) (->> (org-x-dag->selected-date)
+                            (org-x-dag-read-datetime)
+                            (org-x-dag-datetime-split)))
+          (effort (org-x-dag-read-effort)))
+    (org-x-dag-dlp-add-task date title nil time effort)))
 
 ;; make blank plans
 
@@ -3610,26 +3633,13 @@ In the order of display
            ,(nd/org-def-super-agenda-pred "Evening routine"
               (org-x-headline-has-property org-x-prop-routine
                                            org-x-prop-routine-evening)
-              :order 3)
+              :order 2)
            (:name "Calendar" :order 1 :time-grid t
                   :transformer (if (equal (get-text-property 1 'org-category it) "daily")
                                    (propertize it 'face 'org-todo)
-                                 it))))))))
-           ;; (:discard (:anything t))))))))
-
-  ;; (let ((org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
-  ;;       (org-super-agenda-groups
-  ;;        `(,(nd/org-def-super-agenda-pred "Morning routine"
-  ;;             (org-x-headline-has-property org-x-prop-routine
-  ;;                                          org-x-prop-routine-morning)
-  ;;             :order 0)
-  ;;          ,(nd/org-def-super-agenda-pred "Evening routine"
-  ;;             (org-x-headline-has-property org-x-prop-routine
-  ;;                                          org-x-prop-routine-evening)
-  ;;             :order 3)
-  ;;          (:name "Calendar" :order 1 :time-grid t)
-  ;;          (:discard (:anything t)))))
-  ;;   (org-x-dag-show-daily-nodes)))
+                                 it))
+           (:name "Deadlined" :order 3 :deadline t)
+           (:name "Scheduled" :order 4 :scheduled t)))))))
 
 ;; (defun org-x-dag-agenda-goals ()
 ;;   (interactive)
