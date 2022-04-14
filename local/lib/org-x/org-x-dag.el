@@ -1024,7 +1024,7 @@ used for optimization."
    #'org-x-dag-bs-epg-inner))
 
 (defun org-x-dag-bs-prefix (key nodes)
-  (--map (org-x-dag-node-fmap it (either<$> it `(,key ,it))) nodes))
+  (--map (org-x-dag-node-fmap it (either<$> it `(,key ,@it))) nodes))
 
 (defun org-x-dag-bs-epg (tree)
   (-let (((n ns) (org-x-dag-bs-epg-outer tree)))
@@ -1311,19 +1311,20 @@ used for optimization."
                   (agoals (get-committed ht-a a)))
               ;; TODO this check doesn't matter for survival goals since
               ;; those won't be on the quarterly plan
-              (-if-let (gs (-intersection qgoals agoals))
+              ;; (-if-let (gs (-intersection qgoals agoals))
                   (progn
                     (->> (list :scheduled w
-                               :committed (-uniq gs)
+                               ;; :committed (-uniq gs)
+                               :committed (-uniq (append qgoals agoals))
                                :active a)
                          (either :right)
                          (ht-set this-h id))
                     ;; TODO add the goals to their goal links? (this might be
                     ;; useful later when displaying)
                     (org-x-dag-ht-add-links id ht-w :planned w)
-                    (org-x-dag-ht-add-links id ht-a :planned a))
-                (->> (either :left "Non overlapping goals")
-                     (ht-set this-h id)))))))
+                    (org-x-dag-ht-add-links id ht-a :planned a))))))
+                ;; (->> (either :left "Non overlapping goals")
+                ;;      (ht-set this-h id)))))))
       ns)))
 
 (defun org-x-dag-get-children (adjlist id)
@@ -2110,24 +2111,32 @@ FUTURE-LIMIT in a list."
          (b (or (get-file-buffer f) (find-file-noselect f))))
     (set-marker (make-marker) p b)))
 
+(defun org-x-dag-format-item (id extra tags dotime)
+  (let* ((tags* (org-x-dag-prepare-tags tags))
+         (category (org-x-dag-id->category id))
+         (level (org-x-dag-id->formatted-level id))
+         (todo-state (org-x-dag-id->todo id))
+         (effort (org-x-dag-id->hl-meta-prop id :effort))
+         ;; (head (format "%s %s" todo-state (org-x-dag-id->title id)))
+         (head (-> (format "%s %s" todo-state (org-x-dag-id->title id))
+                   (org-add-props nil 'effort effort)))
+         ;; (time-str (-some->> time (apply #'format "%02i:%02i ")))
+         ;; (item (org-agenda-format-item extra head level category tags* time-str))
+         ;; NOTE this depends on the buffer position only when using
+         ;; breadcrumbs (which I never do)
+         (item (org-agenda-format-item extra head level category tags* dotime))
+         ;; TODO why am I getting the priority after sending the headline
+         ;; through some crazy formatting function?
+         (priority (org-get-priority item)))
+    (-> (org-x-dag-add-default-props item id)
+        (org-add-props nil
+            'todo-state todo-state
+            'priority priority))))
+
 (defun org-x-dag-format-tag-node (tags id)
-  (-let* ((tags* (org-x-dag-prepare-tags tags))
-          (category (org-x-dag-id->category id))
-          (todo-state (org-x-dag-id->todo id))
-          ;; (todo-state (--> (org-x-dag-id->todo id)
-          ;;                  (org-add-props it nil
-          ;;                    'face (org-get-todo-face it))))
-          ;; TODO the only reason this format thing is here is to satisfy
-          ;; `org-agenda-format-item' (which I should probably just rewrite)
-          (effort (org-x-dag-id->hl-meta-prop id :effort))
-          (head (-> (format "%s %s" todo-state (org-x-dag-id->title id))
-                    (org-add-props nil 'effort effort)))
-          (level (org-x-dag-id->formatted-level id))
-          (marker (org-agenda-new-marker (org-x-dag-id->marker id)))
+  (-let* ((marker (org-agenda-new-marker (org-x-dag-id->marker id)))
           ((ts . ts-type) (org-x-dag-id->agenda-timestamp id))
-          ;; NOTE this depends on the buffer position only when using
-          ;; breadcrumbs (which I never do)
-          (item (org-agenda-format-item "" head level category tags*))
+          (item (org-x-dag-format-item id "" tags nil))
           (priority (org-get-priority item)))
     (-> (org-x-dag-add-default-props item id)
         (org-add-props nil
@@ -2139,27 +2148,9 @@ FUTURE-LIMIT in a list."
             'org-hd-marker marker
             'org-marker marker
             ;; headline stuff
-            'todo-state todo-state
-            'priority priority
             'ts-date ts
             ;; misc
             'type (concat "tagsmatch" ts-type)))))
-
-(defun org-x-dag-format-item (id extra tags time)
-  (let* ((tags* (org-x-dag-prepare-tags tags))
-         (category (org-x-dag-id->category id))
-         (level (org-x-dag-id->formatted-level id))
-         (todo-state (org-x-dag-id->todo id))
-         (head (format "%s %s" todo-state (org-x-dag-id->title id)))
-         (time-str (-some->> time (apply #'format "%02i:%02i ")))
-         (item (org-agenda-format-item extra head level category tags* time-str))
-         ;; TODO why am I getting the priority after sending the headline
-         ;; through some crazy formatting function?
-         (priority (org-get-priority item)))
-    (-> (org-x-dag-add-default-props item id)
-        (org-add-props nil
-            'todo-state todo-state
-            'priority priority))))
 
 (defun org-x-dag-planning-props (id face pos date ts-date type)
   (list
@@ -2175,48 +2166,57 @@ FUTURE-LIMIT in a list."
    'ts-date (org-x-dag-date-to-absolute ts-date)
    'type type))
 
-(defun org-x-dag-format-scheduled-node (sel-date pos datetime tags id)
+(defun org-x-dag-format-timestamp-node (sel-date pos datetime tags id
+                                                 extra-fun face-fun dt-fun)
+  (declare (indent 5))
   (-let* (((this-date this-time) (org-x-dag-datetime-split datetime))
+          (time-str (-some->> this-time (apply #'format "%02i:%02i ")))
+          ;; negative diff -> past and vice versa
           (diff (org-x-dag-date-diff this-date sel-date))
-          (pastp (< diff 0))
-          (todayp (= diff 0))
-          ;; hopefully this is right...if it is this seems silly
-          (extra (-let (((today past) org-agenda-scheduled-leaders))
-                   (cond (todayp today)
-                         (pastp (format past (- diff)))
-                         (t "")))) ;; This should never actually be used
-          (face (cond (pastp 'org-scheduled-previously)
-                      (todayp 'org-scheduled-today)
-                      (t 'org-scheduled)))
-          ((date type) (if pastp `(,this-date "past-scheduled")
-                         `(,sel-date "scheduled")))
+          (extra (funcall extra-fun diff))
+          (face (funcall face-fun diff))
+          ((date type) (funcall dt-fun diff this-date))
           (props (org-x-dag-planning-props id face pos date this-date type)))
-    ;; NOTE: I don't care about habits, no need to consider them
-    (-> (org-x-dag-format-item id extra tags this-time)
+    (-> (org-x-dag-format-item id extra tags time-str)
         (org-add-props props))))
 
+(defun org-x-dag-format-scheduled-node (sel-date pos datetime tags id)
+  (org-x-dag-format-timestamp-node sel-date pos datetime tags id
+    (lambda (diff)
+      ;; hopefully this is right...if it is this seems silly
+      (-let (((today past) org-agenda-scheduled-leaders))
+        (cond
+         ((= 0 diff) today)
+         ((< diff 0) (format past (- diff)))
+         (t ""))))
+    (lambda (diff)
+      (cond
+       ((< diff 0) 'org-scheduled-previously)
+       ((= diff 0) 'org-scheduled-today)
+       (t 'org-scheduled)))
+    (lambda (diff this-date)
+      (if (< diff 0) `(,this-date "past-scheduled")
+        `(,sel-date "scheduled")))))
+
 (defun org-x-dag-format-deadline-node (sel-date pos datetime tags id)
-  (-let* (((this-date this-time) (org-x-dag-datetime-split datetime))
-          (diff (org-x-dag-date-diff this-date sel-date))
-          (pastp (< diff 0))
-          (futurep (< 0 diff))
-          (extra (-let* (((now future past) org-agenda-deadline-leaders))
-                   (cond
-                    (futurep (format future diff))
-                    (pastp (format past diff))
-                    (t now))))
-          ;; TODO the stock deadline formatter uses the warning time to
-          ;; determine this based on percentage; I'm lazy and don't feel like
-          ;; doing that (now) but I might in the future
-          (face (cond
-                 ((< 5 diff) 'org-upcoming-distant-deadline)
-                 ((< 1 diff) 'org-upcoming-deadline)
-                 (t 'org-warning)))
-          ((date type) (if futurep `(,sel-date "upcoming-deadline")
-                         `(,this-date "deadline")))
-          (props (org-x-dag-planning-props id face pos date this-date type)))
-    (-> (org-x-dag-format-item id extra tags this-time)
-        (org-add-props props))))
+  (org-x-dag-format-timestamp-node sel-date pos datetime tags id
+    (lambda (diff)
+      (-let* (((now future past) org-agenda-deadline-leaders))
+        (cond
+         ((< 0 diff) (format future diff))
+         ((< diff 0) (format past diff))
+         (t now))))
+    ;; TODO the stock deadline formatter uses the warning time to determine this
+    ;; based on percentage; I'm lazy and don't feel like doing that (now) but I
+    ;; might in the future
+    (lambda (diff)
+      (cond
+       ((< 5 diff) 'org-upcoming-distant-deadline)
+       ((< 1 diff) 'org-upcoming-deadline)
+       (t 'org-warning)))
+    (lambda (diff this-date)
+      (if (< 0 diff) `(,sel-date "upcoming-deadline")
+        `(,this-date "deadline")))))
 
 ;;; ID FUNCTIONS
 
@@ -2475,7 +2475,7 @@ FUTURE-LIMIT in a list."
 
 ;; agenda/calendar
 
-(defun org-x-dag-itemize-agenda (sel-date)
+(defun org-x-dag-itemize-agenda (files sel-date)
   (cl-flet*
       ((format-timestamps
         (todayp sel-date id ts get-datetimes-fun format-datetime-fun)
@@ -2499,22 +2499,33 @@ FUTURE-LIMIT in a list."
         (todayp sel-date id ts)
         (format-timestamps todayp sel-date id ts
                            #'org-x-dag-get-deadlines-at
-                           #'org-x-dag-format-deadline-node)))
-    (let* ((todayp (= (org-x-dag-date-to-absolute sel-date) (org-today)))
-           (action (org-x-dag-with-action-ids
-                     (pcase (either-from-right (org-x-dag-id->bs it) nil)
-                       (`(:sp-task :task-active ,s)
-                        (-let (((&plist :sched :dead) s))
-                          (append
-                           (when dead
-                             (format-deadlines todayp sel-date it dead))
-                           (when sched
-                             (format-scheduleds todayp sel-date it sched))))))))
-           (daily (org-x-dag-with-ids (org-x-dag->dlp-ids)
-                    (pcase (either-from-right (org-x-dag-id->bs it) nil)
-                      (`(:daily :active (:sched ,sched))
-                       (format-scheduleds todayp sel-date it sched))))))
-      (append action daily))))
+                           #'org-x-dag-format-deadline-node))
+       (with-task-ish
+        (id todayp)
+        (append
+         (-when-let (dead (org-x-dag-id->planning-timestamp :deadline id))
+           (format-deadlines todayp sel-date id dead))
+         (-when-let (sched (org-x-dag-id->planning-timestamp :scheduled id))
+           (format-scheduleds todayp sel-date id sched)))))
+    (let ((todayp (= (org-x-dag-date-to-absolute sel-date) (org-today))))
+      (org-x-dag-with-ids files
+        (pcase (either-from-right (org-x-dag-id->bs it) nil)
+          (`(:daily :active (:sched ,sched))
+           (-when-let (datetime (org-ml-timestamp-get-start-time sched))
+             (when (org-x-dag-datetime= sel-date (-take 3 datetime))
+               (format-scheduleds todayp sel-date it sched))))
+          (`(:daily :complete ,_)
+           (-when-let (sched (org-x-dag-id->planning-timestamp :scheduled it))
+             (when (org-x-dag-datetime= sel-date (-take 3 (org-ml-timestamp-get-start-time sched)))
+               (format-scheduleds todayp sel-date it sched))))
+          (`(:sp-task :task-active ,_)
+           (with-task-ish it todayp))
+          (`(:sp-task :task-complete ,_)
+           (with-task-ish it todayp))
+          (`(:sp-subiter :si-active ,_)
+           (with-task-ish it todayp))
+          (`(:sp-subiter :si-complete ,_)
+           (with-task-ish it todayp)))))))
 
 ;;; BUFFER MANIPULATION
 
@@ -3489,7 +3500,7 @@ FUTURE-LIMIT in a list."
   (-let ((completion-ignore-case t)
          ;; TODO not sure if this if thing is actually necessary
          ((arg start-day span with-hour) (or org-agenda-overriding-arguments
-                                     (list nil start-day 'day nil))))
+                                             (list nil start-day 'day nil))))
     (catch 'exit
       (org-agenda-prepare "DAG-DAILY")
       (org-compile-prefix-format 'agenda)
@@ -3500,7 +3511,7 @@ FUTURE-LIMIT in a list."
               (org-agenda-redo-command
                `(org-x-dag-show-daily-nodes 'nil ,start-day ',span ,with-hour))
               ((m d y) (calendar-gregorian-from-absolute sd))
-              (rtnall (org-x-dag-itemize-agenda `(,y ,m ,d))))
+              (rtnall (org-x-dag-itemize-agenda org-agenda-files `(,y ,m ,d))))
         (setq-local org-starting-day sd)
         (setq-local org-arg-loc arg)
         ;; TODO just day (for now)
@@ -3557,6 +3568,22 @@ The title will have the form 'LEVEL1.LEVEL2 STATUS (SUBTITLE)'."
                    (s-titleize))))
     (format "%s.%s %s (%s)" level1 level2 status* subtitle)))
 
+(defun org-x-dag-run-series-advice (fun name settings)
+  (nd/with-advice
+      ((#'org-agenda-list :override #'org-x-dag-show-daily-nodes))
+    ;; TODO why the if?
+    (-if-let (org-agenda-files (->> (nth 1 settings)
+                                    (alist-get 'org-agenda-files)
+                                    (car)
+                                    (eval)))
+        (funcall fun name settings)
+      (funcall fun name settings))))
+
+(defun org-x-dag-set-series-advice (on?)
+  (let ((f #'org-agenda-run-series)
+        (a #'org-x-dag-run-series-advice))
+    (if on? (advice-add f :around a) (advice-remove f a))))
+
 ;; agenda views
 
 (defun org-x-dag-agenda-timeblock ()
@@ -3567,7 +3594,10 @@ In the order of display
 2. daily calendar (for thing that begin today at a specific time)
 3. evening tasks (to do immediately before sleeping)"
   (interactive)
-  (let ((org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
+  (let ((files (cons (org-x-dag->planning-file :daily)
+                     (org-x-dag->action-files))))
+    (org-x-dag-agenda-call "Timeblock" nil 'agenda "" files
+      `((org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
         (org-super-agenda-groups
          `(,(nd/org-def-super-agenda-pred "Morning routine"
               (org-x-headline-has-property org-x-prop-routine
@@ -3577,9 +3607,25 @@ In the order of display
               (org-x-headline-has-property org-x-prop-routine
                                            org-x-prop-routine-evening)
               :order 3)
-           (:name "Calendar" :order 1 :time-grid t)
-           (:discard (:anything t)))))
-    (org-x-dag-show-daily-nodes)))
+           (:name "Calendar" :order 1 :time-grid t
+                  :transformer (if (equal (get-text-property 1 'org-category it) "daily")
+                                   (propertize it 'face 'org-todo)
+                                 it))))))))
+           ;; (:discard (:anything t))))))))
+
+  ;; (let ((org-agenda-sorting-strategy '(time-up deadline-up scheduled-up category-keep))
+  ;;       (org-super-agenda-groups
+  ;;        `(,(nd/org-def-super-agenda-pred "Morning routine"
+  ;;             (org-x-headline-has-property org-x-prop-routine
+  ;;                                          org-x-prop-routine-morning)
+  ;;             :order 0)
+  ;;          ,(nd/org-def-super-agenda-pred "Evening routine"
+  ;;             (org-x-headline-has-property org-x-prop-routine
+  ;;                                          org-x-prop-routine-evening)
+  ;;             :order 3)
+  ;;          (:name "Calendar" :order 1 :time-grid t)
+  ;;          (:discard (:anything t)))))
+  ;;   (org-x-dag-show-daily-nodes)))
 
 ;; (defun org-x-dag-agenda-goals ()
 ;;   (interactive)
