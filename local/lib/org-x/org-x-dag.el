@@ -2299,11 +2299,6 @@ FUTURE-LIMIT in a list."
     (org-mode)
     (--mapcat ,id-form (org-x-dag-files->ids ,files))))
 
-(defmacro org-x-dag-with-action-ids (id-form)
-  (declare (indent 1))
-  `(org-x-dag-with-ids (org-x-dag->action-ids)
-     ,id-form))
-
 (defmacro org-x-dag-with-files (files pre-form form)
   (declare (indent 2))
   (let* ((lookup-form '(ht-get file->ids it-file))
