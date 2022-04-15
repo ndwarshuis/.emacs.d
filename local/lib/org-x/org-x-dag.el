@@ -2428,6 +2428,46 @@ FUTURE-LIMIT in a list."
                      (either-from-right ns nil)))
                (mk-item it :endpoint p f c)))))))))
 
+(defun org-x-dag-itemize-qtp (files)
+  (let ((wkp-ids (org-x-dag->current-wkp-ids))
+        (sel-date (->> (org-x-dag->selected-date)
+                       (org-x-dag-date-to-quarter-start))))
+    (org-x-dag-with-ids files
+      (pcase (either-from-right (org-x-dag-id->bs it) nil)
+        (`(:quarterly :active ,dead)
+         (let* ((tags (org-x-dag-id->tags nil it))
+                (date (org-x-dag-quarter-tags-to-date tags)))
+           (when (org-x-dag-datetime= sel-date date)
+             (-when-let (ns (org-x-dag-id->ns it))
+               (-let (((&plist :planned p :committed c)
+                       (either-from-right ns nil)))
+                 ;; TODO actually handle deadlines
+                 (-> (org-x-dag-format-tag-node tags it)
+                     (org-add-props nil
+                         'x-deadline dead
+                         'x-plannedp (-intersection p wkp-ids)
+                         'x-committedp c)
+                     (list)))))))))))
+
+;; TODO not DRY
+(defun org-x-dag-itemize-wkp (files)
+  (let ((sel-date (->> (org-x-dag->selected-date)
+                       (org-x-dag-date-to-week-start))))
+    (org-x-dag-with-ids files
+      (pcase (either-from-right (org-x-dag-id->bs it) nil)
+        (`(:weekly :active)
+         (let* ((tags (org-x-dag-id->tags nil it))
+                (date (org-x-dag-weekly-tags-to-date tags)))
+           (when (org-x-dag-datetime= sel-date date)
+             (-when-let (ns (org-x-dag-id->ns it))
+               (-let (((&plist :planned p :committed c)
+                       (either-from-right ns nil)))
+                 (-> (org-x-dag-format-tag-node tags it)
+                     (org-add-props nil
+                         'x-plannedp p
+                         'x-committedp c)
+                     (list)))))))))))
+
 (defun org-x-dag--item-add-goal-ids (item ids)
   (if ids
       (--map (org-add-props (copy-seq item) nil 'x-goal-id it) ids)
@@ -3657,6 +3697,9 @@ event of an error or nonlocal exit."
         (a #'org-x-dag-run-series-advice))
     (if on? (advice-add f :around a) (advice-remove f a))))
 
+(defun org-x-dag-format-header (s)
+  (org-add-props s '(face org-agenda-structure)))
+
 ;; agenda views
 
 ;; TODO these functions can't bootstrap themselves in the sense that files won't
@@ -3723,6 +3766,62 @@ In the order of display
                         (t
                          '(1 "Unfulfilled | Unplanned")))))
                 (format "%d.%d %s (%s)" krank srank key subtext))))))))))
+
+(defun org-x-dag-agenda-quarterly-plan ()
+  (interactive)
+  (let ((files (list (org-x-dag->planning-file :quarterly)))
+        (quarter-header (lambda ()
+                          (-let (((y q) (->> (org-x-dag->selected-date)
+                                             (org-x-dag-date-to-quarter))))
+                            (-> (format "Quarter %d - %d\n" q y)
+                                (org-x-dag-format-header))))))
+    (org-x-dag-agenda-show-nodes "Quarterly Plan" #'org-x-dag-itemize-qtp files
+      `((org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-agenda-overriding-header ',quarter-header)
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-let* ((c (get-text-property 1 'x-committedp line))
+                      (p (get-text-property 1 'x-plannedp line))
+                      ((rank text)
+                       (cond
+                        ((and p c)
+                         '(4 "Committed | Planned"))
+                        ((and (not p) c)
+                         '(3 "Committed | Unplanned"))
+                        ((and p (not c))
+                         '(2 "Uncommitted | Planned"))
+                        (t
+                         '(1 "Unfulfilled | Unplanned")))))
+                (format "%d. %s" rank text))))))))))
+
+(defun org-x-dag-agenda-weekly-plan ()
+  (interactive)
+  (let ((files (list (org-x-dag->planning-file :weekly)))
+        (weekly-header (lambda ()
+                         (-let* (((date &as y m d) (org-x-dag->selected-date))
+                                 (n (org-x-dag-date-to-week-number date)))
+                           (-> (format "Week %d - %d-%d-%d\n" n y m d)
+                               (org-x-dag-format-header))))))
+    (org-x-dag-agenda-show-nodes "Weekly Plan" #'org-x-dag-itemize-wkp files
+      `((org-agenda-sorting-strategy '(user-defined-up category-keep))
+        (org-agenda-overriding-header ',weekly-header)
+        (org-super-agenda-groups
+         '((:auto-map
+            (lambda (line)
+              (-let* ((c (get-text-property 1 'x-committedp line))
+                      (p (get-text-property 1 'x-plannedp line))
+                      ((rank text)
+                       (cond
+                        ((and p c)
+                         '(4 "Committed | Planned"))
+                        ((and (not p) c)
+                         '(3 "Committed | Unplanned"))
+                        ((and p (not c))
+                         '(2 "Uncommitted | Planned"))
+                        (t
+                         '(1 "Unfulfilled | Unplanned")))))
+                (format "%d. %s" rank text))))))))))
 
 (defun org-x-dag-agenda-tasks ()
   "Show the tasks agenda view.
