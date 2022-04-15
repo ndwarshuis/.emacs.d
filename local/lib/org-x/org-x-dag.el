@@ -146,6 +146,10 @@
 
 ;; date <-> week
 
+(defun org-x-dag-date-to-day-of-week (date)
+  (->> (org-x-dag-date-to-gregorian date)
+       (calendar-day-of-week)))
+
 (defun org-x-dag-date-to-week-number (date)
   (-let* (((y m d) date)
           (greg (org-x-dag-date-to-gregorian date))
@@ -2457,13 +2461,15 @@ FUTURE-LIMIT in a list."
       (pcase (either-from-right (org-x-dag-id->bs it) nil)
         (`(:weekly :active)
          (let* ((tags (org-x-dag-id->tags nil it))
-                (date (org-x-dag-weekly-tags-to-date tags)))
+                (date (org-x-dag-weekly-tags-to-date tags))
+                (day (nth 2 (reverse tags))))
            (when (org-x-dag-datetime= sel-date date)
              (-when-let (ns (org-x-dag-id->ns it))
                (-let (((&plist :planned p :committed c)
                        (either-from-right ns nil)))
                  (-> (org-x-dag-format-tag-node tags it)
                      (org-add-props nil
+                         'x-day day
                          'x-plannedp p
                          'x-committedp c)
                      (list)))))))))))
@@ -3811,6 +3817,8 @@ In the order of display
             (lambda (line)
               (-let* ((c (get-text-property 1 'x-committedp line))
                       (p (get-text-property 1 'x-plannedp line))
+                      (day (get-text-property 1 'x-day line))
+                      (n (car (rassoc day org-x-dag-weekly-tags)))
                       ((rank text)
                        (cond
                         ((and p c)
@@ -3821,7 +3829,7 @@ In the order of display
                          '(2 "Uncommitted | Planned"))
                         (t
                          '(1 "Unfulfilled | Unplanned")))))
-                (format "%d. %s" rank text))))))))))
+                (format "%d.%d %s (%s)" n rank day text))))))))))
 
 (defun org-x-dag-agenda-tasks ()
   "Show the tasks agenda view.
