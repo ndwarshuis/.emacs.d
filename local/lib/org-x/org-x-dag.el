@@ -1281,27 +1281,38 @@ used for optimization."
     ns))
 
 (defun org-x-dag-ns-action (adjlist links ns)
-  (-let (((&alist :endpoint ht-e :lifetime ht-l :survival ht-s) ns))
-    (org-x-dag-ns-with-valid ns adjlist :action links
-      '((:survival) (:endpoint) (:lifetime))
-      (lambda (id this-h res)
-        (-let* (((&alist :survival s :endpoint e :lifetime l) res)
-                (this-ns
-                 (cond
-                  ((and s (or e l))
-                   (->> "Action has both survival and endpoint/lifetime links"
-                        (either :left)))
-                  (s
-                   (either :right `(:committed ,s :survivalp t)))
-                  (t
-                   (either :right `(:committed (,@e ,@l) :survivalp nil))))))
-          (ht-set this-h id this-ns)
-          (org-x-dag-ht-add-links id ht-l :fulfilled l)
-          (org-x-dag-ht-add-links id ht-s :fulfilled s)
-          (org-x-dag-ht-add-links id ht-e :fulfilled e)
-          (->> (--mapcat (org-x-dag-ht-get-maybe ht-e it :committed) e)
-               (org-x-dag-ht-add-links id ht-l :fulfilled)))))
-    ns))
+  (cl-flet
+      ((get-planned
+        (htbl ids)
+        (--mapcat (org-x-dag-ht-get-maybe htbl it :planned) ids)))
+    (-let (((&alist :endpoint ht-e
+                    :lifetime ht-l
+                    :survival ht-s
+                    :quarterly ht-q)
+            ns))
+      (org-x-dag-ns-with-valid ns adjlist :action links
+        '((:survival) (:endpoint) (:lifetime))
+        (lambda (id this-h res)
+          (-let* (((&alist :survival s :endpoint e :lifetime l) res)
+                  (this-ns
+                   (cond
+                    ((and s (or e l))
+                     (->> "Action has both survival and endpoint/lifetime links"
+                          (either :left)))
+                    (s
+                     (either :right `(:committed ,s :survivalp t)))
+                    (t
+                     (either :right `(:committed (,@e ,@l) :survivalp nil))))))
+            (when (org-x-dag-id->planning-timestamp :scheduled id)
+              (->> (-union (get-planned ht-e e) (get-planned ht-l l))
+                   (org-x-dag-ht-add-links id ht-q :scheduled-actions)))
+            (ht-set this-h id this-ns)
+            (org-x-dag-ht-add-links id ht-l :fulfilled l)
+            (org-x-dag-ht-add-links id ht-s :fulfilled s)
+            (org-x-dag-ht-add-links id ht-e :fulfilled e)
+            (->> (--mapcat (org-x-dag-ht-get-maybe ht-e it :committed) e)
+                 (org-x-dag-ht-add-links id ht-l :fulfilled)))))
+      ns)))
 
 (defun org-x-dag-ns-dlp (adjlist links ns)
   (cl-flet
@@ -1419,12 +1430,21 @@ used for optimization."
     ;; add all links to the network status object (ew side effects)
     (org-x-dag-ns-ltg l ns)
     (org-x-dag-ns-svg s ns)
+
     (org-x-dag-ns-epg adjlist e ns)
+    (org-x-dag-ht-propagate-down adjlist :endpoint :committed ns)
+
     (org-x-dag-ns-qtp adjlist q ns)
+    (org-x-dag-ht-propagate-up adjlist :lifetime :planned ns)
+    (org-x-dag-ht-propagate-up adjlist :survival :planned ns)
+
     (org-x-dag-ns-wkp adjlist w ns)
+
     (org-x-dag-ns-action adjlist a ns)
+    (org-x-dag-ht-propagate-up adjlist :lifetime :fulfilled ns)
+    (org-x-dag-ht-propagate-up adjlist :survival :fulfilled ns)
+
     (org-x-dag-ns-dlp adjlist d ns)
-    ;; propagate network statuses across each buffer tree as needed
     (org-x-dag-ht-propagate-down adjlist :action :planned ns)
     (org-x-dag-ht-map-down adjlist :action ns
       (lambda (h id)
@@ -1442,12 +1462,7 @@ used for optimization."
                   (lambda (x) (append x committed))))))
       (lambda (to-set)
         (-let (((committed survivalp) to-set))
-          `(:committed ,committed :survivalp ,survivalp))))
-    (org-x-dag-ht-propagate-down adjlist :endpoint :committed ns)
-    (org-x-dag-ht-propagate-up adjlist :lifetime :fulfilled ns)
-    (org-x-dag-ht-propagate-up adjlist :lifetime :planned ns)
-    (org-x-dag-ht-propagate-up adjlist :survival :fulfilled ns)
-    (org-x-dag-ht-propagate-up adjlist :survival :planned ns)))
+          `(:committed ,committed :survivalp ,survivalp))))))
 
 ;; global pipeline control
 
@@ -1816,6 +1831,9 @@ Return value is a list like (BUFFER NON-BUFFER)."
 (defun org-x-dag-id->buffer-children (id)
   "Return children of ID that are not linked."
   (car (org-x-dag-id->split-children-2 id)))
+
+(defun org-x-dag-id->linked-children (id)
+  (cadr (org-x-dag-id->split-children-2 id)))
 
 (defun org-x-dag-id->all-buffer-children (id)
   "Return nested children of ID that are in the same buffer."
@@ -2433,25 +2451,36 @@ FUTURE-LIMIT in a list."
                (mk-item it :endpoint p f c)))))))))
 
 (defun org-x-dag-itemize-qtp (files)
-  (let ((wkp-ids (org-x-dag->current-wkp-ids))
-        (sel-date (->> (org-x-dag->selected-date)
-                       (org-x-dag-date-to-quarter-start))))
+  (let* ((wkp-ids (org-x-dag->current-wkp-ids))
+         (sel-date (org-x-dag->selected-date))
+         (q-date (org-x-dag-date-to-quarter-start sel-date))
+         (week-start (org-x-dag-date-to-week-start sel-date))
+         (week-end (org-x-dag-datetime-shift week-start 7 'submonth)))
+    (cl-flet
+        ((is-scheduled-current
+          (id)
+          (-when-let (d (-some->> (org-x-dag-id->planning-datetime :scheduled id)
+                          (org-x-dag-datetime-split)
+                          (car)))
+            (and (not (org-x-dag-datetime< d week-start))
+                 (org-x-dag-datetime< d week-end)))))
     (org-x-dag-with-ids files
       (pcase (either-from-right (org-x-dag-id->bs it) nil)
         (`(:quarterly :active ,dead)
          (let* ((tags (org-x-dag-id->tags nil it))
                 (date (org-x-dag-quarter-tags-to-date tags)))
-           (when (org-x-dag-datetime= sel-date date)
+           (when (org-x-dag-datetime= q-date date)
              (-when-let (ns (org-x-dag-id->ns it))
-               (-let (((&plist :planned p :committed c)
+               (-let (((&plist :planned p :committed c :scheduled-actions a)
                        (either-from-right ns nil)))
                  ;; TODO actually handle deadlines
                  (-> (org-x-dag-format-tag-node tags it)
                      (org-add-props nil
                          'x-deadline dead
+                         'x-scheduled (-any-p #'is-scheduled-current a)
                          'x-plannedp (-intersection p wkp-ids)
                          'x-committedp c)
-                     (list)))))))))))
+                     (list))))))))))))
 
 ;; TODO not DRY
 (defun org-x-dag-itemize-wkp (files)
@@ -2476,7 +2505,7 @@ FUTURE-LIMIT in a list."
 
 (defun org-x-dag--item-add-goal-ids (item ids)
   (if ids
-      (--map (org-add-props (copy-seq item) nil 'x-goal-id it) ids)
+      (--map (org-add-props (-copy item) nil 'x-goal-id it) ids)
     (list (org-add-props item nil 'x-goal-id nil))))
 
 (defun org-x-dag-itemize-tasks-with-goals (files)
@@ -2853,38 +2882,38 @@ FUTURE-LIMIT in a list."
 
 ;; quarterly plan
 
-(defun org-x-dag-qtp-to-children (qt-plan)
-  (-let* (((&plist :categories :goals) qt-plan)
-          ;; TODO what happens if there are no categories?
-          (sec (-some->> categories
-                 (--map-indexed (org-ml-build-item!
-                                 :bullet it-index
-                                 :paragraph (symbol-name it)))
-                 (apply #'org-ml-build-plain-list)
-                 (org-ml-build-drawer org-x-drwr-categories)
-                 (list)))
-          (subtrees (--map (apply #'org-ml-build-headline!
-                                  :level 3
-                                  :title-text (plist-get (cdr it) :desc)
-                                  :tags `(,(plist-get (cdr it) :tag))
-                                  (alist-get (car it) goals))
-                           org-x-life-categories)))
-    (list sec subtrees)))
+;; (defun org-x-dag-qtp-to-children (qt-plan)
+;;   (-let* (((&plist :categories :goals) qt-plan)
+;;           ;; TODO what happens if there are no categories?
+;;           (sec (-some->> categories
+;;                  (--map-indexed (org-ml-build-item!
+;;                                  :bullet it-index
+;;                                  :paragraph (symbol-name it)))
+;;                  (apply #'org-ml-build-plain-list)
+;;                  (org-ml-build-drawer org-x-drwr-categories)
+;;                  (list)))
+;;           (subtrees (--map (apply #'org-ml-build-headline!
+;;                                   :level 3
+;;                                   :title-text (plist-get (cdr it) :desc)
+;;                                   :tags `(,(plist-get (cdr it) :tag))
+;;                                   (alist-get (car it) goals))
+;;                            org-x-life-categories)))
+;;     (list sec subtrees)))
 
-(defun org-x-dag-qtp-from-children (children)
-  ;; ignore properties, planning, etc
-  (-let* (((sec subtrees) (if (org-ml-is-type 'section (car children))
-                              `(,(car children) ,(cdr children))
-                            `(nil ,children)))
-          (cats (-some->> sec
-                  (--find (org-x--is-drawer-with-name org-x-drwr-categories it))
-                  (org-x-qtp-drawer-to-categories)))
-          (goals (--map (let* ((tag (car (org-ml-get-property :tags it)))
-                               (key (car (--find (equal tag (plist-get (cdr it) :tag))
-                                                 org-x-life-categories))))
-                          (cons key (org-ml-headline-get-subheadlines it)))
-                        subtrees)))
-    (list :categories cats :goals goals)))
+;; (defun org-x-dag-qtp-from-children (children)
+;;   ;; ignore properties, planning, etc
+;;   (-let* (((sec subtrees) (if (org-ml-is-type 'section (car children))
+;;                               `(,(car children) ,(cdr children))
+;;                             `(nil ,children)))
+;;           (cats (-some->> sec
+;;                   (--find (org-x--is-drawer-with-name org-x-drwr-categories it))
+;;                   (org-x-qtp-drawer-to-categories)))
+;;           (goals (--map (let* ((tag (car (org-ml-get-property :tags it)))
+;;                                (key (car (--find (equal tag (plist-get (cdr it) :tag))
+;;                                                  org-x-life-categories))))
+;;                           (cons key (org-ml-headline-get-subheadlines it)))
+;;                         subtrees)))
+;;     (list :categories cats :goals goals)))
 
 (defun org-x-dag-qtp-get-headline (date)
   (-let* (((y q) (org-x-dag-date-to-quarter date)))
@@ -2892,15 +2921,15 @@ FUTURE-LIMIT in a list."
       (list (-partial #'org-x-dag-headlines-find-year y)
             (-partial #'org-x-dag-headlines-find-quarter q)))))
 
-(defun org-x-dag-qtp-get (quarter)
-  (org-x-with-file (org-x-qtp-get-file)
-    (-let (((year qnum) quarter))
-      (->> (org-ml-parse-subtrees 'all)
-           (org-x-dag-headlines-find-year year)
-           (org-ml-headline-get-subheadlines)
-           (org-x-dag-headlines-find-quarter qnum)
-           (org-ml-get-children)
-           (org-x-dag-qtp-from-children)))))
+;; (defun org-x-dag-qtp-get (quarter)
+;;   (org-x-with-file (org-x-qtp-get-file)
+;;     (-let (((year qnum) quarter))
+;;       (->> (org-ml-parse-subtrees 'all)
+;;            (org-x-dag-headlines-find-year year)
+;;            (org-ml-headline-get-subheadlines)
+;;            (org-x-dag-headlines-find-quarter qnum)
+;;            (org-ml-get-children)
+;;            (org-x-dag-qtp-from-children)))))
 
 (defun org-x-dag-qtp-set-headlines (date headlines)
   (-let* (((y q) (org-x-dag-date-to-quarter date))
@@ -3555,6 +3584,134 @@ FUTURE-LIMIT in a list."
 ;;         (org-x-dag-qtp-set cur-q `(:categories ,c :goals nil))
 ;;         (apply #'message "Created new quaterly plan for %d-Q%d" cur-q)))))
 
+;; show node info
+
+(defun org-x-dag--indent-lines (n lines)
+  (let ((s (make-string n ?\s)))
+    (--map (s-prepend s it) lines)))
+
+(defun org-x-dag--format-bs (bs-data)
+  (cl-flet
+      ((format-comptime
+        (what comptime)
+        (-let* (((&plist :epoch e :canceledp c) comptime)
+                ((y m d H M) (org-ml-unixtime-to-time-long e))
+                (verb (if c "Canceled" "Completed")))
+          (format "%s %s on %d-%d-%d at %02d:%02d" verb what y m d H M))))
+    ;; TODO this could show more detail if I wanted
+    (pcase bs-data
+      ;; action
+      (`(:sp-proj :proj-active)
+       "Active Project")
+      (`(:sp-proj :proj-wait)
+       "Waiting Project")
+      (`(:sp-proj :proj-hold)
+       "Held Project")
+      (`(:sp-proj :proj-stuck)
+       "Stuck Project")
+      (`(:sp-proj :proj-complete ,comptime)
+       (format-comptime "project" comptime))
+      (`(:sp-task :task-complete ,comptime)
+       (format-comptime "task" comptime))
+      (`(:sp-task :task-active ,_)
+       "Active Task")
+      (`(:endpoint :active ,dead)
+       (->> (if dead (->> (org-ml-to-trimmed-string dead)
+                          (format "deadline: %s"))
+              "no deadline")
+            (format "Active with %s")))
+      (`(:sp-iter :iter-active ,_)
+       "Active Iterator")
+      (`(:sp-iter :iter-empty)
+       "Empty Iterator")
+      (`(:sp-iter :iter-complete ,comptime)
+       (format-comptime "iterator" comptime))
+      (`(:sp-subiter :si-active ,_)
+       "Active sub-iterator")
+      (`(:sp-subiter :si-complete ,comptime)
+       (format-comptime "sub-iterator" comptime))
+
+      ;; everything else
+      (`(:endpoint :complete ,comptime)
+       (format-comptime "EPG" comptime))
+      (`(,(or :survival :lifetime) :active)
+       (list "Active"))
+      (`(:quarterly :active ,dead)
+       (->> (if dead (->> (org-ml-to-trimmed-string dead)
+                          (format "deadline: %s"))
+              "no deadline")
+            (format "Active with %s")))
+      (`(:quarterly :complete ,comptime)
+       (format-comptime "quarterly plan" comptime))
+      (`(:weekly :active)
+       "Active")
+      (`(:weekly :complete ,comptime)
+       (format-comptime "weekly plan" comptime))
+      (`(:daily :active (:sched ,sched))
+       (-let (((y m d H M) (org-ml-timestamp-get-start-time sched)))
+         (format "Open and scheduled on %d-%d-%d at %02d:%02d" y m d H M)))
+      (`(:daily :complete ,comptime)
+       (format-comptime "daily metablock" comptime)))))
+
+(defun org-x-dag-show-status ()
+  (interactive)
+  (cl-flet*
+      ((format-maybe
+        (x alt)
+        (if (not x) (list "none") (funcall alt x)))
+       (format-header
+        (header lines)
+        (print lines)
+        (->> (org-x-dag--indent-lines 2 lines)
+             (s-join "\n")
+             (format "%s:\n%s" header)))
+       (format-title
+        (id)
+        (let ((title (org-x-dag-id->title id))
+              (group (->> (org-x-dag-id->group id)
+                          (org-x-dag-group-code))))
+          (format "%s - %s" group title)))
+       (format-titles
+        (ids)
+        (-map #'format-title ids))
+       (format-ids
+        (what ids)
+        (->> (format-maybe ids #'format-titles)
+             (format-header what)))
+       (format-either
+        (e right)
+        (either-from e (lambda (e) (list (format "Error: %s" e))) right))
+       (format-bs
+        (id bs)
+        (->> (format-either bs (lambda (b) (list (org-x-dag--format-bs b))))
+             (format-header "Buffer Status")))
+       (format-ns-either
+        (ns-either)
+        (format-either
+         ns-either
+         (lambda (r)
+           (list (format "%S" r)))))
+       (format-ns
+        (id ns)
+        (->> (format-maybe ns #'format-ns-either)
+             (format-header "Network Status"))))
+    (org-x-dag-sync)
+    (-if-let (hl (org-ml-parse-this-headline))
+        (let* ((id (org-x-dag-headline-get-id hl))
+               (bs (-some->> id
+                     (org-x-dag-id->bs)
+                     (format-bs id))))
+          (if (not bs) (message "Headline is not node")
+            (let ((lps (->> (org-x-dag-id->linked-parents id)
+                            (format-ids "Parent Links")))
+                  ;; TODO make this actually only linked children
+                  (lcs (->> (org-x-dag-id->linked-children id)
+                            (format-ids "Child Links")))
+                  (ns (->> (org-x-dag-id->ns id)
+                           (format-ns id))))
+              (message (s-join "\n\n" (list lps lcs bs ns))))))
+      (message "Not on headline"))))
+
 ;;; agenda views
 
 ;; agenda builders
@@ -3789,8 +3946,11 @@ In the order of display
             (lambda (line)
               (-let* ((c (get-text-property 1 'x-committedp line))
                       (p (get-text-property 1 'x-plannedp line))
+                      (s (get-text-property 1 'x-scheduled line))
                       ((rank text)
                        (cond
+                        ((and s c)
+                         '(5 "Committed | Scheduled"))
                         ((and p c)
                          '(4 "Committed | Planned"))
                         ((and (not p) c)
@@ -3893,6 +4053,7 @@ review phase)"
     (org-x-dag-agenda-show-nodes "Iterators-0" #'org-x-dag-itemize-iterators files
       `((org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
+         ;; TODO this is wrong
          ',(nd/org-def-super-agenda-automap
              (cl-case (org-x-headline-get-iterator-status)
                (:uninit "0. Uninitialized")
