@@ -23,6 +23,8 @@
 
 (require 'dash)
 
+;; type constructor
+
 (defmacro either (key data)
   "Make an either type.
 
@@ -32,6 +34,8 @@ left/right slot."
     ((or :left :right) `(list ,key ,data))
     (_ (error "Invalid status key: %s" key))))
 
+;; monad-y things
+
 (defmacro either>>= (either form)
   "Bind EITHER to FORM where the right slot is bound to 'it'."
   (declare (indent 1))
@@ -39,6 +43,23 @@ left/right slot."
      (`(:left ,_) ,either)
      (`(:right ,it) ,form)
      (e (error "Learn to use monads, dummy; this isn't one: %s" e))))
+
+(defun either-foldM (fun init xs)
+  "Mondically apply FUN to XS (a list).
+
+INIT is the starting value to use for FUN, which takes two
+arguments (the accumulator and the next value) and returns an
+either."
+  (let ((acc (either :right init)))
+    (while (and xs (either-is-right-p acc))
+      (setq acc (funcall fun (cadr acc) (car xs)))
+      (!cdr xs))
+    acc))
+
+(defmacro either-foldM* (form init xs)
+  `(either-foldM (lambda (acc it) ,form) ,init ,xs))
+
+;; Data.Either ripoff things
 
 (defun either-is-left-p (either)
   "Return t if EITHER is a left."

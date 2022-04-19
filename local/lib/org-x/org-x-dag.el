@@ -1196,6 +1196,78 @@ used for optimization."
              (either :right `(,key (,id))))
            (ht-set htbl it)))))
 
+(defun org-x-dag-adjlist-id-node-meta (adjlist id)
+  (-> (ht-get adjlist id)
+      (plist-get :node-meta)))
+
+(defun org-x-dag-adjlist-id-hl-meta (adjlist id)
+  (-> (org-x-dag-adjlist-id-node-meta adjlist id)
+      (plist-get :hl-meta)))
+
+(defun org-x-dag-adjlist-id-hl-meta-prop (adjlist prop id)
+  (-> (org-x-dag-adjlist-id-hl-meta adjlist id)
+      (plist-get prop)))
+
+(defun org-x-dag-adjlist-id-tags (adjlist id)
+  (org-x-dag-adjlist-id-hl-meta-prop adjlist :tags id))
+
+(defun org-x-dag-get-children (adjlist id)
+  (->> (plist-get (ht-get adjlist id) :children)
+       (--filter (-> (org-x-dag-adjlist-id-hl-meta adjlist it)
+                     (plist-get :buffer-parent)
+                     (equal id)))))
+
+;; (defun org-x-dag-ns-with-valid (ns adjlist cur-key links keypairs valid-fun)
+;;   (declare (indent 4))
+;;   (cl-flet*
+;;       ((key-group
+;;         (keys id)
+;;         (let ((g (org-x-dag-id-link-group adjlist id)))
+;;           (if (member g keys) g :invalid)))
+;;        (parent-group
+;;         (h permitleafp adjlist id)
+;;         (cond
+;;          ((either-is-left-p (ht-get h id))
+;;           :error)
+;;          ((and (not permitleafp) (org-x-dag-get-children adjlist id))
+;;           :non-leaf)
+;;          (t :valid)))
+;;        (reduce-valid
+;;         (grouped-targets acc keypair)
+;;         (-let* (((key . permitleafp) keypair)
+;;                 ((acc-keyed acc-error acc-non-leaf) acc)
+;;                 (h (alist-get key ns))
+;;                 ((&alist :valid v :error e :non-leaf n)
+;;                  (->> (alist-get key grouped-targets)
+;;                       (--group-by (parent-group h permitleafp adjlist it)))))
+;;           `(((,key ,@v) ,@acc-keyed)
+;;             (,@e ,@acc-error)
+;;             (,@n ,@acc-non-leaf)))))
+;;     (org-x-dag-each-links links
+;;       (let* ((keys (-map #'car keypairs))
+;;              (grouped (--group-by (key-group keys it) it-targets))
+;;              (cur-h (alist-get cur-key ns)))
+;;         (-if-let (invalid (alist-get :invalid grouped))
+;;             (ht-set cur-h it (org-x-dag-bs-error-links "Invalid links" invalid))
+;;           (-let (((valid err non-leaf)
+;;                   ;; TODO this could be more efficient if we break early when
+;;                   ;; encountering an error/non-leaf node
+;;                   (--reduce-from (reduce-valid grouped acc it) nil keypairs)))
+;;             (cond
+;;              (err
+;;               (->> (org-x-dag-bs-error-links "Linked to invalid links" err)
+;;                    (ht-set cur-h it)))
+;;              (non-leaf
+;;               (->> (org-x-dag-bs-error-links "Linked to non-leaf nodes" non-leaf)
+;;                    (ht-set cur-h it)))
+;;              (t
+;;               (funcall valid-fun it cur-h valid)))))))))
+
+(defun org-x-dag-ns-is-leaf-p (adjlist id)
+  (if (org-x-dag-get-children adjlist id)
+      (either :left "Linked to non-leaf node")
+    (either :right id)))
+
 (defun org-x-dag-ns-with-valid (ns adjlist cur-key links keypairs valid-fun)
   (declare (indent 4))
   (cl-flet*
@@ -1203,42 +1275,38 @@ used for optimization."
         (keys id)
         (let ((g (org-x-dag-id-link-group adjlist id)))
           (if (member g keys) g :invalid)))
-       (parent-group
-        (h permitleafp adjlist id)
+       (id-is-valid
+        (h valid-fun acc id)
         (cond
          ((either-is-left-p (ht-get h id))
-          :error)
-         ((and (not permitleafp) (org-x-dag-get-children adjlist id))
-          :non-leaf)
-         (t :valid)))
+          (either :left "Linked to invalid links"))
+         (valid-fun
+          ;; NOTE this valid-fun doesn't just have to return a Right ID upon
+          ;; success, it can return a Right anything which might be useful
+          ;; downstream
+          (-> (funcall valid-fun adjlist id)
+              (either<$> (cons it acc))))
+         (t
+          (either :right (cons id acc)))))
        (reduce-valid
         (grouped-targets acc keypair)
-        (-let* (((key . permitleafp) keypair)
-                ((acc-keyed acc-error acc-non-leaf) acc)
+        (-let* (((key valid-fun) keypair)
                 (h (alist-get key ns))
-                ((&alist :valid v :error e :non-leaf n)
-                 (->> (alist-get key grouped-targets)
-                      (--group-by (parent-group h permitleafp adjlist it)))))
-          `(((,key ,@v) ,@acc-keyed)
-            (,@e ,@acc-error)
-            (,@n ,@acc-non-leaf)))))
+                (new (->> (alist-get key grouped-targets)
+                          (either-foldM* (id-is-valid h valid-fun acc it) nil))))
+          (either<$> new `((,key ,@it) ,@acc)))))
     (org-x-dag-each-links links
       (let* ((keys (-map #'car keypairs))
              (grouped (--group-by (key-group keys it) it-targets))
              (cur-h (alist-get cur-key ns)))
         (-if-let (invalid (alist-get :invalid grouped))
             (ht-set cur-h it (org-x-dag-bs-error-links "Invalid links" invalid))
-          (-let (((valid err non-leaf)
-                  (--reduce-from (reduce-valid grouped acc it) nil keypairs)))
-            (cond
-             (err
-              (->> (org-x-dag-bs-error-links "Linked to invalid links" err)
-                   (ht-set cur-h it)))
-             (non-leaf
-              (->> (org-x-dag-bs-error-links "Linked to non-leaf nodes" non-leaf)
-                   (ht-set cur-h it)))
-             (t
-              (funcall valid-fun it cur-h valid)))))))))
+          (let ((x (either-foldM* (reduce-valid grouped acc it) nil keypairs)))
+            (either-from x
+              (lambda (_)
+                (ht-set cur-h it x))
+              (lambda (valid-ids)
+                (funcall valid-fun it cur-h valid-ids)))))))))
 
 ;; TODO this needs to eventually propagate deadlines; I want to be able to
 ;; link epgs to other epgs, which means I won't be able to check deadline
@@ -1246,7 +1314,7 @@ used for optimization."
 (defun org-x-dag-ns-epg (adjlist links ns)
   (-let (((&alist :lifetime ht-l) ns))
     (org-x-dag-ns-with-valid ns adjlist :endpoint links
-      '((:lifetime))
+      '((:lifetime org-x-dag-ns-is-leaf-p))
       (lambda (id this-h res)
         (-let (((&alist :lifetime l) res))
           (ht-set this-h id (either :right `(:committed ,l)))
@@ -1260,7 +1328,8 @@ used for optimization."
 (defun org-x-dag-ns-qtp (adjlist links ns)
   (-let (((&alist :lifetime ht-l :endpoint ht-e) ns))
     (org-x-dag-ns-with-valid ns adjlist :quarterly links
-      '((:lifetime) (:endpoint))
+      '((:lifetime org-x-dag-ns-is-leaf-p)
+        (:endpoint org-x-dag-ns-is-leaf-p))
       (lambda (id this-h res)
         (-let (((&alist :lifetime l :endpoint e) res))
           (ht-set this-h id (either :right `(:committed (,@e ,@l))))
@@ -1273,7 +1342,7 @@ used for optimization."
 (defun org-x-dag-ns-wkp (adjlist links ns)
   (-let (((&alist :quarterly ht-q) ns))
     (org-x-dag-ns-with-valid ns adjlist :weekly links
-      '((:quarterly))
+      '((:quarterly org-x-dag-ns-is-leaf-p))
       (lambda (id this-h res)
         (-let (((&alist :quarterly q) res))
           (ht-set this-h id (either :right `(:committed ,q)))
@@ -1291,7 +1360,9 @@ used for optimization."
                     :quarterly ht-q)
             ns))
       (org-x-dag-ns-with-valid ns adjlist :action links
-        '((:survival) (:endpoint) (:lifetime))
+        '((:survival org-x-dag-ns-is-leaf-p)
+          (:endpoint org-x-dag-ns-is-leaf-p)
+          (:lifetime org-x-dag-ns-is-leaf-p))
         (lambda (id this-h res)
           (-let* (((&alist :survival s :endpoint e :lifetime l) res)
                   (this-ns
@@ -1314,44 +1385,64 @@ used for optimization."
                  (org-x-dag-ht-add-links id ht-l :fulfilled)))))
       ns)))
 
-(defun org-x-dag-ns-dlp (adjlist links ns)
+(defun org-x-dag-ns-dlp (sel-date adjlist links ns)
   (cl-flet
-      ((get-committed
-        (htbl ids)
-        (--mapcat (org-x-dag-ht-get-maybe htbl it :committed) ids)))
-    (-let (((&alist :action ht-a :quarterly ht-q :weekly ht-w) ns))
+      ((add-planned
+        (id htbl res)
+        (->> (--mapcat (nth 1) res)
+             (-uniq)
+             ;; TODO ':planned' might not be the best name for these
+             (org-x-dag-ht-add-links id htbl :planned))))
+    (-let* (((&alist :lifetime ht-l
+                     :endpoint ht-e
+                     :survival ht-s
+                     :action ht-a
+                     :quarterly ht-q
+                     :weekly ht-w)
+             ns)
+            (get-planned
+             (lambda (id)
+               (let* ((c (org-x-dag-ht-get-maybe ht-a id :committed))
+                      ;; TODO this is lame
+                      (e (--mapcat (org-x-dag-ht-get-maybe ht-e it :planned) c))
+                      (l (--mapcat (org-x-dag-ht-get-maybe ht-l it :planned) c)))
+                 (-union e l))))
+            (is-valid-action
+             (lambda (adjlist id)
+               (-if-let (sched (-some->> (org-x-dag-adjlist-id-hl-meta-prop adjlist :planning id)
+                                 (org-ml-get-property :scheduled)
+                                 (org-ml-timestamp-get-start-time)))
+                   ;; ASSUME if the node's timestamp does not coincide with the
+                   ;; actual day in the plan it will be reflected in the buffer
+                   ;; status
+                   (-let (((_ time) (org-x-dag-datetime-split sched)))
+                     (if time
+                         (either :left "Linked to action with HH:MM timestamp")
+                       (if (org-x-dag-ht-get-maybe ht-a id :survivalp)
+                           ;; ASSUME (for now) that if survival flag is t
+                           ;; then there will be at least one goal (which
+                           ;; means this action is committed)
+                           (let ((s (org-x-dag-ht-get-maybe ht-a id :committed)))
+                             (either :right `(,id :survival ,s)))
+                         (-if-let (q (funcall get-planned id))
+                             (either :right `(,id :quarterly ,q))
+                           (->> "Linked to scheduled action that isn't on QTP"
+                                (either :left))))))
+                 (-if-let (w (->> (funcall get-planned id)
+                                  (--mapcat (org-x-dag-ht-get-maybe ht-q it :planned))))
+                     (either :right `(,id :weekly ,w))
+                   (->> "Linked to unscheduled action that isn't on WKP"
+                        (either :left)))))))
       (org-x-dag-ns-with-valid ns adjlist :daily links
-        '((:action t) (:weekly))
+        `((:action ,is-valid-action))
         (lambda (id this-h res)
-          (-let (((&alist :action a :weekly w) res))
-            (let ((qgoals (->> (get-committed ht-w w)
-                               (get-committed ht-q)))
-                  (agoals (get-committed ht-a a)))
-              ;; TODO this check doesn't matter for survival goals since
-              ;; those won't be on the quarterly plan
-              ;; (-if-let (gs (-intersection qgoals agoals))
-                  (progn
-                    (->> (list :scheduled w
-                               ;; :committed (-uniq gs)
-                               :committed (-uniq (append qgoals agoals))
-                               :active a)
-                         (either :right)
-                         (ht-set this-h id))
-                    ;; TODO add the goals to their goal links? (this might be
-                    ;; useful later when displaying)
-                    (org-x-dag-ht-add-links id ht-w :planned w)
-                    (org-x-dag-ht-add-links id ht-a :planned a))))))
-                ;; (->> (either :left "Non overlapping goals")
-                ;;      (ht-set this-h id)))))))
-      ns)))
-
-(defun org-x-dag-get-children (adjlist id)
-  (->> (plist-get (ht-get adjlist id) :children)
-       (--filter (-> (ht-get adjlist it)
-                     (plist-get :node-meta)
-                     (plist-get :hl-meta)
-                     (plist-get :buffer-parent)
-                     (equal id)))))
+          (-let (((&alist :action a) res))
+            (org-x-dag-ht-add-links id ht-a :planned (-map #'car a))
+            (-let (((&alist :weekly w :quarterly q :survival s)
+                    (--group-by (nth 1 it) a)))
+              (add-planned id ht-w w)
+              (add-planned id ht-q q)
+              (add-planned id ht-s s))))))))
 
 (defun org-x-dag-ht-map-down (adjlist h-key ns get-fun set-fun def-fun)
   (declare (indent 3))
@@ -1406,63 +1497,81 @@ used for optimization."
         (propagate h it )))
     ns))
 
-(defun org-x-dag-get-network-status (adjlist links)
-  (-let ((ns (->> (list :action
-                        :endpoint
-                        :lifetime
-                        :survival
-                        :quarterly
-                        :weekly
-                        :daily)
-                  (--map (cons it (ht-create #'equal)))))
-         ((&plist :action a
-                  :endpoint e
-                  :lifetime l
-                  :survival s
-                  :quarterly q
-                  :weekly w
-                  :daily d)
-          (--reduce-from (-let* (((group . links) it)
-                                 (acc-links (plist-get acc group)))
-                           (plist-put acc group (append acc-links links)))
-                         nil
-                         links)))
-    ;; add all links to the network status object (ew side effects)
-    (org-x-dag-ns-ltg l ns)
-    (org-x-dag-ns-svg s ns)
+(defun org-x-dag-adjlist-ids-filter-tags (adjlist tag-getter date ids)
+  (--filter (equal date (funcall tag-getter (org-x-dag-adjlist-id-tags it))) ids))
 
-    (org-x-dag-ns-epg adjlist e ns)
-    (org-x-dag-ht-propagate-down adjlist :endpoint :committed ns)
+(defun org-x-dag-get-network-status (sel-date adjlist links)
+  (cl-flet
+      ((cur-links
+        (tag-fun links)
+        (--filter (equal sel-date (->> (car it)
+                                       (org-x-dag-adjlist-id-tags adjlist)
+                                       (funcall tag-fun)))
+                  links)))
+    (-let* ((ns (->> (list :action
+                           :endpoint
+                           :lifetime
+                           :survival
+                           :quarterly
+                           :weekly
+                           :daily)
+                     (--map (cons it (ht-create #'equal)))))
+            ((&plist :action a
+                     :endpoint e
+                     :lifetime l
+                     :survival s
+                     :quarterly q
+                     :weekly w
+                     :daily d)
+             (--reduce-from (-let* (((group . links) it)
+                                    (acc-links (plist-get acc group)))
+                              (plist-put acc group (append acc-links links)))
+                            nil
+                            links))
+            ;; Filter all planning nodes to be on/within the current date. After
+            ;; this I can assume that any time a planning node shows up anywhere
+            ;; it is on the current plan, and I don't need to do any downstream
+            ;; processing to distinguish between current and not current. Bonus,
+            ;; this is much faster (less stuff to deal with)
+            (cur-q (cur-links #'org-x-dag-quarter-tags-to-date q))
+            (cur-w (cur-links #'org-x-dag-weekly-tags-to-date w))
+            (cur-d (cur-links #'org-x-dag-daily-tags-to-date d)))
+      ;; add all links to the network status object (ew side effects)
+      (org-x-dag-ns-ltg l ns)
+      (org-x-dag-ns-svg s ns)
 
-    (org-x-dag-ns-qtp adjlist q ns)
-    (org-x-dag-ht-propagate-up adjlist :lifetime :planned ns)
-    (org-x-dag-ht-propagate-up adjlist :survival :planned ns)
+      (org-x-dag-ns-epg adjlist e ns)
+      (org-x-dag-ht-propagate-down adjlist :endpoint :committed ns)
 
-    (org-x-dag-ns-wkp adjlist w ns)
+      (org-x-dag-ns-qtp adjlist cur-q ns)
+      (org-x-dag-ht-propagate-up adjlist :lifetime :planned ns)
+      (org-x-dag-ht-propagate-up adjlist :survival :planned ns)
 
-    (org-x-dag-ns-action adjlist a ns)
-    (org-x-dag-ht-propagate-up adjlist :lifetime :fulfilled ns)
-    (org-x-dag-ht-propagate-up adjlist :survival :fulfilled ns)
+      (org-x-dag-ns-wkp adjlist cur-w ns)
 
-    (org-x-dag-ns-dlp adjlist d ns)
-    (org-x-dag-ht-propagate-down adjlist :action :planned ns)
-    (org-x-dag-ht-map-down adjlist :action ns
-      (lambda (h id)
-        (either-from* (ht-get h id)
-          nil
-          (-when-let (committed (plist-get it :committed))
-            `(,committed ,(plist-get it :survivalp)))))
-      (lambda (plist to-set)
-        (-let (((committed survivalp) to-set))
-          ;; copy is needed here for some reason, otherwise other parts of the
-          ;; hash table are affected
-          (-> (-copy plist)
-              (plist-put :survivalp survivalp)
-              (org-x-dag-plist-map :committed
-                  (lambda (x) (append x committed))))))
-      (lambda (to-set)
-        (-let (((committed survivalp) to-set))
-          `(:committed ,committed :survivalp ,survivalp))))))
+      (org-x-dag-ns-action adjlist a ns)
+      (org-x-dag-ht-propagate-up adjlist :lifetime :fulfilled ns)
+      (org-x-dag-ht-propagate-up adjlist :survival :fulfilled ns)
+      (org-x-dag-ht-map-down adjlist :action ns
+        (lambda (h id)
+          (either-from* (ht-get h id)
+            nil
+            (-when-let (committed (plist-get it :committed))
+              `(,committed ,(plist-get it :survivalp)))))
+        (lambda (plist to-set)
+          (-let (((committed survivalp) to-set))
+            ;; copy is needed here for some reason, otherwise other parts of the
+            ;; hash table are affected
+            (-> (-copy plist)
+                (plist-put :survivalp survivalp)
+                (org-x-dag-plist-map :committed
+                    (lambda (x) (append x committed))))))
+        (lambda (to-set)
+          (-let (((committed survivalp) to-set))
+            `(:committed ,committed :survivalp ,survivalp))))
+
+      (org-x-dag-ns-dlp sel-date adjlist cur-d ns)
+      (org-x-dag-ht-propagate-down adjlist :action :planned ns))))
 
 ;; global pipeline control
 
@@ -1587,7 +1696,7 @@ removed from, added to, or edited within the DAG respectively."
 TO-REMOVE, TO-INSERT, and TO-UPDATE are lists of files to remove
 from, add to, and update with the DAG. FILE-STATE is a nested
 plist holding the files to be used in the DAG."
-  (-let* (((&plist :dag :file->ids :file->links) org-x-dag)
+  (-let* (((&plist :dag :file->ids :file->links :selected-date) org-x-dag)
           (files2rem (append to-update to-remove))
           (files2ins (append to-update to-insert))
           (ids2rem (org-x-dag-files->ids files2rem))
@@ -1601,7 +1710,7 @@ plist holding the files to be used in the DAG."
     (let ((adjlist (dag-get-adjacency-list (plist-get org-x-dag :dag))))
       (->> (plist-get org-x-dag :file->links)
            (ht-values)
-           (org-x-dag-get-network-status adjlist)
+           (org-x-dag-get-network-status selected-date adjlist)
            (plist-put org-x-dag :netstat)))))
 
 (defun org-x-dag-sync (&optional force)
