@@ -1397,7 +1397,18 @@ used for optimization."
         (->> (--mapcat (nth 1) res)
              (-uniq)
              ;; TODO ':planned' might not be the best name for these
-             (org-x-dag-ht-add-links id htbl :planned))))
+             (org-x-dag-ht-add-links id htbl :planned)))
+       (get-planned-ht
+        (htbl id)
+        (--mapcat (org-x-dag-ht-get-maybe ht-e it :planned) c))
+       (get-sched
+        (id)
+        (-some->> (org-x-dag-adjlist-id-hl-meta-prop adjlist :planning id)
+          (org-ml-get-property :scheduled)
+          (org-ml-timestamp-get-start-time)))
+       (to-valid
+        (id key planning-ids)
+        (either :right `(,id ,key ,planning-ids))))
     (-let* (((&alist :lifetime ht-l
                      :endpoint ht-e
                      :survival ht-s
@@ -1407,37 +1418,33 @@ used for optimization."
              ns)
             (get-planned
              (lambda (id)
-               (let* ((c (org-x-dag-ht-get-maybe ht-a id :committed))
-                      ;; TODO this is lame
-                      (e (--mapcat (org-x-dag-ht-get-maybe ht-e it :planned) c))
-                      (l (--mapcat (org-x-dag-ht-get-maybe ht-l it :planned) c)))
-                 (-union e l))))
-            (is-valid-action
+               (let* ((c (org-x-dag-ht-get-maybe ht-a id :committed)))
+                 (-union (get-planned-ht ht-e c) (get-planned-ht ht-l c)))))
+            (is-scheduled-action
              (lambda (adjlist id)
-               (-if-let (sched (-some->> (org-x-dag-adjlist-id-hl-meta-prop adjlist :planning id)
-                                 (org-ml-get-property :scheduled)
-                                 (org-ml-timestamp-get-start-time)))
-                   ;; ASSUME if the node's timestamp does not coincide with the
-                   ;; actual day in the plan it will be reflected in the buffer
-                   ;; status
+               (-if-let (sched (get-sched id))
+                   ;; ASSUME if the node's timestamp does not coincide with
+                   ;; the actual day in the plan it will be reflected in the
+                   ;; buffer status
                    (-let (((_ time) (org-x-dag-datetime-split sched)))
                      (if time
                          (either :left "Linked to action with HH:MM timestamp")
                        (if (org-x-dag-ht-get-maybe ht-a id :survivalp)
-                           ;; ASSUME (for now) that if survival flag is t
-                           ;; then there will be at least one goal (which
-                           ;; means this action is committed)
-                           (let ((s (org-x-dag-ht-get-maybe ht-a id :committed)))
-                             (either :right `(,id :survival ,s)))
+                           (to-valid id survival c)
                          (-if-let (q (funcall get-planned id))
-                             (either :right `(,id :quarterly ,q))
+                             (to-valid id :quarterly q)
                            (->> "Linked to scheduled action that isn't on QTP"
                                 (either :left))))))
                  (-if-let (w (->> (funcall get-planned id)
                                   (--mapcat (org-x-dag-ht-get-maybe ht-q it :planned))))
-                     (either :right `(,id :weekly ,w))
+                     (to-valid id :weekly w)
                    (->> "Linked to unscheduled action that isn't on WKP"
-                        (either :left)))))))
+                        (either :left))))))
+            (is-valid-action
+             (lambda (adjlist id)
+               (-if-let (c (org-x-dag-ht-get-maybe ht-a id :committed))
+                   (is-scheduled-action adjlist id)
+                 (either :left "Linked to uncommitted action")))))
       (org-x-dag-ns-with-valid ns adjlist :daily links
         `((:action ,is-valid-action))
         (lambda (id this-h res)
