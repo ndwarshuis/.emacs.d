@@ -1302,9 +1302,6 @@ used for optimization."
     '((:survival))
     nil))
 
-;; TODO this needs to eventually propagate deadlines; I want to be able to
-;; link epgs to other epgs, which means I won't be able to check deadline
-;; fidelity without links being established (which they are here)
 (defun org-x-dag-ns-epg (adjlist links ns)
   (-let (((&alist :lifetime ht-l) ns))
     (org-x-dag-ns-with-valid ns adjlist :endpoint links
@@ -1314,8 +1311,7 @@ used for optimization."
         (-let (((&alist :lifetime l) res)
                (d (org-x-dag-adjlist-id-planning adjlist :scheduled id)))
           (ht-set this-h id (either :right `(:committed ,l :deadline ,d)))
-          (org-x-dag-ht-add-links id ht-l :fulfilled l))))
-    ns))
+          (org-x-dag-ht-add-links id ht-l :fulfilled l))))))
 
 (defun org-x-dag-ht-get-maybe (htbl id key)
   (-when-let (x (ht-get htbl id))
@@ -1332,8 +1328,7 @@ used for optimization."
           (->> (--mapcat (org-x-dag-ht-get-maybe ht-e it :committed) e)
                (org-x-dag-ht-add-links id ht-l :planned))
           (org-x-dag-ht-add-links id ht-e :planned e)
-          (org-x-dag-ht-add-links id ht-l :planned l))))
-    ns))
+          (org-x-dag-ht-add-links id ht-l :planned l))))))
 
 (defun org-x-dag-ns-wkp (adjlist links ns)
   (-let (((&alist :quarterly ht-q) ns))
@@ -1342,8 +1337,7 @@ used for optimization."
       (lambda (id this-h res)
         (-let (((&alist :quarterly q) res))
           (ht-set this-h id (either :right `(:committed ,q)))
-          (org-x-dag-ht-add-links id ht-q :planned q))))
-    ns))
+          (org-x-dag-ht-add-links id ht-q :planned q))))))
 
 (defun org-x-dag-ns-action (adjlist links ns)
   (cl-flet
@@ -1383,8 +1377,7 @@ used for optimization."
             (org-x-dag-ht-add-links id ht-s :fulfilled s)
             (org-x-dag-ht-add-links id ht-e :fulfilled e)
             (->> (--mapcat (org-x-dag-ht-get-maybe ht-e it :committed) e)
-                 (org-x-dag-ht-add-links id ht-l :fulfilled)))))
-      ns)))
+                 (org-x-dag-ht-add-links id ht-l :fulfilled))))))))
 
 (defun org-x-dag-ns-dlp (sel-date adjlist links ns)
   (cl-flet
@@ -1452,13 +1445,51 @@ used for optimization."
               (add-planned id ht-q q)
               (add-planned id ht-s s))))))))
 
+;; (defun org-x-dag-ht-map-down-M (adjlist h-key ns get-fun set-fun def-fun)
+;;   (declare (indent 3))
+;;   (cl-labels
+;;       ((propagate
+;;         (adjlist htbl id to-set)
+;;         (->> (-if-let (node (ht-get htbl id))
+;;                  (either>>= node (funcall set-fun it to-set))
+;;                (either :right (funcall def-fun to-set)))
+;;              (ht-set htbl id))
+;;         (--each (org-x-dag-get-children adjlist id)
+;;           (propagate adjlist htbl it to-set))))
+;;     (let ((h (alist-get h-key ns)))
+;;       (-each (ht-keys h)
+;;         (lambda (id)
+;;           (-when-let (xs (funcall get-fun h id))
+;;             (--each (org-x-dag-get-children adjlist id)
+;;               (propagate adjlist h it xs)))))
+;;       ns)))
+
 (defun org-x-dag-ht-map-down (adjlist h-key ns get-fun set-fun def-fun)
+  "Map a network status of a node to its descendents.
+
+ADJLIST is the Org-DAG adjacency list. H-KEY is the key to
+retrieve the network status from NS.
+
+GET-FUN is a function to retrieve the value in question from the
+network status hash table (type :: Map ID (Either String NS) ->
+ID -> Maybe a). For any node which this function returns Just,
+the contents of Just will be applied to its descendents using
+SET-FUN.
+
+SET-FUN combines the current value of a descendant node with the
+output of GET-FUN with its two arguments respectively (type :: a
+-> a -> Either String a). If it \"fails\" it returns Left with an
+error message to be applied to the node (which will override a
+Right if it is already present in the network table).
+
+If the descendant node has no value, it will be set de novo using
+DEF-FUN and the output from GET-FUN (type :: a -> a)."
   (declare (indent 3))
   (cl-labels
       ((propagate
         (adjlist htbl id to-set)
         (->> (-if-let (node (ht-get htbl id))
-                 (either<$> node (funcall set-fun it to-set))
+                 (either>>= node (funcall set-fun it to-set))
                (either :right (funcall def-fun to-set)))
              (ht-set htbl id))
         (--each (org-x-dag-get-children adjlist id)
@@ -1468,18 +1499,66 @@ used for optimization."
         (lambda (id)
           (-when-let (xs (funcall get-fun h id))
             (--each (org-x-dag-get-children adjlist id)
-              (propagate adjlist h it xs)))))
-      ns)))
+              (propagate adjlist h it xs))))))))
 
 (defun org-x-dag-ht-propagate-down (adjlist h-key s-key ns)
   (org-x-dag-ht-map-down adjlist h-key ns
     (lambda (h id)
       (org-x-dag-ht-get-maybe h id s-key))
     (lambda (plist to-set)
-      (org-x-dag-plist-map (-copy plist) s-key
-        (lambda (x) (append x to-set))))
+      (->> (org-x-dag-plist-map (-copy plist) s-key
+             (lambda (x) (append x to-set)))
+           (either :right)))
     (lambda (to-set)
       (list s-key (-copy to-set)))))
+
+(defun org-x-dag-ht-propagate-epg-deadline-down (adjlist ns)
+  (org-x-dag-ht-map-down adjlist :action ns
+    (lambda (h id)
+      (org-x-dag-ht-get-maybe h id :deadline))
+    ;; "Map deadlines down the tree. If a node doesn't have a deadline,
+    ;; assign it the value of the ancestor. If a node has a deadline, check
+    ;; to make sure it a) has the same precision as the ancestor and b)
+    ;; finishes before the ancestor, else throw an error; if these two
+    ;; conditions pass return the original deadline
+    (lambda (plist to-set)
+      (-if-let (this-dead (-some->> (plist-get plist :deadline)
+                            (org-ml-timestamp-get-start-time)))
+          (let ((set-dead (org-ml-timestamp-get-start-time to-set)))
+            (cond
+             ((xor (org-ml-time-is-long this-dead)
+                   (org-ml-time-is-long set-dead))
+              (->> "EPG has parent with different deadline precision"
+                   (either :left))
+              ((org-x-dag-datetime< set-dead this-dead)
+               (->> "EPG has deadline the ends after parent deadline"
+                    (either :left)))
+              (t
+               (either :right plist)))))
+        (either :right plist)))
+    (lambda (to-set)
+      `(:deadline ,to-set))))
+
+(defun org-x-dag-ht-propagate-action-down (adjlist ns)
+  (org-x-dag-ht-map-down adjlist :action ns
+    (lambda (h id)
+      (-when-let (a (ht-get h id))
+        (either-from* a
+          nil
+          (-when-let (committed (plist-get it :committed))
+            `(,committed ,(plist-get it :survivalp))))))
+    (lambda (plist to-set)
+      ;; copy is needed here for some reason, otherwise other parts of the
+      ;; hash table are affected
+      (-let* (((committed survivalp) to-set)
+              (new (-> (-copy plist)
+                       (plist-put :survivalp survivalp)
+                       (org-x-dag-plist-map :committed
+                           (lambda (x) (append x committed))))))
+        (either :right new)))
+    (lambda (to-set)
+      (-let (((committed survivalp) to-set))
+        `(:committed ,committed :survivalp ,survivalp)))))
 
 (defun org-x-dag-ht-propagate-up (adjlist h-key s-key ns)
   (cl-labels
@@ -1502,8 +1581,7 @@ used for optimization."
           rs*)))
     (let ((h (alist-get h-key ns)))
       (--each (ht-keys h)
-        (propagate h it )))
-    ns))
+        (propagate h it )))))
 
 (defun org-x-dag-adjlist-ids-filter-tags (adjlist tag-getter date ids)
   (--filter (equal date (funcall tag-getter (org-x-dag-adjlist-id-tags it))) ids))
@@ -1545,11 +1623,12 @@ used for optimization."
             (cur-w (cur-links #'org-x-dag-weekly-tags-to-date w))
             (cur-d (cur-links #'org-x-dag-daily-tags-to-date d)))
       ;; add all links to the network status object (ew side effects)
-      (org-x-dag-ns-ltg l ns)
-      (org-x-dag-ns-svg s ns)
+      (org-x-dag-ns-ltg adjlist l ns)
+      (org-x-dag-ns-svg adjlist s ns)
 
       (org-x-dag-ns-epg adjlist e ns)
       (org-x-dag-ht-propagate-down adjlist :endpoint :committed ns)
+      (org-x-dag-ht-propagate-epg-deadline-down adjlist ns)
 
       (org-x-dag-ns-qtp adjlist cur-q ns)
       (org-x-dag-ht-propagate-up adjlist :lifetime :planned ns)
@@ -1560,23 +1639,7 @@ used for optimization."
       (org-x-dag-ns-action adjlist a ns)
       (org-x-dag-ht-propagate-up adjlist :lifetime :fulfilled ns)
       (org-x-dag-ht-propagate-up adjlist :survival :fulfilled ns)
-      (org-x-dag-ht-map-down adjlist :action ns
-        (lambda (h id)
-          (either-from* (ht-get h id)
-            nil
-            (-when-let (committed (plist-get it :committed))
-              `(,committed ,(plist-get it :survivalp)))))
-        (lambda (plist to-set)
-          (-let (((committed survivalp) to-set))
-            ;; copy is needed here for some reason, otherwise other parts of the
-            ;; hash table are affected
-            (-> (-copy plist)
-                (plist-put :survivalp survivalp)
-                (org-x-dag-plist-map :committed
-                    (lambda (x) (append x committed))))))
-        (lambda (to-set)
-          (-let (((committed survivalp) to-set))
-            `(:committed ,committed :survivalp ,survivalp))))
+      (org-x-dag-ht-propagate-action-down adjlist ns)
 
       (org-x-dag-ns-dlp sel-date adjlist cur-d ns)
       (org-x-dag-ht-propagate-down adjlist :action :planned ns))))
