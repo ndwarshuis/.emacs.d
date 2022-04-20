@@ -1377,15 +1377,9 @@ used for optimization."
 
 (defun org-x-dag-ns-dlp (sel-date adjlist links ns)
   (cl-flet
-      ((add-planned
-        (id htbl res)
-        (->> (--mapcat (nth 1) res)
-             (-uniq)
-             ;; TODO ':planned' might not be the best name for these
-             (org-x-dag-ht-add-links id htbl :planned)))
-       (get-planned-ht
-        (htbl id)
-        (--mapcat (org-x-dag-ht-get-maybe htbl it :planned) c))
+      ((get-planned-ht
+        (htbl ids)
+        (--mapcat (org-x-dag-ht-get-maybe htbl it :planned) ids))
        (get-sched
         (id)
         (-some->> (org-x-dag-adjlist-id-hl-meta-prop adjlist :planning id)
@@ -1393,7 +1387,13 @@ used for optimization."
           (org-ml-timestamp-get-start-time)))
        (to-valid
         (id key planning-ids)
-        (either :right `(,id ,key ,planning-ids))))
+        (either :right `(,id ,key ,planning-ids)))
+       (add-planned
+        (id htbl res)
+        (->> (--mapcat (nth 1) res)
+             (-uniq)
+             ;; TODO ':planned' might not be the best name for these
+             (org-x-dag-ht-add-links id htbl :planned))))
     (-let* (((&alist :lifetime ht-l
                      :endpoint ht-e
                      :survival ht-s
@@ -1402,11 +1402,11 @@ used for optimization."
                      :weekly ht-w)
              ns)
             (get-planned
-             (lambda (id)
-               (let* ((c (org-x-dag-ht-get-maybe ht-a id :committed)))
-                 (-union (get-planned-ht ht-e c) (get-planned-ht ht-l c)))))
+             (lambda (id committed-ids)
+               (->> (get-planned-ht ht-l committed-ids)
+                    (-union (get-planned-ht ht-e committed-ids)))))
             (is-scheduled-action
-             (lambda (adjlist id)
+             (lambda (adjlist id committed-ids)
                (-if-let (sched (get-sched id))
                    ;; ASSUME if the node's timestamp does not coincide with
                    ;; the actual day in the plan it will be reflected in the
@@ -1415,12 +1415,12 @@ used for optimization."
                      (if time
                          (either :left "Linked to action with HH:MM timestamp")
                        (if (org-x-dag-ht-get-maybe ht-a id :survivalp)
-                           (to-valid id survival c)
-                         (-if-let (q (funcall get-planned id))
+                           (to-valid id survival committed-ids)
+                         (-if-let (q (funcall get-planned id committed-ids))
                              (to-valid id :quarterly q)
                            (->> "Linked to scheduled action that isn't on QTP"
                                 (either :left))))))
-                 (-if-let (w (->> (funcall get-planned id)
+                 (-if-let (w (->> (funcall get-planned id committed-ids)
                                   (--mapcat (org-x-dag-ht-get-maybe ht-q it :planned))))
                      (to-valid id :weekly w)
                    (->> "Linked to unscheduled action that isn't on WKP"
@@ -1428,7 +1428,7 @@ used for optimization."
             (is-valid-action
              (lambda (adjlist id)
                (-if-let (c (org-x-dag-ht-get-maybe ht-a id :committed))
-                   (is-scheduled-action adjlist id)
+                   (funcall is-scheduled-action adjlist id c)
                  (either :left "Linked to uncommitted action")))))
       (org-x-dag-ns-with-valid ns adjlist :daily links
         `((:action ,is-valid-action))
