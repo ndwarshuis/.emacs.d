@@ -898,33 +898,18 @@ used for optimization."
      ((-some->> it-planning (org-ml-get-property :scheduled))
       (either :left "EPGs cannot be scheduled"))
      ((equal it-todo org-x-kw-todo)
-      (let ((dead (-some->> it-planning (org-ml-get-property :deadline))))
-        (org-x-dag-bs-fold-children child-bss `(:active ,dead)
-          (->> (pcase `(,acc ,it)
-                 (`((:active ,_) (:active ,_)) nil)
-                 (`(,_ (:active ,_)) t)
-                 (`((:active ,_) ,_) nil))
-               (either :right))
-          nil
-          (pcase it
-            (`(:active ,c-dead)
-             ;; TODO I might want to enforce the same precision here like I do
-             ;; for iterators
-             (let ((c-epoch (-some->> c-dead
-                              (org-ml-timestamp-get-start-time)
-                              (org-ml-time-to-unixtime)))
-                   (p-epoch (-some->> dead
-                              (org-ml-timestamp-get-start-time)
-                              (org-ml-time-to-unixtime))))
-               (cond
-                ((and c-epoch p-epoch (<= c-epoch p-epoch))
-                 (either :right `(:active ,dead)))
-                ((not dead)
-                 (either :right `(:active ,c-dead)))
-                (t
-                 (either :left "Child deadlines must be before parent deadlines")))))
-            (_
-             (either :left "Active EPGs must have at least one active child"))))))
+      (org-x-dag-bs-fold-children child-bss `(:active)
+        (->> (pcase `(,acc ,it)
+               (`((:active) (:active)) nil)
+               (`(,_ (:active)) t)
+               (`((:active) ,_) nil))
+             (either :right))
+        nil
+        (pcase it
+          ('(:active)
+           (either :right '(:active)))
+          (_
+           (either :left "Active EPGs must have at least one active child")))))
      (t
       (org-x-dag-bs-error-kw "Endpoint goal" it-todo)))))
 
@@ -2564,8 +2549,8 @@ FUTURE-LIMIT in a list."
              (-let (((&plist :planned p :fulfilled f)
                      (either-from-right ns nil)))
                (mk-item it :lifetime p f nil))))
-          ;; TODO not sure how I want to handle deadlines yet here
-          (`(:endpoint :active ,_)
+          ;; TODO need to grab deadlines from the network status (when done)
+          (`(:endpoint :active)
            (-when-let (ns (org-x-dag-id->ns it))
              (-let (((&plist :planned p :fulfilled f :committed c)
                      (either-from-right ns nil)))
@@ -3736,11 +3721,8 @@ FUTURE-LIMIT in a list."
        (format-comptime "task" comptime))
       (`(:sp-task :task-active ,_)
        "Active Task")
-      (`(:endpoint :active ,dead)
-       (->> (if dead (->> (org-ml-to-trimmed-string dead)
-                          (format "deadline: %s"))
-              "no deadline")
-            (format "Active with %s")))
+      (`(:endpoint :active)
+       "Active Endpoint Goal")
       (`(:sp-iter :iter-active ,_)
        "Active Iterator")
       (`(:sp-iter :iter-empty)
