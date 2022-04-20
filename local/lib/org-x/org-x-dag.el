@@ -1358,26 +1358,31 @@ used for optimization."
                     :lifetime ht-l
                     :survival ht-s
                     :quarterly ht-q)
-            ns))
+            ns)
+           (is-committed-leaf-p
+            (lambda (adjlist id)
+              (if (not (org-x-dag-ht-get-maybe ht-e id :committed))
+                  (either :left "Linked to non-committed endpoint node")
+                (org-x-dag-ns-is-leaf-p adjlist id)))))
       (org-x-dag-ns-with-valid ns adjlist :action links
-        '((:survival org-x-dag-ns-is-leaf-p)
-          (:endpoint org-x-dag-ns-is-leaf-p)
+        `((:survival org-x-dag-ns-is-leaf-p)
+          (:endpoint ,is-committed-leaf-p)
           (:lifetime org-x-dag-ns-is-leaf-p))
         (lambda (id this-h res)
-          (-let* (((&alist :survival s :endpoint e :lifetime l) res)
-                  (this-ns
-                   (cond
-                    ((and s (or e l))
-                     (->> "Action has both survival and endpoint/lifetime links"
-                          (either :left)))
-                    (s
-                     (either :right `(:committed ,s :survivalp t)))
-                    (t
-                     (either :right `(:committed (,@e ,@l) :survivalp nil))))))
-            (when (org-x-dag-id->planning-timestamp :scheduled id)
+          (-let (((&alist :survival s :endpoint e :lifetime l) res))
+            (->> (cond
+                  ((and s (or e l))
+                   (->> "Action has both survival and endpoint/lifetime links"
+                        (either :left)))
+                  (s
+                   (either :right `(:committed ,s :survivalp t)))
+                  (t
+                   (either :right `(:committed (,@e ,@l) :survivalp nil))))
+                 (ht-set this-h id this-ns))
+            (when (-some->> (org-x-dag-adjlist-id-hl-meta-prop adjlist :planning id)
+                    (org-ml-get-property :scheduled))
               (->> (-union (get-planned ht-e e) (get-planned ht-l l))
                    (org-x-dag-ht-add-links id ht-q :scheduled-actions)))
-            (ht-set this-h id this-ns)
             (org-x-dag-ht-add-links id ht-l :fulfilled l)
             (org-x-dag-ht-add-links id ht-s :fulfilled s)
             (org-x-dag-ht-add-links id ht-e :fulfilled e)
