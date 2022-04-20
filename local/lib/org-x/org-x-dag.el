@@ -1354,16 +1354,16 @@ used for optimization."
       ((get-planned
         (htbl ids)
         (--mapcat (org-x-dag-ht-get-maybe htbl it :planned) ids)))
-    (-let (((&alist :endpoint ht-e
-                    :lifetime ht-l
-                    :survival ht-s
-                    :quarterly ht-q)
-            ns)
-           (is-committed-leaf-p
-            (lambda (adjlist id)
-              (if (not (org-x-dag-ht-get-maybe ht-e id :committed))
-                  (either :left "Linked to non-committed endpoint node")
-                (org-x-dag-ns-is-leaf-p adjlist id)))))
+    (-let* (((&alist :endpoint ht-e
+                     :lifetime ht-l
+                     :survival ht-s
+                     :quarterly ht-q)
+             ns)
+            (is-committed-leaf-p
+             (lambda (adjlist id)
+               (if (not (org-x-dag-ht-get-maybe ht-e id :committed))
+                   (either :left "Linked to non-committed endpoint node")
+                 (org-x-dag-ns-is-leaf-p adjlist id)))))
       (org-x-dag-ns-with-valid ns adjlist :action links
         `((:survival org-x-dag-ns-is-leaf-p)
           (:endpoint ,is-committed-leaf-p)
@@ -1378,7 +1378,7 @@ used for optimization."
                    (either :right `(:committed ,s :survivalp t)))
                   (t
                    (either :right `(:committed (,@e ,@l) :survivalp nil))))
-                 (ht-set this-h id this-ns))
+                 (ht-set this-h id))
             (when (-some->> (org-x-dag-adjlist-id-hl-meta-prop adjlist :planning id)
                     (org-ml-get-property :scheduled))
               (->> (-union (get-planned ht-e e) (get-planned ht-l l))
@@ -1400,7 +1400,7 @@ used for optimization."
              (org-x-dag-ht-add-links id htbl :planned)))
        (get-planned-ht
         (htbl id)
-        (--mapcat (org-x-dag-ht-get-maybe ht-e it :planned) c))
+        (--mapcat (org-x-dag-ht-get-maybe htbl it :planned) c))
        (get-sched
         (id)
         (-some->> (org-x-dag-adjlist-id-hl-meta-prop adjlist :planning id)
