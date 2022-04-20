@@ -1160,17 +1160,11 @@ used for optimization."
        (format "%s: %s" msg)
        (either :left)))
 
-(defun org-x-dag-ns-toplevel (tbl links ns)
-  (let ((h (alist-get tbl ns)))
-    (org-x-dag-each-links links
-      (ht-set h it (org-x-dag-bs-error-links "Invalid links" it-targets)))
-    ns))
-
-(defun org-x-dag-ns-ltg (links ns)
-  (org-x-dag-ns-toplevel :lifetime links ns))
-
-(defun org-x-dag-ns-svg (links ns)
-  (org-x-dag-ns-toplevel :survival links ns))
+;; (defun org-x-dag-ns-toplevel (tbl links ns)
+;;   (let ((h (alist-get tbl ns)))
+;;     (org-x-dag-each-links links
+;;       (ht-set h it (org-x-dag-bs-error-links "Invalid links" it-targets)))
+;;     ns))
 
 (defun org-x-dag-ht-add-links (id htbl key targets)
   (let (r)
@@ -1192,6 +1186,10 @@ used for optimization."
 (defun org-x-dag-adjlist-id-hl-meta-prop (adjlist prop id)
   (-> (org-x-dag-adjlist-id-hl-meta adjlist id)
       (plist-get prop)))
+
+(defun org-x-dag-adjlist-id-planning (adjlist which id)
+  (-some->> (org-x-dag-adjlist-id-hl-meta-prop adjlist :planning id)
+    (org-ml-get-property which)))
 
 (defun org-x-dag-adjlist-id-tags (adjlist id)
   (org-x-dag-adjlist-id-hl-meta-prop adjlist :tags id))
@@ -1291,7 +1289,18 @@ used for optimization."
               (lambda (_)
                 (ht-set cur-h it x))
               (lambda (valid-ids)
-                (funcall valid-fun it cur-h valid-ids)))))))))
+                (when valid-fun
+                  (funcall valid-fun it cur-h valid-ids))))))))))
+
+(defun org-x-dag-ns-ltg (adjlist links ns)
+  (org-x-dag-ns-with-valid ns adjlist :lifetime links
+    '((:lifetime))
+    nil))
+
+(defun org-x-dag-ns-svg (adjlist links ns)
+  (org-x-dag-ns-with-valid ns adjlist :survival links
+    '((:survival))
+    nil))
 
 ;; TODO this needs to eventually propagate deadlines; I want to be able to
 ;; link epgs to other epgs, which means I won't be able to check deadline
@@ -1299,10 +1308,12 @@ used for optimization."
 (defun org-x-dag-ns-epg (adjlist links ns)
   (-let (((&alist :lifetime ht-l) ns))
     (org-x-dag-ns-with-valid ns adjlist :endpoint links
-      '((:lifetime org-x-dag-ns-is-leaf-p))
+      '((:lifetime org-x-dag-ns-is-leaf-p)
+        (:endpoint))
       (lambda (id this-h res)
-        (-let (((&alist :lifetime l) res))
-          (ht-set this-h id (either :right `(:committed ,l)))
+        (-let (((&alist :lifetime l) res)
+               (d (org-x-dag-adjlist-id-planning adjlist :scheduled id)))
+          (ht-set this-h id (either :right `(:committed ,l :deadline ,d)))
           (org-x-dag-ht-add-links id ht-l :fulfilled l))))
     ns))
 
