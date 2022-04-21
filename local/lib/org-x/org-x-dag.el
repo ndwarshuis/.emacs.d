@@ -1460,12 +1460,12 @@ SET-FUN.
 
 SET-FUN combines the current value of a descendant node with the
 output of GET-FUN with its two arguments respectively (type :: a
--> a -> Either String a). If it \"fails\" it returns Left with an
+-> a -> Either String NS). If it \"fails\" it returns Left with an
 error message to be applied to the node (which will override a
 Right if it is already present in the network table).
 
 If the descendant node has no value, it will be set de novo using
-DEF-FUN and the output from GET-FUN (type :: a -> a)."
+DEF-FUN and the output from GET-FUN (type :: a -> NS)."
   (declare (indent 3))
   (cl-labels
       ((propagate
