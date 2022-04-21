@@ -1626,7 +1626,9 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
       (org-x-dag-ht-propagate-action-down adjlist ns)
 
       (org-x-dag-ns-dlp sel-date adjlist cur-d ns)
-      (org-x-dag-ht-propagate-down adjlist :action :planned ns))))
+      (org-x-dag-ht-propagate-down adjlist :action :planned ns)
+
+      ns)))
 
 ;; global pipeline control
 
