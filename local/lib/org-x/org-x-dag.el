@@ -1571,10 +1571,10 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
 (defun org-x-dag-get-network-status (sel-date adjlist links)
   (cl-flet
       ((cur-links
-        (tag-fun links)
-        (--filter (equal sel-date (->> (car it)
-                                       (org-x-dag-adjlist-id-tags adjlist)
-                                       (funcall tag-fun)))
+        (tag-fun date links)
+        (--filter (equal date (->> (car it)
+                                   (org-x-dag-adjlist-id-tags adjlist)
+                                   (funcall tag-fun)))
                   links)))
     (-let* ((ns (->> (list :action
                            :endpoint
@@ -1601,9 +1601,11 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
             ;; it is on the current plan, and I don't need to do any downstream
             ;; processing to distinguish between current and not current. Bonus,
             ;; this is much faster (less stuff to deal with)
-            (cur-q (cur-links #'org-x-dag-quarter-tags-to-date q))
-            (cur-w (cur-links #'org-x-dag-weekly-tags-to-date w))
-            (cur-d (cur-links #'org-x-dag-daily-tags-to-date d)))
+            (q-date (org-x-dag-date-to-quarter-start sel-date))
+            (w-date (org-x-dag-date-to-week-start sel-date))
+            (cur-q (cur-links #'org-x-dag-quarter-tags-to-date q-date q))
+            (cur-w (cur-links #'org-x-dag-weekly-tags-to-date w-date w))
+            (cur-d (cur-links #'org-x-dag-daily-tags-to-date sel-date d)))
       ;; add all links to the network status object (ew side effects)
       (org-x-dag-ns-ltg adjlist l ns)
       (org-x-dag-ns-svg adjlist s ns)
