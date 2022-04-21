@@ -1438,13 +1438,15 @@ used for optimization."
       (org-x-dag-ns-with-valid ns adjlist :daily links
         `((:action ,is-valid-action))
         (lambda (id this-h res)
-          (-let (((&alist :action a) res))
-            (org-x-dag-ht-add-links id ht-a :planned (-map #'car a))
-            (-let (((&alist :weekly w :quarterly q :survival s)
-                    (--group-by (nth 1 it) a)))
-              (add-planned id ht-w w)
-              (add-planned id ht-q q)
-              (add-planned id ht-s s))))))))
+          (-let* (((&alist :action a) res)
+                  ((&alist :weekly w :quarterly q :survival s)
+                   (--group-by (nth 1 it) a))
+                  (a-ids (-map #'car a)))
+            (org-x-dag-ht-add-links id ht-a :planned a-ids)
+            (ht-set this-h id (either :right `(:committed ,a-ids)))
+            (add-planned id ht-w w)
+            (add-planned id ht-q q)
+            (add-planned id ht-s s)))))))
 
 (defun org-x-dag-ht-map-down (adjlist h-key ns get-fun set-fun def-fun)
   "Map a network status of a node to its descendents.
