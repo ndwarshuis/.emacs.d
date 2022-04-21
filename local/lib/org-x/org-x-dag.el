@@ -3801,7 +3801,7 @@ FUTURE-LIMIT in a list."
       (`(:endpoint :complete ,comptime)
        (format-comptime "EPG" comptime))
       (`(,(or :survival :lifetime) :active)
-       (list "Active"))
+       "Active")
       (`(:quarterly :active ,dead)
        (->> (if dead (->> (org-ml-to-trimmed-string dead)
                           (format "deadline: %s"))
