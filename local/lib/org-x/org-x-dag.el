@@ -1617,6 +1617,7 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
       (org-x-dag-ht-propagate-epg-deadline-down adjlist ns)
 
       (org-x-dag-ns-qtp adjlist cur-q ns)
+      ;; TODO apparently these don't actually work
       (org-x-dag-ht-propagate-up adjlist :lifetime :planned ns)
       (org-x-dag-ht-propagate-up adjlist :survival :planned ns)
 
