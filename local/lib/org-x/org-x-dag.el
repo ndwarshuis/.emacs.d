@@ -1395,7 +1395,7 @@ used for optimization."
         (either :right `(,id ,key ,planning-ids)))
        (add-planned
         (id htbl res)
-        (->> (--mapcat (nth 1) res)
+        (->> (--mapcat (nth 2 it) res)
              (-uniq)
              ;; TODO ':planned' might not be the best name for these
              (org-x-dag-ht-add-links id htbl :planned))))
@@ -3816,6 +3816,48 @@ FUTURE-LIMIT in a list."
       (`(:daily :complete ,comptime)
        (format-comptime "daily metablock" comptime)))))
 
+(defun org-x-dag--format-title-with-group (id)
+  (let ((title (org-x-dag-id->title id))
+        (group (->> (org-x-dag-id->group id)
+                    (org-x-dag-group-code))))
+    (format "%s - %s" group title)))
+
+(defun org-x-dag--format-ns (id ns-data)
+  (cl-flet
+      ((format-group
+        (header key fun)
+        (-some->> (plist-get ns-data key)
+          (--map (funcall fun it))
+          (org-x-dag--indent-lines 2)
+          (cons (format "%s:" header)))))
+    (let ((group (org-x-dag-id->group id)))
+      (pcase group
+        (:action
+         (append
+          (format-group "Planned"
+                        :planned
+                        #'org-x-dag-id->title)
+          (format-group "Committed Goals"
+                        :committed
+                        #'org-x-dag--format-title-with-group)))
+        (:lifetime)
+        (:endpoint)
+        (:survival)
+        (:quarterly
+         (append
+          (format-group "Scheduled actions"
+                        :scheduled-actions
+                        (lambda (id)
+                          (org-x-dag-id->path t id)))
+          (format-group "Planned"
+                        :planned
+                        #'org-x-dag-id->title)
+          (format-group "Committed Goals"
+                        :committed
+                        #'org-x-dag--format-title-with-group)))
+        (:weekly)
+        (:daily)))))
+
 (defun org-x-dag-show-status ()
   (interactive)
   (cl-flet*
@@ -3824,19 +3866,12 @@ FUTURE-LIMIT in a list."
         (if (not x) (list "none") (funcall alt x)))
        (format-header
         (header lines)
-        (print lines)
         (->> (org-x-dag--indent-lines 2 lines)
              (s-join "\n")
              (format "%s:\n%s" header)))
-       (format-title
-        (id)
-        (let ((title (org-x-dag-id->title id))
-              (group (->> (org-x-dag-id->group id)
-                          (org-x-dag-group-code))))
-          (format "%s - %s" group title)))
        (format-titles
         (ids)
-        (-map #'format-title ids))
+        (-map #'org-x-dag--format-title-with-group ids))
        (format-ids
         (what ids)
         (->> (format-maybe ids #'format-titles)
@@ -3849,14 +3884,14 @@ FUTURE-LIMIT in a list."
         (->> (format-either bs (lambda (b) (list (org-x-dag--format-bs b))))
              (format-header "Buffer Status")))
        (format-ns-either
-        (ns-either)
+        (id ns-either)
         (format-either
          ns-either
          (lambda (r)
-           (list (format "%S" r)))))
+           (org-x-dag--format-ns id r))))
        (format-ns
         (id ns)
-        (->> (format-maybe ns #'format-ns-either)
+        (->> (format-maybe ns (lambda (x) (format-ns-either id x)))
              (format-header "Network Status"))))
     (org-x-dag-sync)
     (-if-let (hl (org-ml-parse-this-headline))
@@ -3867,12 +3902,16 @@ FUTURE-LIMIT in a list."
           (if (not bs) (message "Headline is not node")
             (let ((lps (->> (org-x-dag-id->linked-parents id)
                             (format-ids "Parent Links")))
-                  ;; TODO make this actually only linked children
                   (lcs (->> (org-x-dag-id->linked-children id)
                             (format-ids "Child Links")))
                   (ns (->> (org-x-dag-id->ns id)
                            (format-ns id))))
-              (message (s-join "\n\n" (list lps lcs bs ns))))))
+              ;; TODO there is probably a better way to do this
+              (pop-to-buffer "*Org-DAG Node Status*")
+              (read-only-mode 0)
+              (erase-buffer)
+              (insert (s-join "\n\n" (list lps lcs bs ns)))
+              (read-only-mode 1))))
       (message "Not on headline"))))
 
 ;;; agenda views
