@@ -520,7 +520,8 @@ used for optimization."
                 this-links (or (org-x-dag-get-parent-links (nth 3 this-pblock)
                                                         next-pos)
                                (unless node-stack
-                                 (nth 2 (car bare-stack)))))
+                                 (or (nth 2 (car bare-stack))
+                                     this-file-links))))
           (when this-tags
             (setq this-tags (split-string this-tags ":")))
           (when (and (not node-stack) bare-stack)
