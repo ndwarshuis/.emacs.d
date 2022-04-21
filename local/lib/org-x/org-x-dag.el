@@ -3832,22 +3832,57 @@ FUTURE-LIMIT in a list."
         (-some->> (plist-get ns-data key)
           (--map (funcall fun it))
           (org-x-dag--indent-lines 2)
-          (cons (format "%s:" header)))))
+          (cons (format "%s:" header))))
+       (append-groups
+        (&rest groups)
+        (or (->> (-non-nil groups)
+                 (-interpose '(""))
+                 (-flatten-n 1))
+            '("none"))))
     (let ((group (org-x-dag-id->group id)))
       (pcase group
         (:action
-         (append
+         (append-groups
           (format-group "Planned"
                         :planned
                         #'org-x-dag-id->title)
           (format-group "Committed Goals"
                         :committed
                         #'org-x-dag--format-title-with-group)))
-        (:lifetime)
-        (:endpoint)
-        (:survival)
+        (:lifetime
+         (append-groups
+          (format-group "Planned"
+                        :planned
+                        #'org-x-dag-id->title)
+          (format-group "Fulfilled"
+                        :committed
+                        #'org-x-dag--format-title-with-group)))
+        (:endpoint
+         (append-groups
+          (format-group "Planned"
+                        :planned
+                        #'org-x-dag-id->title)
+          (format-group "Committed"
+                        :committed
+                        (lambda (id)
+                          (org-x-dag-id->path nil id)))
+          (format-group "Fulfilled"
+                        :fulfilled
+                        (lambda (id)
+                          (org-x-dag-id->path t id)))))
+        (:survival
+         (append-groups
+          ;; TODO not sure if this works
+          (format-group "Planned"
+                        :planned
+                        (lambda (id)
+                          (org-x-dag-id->path t id)))
+          (format-group "Fulfilled"
+                        :fulfilled
+                        (lambda (id)
+                          (org-x-dag-id->path t id)))))
         (:quarterly
-         (append
+         (append-groups
           (format-group "Scheduled actions"
                         :scheduled-actions
                         (lambda (id)
@@ -3858,8 +3893,24 @@ FUTURE-LIMIT in a list."
           (format-group "Committed Goals"
                         :committed
                         #'org-x-dag--format-title-with-group)))
-        (:weekly)
-        (:daily)))))
+        (:weekly
+         (append-groups
+          (format-group "Planned"
+                        :planned
+                        (lambda (id)
+                          (org-x-dag-id->path t id)))
+          (format-group "Committed"
+                        :committed
+                        #'org-x-dag-id->title)))
+        (:daily
+         (append-groups
+          (format-group "Planned"
+                        :planned
+                        (lambda (id)
+                          (org-x-dag-id->path t id)))
+          (format-group "Committed"
+                        :committed
+                        #'org-x-dag-id->title)))))))
 
 (defun org-x-dag-show-status ()
   (interactive)
