@@ -1446,25 +1446,6 @@ used for optimization."
               (add-planned id ht-q q)
               (add-planned id ht-s s))))))))
 
-;; (defun org-x-dag-ht-map-down-M (adjlist h-key ns get-fun set-fun def-fun)
-;;   (declare (indent 3))
-;;   (cl-labels
-;;       ((propagate
-;;         (adjlist htbl id to-set)
-;;         (->> (-if-let (node (ht-get htbl id))
-;;                  (either>>= node (funcall set-fun it to-set))
-;;                (either :right (funcall def-fun to-set)))
-;;              (ht-set htbl id))
-;;         (--each (org-x-dag-get-children adjlist id)
-;;           (propagate adjlist htbl it to-set))))
-;;     (let ((h (alist-get h-key ns)))
-;;       (-each (ht-keys h)
-;;         (lambda (id)
-;;           (-when-let (xs (funcall get-fun h id))
-;;             (--each (org-x-dag-get-children adjlist id)
-;;               (propagate adjlist h it xs)))))
-;;       ns)))
-
 (defun org-x-dag-ht-map-down (adjlist h-key ns get-fun set-fun def-fun)
   "Map a network status of a node to its descendents.
 
