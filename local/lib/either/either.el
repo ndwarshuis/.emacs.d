@@ -140,5 +140,14 @@ left/right slots."
         (!cons (cadr it) acc)))
     (nreverse acc)))
 
+(defun either-partition (eithers)
+  "Return separate EITHERS into list like (LEFTS RIGHTS)."
+  (let (acc-left acc-right)
+    (--each eithers
+      (if (either-is-right-p it)
+          (!cons (cadr it) acc-right)
+        (!cons (cadr it) acc-left)))
+    `(,(nreverse acc-left) ,(nreverse acc-right))))
+
 (provide 'either)
 ;;; either.el ends here
