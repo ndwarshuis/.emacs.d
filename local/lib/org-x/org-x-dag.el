@@ -1131,6 +1131,9 @@ used for optimization."
 ;; - scheduled: x -> plan
 ;; - active: x -> action
 
+(defun org-x-dag--ns-error (msg ids)
+  (either :left `(:msg ,msg :ids ,ids)))
+
 (defun org-x-dag-id-link-group (adjlist id)
   (-> (ht-get adjlist id)
       (plist-get :node-meta)
@@ -1249,7 +1252,7 @@ used for optimization."
 
 (defun org-x-dag-ns-is-leaf-p (adjlist id)
   (if (org-x-dag-get-children adjlist id)
-      (either :left "Linked to non-leaf node")
+      (org-x-dag--ns-error "Linked to non-leaf node" (list id))
     (either :right id)))
 
 (defun org-x-dag-ns-with-valid (ns adjlist cur-key links keypairs valid-fun)
@@ -1263,7 +1266,7 @@ used for optimization."
         (h valid-fun acc id)
         (cond
          ((either-is-left-p (ht-get h id))
-          (either :left "Linked to invalid links"))
+          (org-x-dag--ns-error "Linked to non-leaf node" (list id)))
          (valid-fun
           ;; NOTE this valid-fun doesn't just have to return a Right ID upon
           ;; success, it can return a Right anything which might be useful
@@ -1284,7 +1287,8 @@ used for optimization."
              (grouped (--group-by (key-group keys it) it-targets))
              (cur-h (alist-get cur-key ns)))
         (-if-let (invalid (alist-get :invalid grouped))
-            (ht-set cur-h it (org-x-dag-bs-error-links "Invalid links" invalid))
+            (->> (org-x-dag--ns-error "Invalid links" invalid)
+                 (ht-set cur-h it))
           (let ((x (either-foldM* (reduce-valid grouped acc it) nil keypairs)))
             (either-from x
               (lambda (_)
@@ -1352,9 +1356,9 @@ used for optimization."
              ns)
             (is-committed-leaf-p
              (lambda (adjlist id)
-               (if (not (org-x-dag-ht-get-maybe ht-e id :committed))
-                   (either :left "Linked to non-committed endpoint node")
-                 (org-x-dag-ns-is-leaf-p adjlist id)))))
+               (if (org-x-dag-ht-get-maybe ht-e id :committed)
+                   (org-x-dag-ns-is-leaf-p adjlist id)
+                 (org-x-dag--ns-error "Linked to non-committed endpoint node" (list id))))))
       (org-x-dag-ns-with-valid ns adjlist :action links
         `((:survival org-x-dag-ns-is-leaf-p)
           (:endpoint ,is-committed-leaf-p)
@@ -1363,8 +1367,8 @@ used for optimization."
           (-let (((&alist :survival s :endpoint e :lifetime l) res))
             (->> (cond
                   ((and s (or e l))
-                   (->> "Action has both survival and endpoint/lifetime links"
-                        (either :left)))
+                   (-> "Action has both survival and endpoint/lifetime links"
+                       (org-x-dag--ns-error (append s e l))))
                   (s
                    (either :right `(:committed ,s :survivalp t)))
                   (t
@@ -1418,23 +1422,25 @@ used for optimization."
                    ;; buffer status
                    (-let (((_ time) (org-x-dag-datetime-split sched)))
                      (if time
-                         (either :left "Linked to action with HH:MM timestamp")
+                         (-> "Linked to action with HH:MM timestamp"
+                             (org-x-dag--ns-error (list id)))
                        (if (org-x-dag-ht-get-maybe ht-a id :survivalp)
                            (to-valid id survival committed-ids)
                          (-if-let (q (funcall get-planned id committed-ids))
                              (to-valid id :quarterly q)
-                           (->> "Linked to scheduled action that isn't on QTP"
-                                (either :left))))))
+                           (-> "Linked to scheduled action that isn't on QTP"
+                               (org-x-dag--ns-error (list id)))))))
                  (-if-let (w (->> (funcall get-planned id committed-ids)
                                   (--mapcat (org-x-dag-ht-get-maybe ht-q it :planned))))
                      (to-valid id :weekly w)
-                   (->> "Linked to unscheduled action that isn't on WKP"
-                        (either :left))))))
+                   (-> "Linked to unscheduled action that isn't on WKP"
+                       (org-x-dag--ns-error (list id)))))))
             (is-valid-action
              (lambda (adjlist id)
                (-if-let (c (org-x-dag-ht-get-maybe ht-a id :committed))
                    (funcall is-scheduled-action adjlist id c)
-                 (either :left "Linked to uncommitted action")))))
+                 (-> "Linked to uncommitted action"
+                     (org-x-dag--ns-error (list id)))))))
       (org-x-dag-ns-with-valid ns adjlist :daily links
         `((:action ,is-valid-action))
         (lambda (id this-h res)
@@ -1506,17 +1512,18 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
     ;; finishes before the ancestor, else throw an error; if these two
     ;; conditions pass return the original deadline
     (lambda (plist to-set)
+      ;; TODO need to pass the id here to get the error messages correct
       (-if-let (this-dead (-some->> (plist-get plist :deadline)
                             (org-ml-timestamp-get-start-time)))
           (let ((set-dead (org-ml-timestamp-get-start-time to-set)))
             (cond
              ((xor (org-ml-time-is-long this-dead)
                    (org-ml-time-is-long set-dead))
-              (->> "EPG has parent with different deadline precision"
-                   (either :left))
+              (-> "EPG has parent with different deadline precision"
+                  (org-x-dag--ns-error nil))
               ((org-x-dag-datetime< set-dead this-dead)
-               (->> "EPG has deadline the ends after parent deadline"
-                    (either :left)))
+               (-> "EPG has deadline that ends after parent deadline"
+                   (org-x-dag--ns-error nil)))
               (t
                (either :right plist)))))
         (either :right plist)))
@@ -1822,14 +1829,22 @@ If FORCE is non-nil, sync no matter what."
 (defun org-x-dag->goal-file (which)
   (plist-get (org-x-dag->goal-file-state) which))
 
+(defun org-x-dag->goal-files ()
+  (-map #'org-x-dag->goal-file (list :lifetime :endpoint :survival)))
+
 (defun org-x-dag->planning-file (which)
   (plist-get (org-x-dag->planning-file-state) which))
+
+(defun org-x-dag->planning-files ()
+  (-map #'org-x-dag->planning-file (list :quarterly :weekly :daily)))
 
 (defun org-x-dag->action-files ()
   (plist-get (org-x-dag->file-state) :action-files))
 
 (defun org-x-dag->files ()
-  (org-x-dag-flatten-file-state (org-x-dag->file-state)))
+  (append (org-x-dag->planning-files)
+          (org-x-dag->goal-files)
+          (org-x-dag->action-files)))
 
 ;; id properties
 
@@ -2732,17 +2747,21 @@ FUTURE-LIMIT in a list."
 
 (defun org-x-dag-itemize-errors (files)
   (cl-flet
-      ((format-id
-        (id msg)
+      ((format-error
+        (id type msg)
         (-> (org-x-dag-format-tag-node nil id)
             (org-add-props nil
-                'x-error msg))))
-    (with-temp-buffer
-      (org-mode)
-      (->> (org-x-dag-files->ids files)
-           (--map (pcase (org-x-dag-id->bs it)
-                    (`(:error ,msg) (format-id it msg))))
-           (-non-nil)))))
+                'x-error-type type
+                'x-error msg)
+            (list))))
+    (org-x-dag-with-ids files
+      (-if-let (b-err (either-from-left (org-x-dag-id->bs it) nil))
+          (format-error it :buffer-status b-err)
+        (-when-let (n-err (-some-> (org-x-dag-id->ns it)
+                            (either-from
+                                (lambda (it) (plist-get it :msg))
+                              (-const nil))))
+          (format-error it :network-status n-err))))))
 
 ;; agenda/calendar
 
@@ -3939,10 +3958,12 @@ FUTURE-LIMIT in a list."
              (format-header "Buffer Status")))
        (format-ns-either
         (id ns-either)
-        (format-either
-         ns-either
-         (lambda (r)
-           (org-x-dag--format-ns id r))))
+        (either-from* ns-either
+          (-let (((&plist :msg :ids) it))
+            (->> (-map #'org-x-dag--format-title-with-group ids)
+                 (org-x-dag--indent-lines 2)
+                 (cons (format "Error: %s" msg))))
+          (org-x-dag--format-ns id it)))
        (format-ns
         (id ns)
         (->> (format-maybe ns (lambda (x) (format-ns-either id x)))
@@ -3967,6 +3988,11 @@ FUTURE-LIMIT in a list."
               (insert (s-join "\n\n" (list lps lcs bs ns)))
               (read-only-mode 1))))
       (message "Not on headline"))))
+
+(defun org-x-dag-agenda-show-status ()
+  (interactive)
+  (org-x-agenda-cmd-wrapper nil
+    (org-x-dag-show-status)))
 
 ;;; agenda views
 
@@ -4322,12 +4348,17 @@ review phase)"
 (defun org-x-dag-agenda-errors ()
   "Show the critical errors agenda view."
   (interactive)
-  (let ((files (org-x-dag->action-files)))
+  (let ((files (org-x-dag->files)))
     (org-x-dag-agenda-show-nodes "Errors" #'org-x-dag-itemize-errors files
       `((org-super-agenda-groups
          '((:auto-map
             (lambda (line)
-              (get-text-property 1 'x-error line)))))))))
+              (-let* ((e (get-text-property 1 'x-error line))
+                      (et (get-text-property 1 'x-error-type line))
+                      ((rank key) (cl-case et
+                                    (:buffer-status '(1 "Buffer Status"))
+                                    (:network-status '(2 "Network Status")))))
+                (format "%d. %s - %s" rank key e))))))))))
 
 (defun org-x-dag-agenda-archive ()
   "Show the archive agenda view."
