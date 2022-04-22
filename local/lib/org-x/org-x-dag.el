@@ -1271,7 +1271,7 @@ used for optimization."
           ;; NOTE this valid-fun doesn't just have to return a Right ID upon
           ;; success, it can return a Right anything which might be useful
           ;; downstream
-          (funcall valid-fun adjlist id))
+          (funcall valid-fun id))
          (t
           (either :right id))))
        (reduce-valid
@@ -1315,7 +1315,7 @@ used for optimization."
 (defun org-x-dag-ns-epg (adjlist links ns)
   (-let (((&alist :lifetime ht-l) ns))
     (org-x-dag-ns-with-valid ns adjlist :endpoint links
-      '((:lifetime org-x-dag-ns-is-leaf-p)
+      `((:lifetime (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id)))
         (:endpoint))
       (lambda (id this-h res)
         (-let (((&alist :lifetime l) res)
@@ -1330,8 +1330,8 @@ used for optimization."
 (defun org-x-dag-ns-qtp (adjlist links ns)
   (-let (((&alist :lifetime ht-l :endpoint ht-e) ns))
     (org-x-dag-ns-with-valid ns adjlist :quarterly links
-      '((:lifetime org-x-dag-ns-is-leaf-p)
-        (:endpoint org-x-dag-ns-is-leaf-p))
+      `((:lifetime (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id)))
+        (:endpoint (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id))))
       (lambda (id this-h res)
         (-let (((&alist :lifetime l :endpoint e) res))
           (ht-set this-h id (either :right `(:committed (,@e ,@l))))
@@ -1343,7 +1343,7 @@ used for optimization."
 (defun org-x-dag-ns-wkp (adjlist links ns)
   (-let (((&alist :quarterly ht-q) ns))
     (org-x-dag-ns-with-valid ns adjlist :weekly links
-      '((:quarterly org-x-dag-ns-is-leaf-p))
+      `((:quarterly (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id))))
       (lambda (id this-h res)
         (-let (((&alist :quarterly q) res))
           (ht-set this-h id (either :right `(:committed ,q)))
@@ -1360,15 +1360,15 @@ used for optimization."
                      :quarterly ht-q)
              ns)
             (is-committed-leaf-p
-             (lambda (adjlist id)
+             (lambda (id)
                (if (org-x-dag-ht-get-maybe ht-e id :committed)
                    (org-x-dag-ns-is-leaf-p adjlist id)
                  (->> (list "Linked to non-committed endpoint node" id)
                       (either :left))))))
       (org-x-dag-ns-with-valid ns adjlist :action links
-        `((:survival org-x-dag-ns-is-leaf-p)
+        `((:survival (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id)))
           (:endpoint ,is-committed-leaf-p)
-          (:lifetime org-x-dag-ns-is-leaf-p))
+          (:lifetime (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id))))
         (lambda (id this-h res)
           (-let (((&alist :survival s :endpoint e :lifetime l) res))
             (->> (cond
@@ -1392,7 +1392,7 @@ used for optimization."
             (->> (--mapcat (org-x-dag-ht-get-maybe ht-e it :committed) e)
                  (org-x-dag-ht-add-links id ht-l :fulfilled))))))))
 
-(defun org-x-dag-ns-dlp (sel-date adjlist links ns)
+(defun org-x-dag-ns-dlp (adjlist links ns)
   (cl-flet
       ((get-planned-ht
         (htbl ids)
@@ -1419,11 +1419,11 @@ used for optimization."
                      :weekly ht-w)
              ns)
             (get-planned
-             (lambda (id committed-ids)
+             (lambda (committed-ids)
                (->> (get-planned-ht ht-l committed-ids)
                     (-union (get-planned-ht ht-e committed-ids)))))
             (is-scheduled-action
-             (lambda (adjlist id committed-ids)
+             (lambda (id committed-ids)
                (-if-let (sched (get-sched id))
                    ;; ASSUME if the node's timestamp does not coincide with
                    ;; the actual day in the plan it will be reflected in the
@@ -1433,20 +1433,20 @@ used for optimization."
                          (->> (list "Linked to action with HH:MM timestamp" id)
                               (either :left))
                        (if (org-x-dag-ht-get-maybe ht-a id :survivalp)
-                           (to-valid id survival committed-ids)
+                           (to-valid id :survival committed-ids)
                          (-if-let (q (funcall get-planned id committed-ids))
                              (to-valid id :quarterly q)
                            (->> (list "Linked to scheduled action that isn't on QTP" id)
                                 (either :left))))))
-                 (-if-let (w (->> (funcall get-planned id committed-ids)
+                 (-if-let (w (->> (funcall get-planned committed-ids)
                                   (--mapcat (org-x-dag-ht-get-maybe ht-q it :planned))))
                      (to-valid id :weekly w)
                    (->> (list "Linked to unscheduled action that isn't on WKP" id)
                         (either :left))))))
             (is-valid-action
-             (lambda (adjlist id)
+             (lambda (id)
                (-if-let (c (org-x-dag-ht-get-maybe ht-a id :committed))
-                   (funcall is-scheduled-action adjlist id c)
+                   (funcall is-scheduled-action id c)
                  (either :left (list "Linked to uncommitted action" id))))))
       (org-x-dag-ns-with-valid ns adjlist :daily links
         `((:action ,is-valid-action))
@@ -1580,9 +1580,6 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
       (--each (ht-keys h)
         (propagate h it )))))
 
-(defun org-x-dag-adjlist-ids-filter-tags (adjlist tag-getter date ids)
-  (--filter (equal date (funcall tag-getter (org-x-dag-adjlist-id-tags it))) ids))
-
 (defun org-x-dag-get-network-status (sel-date adjlist links)
   (cl-flet
       ((cur-links
@@ -1641,7 +1638,7 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
       (org-x-dag-ht-propagate-up adjlist :survival :fulfilled ns)
       (org-x-dag-ht-propagate-action-down adjlist ns)
 
-      (org-x-dag-ns-dlp sel-date adjlist cur-d ns)
+      (org-x-dag-ns-dlp adjlist cur-d ns)
       (org-x-dag-ht-propagate-down adjlist :action :planned ns)
 
       ns)))
@@ -2351,8 +2348,7 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-format-tag-node (tags id)
   (-let* ((marker (org-agenda-new-marker (org-x-dag-id->marker id)))
           ((ts . ts-type) (org-x-dag-id->agenda-timestamp id))
-          (item (org-x-dag-format-item id "" tags nil))
-          (priority (org-get-priority item)))
+          (item (org-x-dag-format-item id "" tags nil)))
     (-> (org-x-dag-add-default-props item id)
         (org-add-props nil
             ;; face
@@ -3958,7 +3954,7 @@ FUTURE-LIMIT in a list."
         (e right)
         (either-from e (lambda (e) (list (format "Error: %s" e))) right))
        (format-bs
-        (id bs)
+        (bs)
         (->> (format-either bs (lambda (b) (list (org-x-dag--format-bs b))))
              (format-header "Buffer Status")))
        (format-ns-either
@@ -3980,7 +3976,7 @@ FUTURE-LIMIT in a list."
         (let* ((id (org-x-dag-headline-get-id hl))
                (bs (-some->> id
                      (org-x-dag-id->bs)
-                     (format-bs id))))
+                     (format-bs))))
           (if (not bs) (message "Headline is not node")
             (let ((lps (->> (org-x-dag-id->linked-parents id)
                             (format-ids "Parent Links")))
