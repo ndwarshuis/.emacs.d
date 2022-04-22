@@ -2964,6 +2964,8 @@ original function being advised and ARGS are the arguments."
 
 (advice-add #'org-agenda-run-series :around #'org-x-agenda-run-series-advice)
 
+;; (advice-remove #'org-agenda-run-series #'org-x-agenda-run-series-advice)
+
 (defun nd/org-agenda-run-series (name files cmds)
   (declare (indent 2))
   (catch 'exit
