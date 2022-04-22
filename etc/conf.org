@@ -2554,12 +2554,6 @@ NOTE: Capitalized entries store a link to the capture along with writing to the 
                     "#+END_QUOTE")
            :immediate-finish t)
 
-          ("M" "metablock" entry (file+olp+datetree ,org-x-daily-plan-file)
-           ,(concat "* %(eval org-x-kw-todo) %^{Metablock Title}\n"
-                    "SCHEDULED: %^t\n"
-                    "%^{Effort}p"
-                    "%?"))
-
           ;; or capturing links with web browser
           ("L" "org-protocol link" entry (file ,capfile)
            ,(concat "* %^{Title} :%(eval org-x-tag-note):\n"
@@ -4458,7 +4452,8 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 :PROPERTIES:
 :ID:       b911386e-b056-4816-bbf5-fae2ec689a0e
 :END:
-#+BEGIN_SRC emacs-lisp
+**** base
+#+begin_src emacs-lisp
 (add-hook 'org-mode-hook
           (lambda ()
             ;; use the hyper keys/vim arrows with the shifters instead of shift/arrows
@@ -4488,8 +4483,15 @@ These are for mode-specific bindings that can/should be outside of the evil maps
 
             ;; add clock in/out functions for tomato mode
             (local-set-key (kbd "C-x C-c C-x C-i") 'org-tomato-user-hl-clock-in)
-            (local-set-key (kbd "C-x C-c C-x C-o") 'org-tomato-user-hl-clock-out)))
-            
+            (local-set-key (kbd "C-x C-c C-x C-o") 'org-tomato-user-hl-clock-out)
+
+            ;; dag stuff
+            (local-set-key (kbd "C-x C-c l") 'org-x-dag-link-child-to-parent)
+            (local-set-key (kbd "C-x C-c L") 'org-x-dag-link-parent-to-child)
+            (local-set-key (kbd "C-x C-c s") 'org-x-dag-show-status)))
+#+end_src
+**** agenda
+#+BEGIN_SRC emacs-lisp
 (add-hook 'org-agenda-mode-hook
           (lambda ()
             (local-set-key (kbd "C-c C-c") 'org-agenda-set-tags)
@@ -4501,7 +4503,10 @@ These are for mode-specific bindings that can/should be outside of the evil maps
             (local-set-key (kbd "C-x C-c C-x C-i") 'org-tomato-user-hl-agenda-clock-in)
             (local-set-key (kbd "C-x C-c C-x C-o") 'org-tomato-user-hl-agenda-clock-out)
             (local-set-key (kbd "C-x C-c m") 'org-x-agenda-meeting-add-agenda-item)
-            (local-set-key (kbd "C-x C-c M") 'org-x-agenda-meeting-add-action-item)))
+            (local-set-key (kbd "C-x C-c M") 'org-x-agenda-meeting-add-action-item)
+            (local-set-key (kbd "C-x C-c l") 'org-x-dag-agenda-link-child-to-parent)
+            (local-set-key (kbd "C-x C-c L") 'org-x-dag-agenda-link-parent-to-child)
+            (local-set-key (kbd "C-x C-c s") 'org-x-dag-agenda-show-status)))
 
 (setq org-super-agenda-header-map (make-sparse-keymap))
 (define-key org-super-agenda-header-map (kbd "<tab>") #'origami-toggle-node)
@@ -4721,6 +4726,9 @@ The function keys are nice because they are almost (not always) free in every mo
   ("I" #'nd/org-agenda-iterators)
   ("P" #'nd/org-agenda-periodical)
   ("a" #'nd/org-agenda-archive)
+  ("M" #'org-x-dag-add-daily-metablock)
+  ("D" #'org-x-dag-set-date)
+  ("C" #'org-x-dag-show-date)
   ;; ("m" #'nd/org-agenda-meetings)
   ("e" #'nd/org-agenda-errors))
 
