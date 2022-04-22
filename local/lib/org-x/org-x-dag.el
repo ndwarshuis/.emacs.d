@@ -524,9 +524,8 @@ used for optimization."
                                      this-file-links))))
           (when this-tags
             (setq this-tags (split-string this-tags ":")))
-          (when (and (not node-stack) bare-stack)
-            (setq this-tags (->> (car bare-stack)
-                                 (nth 1)
+          (unless node-stack
+            (setq this-tags (->> (or (nth 1 (car bare-stack)) org-file-tags)
                                  (append this-tags))))
           (->> (list :point this-point
                      :buffer-parent this-buffer-parent
