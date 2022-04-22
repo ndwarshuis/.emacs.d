@@ -1900,12 +1900,8 @@ Return one of seven values: :lifetime, :survival, :endpoint,
   "Return local tags for ID."
   (org-x-dag-id->hl-meta-prop id :tags))
 
-(defun org-x-dag-id->tags (parent-tags id)
+(defun org-x-dag-id->tags (id)
   "Return all tags for ID.
-
-If PARENT-TAGS is nil, return all inherited tags based on the
-parents of ID. If PARENT-TAGS is a list of strings, these are
-used as the parent tags instead of looking them up.
 
 Returned tags will be ordered from left to right as lowest to
 highest in the tree."
@@ -1921,13 +1917,13 @@ highest in the tree."
                  (ascend parent))
           tags)))
     (let ((local-tags (org-x-dag-id->local-tags id)))
-      `(,@local-tags ,@(or parent-tags (ascend id nil))))))
+      `(,@local-tags ,@(ascend id nil)))))
 
-(defun org-x-dag-id->bucket (parent-tags id)
-  (-some->> (org-x-dag-id->tags parent-tags id)
-    (--find (= (elt it 0) org-x-tag-category-prefix))
-    (s-chop-prefix "_")
-    (intern)))
+;; (defun org-x-dag-id->bucket (parent-tags id)
+;;   (-some->> (org-x-dag-id->tags parent-tags id)
+;;     (--find (= (elt it 0) org-x-tag-category-prefix))
+;;     (s-chop-prefix "_")
+;;     (intern)))
 
 (defun org-x-dag-id->link (id)
   "Return the link node for ID."
@@ -2110,10 +2106,10 @@ Return value is a list like (BUFFER NON-BUFFER)."
        (org-x-dag-files->ids)))
 
 (defun org-x-dag-filter-ids-tags (tags ids)
-  (--filter (-intersection (org-x-dag-id->tags nil it) tags) ids))
+  (--filter (-intersection (org-x-dag-id->tags it) tags) ids))
 
 (defun org-x-dag-date->tagged-ids (ids tag-getter date)
-  (--filter (equal date (funcall tag-getter (org-x-dag-id->tags nil it))) ids))
+  (--filter (equal date (funcall tag-getter (org-x-dag-id->tags it))) ids))
 
 (defun org-x-dag-date->qtp-ids (date)
   (org-x-dag-date->tagged-ids (org-x-dag->qtp-ids)
@@ -2536,7 +2532,7 @@ FUTURE-LIMIT in a list."
          (-let (((&plist :committed c) (-when-let (ns (org-x-dag-id->ns it))
                                          (either-from-right ns nil))))
            (when (and (not sched) (not dead) c)
-             (let ((tags (org-x-dag-id->tags nil it))
+             (let ((tags (org-x-dag-id->tags it))
                    (bp (org-x-dag-id->buffer-parent it)))
                (-> (org-x-dag-format-tag-node tags it)
                    (org-add-props nil
@@ -2557,7 +2553,7 @@ FUTURE-LIMIT in a list."
                                 (:proj-stuck 1)))
            (-when-let ((&plist :committed) (-when-let (ns (org-x-dag-id->ns it))
                                              (either-from-right ns nil)))
-             (let ((tags (org-x-dag-id->tags nil it)))
+             (let ((tags (org-x-dag-id->tags it)))
                (-> (org-x-dag-format-tag-node tags it)
                    (org-add-props nil
                        'x-toplevelp (org-x-dag-id->is-toplevel-p it)
@@ -2571,7 +2567,7 @@ FUTURE-LIMIT in a list."
       (`(:sp-proj . ,status-data)
        (let ((status (car status-data)))
          (when (memq status '(:iter-empty :iter-active))
-           (let ((tags (org-x-dag-id->tags nil it)))
+           (let ((tags (org-x-dag-id->tags it)))
              (-> (org-x-dag-format-tag-node tags it)
                  (org-add-props nil
                      'x-status status)
@@ -2592,7 +2588,7 @@ FUTURE-LIMIT in a list."
               (-some-> (org-x-dag-id->ns it)
                 (either-from-right  nil))))
         (when (not p)
-          (let ((tags (org-x-dag-id->tags nil it))
+          (let ((tags (org-x-dag-id->tags it))
                 (toplevelp (pcase type
                              ((or :proj :task)
                               (org-x-dag-id->is-toplevel-p it))
@@ -2611,7 +2607,7 @@ FUTURE-LIMIT in a list."
     (cl-flet
         ((mk-item
           (id type plannedp fulfilledp committedp)
-          (let ((tags (org-x-dag-id->tags nil id))
+          (let ((tags (org-x-dag-id->tags id))
                 (leafp (org-x-dag-id->is-buffer-leaf-p id)))
             (-> (org-x-dag-format-tag-node tags id)
                 (org-add-props nil
@@ -2652,7 +2648,7 @@ FUTURE-LIMIT in a list."
     (org-x-dag-with-ids files
       (pcase (either-from-right (org-x-dag-id->bs it) nil)
         (`(:quarterly :active ,dead)
-         (let* ((tags (org-x-dag-id->tags nil it))
+         (let* ((tags (org-x-dag-id->tags it))
                 (date (org-x-dag-quarter-tags-to-date tags)))
            (when (org-x-dag-datetime= q-date date)
              (-when-let (ns (org-x-dag-id->ns it))
@@ -2674,7 +2670,7 @@ FUTURE-LIMIT in a list."
     (org-x-dag-with-ids files
       (pcase (either-from-right (org-x-dag-id->bs it) nil)
         (`(:weekly :active)
-         (let* ((tags (org-x-dag-id->tags nil it))
+         (let* ((tags (org-x-dag-id->tags it))
                 (date (org-x-dag-weekly-tags-to-date tags))
                 (day (nth 2 (reverse tags))))
            (when (org-x-dag-datetime= sel-date date)
@@ -2702,7 +2698,7 @@ FUTURE-LIMIT in a list."
                             nil
                             (unless (plist-get it :survivalp)
                               (plist-get it :committed)))))
-              (tags (org-x-dag-id->tags nil it))
+              (tags (org-x-dag-id->tags it))
               (bp (org-x-dag-id->buffer-parent it)))
          (-> (org-x-dag-format-tag-node tags it)
              (org-add-props nil
@@ -2720,7 +2716,7 @@ FUTURE-LIMIT in a list."
                              nil
                              (unless (plist-get it :survivalp)
                                (plist-get it :committed)))))
-               (tags (org-x-dag-id->tags nil it)))
+               (tags (org-x-dag-id->tags it)))
            (-> (org-x-dag-format-tag-node tags it)
                (org-x-dag--item-add-goal-ids goal-ids))))))))
 
@@ -2740,7 +2736,7 @@ FUTURE-LIMIT in a list."
                           (org-x-dag-id->is-active-iterator-child-p it))))
         (-let ((epoch (plist-get comptime :epoch)))
           (when (org-x-dag-time-is-archivable-p epoch)
-            (let ((tags (org-x-dag-id->tags nil it)))
+            (let ((tags (org-x-dag-id->tags it)))
               (-> (org-x-dag-format-tag-node tags it)
                   (org-add-props nil
                       'x-type type)
@@ -2773,7 +2769,7 @@ FUTURE-LIMIT in a list."
           (-when-let (datetimes (funcall get-datetimes-fun sel-date pts))
             ;; TODO this will show all tasks regardless of if they have a
             ;; goal/plan or not
-            (-let ((tags (org-x-dag-id->tags nil id))
+            (-let ((tags (org-x-dag-id->tags id))
                    ((&plist :pos) pts)
                    (donep (org-x-dag-id->is-done-p id)))
               (--> datetimes
