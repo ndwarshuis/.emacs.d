@@ -46,8 +46,11 @@
        (-take 5)
        (reverse)))
 
+(defun org-x-dag-datetime-to-date (datetime)
+  (-take 3 datetime))
+
 (defun org-x-dag-current-date ()
-  (-take 3 (org-x-dag-current-datetime)))
+  (org-x-dag-datetime-to-date (org-x-dag-current-datetime)))
 
 (defun org-x-dag-current-time ()
   (-drop 3 (org-x-dag-current-datetime)))
@@ -89,6 +92,13 @@
        ,form
      (error "Datetimes are invalid lengths: %S and %S" ,datetime0 ,datetime1)))
 
+(defun org-x-dag-datetime-split (datetime)
+  ;; TODO this function doesn't guarantee that a short timestamp is properly
+  ;; formatted
+  (if (org-ml-time-is-long datetime)
+      (-split-at 3 datetime)
+    `(,(org-x-dag-datetime-to-date datetime) nil)))
+
 (defun org-x-dag-datetime< (datetime0 datetime1)
   (org-x-dag-with-times datetime0 datetime1
     (-when-let (next (->> (-zip-with #'cons datetime0 datetime1)
@@ -102,12 +112,13 @@
          (--drop-while (= (car it) (cdr it)))
          (not))))
 
-(defun org-x-dag-datetime-split (datetime)
-  ;; TODO this function doesn't guarantee that a short timestamp is properly
-  ;; formatted
-  (if (org-ml-time-is-long datetime)
-      (-split-at 3 datetime)
-    `(,(-take 3 datetime) nil)))
+(defun org-x-dag-date< (datetime0 datetime1)
+  (org-x-dag-datetime< (org-x-dag-datetime-to-date datetime0)
+                       (org-x-dag-datetime-to-date datetime1)))
+
+(defun org-x-dag-date= (datetime0 datetime1)
+  (org-x-dag-datetime= (org-x-dag-datetime-to-date datetime0)
+                       (org-x-dag-datetime-to-date datetime1)))
 
 (defun org-x-dag-datetime-shift (datetime shift unit)
   (cl-flet*
@@ -120,7 +131,7 @@
           (list y* m* d* H* M*)))
        (enc-dec-short
         (y m d)
-        (-take 3 (enc-dec-long y m d 0 0))))
+        (org-x-dag-datetime-to-date (enc-dec-long y m d 0 0))))
     (pcase datetime
       ((or `(,y ,m ,d) `(,y ,m ,d nil nil))
        (pcase unit
@@ -2773,8 +2784,8 @@ FUTURE-LIMIT in a list."
                    ((&plist :pos) pts)
                    (donep (org-x-dag-id->is-done-p id)))
               (--> datetimes
-                   (--remove (and donep (not (org-x-dag-datetime= (-take 3 it) sel-date))) it)
-                   (if (not todayp) (--remove (org-x-dag-datetime< (-take 3 it) sel-date) it) it)
+                   (--remove (and donep (not (org-x-dag-date= it sel-date))) it)
+                   (if (not todayp) (--remove (org-x-dag-date< it sel-date) it) it)
                    (--map (funcall format-datetime-fun sel-date pos it tags id) it))))))
        (format-scheduleds
         (todayp sel-date id ts)
@@ -2798,11 +2809,11 @@ FUTURE-LIMIT in a list."
         (pcase (either-from-right (org-x-dag-id->bs it) nil)
           (`(:daily :active (:sched ,sched))
            (-when-let (datetime (org-ml-timestamp-get-start-time sched))
-             (when (org-x-dag-datetime= sel-date (-take 3 datetime))
+             (when (org-x-dag-date= sel-date datetime)
                (format-scheduleds todayp sel-date it sched))))
           (`(:daily :complete ,_)
            (-when-let (sched (org-x-dag-id->planning-timestamp :scheduled it))
-             (when (org-x-dag-datetime= sel-date (-take 3 (org-ml-timestamp-get-start-time sched)))
+             (when (org-x-dag-date= sel-date (org-ml-timestamp-get-start-time sched))
                (format-scheduleds todayp sel-date it sched))))
           (`(:sp-task :task-active ,_)
            (with-task-ish it todayp))
