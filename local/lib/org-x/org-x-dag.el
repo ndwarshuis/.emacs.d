@@ -1760,18 +1760,37 @@ removed from, added to, or edited within the DAG respectively."
             ((,path ,group ,@links) ,@acc-links)))))
     (-reduce-from #'append-results nil files)))
 
-;; TODO what about all the nodes that don't need to be updated?
-(defun org-x-dag-update-ht (to-remove to-insert ht)
-  (--each to-remove
-    (ht-remove ht it))
-  (--each to-insert
-    (ht-set ht (car it) (cdr it))))
+(defun org-x-dag-warn-duplicated (xs)
+  (let ((h (ht-create #'equal)))
+    (--each xs
+      (if (ht-get h it)
+          (warn "Duplicated ID found when syncing DAG: %s" it)
+        (ht-set h it t)))))
 
-(defun org-x-dag-get-duplicated (xs)
-  (let ((h (ht-create #'equal))
-        acc)
-    (--each xs (if (ht-get h it) (!cons it acc) (ht-set h it t)))
-    acc))
+(defun org-x-dag-update-dag (ids2rem ids2ins)
+  (-let* (((&plist :dag) org-x-dag)
+         (new (if (dag-is-empty-p dag)
+                  (dag-plist-to-dag ids2ins)
+                (dag-edit-nodes ids2rem ids2ins dag))))
+    (plist-put org-x-dag :dag new)
+    (org-x-dag-warn-duplicated (--map (plist-get it :id) ids2ins))))
+
+(defun org-x-dag-update-ht (to-remove to-insert key)
+  (let ((h (plist-get org-x-dag key)))
+    (--each to-remove
+      (ht-remove h it))
+    (--each to-insert
+      (ht-set h (car it) (cdr it)))))
+
+(defun org-x-dag-build-network-status ()
+  (-let* (((&plist :selected-date :file->links :dag) org-x-dag)
+          (adjlist (dag-get-adjacency-list dag))
+          (new (if (dag-is-valid-p dag)
+                   (->> (ht-values file->links)
+                        (org-x-dag-get-network-status selected-date adjlist))
+                 (warn "Cycle detected: network status cannot be constructed")
+                 nil)))
+    (plist-put org-x-dag :netstat new)))
 
 ;; TODO there is a HUGE DIFFERENCE between a 'key' (the things in the hash table
 ;; the look things up) and a 'node' (which is a cons cell, the car of which is a
@@ -1783,24 +1802,15 @@ removed from, added to, or edited within the DAG respectively."
 TO-REMOVE, TO-INSERT, and TO-UPDATE are lists of files to remove
 from, add to, and update with the DAG. FILE-STATE is a nested
 plist holding the files to be used in the DAG."
-  (-let* (((&plist :dag :file->ids :file->links :selected-date) org-x-dag)
-          (files2rem (append to-update to-remove))
+  (-let* ((files2rem (append to-update to-remove))
           (files2ins (append to-update to-insert))
           (ids2rem (org-x-dag-files->ids files2rem))
           ((ids2ins fms2ins links2ins) (org-x-dag-read-files files2ins)))
-    (->> (if (dag-is-empty-p dag) (dag-plist-to-dag ids2ins)
-           (dag-edit-nodes ids2rem ids2ins dag))
-         (plist-put org-x-dag :dag))
-    (--each (org-x-dag-get-duplicated (--map (plist-get it :id) ids2ins))
-      (warn "Duplicated ID found when syncing DAG: %s" it))
-    (org-x-dag-update-ht files2rem fms2ins file->ids)
-    (org-x-dag-update-ht files2rem links2ins file->links)
+    (org-x-dag-update-dag ids2rem ids2ins)
+    (org-x-dag-update-ht files2rem fms2ins :file->ids)
+    (org-x-dag-update-ht files2rem links2ins :file->links)
     (plist-put org-x-dag :files file-state)
-    (let ((adjlist (dag-get-adjacency-list (plist-get org-x-dag :dag))))
-      (->> (plist-get org-x-dag :file->links)
-           (ht-values)
-           (org-x-dag-get-network-status selected-date adjlist)
-           (plist-put org-x-dag :netstat)))))
+    (org-x-dag-build-network-status)))
 
 (defun org-x-dag-sync (&optional force)
   "Sync the DAG with files from `org-x-dag-get-files'.
@@ -1809,7 +1819,6 @@ If FORCE is non-nil, sync no matter what."
   (when force
     (setq org-x-dag-sync-state nil
           org-x-dag (org-x-dag-empty)))
-  ;; TODO verify integrity somewhere in here
   (-let (((file-state to-remove to-insert to-update no-change)
           (org-x-dag-get-sync-state)))
     (org-x-dag-update file-state to-remove to-insert to-update)
@@ -1968,10 +1977,11 @@ highest in the tree."
        (org-ml-build-item)))
 
 (defun org-x-dag-id->ns (id)
-  (let ((nst (plist-get org-x-dag :netstat)))
-    (-> (org-x-dag-id->group id)
-        (alist-get nst)
-        (ht-get id))))
+  (-if-let (nst (plist-get org-x-dag :netstat))
+      (-> (org-x-dag-id->group id)
+          (alist-get nst)
+          (ht-get id))
+    (warn "Network status table uninitiated, possibly due to cycle")))
 
 (defun org-x-dag-id->ns-key (key id)
   (-when-let (n (org-x-dag-id->ns id))
