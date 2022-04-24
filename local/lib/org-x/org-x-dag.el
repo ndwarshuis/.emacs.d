@@ -2185,12 +2185,12 @@ Return value is a list like (BUFFER NON-BUFFER)."
   (-> (org-x-dag->selected-date)
       (org-x-dag-date->dlp-ids)))
 
-(defun org-x-dag-goal-count-tasks (id)
-  (->> (org-x-dag-id->children id)
-       (-mapcat #'org-x-dag-id->all-buffer-children)
-       ;; TODO this isn't very efficient, looking up children twice
-       (-remove #'org-x-dag-id->buffer-children)
-       (length)))
+;; (defun org-x-dag-goal-count-tasks (id)
+;;   (->> (org-x-dag-id->children id)
+;;        (-mapcat #'org-x-dag-id->all-buffer-children)
+;;        ;; TODO this isn't very efficient, looking up children twice
+;;        (-remove #'org-x-dag-id->buffer-children)
+;;        (length)))
 
 ;; AGENDA LINE FORMATTING
 
@@ -2291,7 +2291,6 @@ encountered will be returned."
           ('year (* 12 value))
           ('month value)
           (_ (if islongp
-                 ;; TODO make these messages not suck
                  (pcase unit
                    ('week (* 7 1440 value))
                    ('day (* 1440 value))
@@ -2832,7 +2831,6 @@ FUTURE-LIMIT in a list."
 
 ;; agenda/calendar
 
-;; TODO add conflict resolution to this
 (defun org-x-dag-itemize-agenda (files sel-date)
   (let ((todayp (org-x-dag-date= (org-x-dag-current-date) sel-date)))
     (cl-flet*
@@ -4188,31 +4186,6 @@ FUTURE-LIMIT in a list."
         (setq buffer-read-only t)))))
 
 ;; agenda helper functions/macros
-
-;; (defmacro org-x-dag-with-raw-headline (agenda-line &rest body)
-;;   "Execute BODY on original headline referred to with AGENDA-LINE."
-;;   (declare (indent 1))
-;;   `(-when-let (marker (get-text-property 1 'org-marker ,agenda-line))
-;;      (with-current-buffer (marker-buffer marker)
-;;        (goto-char marker)
-;;        ,@body)))
-
-;; (defun org-x-dag-mk-super-agenda-pred (body)
-;;   "Return a predicate function with BODY.
-;; The function will be a lambda form that takes one argument, the
-;; current agenda line, and executes BODY at the point in the
-;; original buffer pointed at by the agenda line."
-;;   `(lambda (agenda-line)
-;;      (org-x-dag-with-raw-headline agenda-line ,@body)))
-
-;; (defmacro org-x-dag-def-super-agenda-pred (name &rest body)
-;;   "Make super agenda predicate form with NAME and BODY.
-;; Key-pairs at the end of BODY will be interpreted as a plist to append
-;; to the end of the predicate form."
-;;   (declare (indent 1))
-;;   (-let* (((pred-body plist) (--split-with (not (keywordp it)) body))
-;;           (pred (org-x-dag-mk-super-agenda-pred pred-body)))
-;;     `(quote (:name ,name :pred ,pred ,@plist))))
 
 (defun org-x-dag-agenda-run-series (name files cmds)
   (declare (indent 2))
