@@ -4009,17 +4009,13 @@ I like being evil, which means I think vim is a good editor and emacs is a good 
 :ID:       07d06b91-fa97-41f5-8d12-ac0d1e86c988
 :END:
 #+BEGIN_SRC emacs-lisp
-(use-package undo-fu
-  :straight t)
-
 (use-package evil
   :straight t
-  :after undo-fu
   :init
   ;; this is required to make evil collection work
   (setq evil-want-integration t
         evil-want-keybinding nil
-        evil-undo-system 'undo-fu)
+        evil-undo-system 'undo-redo)
   :config
   (evil-mode 1))
 #+END_SRC
