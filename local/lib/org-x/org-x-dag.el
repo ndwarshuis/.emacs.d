@@ -1444,7 +1444,7 @@ used for optimization."
                               (either :left))
                        (if (org-x-dag-ht-get-maybe ht-a id :survivalp)
                            (to-valid id :survival committed-ids)
-                         (-if-let (q (funcall get-planned id committed-ids))
+                         (-if-let (q (funcall get-planned committed-ids))
                              (to-valid id :quarterly q)
                            (->> (list "Linked to scheduled action that isn't on QTP" id)
                                 (either :left))))))
