@@ -1767,6 +1767,12 @@ removed from, added to, or edited within the DAG respectively."
   (--each to-insert
     (ht-set ht (car it) (cdr it))))
 
+(defun org-x-dag-get-duplicated (xs)
+  (let ((h (ht-create #'equal))
+        acc)
+    (--each xs (if (ht-get h it) (!cons it acc) (ht-set h it t)))
+    acc))
+
 ;; TODO there is a HUGE DIFFERENCE between a 'key' (the things in the hash table
 ;; the look things up) and a 'node' (which is a cons cell, the car of which is a
 ;; 'key' and the cdr of which is a 'relation'). These names suck, but the point
@@ -1785,6 +1791,8 @@ plist holding the files to be used in the DAG."
     (->> (if (dag-is-empty-p dag) (dag-plist-to-dag ids2ins)
            (dag-edit-nodes ids2rem ids2ins dag))
          (plist-put org-x-dag :dag))
+    (--each (org-x-dag-get-duplicated (--map (plist-get it :id) ids2ins))
+      (warn "Duplicated ID found when syncing DAG: %s" it))
     (org-x-dag-update-ht files2rem fms2ins file->ids)
     (org-x-dag-update-ht files2rem links2ins file->links)
     (plist-put org-x-dag :files file-state)
