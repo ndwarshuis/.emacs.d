@@ -2840,43 +2840,38 @@ FUTURE-LIMIT in a list."
   (let ((todayp (org-x-dag-date= (org-x-dag-current-date) sel-date)))
     (cl-flet*
         ((get-datetimes
-          (donep get-fun pts)
+          (donep dt-fun pts)
           (if donep
               (-let (((&plist :datetime) pts))
                 (when (org-x-dag-date= datetime sel-date)
                   `(,datetime)))
-            (-when-let (datetimes (funcall get-fun sel-date pts))
+            (-when-let (datetimes (funcall dt-fun sel-date pts))
               (if todayp datetimes
                 (--drop-while (org-x-dag-date< it sel-date) datetimes)))))
-         (format-timestamps
-          (donep id which get-fun format-fun)
+         (expand-datetimes
+          (id donep which dt-fun)
           (-when-let (pts (-some->> (org-x-dag-id->planning-timestamp which id)
                             (org-x-dag-partition-timestamp)))
-            (-when-let (ds (get-datetimes donep get-fun pts))
+            (-when-let (ds (get-datetimes donep dt-fun pts))
               (-let ((tags (org-x-dag-id->tags id))
                      ((&plist :pos) pts))
                 (--map (list :pos pos :datetime it :tags tags :id id) ds)))))
-                ;; (--map (funcall format-fun sel-date pos it tags id) ds)))))
-         (format-scheduleds
-          (donep id)
-          (format-timestamps donep id :scheduled
-                             #'org-x-dag-get-scheduled-at
-                             #'org-x-dag-format-scheduled-node))
-         (format-deadlines
-          (donep id)
-          (format-timestamps donep id :deadline
-                             #'org-x-dag-get-deadlines-at
-                             #'org-x-dag-format-deadline-node))
+         (scheduled-datetimes
+          (id donep)
+          (expand-datetimes id donep :scheduled #'org-x-dag-get-scheduled-at))
+         (deadlined-datetimes
+          (id donep)
+          (expand-datetimes id donep :deadline #'org-x-dag-get-deadlines-at))
          (add-sched
           (acc id donep)
           (-let (((acc-d acc-s) acc)
-                 (ss (format-scheduleds donep id)))
+                 (ss (scheduled-datetimes id donep)))
             `(,acc-d (,@ss ,@acc-s))))
          (add-dead-sched
           (acc id donep)
           (-let (((acc-d acc-s) acc)
-                 (ds (format-deadlines donep id))
-                 (ss (format-scheduleds donep id)))
+                 (ds (deadlined-datetimes id donep))
+                 (ss (scheduled-datetimes id donep)))
             `((,@ds ,@acc-d) (,@ss ,@acc-s))))
          (format-id
           (acc id)
