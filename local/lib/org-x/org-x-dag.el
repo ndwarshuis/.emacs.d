@@ -534,18 +534,16 @@ used for optimization."
                                (unless node-stack
                                  (or (nth 2 (car bare-stack))
                                      this-file-links))))
-          (when this-tags
-            (setq this-tags (split-string this-tags ":")))
-          (unless node-stack
-            (setq this-tags (->> (or (nth 1 (car bare-stack)) org-file-tags)
-                                 (append this-tags))))
           (->> (list :point this-point
                      :buffer-parent this-buffer-parent
                      :effort (org-x-dag-get-local-property pbeg pend effort-prop)
                      :level this-level
                      :todo this-todo
                      :title (if this-title (substring-no-properties this-title) "")
-                     :tags this-tags
+                     :tags (when this-tags (split-string this-tags ":"))
+                     :parent-tags (unless node-stack
+                                    (or (nth 1 (car bare-stack))
+                                        org-file-tags))
                      :planning (org-x-dag-parse-this-planning (nth 0 this-pblock))
                      :props (org-x-dag-get-local-properties pbeg pend pps))
                (append file-meta)
@@ -1069,8 +1067,10 @@ used for optimization."
       (either :left "QTPs cannot be scheduled"))
      ((equal it-todo org-x-kw-todo)
       (-if-let (dead (-some->> it-planning (org-ml-get-properties :deadline)))
-          (-let* (((&plist :tags) node-data)
-                  (tag-dt (org-x-dag-quarter-tags-to-date tags))
+          ;; ASSUME :parent-tags will contain the date tags as the level of the
+          ;; plan will never exceed one
+          (-let* (((&plist :parent-tags) node-data)
+                  (tag-dt (org-x-dag-quarter-tags-to-date parent-tags))
                   (dead-dt (->> (org-ml-timestamp-get-start-time dead)
                                 (org-x-dag-datetime-split)
                                 (car))))
@@ -1111,8 +1111,10 @@ used for optimization."
                                                (org-x-dag-datetime-split))))
             (if (not sched-time)
                 (either :left "Daily metablocks must have scheduled time")
-              (-let* (((&plist :tags) node-data)
-                      (tag-date (org-x-dag-daily-tags-to-date tags)))
+              ;; ASSUME :parent-tags will contain the date tags as the level
+              ;; of the daily plan will never exceed one
+              (-let* (((&plist :parent-tags) node-data)
+                      (tag-date (org-x-dag-daily-tags-to-date parent-tags)))
                 (if (org-x-dag-datetime= tag-date sched-date)
                     (either :right `(:active (:sched ,sched)))
                   (either :left "Daily metablocks must be scheduled within their date")))))
@@ -1204,9 +1206,6 @@ used for optimization."
 (defun org-x-dag-adjlist-id-planning (adjlist which id)
   (-some->> (org-x-dag-adjlist-id-hl-meta-prop adjlist :planning id)
     (org-ml-get-property which)))
-
-(defun org-x-dag-adjlist-id-tags (adjlist id)
-  (org-x-dag-adjlist-id-hl-meta-prop adjlist :tags id))
 
 (defun org-x-dag-get-children (adjlist id)
   (->> (plist-get (ht-get adjlist id) :children)
@@ -1591,13 +1590,13 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
         (propagate h it )))))
 
 (defun org-x-dag-get-network-status (sel-date adjlist links)
-  (cl-flet
-      ((cur-links
+  (cl-flet*
+      ((plan-tags
+        (id)
+        (org-x-dag-adjlist-id-hl-meta-prop adjlist :parent-tags id))
+       (cur-links
         (tag-fun date links)
-        (--filter (equal date (->> (car it)
-                                   (org-x-dag-adjlist-id-tags adjlist)
-                                   (funcall tag-fun)))
-                  links)))
+        (--filter (equal date (funcall tag-fun (plan-tags (car it)))) links)))
     (-let* ((ns (->> (list :action
                            :endpoint
                            :lifetime
@@ -1951,9 +1950,9 @@ highest in the tree."
             (->> (org-x-dag-id->local-tags parent)
                  (append tags)
                  (ascend parent))
-          tags)))
-    (let ((local-tags (org-x-dag-id->local-tags id)))
-      `(,@local-tags ,@(ascend id nil)))))
+          `(,@tags ,@(org-x-dag-id->hl-meta-prop id :parent-tags)))))
+    `(,@(org-x-dag-id->local-tags id)
+      ,@(ascend id nil))))
 
 (defun org-x-dag-id->node-properties (id)
   (org-x-dag-id->hl-meta-prop id :props))
@@ -2853,7 +2852,9 @@ FUTURE-LIMIT in a list."
           (-when-let (pts (-some->> (org-x-dag-id->planning-timestamp which id)
                             (org-x-dag-partition-timestamp)))
             (-when-let (ds (get-datetimes donep dt-fun pts))
-              (-let ((tags (org-x-dag-id->tags id))
+              (-let ((tags (if (eq (org-x-dag-id->group id) :daily)
+                               (org-x-dag-id->local-tags id)
+                             (org-x-dag-id->tags id)))
                      ((&plist :pos) pts))
                 (--map (list :pos pos :datetime it :tags tags :id id) ds)))))
          (scheduled-datetimes
