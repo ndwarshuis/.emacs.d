@@ -2427,18 +2427,23 @@ FUTURE-LIMIT in a list."
             'type (concat "tagsmatch" ts-type)))))
 
 (defun org-x-dag-planning-props (id face pos date ts-date type)
-  (list
-   ;; face
-   'face (if (org-x-dag-id->is-done-p id) 'org-agenda-done face)
-   'undone-face face
-   'done-face 'org-agenda-done
-   ;; marker
-   'org-hd-marker (org-agenda-new-marker (org-x-dag-id->marker id))
-   'org-marker (org-agenda-new-marker (org-x-dag-id->marker id pos))
-   ;; headline stuff
-   'date (org-x-dag-date-to-absolute date)
-   'ts-date (org-x-dag-date-to-absolute ts-date)
-   'type type))
+  (let* ((todo (org-x-dag-id->todo id))
+         (face* (cond
+                 ((equal todo org-x-kw-canc) 'org-agenda-dimmed-todo-face)
+                 ((equal todo org-x-kw-done) 'org-agenda-done)
+                 (t face))))
+    (list
+     ;; face
+     'face face*
+     'undone-face face
+     'done-face 'org-agenda-done
+     ;; marker
+     'org-hd-marker (org-agenda-new-marker (org-x-dag-id->marker id))
+     'org-marker (org-agenda-new-marker (org-x-dag-id->marker id pos))
+     ;; headline stuff
+     'date (org-x-dag-date-to-absolute date)
+     'ts-date (org-x-dag-date-to-absolute ts-date)
+     'type type)))
 
 (defun org-x-dag-format-timestamp-node (sel-date pos datetime tags id
                                                  extra-fun face-fun dt-fun)
