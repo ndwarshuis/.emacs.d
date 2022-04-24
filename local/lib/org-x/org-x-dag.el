@@ -615,7 +615,8 @@ used for optimization."
 (defun org-x-dag-bs-error-kw (type-name kw)
   (either :left (format "%ss cannot have keyword '%s" type-name kw)))
 
-(defmacro org-x-dag-bs-action-with-closed (node-data type-name canc-bs-form
+(defmacro org-x-dag-bs-action-with-closed (node-data _ type-name
+                                                     canc-bs-form
                                                      done-form open-form)
   (declare (indent 2))
   (let ((c (make-symbol "--closed")))
@@ -644,7 +645,7 @@ used for optimization."
             (t
              ,open-form)))))))
 
-(defun org-x-dag-bs-action-project-inner (node-data child-bss)
+(defun org-x-dag-bs-action-project-inner (node-data _ child-bss)
   (cl-flet
       ((new-proj
         (status)
@@ -655,7 +656,7 @@ used for optimization."
           (or sched (equal todo org-x-kw-next)))))
     ;; rankings
     ;; *-active > proj-wait > proj-held > (proj-stuck == iter-empty) > *-complete
-    (org-x-dag-bs-action-with-closed node-data "projects"
+    (org-x-dag-bs-action-with-closed node-data ancestry "projects"
       (if child-bss
           `(:sp-proj :proj-complete ,it-comptime)
         `(:sp-task :task-complete ,it-comptime))
@@ -787,8 +788,9 @@ used for optimization."
 ;; TODO these next two could be made more efficient by cutting out the
 ;; earlystop form and returning error in the rank form (the trans form is
 ;; still needed in case there is only one child)
-(defun org-x-dag-bs-action-subiter-complete-fold (child-bss comptime type-name comp-key)
-  (declare (indent 2))
+(defun org-x-dag-bs-action-subiter-complete-fold (child-bss _ comptime
+                                                            type-name comp-key)
+  (declare (indent 3))
   (org-x-dag-bs-fold-children child-bss `(,comp-key ,comptime)
     (->> (pcase `(,acc ,it)
            (`((:si-complete ,_) (:si-complete ,_)) nil)
@@ -806,7 +808,8 @@ used for optimization."
        (->> (format "Completed %s cannot have active children" type-name)
             (either :left))))))
 
-(defun org-x-dag-bs-action-subiter-todo-fold (child-bss type-name active-key default)
+(defun org-x-dag-bs-action-subiter-todo-fold (child-bss _ type-name
+                                                        active-key default)
   (org-x-dag-bs-fold-children child-bss default
     (pcase `(,acc ,it)
       (`((:si-active ,a) (:si-active ,b))
@@ -848,10 +851,10 @@ used for optimization."
 (defun org-x-dag-node-is-iterator-p (node)
   (org-x-dag-node-data-is-iterator-p (plist-get node :node-meta)))
 
-(defun org-x-dag-bs-action-subiter-inner (node-data child-bss)
-  (org-x-dag-bs-action-with-closed node-data "sub-iterators"
+(defun org-x-dag-bs-action-subiter-inner (node-data ancestry child-bss)
+  (org-x-dag-bs-action-with-closed node-data ancestry "sub-iterators"
     `(:si-complete ,it-comptime)
-    (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
+    (org-x-dag-bs-action-subiter-complete-fold child-bss ancestry it-comptime
       "sub-iterators" :si-complete)
     (-let (((sched dead) (-some->> it-planning
                            (org-ml-get-properties '(:scheduled :deadline)))))
@@ -865,30 +868,30 @@ used for optimization."
        ((org-x-dag-node-data-is-iterator-p node-data)
         (either :left "Iterators cannot be nested"))
        ((equal it-todo org-x-kw-todo)
-        (org-x-dag-bs-action-subiter-todo-fold child-bss
+        (org-x-dag-bs-action-subiter-todo-fold child-bss ancestry
           "sub-iterator" :si-active
           `(:si-active (:sched ,sched :dead ,dead))))
        (t
         (org-x-dag-bs-error-kw "Sub-iterator" it-todo))))))
 
-(defun org-x-dag-bs-action-iter-inner (node-data child-bss)
-  (org-x-dag-bs-action-with-closed node-data "iterators"
+(defun org-x-dag-bs-action-iter-inner (node-data ancestry child-bss)
+  (org-x-dag-bs-action-with-closed node-data ancestry "iterators"
     `(:iter-complete ,it-comptime)
-    (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
+    (org-x-dag-bs-action-subiter-complete-fold child-bss ancestry it-comptime
       "iterators" :iter-complete)
     (cond
      ((and child-bss (-some->> it-planning (org-ml-get-property :scheduled)))
       (either :left "Iterators cannot be scheduled"))
      ;; TODO also check for timeshift and archive props
      ((equal it-todo org-x-kw-todo)
-      (org-x-dag-bs-action-subiter-todo-fold child-bss
+      (org-x-dag-bs-action-subiter-todo-fold child-bss ancestry
         "iterator" :iter-active
         '(:iter-empty)))
      (t
       (org-x-dag-bs-error-kw "Iterator" it-todo)))))
 
-(defun org-x-dag-bs-epg-inner (node child-bss)
-  (org-x-dag-bs-action-with-closed node "endpoint goal"
+(defun org-x-dag-bs-epg-inner (node _ child-bss)
+  (org-x-dag-bs-action-with-closed node ancestry "endpoint goal"
     `(:complete ,it-comptime)
     (org-x-dag-bs-fold-children child-bss `(:complete ,it-comptime)
       (->> (pcase `(,acc ,it)
@@ -954,28 +957,33 @@ used for optimization."
            ,node))
      (org-x-dag-node i ps h ,form)))
 
-(defun org-x-dag-bs-with-children (tree child-fun node-fun concat-fun)
+(defun org-x-dag-bs-with-children (tree ancestry ancestry-fun child-fun
+                                        node-fun concat-fun)
   (declare (indent 3))
   ;; TODO this is super inefficient, make a plist mapper function
   (-let* (((node . children) tree)
           ((&plist :id i :parents ps :node-meta m) node)
-          ((shallow rest) (->> (--map (funcall child-fun it) children)
+          (new-ancestry (funcall ancestry-fun m ancestry))
+          ((shallow rest) (->> children
+                               (--map (funcall child-fun it new-ancestry))
+                               ;; NOTE this is the same as -unzip except it
+                               ;; always returns a list
                                (apply #'-zip-lists))))
     (list (->> shallow
                (--map (plist-get (plist-get it :node-meta) :buffer-status))
-               (funcall node-fun m)
+               (funcall node-fun m ancestry)
                (org-x-dag-node i ps m))
           (funcall concat-fun shallow rest))))
 
 ;; Tree a -> (Tree a -> (b, [d])) -> (a -> [b] -> c) -> (c, [d])
-(defun org-x-dag-bs-with-children-1 (tree child-fun node-fun)
-  (org-x-dag-bs-with-children tree child-fun node-fun
+(defun org-x-dag-bs-with-children-1 (tree ancestry ancestry-fun child-fun node-fun)
+  (org-x-dag-bs-with-children tree ancestry ancestry-fun child-fun node-fun
     (lambda (shallow deep)
       (append shallow (-flatten-n 1 deep)))))
 
 ;; Tree a -> (Tree a -> (b, ([d], [e]))) -> (a -> [b] -> c) -> (c, ([d], [e]))
-(defun org-x-dag-bs-with-children-2 (tree child-fun node-fun)
-  (org-x-dag-bs-with-children tree child-fun node-fun
+(defun org-x-dag-bs-with-children-2 (tree ancestry ancestry-fun child-fun node-fun)
+  (org-x-dag-bs-with-children tree ancestry ancestry-fun child-fun node-fun
     (lambda (shallow deep)
       (--reduce-from (-let (((a b) acc)
                             ((as bs) it))
@@ -983,26 +991,38 @@ used for optimization."
                      `(,shallow nil)
                      deep))))
 
-(defun org-x-dag-bs-action-subiter (tree)
+(defun org-x-dag-bs-action-new-ancestry (node-meta parent-ancestry)
+  (-let (((&plist :canceled-parent-p c :held-parent-p h) parent-ancestry)
+         ((&plist :todo) node-meta))
+    (list :canceled-parent-p (or c (equal todo org-x-kw-canc))
+          :held-parent-p (or h (equal todo org-x-kw-hold)))))
+
+(defun org-x-dag-bs-action-subiter (tree ancestry)
   (org-x-dag-bs-with-children-1
    tree
+   ancestry
+   #'org-x-dag-bs-action-new-ancestry
    #'org-x-dag-bs-action-subiter
    #'org-x-dag-bs-action-subiter-inner))
 
-(defun org-x-dag-bs-action-iter (tree)
+(defun org-x-dag-bs-action-iter (tree ancestry)
   (org-x-dag-bs-with-children-1
    tree
+   ancestry
+   #'org-x-dag-bs-action-new-ancestry
    #'org-x-dag-bs-action-subiter
-   (lambda (node-data child-bss)
-     (either<$> (org-x-dag-bs-action-iter-inner node-data child-bss)
+   (lambda (node-data ancestry child-bss)
+     (either<$> (org-x-dag-bs-action-iter-inner node-data ancestry child-bss)
        (cons :sp-iter it)))))
 
-(defun org-x-dag-bs-action-project (tree)
+(defun org-x-dag-bs-action-project (tree ancestry)
   (if (org-x-dag-node-is-iterator-p (car tree))
-      (-let (((iter subiters) (org-x-dag-bs-action-iter tree)))
+      (-let (((iter subiters) (org-x-dag-bs-action-iter tree ancestry)))
         `(,iter (nil ,subiters)))
     (org-x-dag-bs-with-children-2
      tree
+     ancestry
+     #'org-x-dag-bs-action-new-ancestry
      #'org-x-dag-bs-action-project
      #'org-x-dag-bs-action-project-inner)))
 
@@ -1012,12 +1032,16 @@ used for optimization."
         (node)
         (org-x-dag-node-fmap node
           (either<$> it (cons :sp-subiter it)))))
-    (-let (((p (ps is)) (org-x-dag-bs-action-project node-tree)))
+    (-let (((p (ps is)) (->> (list :canceled-parent-p nil
+                                   :held-parent-p nil)
+                             (org-x-dag-bs-action-project node-tree))))
       `(,p ,@ps ,@(-map #'lift-subiter is)))))
 
-(defun org-x-dag-bs-epg-outer (tree)
+(defun org-x-dag-bs-epg-outer (tree ancestry)
   (org-x-dag-bs-with-children-1
    tree
+   ancestry
+   (lambda (_ a) a)
    #'org-x-dag-bs-epg-outer
    #'org-x-dag-bs-epg-inner))
 
@@ -1025,7 +1049,7 @@ used for optimization."
   (--map (org-x-dag-node-fmap it (either<$> it `(,key ,@it))) nodes))
 
 (defun org-x-dag-bs-epg (tree)
-  (-let (((n ns) (org-x-dag-bs-epg-outer tree)))
+  (-let (((n ns) (org-x-dag-bs-epg-outer tree nil)))
     (org-x-dag-bs-prefix :endpoint `(,n ,@ns))))
 
 (defun org-x-dag-bs-toplevel-goal-inner (type-name node-data child-bss)
@@ -1040,16 +1064,17 @@ used for optimization."
      (t
       (org-x-dag-bs-error-kw type-name todo)))))
 
-(defun org-x-dag-bs-toplevel-goal-outer (type-name tree)
+(defun org-x-dag-bs-toplevel-goal-outer (type-name tree ancestry)
   (org-x-dag-bs-with-children-1
    tree
-   (lambda (tree)
-     (org-x-dag-bs-toplevel-goal-outer type-name tree))
-   (lambda (node-data child-bss)
+   ancestry
+   (lambda (_ a) a)
+   (-partial #'org-x-dag-bs-toplevel-goal-outer type-name)
+   (lambda (node-data _ child-bss)
      (org-x-dag-bs-toplevel-goal-inner type-name node-data child-bss))))
 
 (defun org-x-dag-bs-toplevel-goal (type-name type-key tree)
-  (-let (((n ns) (org-x-dag-bs-toplevel-goal-outer type-name tree)))
+  (-let (((n ns) (org-x-dag-bs-toplevel-goal-outer type-name tree nil)))
     (org-x-dag-bs-prefix type-key `(,n ,@ns))))
 
 (defun org-x-dag-bs-ltg (tree)
@@ -1059,7 +1084,7 @@ used for optimization."
   (org-x-dag-bs-toplevel-goal "SVG" :survival tree))
 
 (defun org-x-dag-bs-qtp-inner (node-data)
-  (org-x-dag-bs-action-with-closed node-data "quarterly plan"
+  (org-x-dag-bs-action-with-closed node-data nil "quarterly plan"
     `(:complete ,it-comptime)
     (either :right `(:complete ,it-comptime))
     (cond
@@ -1083,7 +1108,7 @@ used for optimization."
       (org-x-dag-bs-error-kw "QTP" it-todo)))))
 
 (defun org-x-dag-bs-wkp-inner (node-data)
-  (org-x-dag-bs-action-with-closed node-data "weekly plan"
+  (org-x-dag-bs-action-with-closed node-data nil "weekly plan"
     `(:complete ,it-comptime)
     (either :right `(:complete ,it-comptime))
     (cond
@@ -1097,7 +1122,7 @@ used for optimization."
       (org-x-dag-bs-error-kw "WKP" it-todo)))))
 
 (defun org-x-dag-bs-dlp-inner (node-data)
-  (org-x-dag-bs-action-with-closed node-data "daily metablock"
+  (org-x-dag-bs-action-with-closed node-data nil "daily metablock"
     `(:complete ,it-comptime)
     (either :right `(:complete ,it-comptime))
     (cond
@@ -1908,10 +1933,9 @@ If FORCE is non-nil, sync no matter what."
 
 (defun org-x-dag-id->duration (id)
   "Return duration in minutes for ID (if it exists)."
-  (condition-case nil
-      (-some->> (org-x-dag-id->hl-meta-prop id :effort)
-        (org-duration-to-minutes))
-    nil))
+  (ignore-errors
+    (-some->> (org-x-dag-id->hl-meta-prop id :effort)
+      (org-duration-to-minutes))))
 
 (defun org-x-dag-id->group (id)
   "Return file group for ID.
