@@ -651,19 +651,15 @@ used for optimization."
   (cl-flet*
       ((wrap-ancestry
         (form)
-        `(list :ancestry ,ancestry :status ,form))
+        `(list :ancestry ,ancestry :local ,form))
        (lift-form
         (form)
-        ;; `(let ((r ,form))
-        ;;    (unless r
-        ;;      (print 'hi))
-        ;;    (either<$> ,form (list :ancestry ancestry :status it)))))
         `(either<$> ,form ,(wrap-ancestry 'it))))
     (let ((canc-bs-form* (wrap-ancestry canc-bs-form))
           (done-form* (lift-form done-form))
           (open-form* (lift-form open-form)))
       `(-let ((it-children (--map (either>>= it
-                                    (->> (plist-get it :status)
+                                    (->> (plist-get it :local)
                                          (either :right)))
                                   ,child-bss)))
          ;; (print "----")
@@ -1042,8 +1038,8 @@ used for optimization."
    #'org-x-dag-bs-action-subiter
    (lambda (node-data ancestry child-bss)
      (either<$> (org-x-dag-bs-action-iter-inner node-data ancestry child-bss)
-       (-let (((&plist :ancestry a :status s) it))
-         (list :ancestry a :status (cons :sp-iter s)))))))
+       (-let (((&plist :ancestry a :local l) it))
+         (list :ancestry a :local (cons :sp-iter l)))))))
 
 (defun org-x-dag-bs-action-project (tree ancestry)
   (if (org-x-dag-node-is-iterator-p (car tree))
@@ -1056,16 +1052,24 @@ used for optimization."
      #'org-x-dag-bs-action-project
      #'org-x-dag-bs-action-project-inner)))
 
+(defun org-x-dag-bs-prefix (key nodes)
+  (--map (org-x-dag-node-fmap it (either<$> it `(,key ,@it))) nodes))
+
 (defun org-x-dag-bs-action (node-tree)
   (cl-flet
       ((lift-subiter
         (node)
         (org-x-dag-node-fmap node
-          (either<$> it (cons :sp-subiter it)))))
+          (either<$> it
+            (-let (((&plist :ancestry a :local l) it))
+              (list :ancestry a :local (cons :sp-subiter l)))))))
+        ;; (org-x-dag-node-fmap node
+        ;;   (either<$> it (cons :sp-subiter it)))))
     (-let (((p (ps is)) (->> (list :canceled-parent-p nil
                                    :held-parent-p nil)
                              (org-x-dag-bs-action-project node-tree))))
-      `(,p ,@ps ,@(-map #'lift-subiter is)))))
+      (->> `(,p ,@ps ,@(-map #'lift-subiter is))
+           (org-x-dag-bs-prefix :action)))))
 
 (defun org-x-dag-bs-epg-outer (tree ancestry)
   (org-x-dag-bs-with-children-1
@@ -1074,9 +1078,6 @@ used for optimization."
    (lambda (_ a) a)
    #'org-x-dag-bs-epg-outer
    #'org-x-dag-bs-epg-inner))
-
-(defun org-x-dag-bs-prefix (key nodes)
-  (--map (org-x-dag-node-fmap it (either<$> it `(,key ,@it))) nodes))
 
 (defun org-x-dag-bs-epg (tree)
   (-let (((n ns) (org-x-dag-bs-epg-outer tree '(:canceled-parent-p nil))))
@@ -1946,6 +1947,14 @@ If FORCE is non-nil, sync no matter what."
   (-> (org-x-dag-id->node-meta id)
       (plist-get :buffer-status)))
 
+(defun org-x-dag-id->bs-local (id)
+  (-> (org-x-dag-id->bs id)
+      (plist-get :local)))
+
+(defun org-x-dag-id->bs-ancestry (id)
+  (-> (org-x-dag-id->bs id)
+      (plist-get :ancestry)))
+
 (defun org-x-dag-id->hl-meta-prop (id prop)
   (-> (org-x-dag-id->hl-meta id)
       (plist-get prop)))
@@ -2630,6 +2639,16 @@ FUTURE-LIMIT in a list."
     (org-mode)
     (--mapcat ,id-form (org-x-dag-files->ids ,files))))
 
+(defmacro org-x-dag-with-unmasked-action-ids (files id-form)
+  (declare (indent 1))
+  `(org-x-dag-with-ids files
+     (pcase (either-from-right (org-x-dag-id->bs it) nil)
+       (`(:action . ,bs)
+        (-let (((&plist :local it-local :ancestry a) bs))
+          (unless (or (plist-get a :canceled-parent-p)
+                      (plist-get a :held-parent-p))
+            ,id-form))))))
+
 (defmacro org-x-dag-with-files (files pre-form form)
   (declare (indent 2))
   (let* ((lookup-form '(ht-get file->ids it-file))
@@ -2651,10 +2670,9 @@ FUTURE-LIMIT in a list."
 
 ;; tasks/projects
 
-;; TODO this includes tasks underneath cancelled headlines
 (defun org-x-dag-itemize-tasks (files)
-  (org-x-dag-with-ids files
-    (pcase (either-from-right (org-x-dag-id->bs it) nil)
+  (org-x-dag-with-unmasked-action-ids files
+    (pcase it-local
       (`(:sp-task :task-active ,s)
        (-let (((&plist :sched :dead) s))
          (-let (((&plist :committed c) (-when-let (ns (org-x-dag-id->ns it))
@@ -2669,8 +2687,8 @@ FUTURE-LIMIT in a list."
                    (list))))))))))
 
 (defun org-x-dag-itemize-projects (files)
-  (org-x-dag-with-ids files
-    (pcase (either-from-right (org-x-dag-id->bs it) nil)
+  (org-x-dag-with-unmasked-action-ids files
+    (pcase it-local
       (`(:sp-proj . ,status-data)
        ;; NOTE in the future there might be more than just the car to this
        (let ((status (car status-data)))
@@ -2690,8 +2708,8 @@ FUTURE-LIMIT in a list."
                    (list))))))))))
 
 (defun org-x-dag-itemize-iterators (files)
-  (org-x-dag-with-ids files
-    (pcase (either-from-right (org-x-dag-id->bs it) nil)
+  (org-x-dag-with-unmasked-action-ids files
+    (pcase it-local
       (`(:sp-proj . ,status-data)
        (let ((status (car status-data)))
          (when (memq status '(:iter-empty :iter-active))
@@ -2702,8 +2720,8 @@ FUTURE-LIMIT in a list."
                  (list)))))))))
 
 (defun org-x-dag-itemize-incubated (files)
-  (org-x-dag-with-ids files
-    (-when-let (type (pcase (either-from-right (org-x-dag-id->bs it) nil)
+  (org-x-dag-with-unmasked-action-ids files
+    (-when-let (type (pcase it-local
                        (`(:sp-proj :proj-complete ,_) nil)
                        (`(:sp-task :task-complete ,_) nil)
                        (`(:sp-iter :iter-complete ,_) nil)
@@ -2747,17 +2765,21 @@ FUTURE-LIMIT in a list."
                 (list)))))
       (org-x-dag-with-ids files
         (pcase (either-from-right (org-x-dag-id->bs it) nil)
-          (`(:lifetime :active)
-           (-when-let (ns (org-x-dag-id->ns it))
-             (-let (((&plist :planned p :fulfilled f)
-                     (either-from-right ns nil)))
-               (mk-item it :lifetime p f nil))))
+          (`(:lifetime . ,bs)
+           (-let (((&plist-get :ancestry a :local l) bs))
+             (when (and (not (plist-get a :canceled-parent-p)) (eq l :active))
+               (-when-let (ns (org-x-dag-id->ns it))
+                 (-let (((&plist :planned p :fulfilled f)
+                         (either-from-right ns nil)))
+                   (mk-item it :lifetime p f nil))))))
           ;; TODO need to grab deadlines from the network status (when done)
-          (`(:endpoint :active)
-           (-when-let (ns (org-x-dag-id->ns it))
-             (-let (((&plist :planned p :fulfilled f :committed c)
-                     (either-from-right ns nil)))
-               (mk-item it :endpoint p f c)))))))))
+          (`(:endpoint . ,bs)
+           (-let (((&plist-get :ancestry a :local l) bs))
+             (when (and (not (plist-get a :canceled-parent-p)) (eq l :active))
+               (-when-let (ns (org-x-dag-id->ns it))
+                 (-let (((&plist :planned p :fulfilled f :committed c)
+                         (either-from-right ns nil)))
+                   (mk-item it :endpoint p f c)))))))))))
 
 (defun org-x-dag-itemize-qtp (files)
   (let* ((wkp-ids (org-x-dag->current-wkp-ids))
@@ -2818,8 +2840,8 @@ FUTURE-LIMIT in a list."
     (list (org-add-props item nil 'x-goal-id nil))))
 
 (defun org-x-dag-itemize-tasks-with-goals (files)
-  (org-x-dag-with-ids files
-    (pcase (either-from-right (org-x-dag-id->bs it) nil)
+  (org-x-dag-with-unmasked-action-ids files
+    (pcase it-local
       (`(:sp-task :task-active ,_)
        (-let ((goal-ids (-when-let (ns (org-x-dag-id->ns it))
                           (either-from* ns
@@ -2835,8 +2857,8 @@ FUTURE-LIMIT in a list."
              (org-x-dag--item-add-goal-ids goal-ids)))))))
 
 (defun org-x-dag-itemize-projects-with-goals (files)
-  (org-x-dag-with-ids files
-    (pcase (either-from-right (org-x-dag-id->bs it) nil)
+  (org-x-dag-with-unmasked-action-ids files
+    (pcase it-local 
       (`(:sp-proj . ,s)
        (unless (eq (car s) :proj-complete)
          (let ((goal-ids (-when-let (ns (org-x-dag-id->ns it))
@@ -2849,9 +2871,9 @@ FUTURE-LIMIT in a list."
                (org-x-dag--item-add-goal-ids goal-ids))))))))
 
 (defun org-x-dag-itemize-archived (files)
-  (org-x-dag-with-ids files
+  (org-x-dag-with-unmasked-action-ids files
     (-let (((comptime type)
-            (pcase (either-from-right (org-x-dag-id->bs it) nil)
+            (pcase it-local
               (`(:sp-proj :proj-complete ,c) `(,c :proj))
               (`(:sp-task :task-complete ,c) `(,c :task))
               (`(:sp-iter :iter-complete ,c) `(,c :iter))
@@ -2937,14 +2959,21 @@ FUTURE-LIMIT in a list."
                  (add-sched acc id nil))))
             (`(:daily :complete ,_)
              (add-sched acc id t))
-            (`(:sp-task :task-active ,_)
-             (add-dead-sched acc id nil))
-            (`(:sp-task :task-complete ,_)
-             (add-dead-sched acc id t))
-            (`(:sp-subiter :si-active ,_)
-             (add-dead-sched acc id nil))
-            (`(:sp-subiter :si-complete ,_)
-             (add-dead-sched acc id t))
+            (`(:action . ,bs)
+             (-let (((&plist :ancestry a :local l) bs))
+               (if (or (plist-get a :canceled-parent-p)
+                       (plist-get a :held-parent-p))
+                   acc
+                 (pcase l
+                   (`(:sp-task :task-active ,_)
+                    (add-dead-sched acc id nil))
+                   (`(:sp-task :task-complete ,_)
+                    (add-dead-sched acc id t))
+                   (`(:sp-subiter :si-active ,_)
+                    (add-dead-sched acc id nil))
+                   (`(:sp-subiter :si-complete ,_)
+                    (add-dead-sched acc id t))
+                   (_ acc)))))
             (_ acc)))
          (get-interval
           (x)
@@ -3951,55 +3980,79 @@ FUTURE-LIMIT in a list."
           (format "%s %s on %d-%d-%d at %02d:%02d" verb what y m d H M))))
     ;; TODO this could show more detail if I wanted
     (pcase bs-data
-      ;; action
-      (`(:sp-proj :proj-active ,_)
-       "Active Project")
-      (`(:sp-proj :proj-wait ,_)
-       "Waiting Project")
-      (`(:sp-proj :proj-hold ,_)
-       "Held Project")
-      (`(:sp-proj :proj-stuck ,_)
-       "Stuck Project")
-      (`(:sp-proj :proj-complete ,comptime)
-       (format-comptime "project" comptime))
-      (`(:sp-task :task-complete ,comptime)
-       (format-comptime "task" comptime))
-      (`(:sp-task :task-active ,_)
-       "Active Task")
-      (`(:endpoint :active)
-       "Active Endpoint Goal")
-      (`(:sp-iter :iter-active ,_)
-       "Active Iterator")
-      (`(:sp-iter :iter-empty)
-       "Empty Iterator")
-      (`(:sp-iter :iter-complete ,comptime)
-       (format-comptime "iterator" comptime))
-      (`(:sp-subiter :si-active ,_)
-       "Active sub-iterator")
-      (`(:sp-subiter :si-complete ,comptime)
-       (format-comptime "sub-iterator" comptime))
+      (`(:action . ,d)
+       (-let* (((&plist :ancestry a :local l) d)
+               (local-status
+                (pcase l
+                  (`(:sp-proj :proj-active)
+                   "Active Project")
+                  (`(:sp-proj :proj-wait)
+                   "Waiting Project")
+                  (`(:sp-proj :proj-hold)
+                   "Held Project")
+                  (`(:sp-proj :proj-stuck)
+                   "Stuck Project")
+                  (`(:sp-proj :proj-complete ,comptime)
+                   (format-comptime "project" comptime))
+                  (`(:sp-task :task-complete ,comptime)
+                   (format-comptime "task" comptime))
+                  (`(:sp-task :task-active ,_)
+                   "Active Task")
+                  (`(:sp-iter :iter-active ,_)
+                   "Active Iterator")
+                  (`(:sp-iter :iter-empty)
+                   "Empty Iterator")
+                  (`(:sp-iter :iter-complete ,comptime)
+                   (format-comptime "iterator" comptime))
+                  (`(:sp-subiter :si-active ,_)
+                   "Active sub-iterator")
+                  (`(:sp-subiter :si-complete ,comptime)
+                   (format-comptime "sub-iterator" comptime))
+                  (e (error "Unmatched pattern: %s" e))))
+               ((&plist :canceled-parent-p c :held-parent-p h) a)
+               (ancestry-status (cond
+                                 ((and c h) "Held/Canceled")
+                                 (c "Canceled")
+                                 (h "Held")
+                                 (t "Unmasked"))))
+         (list (format "Action status: %s" local-status)
+               (format "Mask status: %s" ancestry-status))))
 
-      ;; everything else
-      (`(:endpoint :complete ,comptime)
-       (format-comptime "EPG" comptime))
-      (`(,(or :survival :lifetime) :active)
-       "Active")
+      (`(:endpoint . ,d)
+       (-let* (((&plist :ancestry a :local l) d)
+               (local-status (pcase l
+                               (`(:active)
+                                "Active Endpoint Goal")
+                               (`(:complete ,comptime)
+                                (format-comptime "EPG" comptime))))
+               (ancestry-status (if (plist-get a :canceled-parent-p)
+                                    "Canceled"
+                                  "Unmasked")))
+         (list (format "Goal status: %s" local-status)
+               (format "Mask status: %s" ancestry-status))))
+      ;; TODO I currently don't allow either of these to be anything other than
+      ;; "TODO"
+      (`(,(or :lifetime :survival) . ,d)
+       (-let* (((&plist :ancestry a :local _) d)
+               (ancestry-status (if (plist-get a :canceled-parent-p))))
+         (list "Active" (format "Mask Status: %s" ancestry-status))))
+
       (`(:quarterly :active ,dead)
        (->> (if dead (->> (org-ml-to-trimmed-string dead)
                           (format "deadline: %s"))
               "no deadline")
             (format "Active with %s")))
       (`(:quarterly :complete ,comptime)
-       (format-comptime "quarterly plan" comptime))
+       (list (format-comptime "quarterly plan" comptime)))
       (`(:weekly :active)
        "Active")
       (`(:weekly :complete ,comptime)
-       (format-comptime "weekly plan" comptime))
+       (list (format-comptime "weekly plan" comptime)))
       (`(:daily :active (:sched ,sched))
        (-let (((y m d H M) (org-ml-timestamp-get-start-time sched)))
-         (format "Open and scheduled on %d-%d-%d at %02d:%02d" y m d H M)))
+         (list (format "Open and scheduled on %d-%d-%d at %02d:%02d" y m d H M))))
       (`(:daily :complete ,comptime)
-       (format-comptime "daily metablock" comptime)))))
+       (list (format-comptime "daily metablock" comptime))))))
 
 (defun org-x-dag--format-title-with-group (id)
   (let ((title (org-x-dag-id->title id))
@@ -4117,7 +4170,7 @@ FUTURE-LIMIT in a list."
         (either-from e (lambda (e) (list (format "Error: %s" e))) right))
        (format-bs
         (bs)
-        (->> (format-either bs (lambda (b) (list (org-x-dag--format-bs b))))
+        (->> (format-either bs (lambda (b) (org-x-dag--format-bs b)))
              (format-header "Buffer Status")))
        (format-ns-either
         (id ns-either)
