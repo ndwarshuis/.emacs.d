@@ -2964,6 +2964,9 @@ original function being advised and ARGS are the arguments."
 
 (advice-add #'org-agenda-run-series :around #'org-x-agenda-run-series-advice)
 
+;; hide the daily tags
+(setq org-agenda-hide-tags-regexp "[DMYQ][0-9]\\{2\\}")
+
 ;; (advice-remove #'org-agenda-run-series #'org-x-agenda-run-series-advice)
 
 (defun nd/org-agenda-run-series (name files cmds)
