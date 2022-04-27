@@ -581,8 +581,6 @@ used for optimization."
 
 ;; buffer status
 
-;; TODO need to check for created timestamps
-
 ;; [Status a] -> b -> (a -> a -> Status Bool) -> (a -> Bool) -> (a -> Status b)
 ;; -> Status b
 (defmacro org-x-dag-bs-fold-children (bss default rank-form stop-form trans-form)
@@ -612,8 +610,18 @@ used for optimization."
                (either>>= final ,trans-form))))
        (either :right ,default))))
 
+(defmacro org-x-dag-left (fmt &rest args)
+  `(either :left (format ,fmt ,@args)))
+
 (defun org-x-dag-bs-error-kw (type-name kw)
-  (either :left (format "%ss cannot have keyword '%s" type-name kw)))
+  (org-x-dag-left "%ss cannot have keyword '%s" type-name kw))
+
+(defmacro org-x-dag-bs-check-created (node-data &rest body)
+  (declare (indent 1))
+  `(if (not (alist-get org-x-prop-created (plist-get ,node-data :props)
+                       nil nil #'equal))
+       (either :left "CREATED timestamp not set")
+     ,@body))
 
 (defmacro org-x-dag-bs-with-closed (node-data type-name canc-bs-form
                                               done-form open-form)
@@ -636,11 +644,10 @@ used for optimization."
                (let ((it-comptime (complete-time ,c nil)))
                  ,done-form))
               (t
-               (->> (format "Closed %s must be marked CANC/DONE" ,type-name)
-                    (either :left))))
+               (org-x-dag-left "Closed %s must be marked CANC/DONE" type-name)))
            (cond
             ((member it-todo org-x-done-keywords)
-             (either :left (format "DONE/CANC %s must be closed" ,type-name)))
+             (org-x-dag-left "DONE/CANC %s must be closed" type-name))
             (t
              ,open-form)))))))
 
@@ -658,17 +665,15 @@ used for optimization."
     (let ((canc-bs-form* (wrap-ancestry canc-bs-form))
           (done-form* (lift-form done-form))
           (open-form* (lift-form open-form)))
-      `(-let ((it-children (--map (either>>= it
-                                    (->> (plist-get it :local)
-                                         (either :right)))
-                                  ,child-bss)))
-         ;; (print "----")
-         ;; (print child-bss)
-         ;; (print it-children)
-         (org-x-dag-bs-with-closed ,node-data ,type-name
-           ,canc-bs-form*
-           ,done-form*
-           ,open-form*)))))
+      `(org-x-dag-bs-check-created ,node-data
+         (-let ((it-children (--map (either>>= it
+                                      (->> (plist-get it :local)
+                                           (either :right)))
+                                    ,child-bss)))
+           (org-x-dag-bs-with-closed ,node-data ,type-name
+             ,canc-bs-form*
+             ,done-form*
+             ,open-form*))))))
 
 (defun org-x-dag-bs-action-project-inner (node-data ancestry child-bss)
   (cl-flet
@@ -1063,8 +1068,6 @@ used for optimization."
           (either<$> it
             (-let (((&plist :ancestry a :local l) it))
               (list :ancestry a :local (cons :sp-subiter l)))))))
-        ;; (org-x-dag-node-fmap node
-        ;;   (either<$> it (cons :sp-subiter it)))))
     (-let (((p (ps is)) (->> (list :canceled-parent-p nil
                                    :held-parent-p nil)
                              (org-x-dag-bs-action-project node-tree))))
@@ -1084,16 +1087,17 @@ used for optimization."
     (org-x-dag-bs-prefix :endpoint `(,n ,@ns))))
 
 (defun org-x-dag-bs-toplevel-goal-inner (type-name node-data child-bss)
-  (-let (((&plist :planning :todo) node-data))
-    (cond
-     (planning
-      (either :left (format "%ss cannot have planning elements" type-name)))
-     ((either-lefts child-bss)
-      (either :left "Child error"))
-     ((equal todo org-x-kw-todo)
-      (either :right '(:active)))
-     (t
-      (org-x-dag-bs-error-kw type-name todo)))))
+  (org-x-dag-bs-check-created node-data
+    (-let (((&plist :planning :todo) node-data))
+      (cond
+       (planning
+        (either :left (format "%ss cannot have planning elements" type-name)))
+       ((either-lefts child-bss)
+        (either :left "Child error"))
+       ((equal todo org-x-kw-todo)
+        (either :right '(:active)))
+       (t
+        (org-x-dag-bs-error-kw type-name todo))))))
 
 (defun org-x-dag-bs-toplevel-goal-outer (type-name tree ancestry)
   (org-x-dag-bs-with-children-1
