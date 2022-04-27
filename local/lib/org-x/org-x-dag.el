@@ -2935,9 +2935,7 @@ FUTURE-LIMIT in a list."
           (-when-let (pts (-some->> (org-x-dag-id->planning-timestamp which id)
                             (org-x-dag-partition-timestamp)))
             (-when-let (ds (get-datetimes donep dt-fun pts))
-              (-let ((tags (if (eq (org-x-dag-id->group id) :daily)
-                               (org-x-dag-id->local-tags id)
-                             (org-x-dag-id->tags id)))
+              (-let ((tags (org-x-dag-id->tags id))
                      ((&plist :pos) pts))
                 (--map (list :pos pos :datetime it :tags tags :id id) ds)))))
          (scheduled-datetimes
