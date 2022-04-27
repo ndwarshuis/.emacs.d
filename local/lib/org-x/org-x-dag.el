@@ -1078,7 +1078,10 @@ used for optimization."
   (org-x-dag-bs-with-children-1
    tree
    ancestry
-   (lambda (_ a) a)
+   (lambda (node-meta parent-ancestry)
+     (-let (((&plist :canceled-parent-p c) parent-ancestry)
+            ((&plist :todo) node-meta))
+       (list :canceled-parent-p (or c (equal todo org-x-kw-canc)))))
    #'org-x-dag-bs-epg-outer
    #'org-x-dag-bs-epg-inner))
 
