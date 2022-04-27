@@ -644,10 +644,10 @@ used for optimization."
                (let ((it-comptime (complete-time ,c nil)))
                  ,done-form))
               (t
-               (org-x-dag-left "Closed %s must be marked CANC/DONE" type-name)))
+               (org-x-dag-left "Closed %s must be marked CANC/DONE" ,type-name)))
            (cond
             ((member it-todo org-x-done-keywords)
-             (org-x-dag-left "DONE/CANC %s must be closed" type-name))
+             (org-x-dag-left "DONE/CANC %s must be closed" ,type-name))
             (t
              ,open-form)))))))
 
@@ -2648,7 +2648,7 @@ FUTURE-LIMIT in a list."
 
 (defmacro org-x-dag-with-unmasked-action-ids (files id-form)
   (declare (indent 1))
-  `(org-x-dag-with-ids files
+  `(org-x-dag-with-ids ,files
      (pcase (either-from-right (org-x-dag-id->bs it) nil)
        (`(:action . ,bs)
         (-let (((&plist :local it-local :ancestry a) bs))
@@ -2773,7 +2773,7 @@ FUTURE-LIMIT in a list."
       (org-x-dag-with-ids files
         (pcase (either-from-right (org-x-dag-id->bs it) nil)
           (`(:lifetime . ,bs)
-           (-let (((&plist-get :ancestry a :local l) bs))
+           (-let (((&plist :ancestry a :local l) bs))
              (when (and (not (plist-get a :canceled-parent-p)) (eq l :active))
                (-when-let (ns (org-x-dag-id->ns it))
                  (-let (((&plist :planned p :fulfilled f)
@@ -2781,7 +2781,7 @@ FUTURE-LIMIT in a list."
                    (mk-item it :lifetime p f nil))))))
           ;; TODO need to grab deadlines from the network status (when done)
           (`(:endpoint . ,bs)
-           (-let (((&plist-get :ancestry a :local l) bs))
+           (-let (((&plist :ancestry a :local l) bs))
              (when (and (not (plist-get a :canceled-parent-p)) (eq l :active))
                (-when-let (ns (org-x-dag-id->ns it))
                  (-let (((&plist :planned p :fulfilled f :committed c)
@@ -4041,7 +4041,7 @@ FUTURE-LIMIT in a list."
       ;; "TODO"
       (`(,(or :lifetime :survival) . ,d)
        (-let* (((&plist :ancestry a :local _) d)
-               (ancestry-status (if (plist-get a :canceled-parent-p))))
+               (ancestry-status (plist-get a :canceled-parent-p)))
          (list "Active" (format "Mask Status: %s" ancestry-status))))
 
       (`(:quarterly :active ,dead)
