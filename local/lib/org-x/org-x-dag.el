@@ -581,34 +581,45 @@ used for optimization."
 
 ;; buffer status
 
+(defun org-x-dag-bs-check-children (bss msg nochild-def child-def fun)
+  (declare (indent 4))
+  ;; this is almost like fold or foldM but I want to stop if `fun' returns nil
+  (cl-labels
+      ;; hopefully the TCO native comp actually works :)
+      ((fold-while
+        (xs)
+        (cond
+         ((not xs) (either :right child-def))
+         ((either-is-left-p (car xs)) (either :left "Child error"))
+         (t (if (funcall fun (car xs))
+                (fold-while (cdr xs))
+              (either :left msg))))))
+    (if (not bss) (either :right nochild-def)
+      (fold-while bss))))
+
 ;; [Status a] -> b -> (a -> a -> Status Bool) -> (a -> Bool) -> (a -> Status b)
 ;; -> Status b
-(defmacro org-x-dag-bs-fold-children (bss default rank-form stop-form trans-form)
+(defun org-x-dag-bs-rankfold-children (bss default rank-fun stop-fun trans-fun)
   (declare (indent 2))
   (let ((err (either :left "Child error")))
-    `(if ,bss
-         (-let (((x . xs) ,bss))
-           (if (either-is-left-p x) ',err
-             (let ((acc (cadr x)) r final it)
-               (while (and (not final) xs)
-                 (setq x (car xs))
-                 (if (either-is-left-p x)
-                     (setq final ',err)
-                   (setq it (cadr x)
-                         r ,rank-form)
-                   (unless r
-                     (error "You forgot the difference between Maybe and Either"))
-                   (if (either-is-left-p r)
-                       (setq final r)
-                     (when (cadr r)
-                       (setq acc (cadr x)))
-                     (if ,stop-form
-                         (setq final (either :right acc))
-                       (!cdr xs)))))
-               (when (not final)
-                 (setq final (either :right acc)))
-               (either>>= final ,trans-form))))
-       (either :right ,default))))
+    (cl-labels
+        ((fold-rank
+          (acc xs)
+          (if (not xs) (either :right acc)
+            (-let (((x . rest) xs))
+              (pcase x
+                (`(:right ,r)
+                 (either>>= (funcall rank-fun acc r)
+                   (if (not it) (fold-rank acc rest)
+                     (if (funcall stop-fun r) x (fold-rank r rest)))))
+                (_ err))))))
+      (if (not bss) (either :right default)
+        (pcase (car bss)
+          (`(:right ,r)
+           (if (funcall stop-fun r) (funcall trans-fun r)
+             (either>>= (fold-rank r (cdr bss))
+               (funcall trans-fun it))))
+          (_ err))))))
 
 (defmacro org-x-dag-left (fmt &rest args)
   `(either :left (format ,fmt ,@args)))
@@ -665,6 +676,9 @@ used for optimization."
     (let ((canc-bs-form* (wrap-ancestry canc-bs-form))
           (done-form* (lift-form done-form))
           (open-form* (lift-form open-form)))
+      ;; TODO this seems excessive, I'm unwrapping some outer type for the
+      ;; sake of some inner type, but if any of these are left then
+      ;; they should short circuit the fold/check functions embedded in here
       `(org-x-dag-bs-check-created ,node-data
          (-let ((it-children (--map (either>>= it
                                       (->> (plist-get it :local)
@@ -692,32 +706,16 @@ used for optimization."
         `(:sp-task :task-complete ,it-comptime))
 
       ;; done form
-      (org-x-dag-bs-fold-children it-children `(:sp-task :task-complete ,it-comptime)
-        ;; TODO this could be slightly more efficient if the error type is
-        ;; returned in this form and not the last
-        (->> (pcase `(,acc ,it)
-               (`((:sp-proj :proj-complete ,_) (:sp-proj :proj-complete ,_)) nil)
-               (`((:sp-iter :iter-complete ,_) (:sp-iter :iter-complete ,_)) nil)
-               (`((:sp-task :task-complete ,_) (:sp-task :task-complete ,_)) nil)
-               (`((:sp-proj :proj-complete ,_) ,_) t)
-               (`((:sp-iter :iter-complete ,_) ,_) t)
-               (`((:sp-task :task-complete ,_) ,_) t)
-               (`(,_ (:sp-proj :proj-complete ,_)) nil)
-               (`(,_ (:sp-iter :iter-complete ,_)) nil)
-               (`(,_ (:sp-task :task-complete ,_)) nil)
-               (e (error "Unmatched pattern: %S" e)))
-             (either :right))
-        (pcase acc
-          (`(:sp-proj :proj-complete ,_) nil)
-          (`(:sp-iter :iter-complete ,_) nil)
-          (`(:sp-task :task-complete ,_) nil)
-          (_ t))
-        (pcase it
-          ((or `(:sp-proj :proj-complete ,_)
-               `(:sp-iter :iter-complete ,_)
-               `(:sp-task :task-complete ,_))
-           (either :right `(:sp-proj :proj-complete ,it-comptime)))
-          (_ (either :left "Completed projects cannot have active children"))))
+      (org-x-dag-bs-check-children it-children
+          "Completed projects cannot have active children"
+          `(:sp-task :task-complete ,it-comptime)
+          `(:sp-proj :proj-complete ,it-comptime)
+        (lambda (child-bs)
+          (pcase child-bs
+            (`(:sp-proj :proj-complete ,_) nil)
+            (`(:sp-iter :iter-complete ,_) nil)
+            (`(:sp-task :task-complete ,_) nil)
+            (_ t))))
 
       ;; undone form
       (-let* (((sched dead) (-some->> it-planning
@@ -732,78 +730,84 @@ used for optimization."
          ((and child-bss sched)
           (either :left "Projects cannot be scheduled"))
          ((equal it-todo org-x-kw-todo)
-          (org-x-dag-bs-fold-children it-children task-default
-            (->> (pcase `(,acc ,it)
-                   (`((:sp-task :task-active ,a) (:sp-task :task-active ,b))
-                    (and (not (is-next a)) (is-next b)))
+          (org-x-dag-bs-rankfold-children it-children task-default
+            (lambda (acc next)
+              (->> (pcase `(,acc ,next)
+                     (`((:sp-task :task-active ,a) (:sp-task :task-active ,b))
+                      (and (not (is-next a)) (is-next b)))
 
-                   (`(,(or `(:sp-proj :proj-active)
-                           `(:sp-proj :proj-wait)
-                           `(:sp-proj :proj-held)
-                           `(:sp-proj :proj-stuck)
-                           `(:sp-iter :iter-active)
-                           `(:sp-iter :iter-empty))
-                      (:sp-task :task-active ,d))
-                    (is-next d))
+                     (`(,(or `(:sp-proj :proj-active)
+                             `(:sp-proj :proj-wait)
+                             `(:sp-proj :proj-held)
+                             `(:sp-proj :proj-stuck)
+                             `(:sp-iter :iter-active)
+                             `(:sp-iter :iter-empty))
+                        (:sp-task :task-active ,d))
+                      (is-next d))
 
-                   (`((:sp-task :task-active ,d)
-                      ,(or `(:sp-proj :proj-active)
-                           `(:sp-proj :proj-wait)
-                           `(:sp-proj :proj-held)
-                           `(:sp-proj :proj-stuck)
-                           `(:sp-iter :iter-active, _)
-                           `(:sp-iter :iter-empty)))
-                    (not (is-next d)))
+                     (`((:sp-task :task-active ,d)
+                        ,(or `(:sp-proj :proj-active)
+                             `(:sp-proj :proj-wait)
+                             `(:sp-proj :proj-held)
+                             `(:sp-proj :proj-stuck)
+                             `(:sp-iter :iter-active, _)
+                             `(:sp-iter :iter-empty)))
+                      (not (is-next d)))
 
-                   (`((:sp-iter :iter-active ,_) ,_) nil)
-                   (`((:sp-proj :proj-active) ,_) nil)
-                   (`(,_ (:sp-proj :proj-active)) t)
-                   (`(,_ (:sp-iter :iter-active ,_)) t)
+                     (`((:sp-iter :iter-active ,_) ,_) nil)
+                     (`((:sp-proj :proj-active) ,_) nil)
+                     (`(,_ (:sp-proj :proj-active)) t)
+                     (`(,_ (:sp-iter :iter-active ,_)) t)
 
-                   (`((:sp-proj :proj-wait) ,_) nil)
-                   (`(,_ (:sp-proj :proj-wait)) t)
+                     (`((:sp-proj :proj-wait) ,_) nil)
+                     (`(,_ (:sp-proj :proj-wait)) t)
 
-                   (`((:sp-proj :proj-held) ,_) nil)
-                   (`(,_ (:sp-proj :proj-held)) t)
+                     (`((:sp-proj :proj-held) ,_) nil)
+                     (`(,_ (:sp-proj :proj-held)) t)
 
-                   (`((:sp-proj :proj-stuck) ,_) nil)
-                   (`((:sp-iter :iter-empty) ,_) nil)
-                   (`((:sp-task :task-active ,_) ,_) nil)
-                   (`(,_ (:sp-proj :proj-stuck)) t)
-                   (`(,_ (:sp-iter :iter-empty)) t)
-                   (`(,_ (:sp-task :task-active ,_)) t)
+                     (`((:sp-proj :proj-stuck) ,_) nil)
+                     (`((:sp-iter :iter-empty) ,_) nil)
+                     (`((:sp-task :task-active ,_) ,_) nil)
+                     (`(,_ (:sp-proj :proj-stuck)) t)
+                     (`(,_ (:sp-iter :iter-empty)) t)
+                     (`(,_ (:sp-task :task-active ,_)) t)
 
-                   ;; any pair that makes it this far is completed in both, which means
-                   ;; neither takes precedence, which means choose the left one
-                   (`(,_ ,_) nil))
-                 (either :right))
+                     ;; any pair that makes it this far is completed in both,
+                     ;; which means neither takes precedence, which means choose
+                     ;; the left one
+                     (`(,_ ,_) nil))
+                   (either :right)))
 
             ;; early stop
-            (pcase acc
-              (`(:sp-proj :proj-active) t)
-              (`(:sp-iter :iter-active ,_) t)
-              (`(:sp-task :task-active ,d) (is-next d))
-              (_ nil))
+            (lambda (next)
+              (pcase next
+                (`(:sp-proj :proj-active) t)
+                (`(:sp-iter :iter-active ,_) t)
+                (`(:sp-task :task-active ,d) (is-next d))
+                (_ nil)))
 
             ;; child -> parent translation
-            (pcase it
-              ((or `(:sp-proj :proj-complete ,_)
-                   `(:sp-task :task-complete ,_)
-                   `(:sp-iter :iter-complete ,_))
-               (either :left "Active projects must have at least one active child"))
-              (`(:sp-proj ,s) (new-proj s))
-              (`(:sp-iter :iter-active ,_) (new-proj :proj-active))
-              (`(:sp-iter :iter-empty) (new-proj :proj-stuck))
-              (`(:sp-task :task-active ,d)
-               (-let (((&plist :todo o :sched s) d))
-                 (cond
-                  ((equal o org-x-kw-todo) (->> (if s :proj-active :proj-stuck)
-                                                (new-proj)))
-                  ((equal o org-x-kw-next) (new-proj :proj-active))
-                  ((equal o org-x-kw-wait) (new-proj :proj-wait))
-                  ((equal o org-x-kw-hold) (new-proj :proj-hold))
-                  (t (org-x-dag-bs-error-kw "Task action" o)))))
-              (e (error "Pattern fail: %s" e)))))
+            (lambda (acc)
+              (pcase acc
+                ((or `(:sp-proj :proj-complete ,_)
+                     `(:sp-task :task-complete ,_)
+                     `(:sp-iter :iter-complete ,_))
+                 (->> "Active projects must have at least one active child"
+                      (either :left )))
+                (`(:sp-proj ,s) (new-proj s))
+                (`(:sp-iter :iter-active ,_) (new-proj :proj-active))
+                (`(:sp-iter :iter-empty) (new-proj :proj-stuck))
+                (`(:sp-task :task-active ,d)
+                 (-let (((&plist :todo o :sched s) d))
+                   (cond
+                    ((equal o org-x-kw-todo) (->> (if s :proj-active
+                                                    :proj-stuck)
+                                                  (new-proj)))
+                    ((equal o org-x-kw-next) (new-proj :proj-active))
+                    ((equal o org-x-kw-wait) (new-proj :proj-wait))
+                    ((equal o org-x-kw-hold) (new-proj :proj-hold))
+                    (t (org-x-dag-bs-error-kw "Task action" o)))))
+                (e (error "Pattern fail: %s" e))))))
          (child-bss
           (org-x-dag-bs-error-kw "Project action" it-todo))
          (t
@@ -820,63 +824,58 @@ used for optimization."
 (defun org-x-dag-bs-action-subiter-complete-fold (child-bss comptime type-name
                                                             comp-key)
   (declare (indent 2))
-  (org-x-dag-bs-fold-children child-bss `(,comp-key ,comptime)
-    (->> (pcase `(,acc ,it)
-           (`((:si-complete ,_) (:si-complete ,_)) nil)
-           (`((:si-complete ,_) ,_) t)
-           (`(,_ (:si-complete ,_)) nil)
-           (e (error "Unmatched pattern: %S" e)))
-         (either :right))
-    (pcase acc
-      (`(:si-complete ,_) nil)
-      (_ t))
-    (pcase it
-      (`(:si-complete ,_)
-       (either :right `(,comp-key ,comptime)))
-      (_
-       (->> (format "Completed %s cannot have active children" type-name)
-            (either :left))))))
+  (org-x-dag-bs-check-children child-bss
+      (format "Completed %s cannot have active children" type-name)
+      `(,comp-key ,comptime)
+      `(,comp-key ,comptime)
+    (lambda (child-bs)
+      (pcase child-bs
+        (`(:si-complete ,_) nil)
+        (_ t)))))
 
 (defun org-x-dag-bs-action-subiter-todo-fold (child-bss type-name active-key
                                                         default)
   (declare (indent 1))
-  (org-x-dag-bs-fold-children child-bss default
-    (pcase `(,acc ,it)
-      (`((:si-active ,a) (:si-active ,b))
-       (-let (((&plist :sched as :dead ad) a)
-              ((&plist :sched bs :dead bd) b))
-         (cond
-          ((or (xor as bs) (xor ad bd))
-           (->> "All sub-iters must have the same planning configuration"
-                (either :left)))
-          ((and as bs (xor (org-ml-time-is-long as) (org-ml-time-is-long bs)))
-           (->> "Sub-iters must have scheduled timestamp with same length"
-                (either :left)))
-          ((and ad bd (xor (org-ml-time-is-long ad) (org-ml-time-is-long bd)))
-           (->> "Sub-iters must have deadline timestamp with same length"
-                (either :left)))
-          ;; ASSUME this won't fail since the datetimes are assumed to be the
-          ;; same length as per rules above
-          ((and ad bd)
-           (->> (org-x-dag-datetime< (org-ml-timestamp-get-start-time ad)
-                                     (org-ml-timestamp-get-start-time bd))
-                (either :right)))
-          (t
-           (->> (org-x-dag-datetime< (org-ml-timestamp-get-start-time as)
-                                     (org-ml-timestamp-get-start-time bs))
-                (either :right))))))
-      (`((:si-active ,_) ,_) (either :right nil))
-      (`(,_ (:si-active ,_)) (either :right t))
-      (`(,_ ,_) (either :right nil)))
-    (pcase acc
-      (`(:si-active ,_) t)
-      (_ nil))
-    (pcase it
-      (`(:si-complete ,_)
-       (->> (format "Active %s must have at least one active child" type-name)
-            (either :left)))
-      (`(:si-active ,ts-data)
-       (either :right `(,active-key ,ts-data))))))
+  (org-x-dag-bs-rankfold-children child-bss default
+    (lambda (acc next)
+      (pcase `(,acc ,next)
+        (`((:si-active ,a) (:si-active ,b))
+         (-let (((&plist :sched as :dead ad) a)
+                ((&plist :sched bs :dead bd) b))
+           (cond
+            ((or (xor as bs) (xor ad bd))
+             (->> "All sub-iters must have the same planning configuration"
+                  (either :left)))
+            ((and as bs (xor (org-ml-time-is-long as) (org-ml-time-is-long bs)))
+             (->> "Sub-iters must have scheduled timestamp with same length"
+                  (either :left)))
+            ((and ad bd (xor (org-ml-time-is-long ad) (org-ml-time-is-long bd)))
+             (->> "Sub-iters must have deadline timestamp with same length"
+                  (either :left)))
+            ;; ASSUME this won't fail since the datetimes are assumed to be the
+            ;; same length as per rules above
+            ((and ad bd)
+             (->> (org-x-dag-datetime< (org-ml-timestamp-get-start-time ad)
+                                       (org-ml-timestamp-get-start-time bd))
+                  (either :right)))
+            (t
+             (->> (org-x-dag-datetime< (org-ml-timestamp-get-start-time as)
+                                       (org-ml-timestamp-get-start-time bs))
+                  (either :right))))))
+        (`((:si-active ,_) ,_) (either :right nil))
+        (`(,_ (:si-active ,_)) (either :right t))
+        (`(,_ ,_) (either :right nil))))
+    (lambda (next)
+      (pcase next
+        (`(:si-active ,_) t)
+        (_ nil)))
+    (lambda (acc)
+      (pcase acc
+        (`(:si-complete ,_)
+         (->> type-name
+              (org-x-dag-left "Active %s must have at least one active child")))
+        (`(:si-active ,ts-data)
+         (either :right `(,active-key ,ts-data)))))))
 
 (defun org-x-dag-node-is-iterator-p (node)
   (org-x-dag-node-data-is-iterator-p (plist-get node :node-meta)))
@@ -923,35 +922,26 @@ used for optimization."
 (defun org-x-dag-bs-epg-inner (node ancestry child-bss)
   (org-x-dag-bs-action-with-closed node ancestry child-bss "endpoint goal"
     `(:complete ,it-comptime)
-    (org-x-dag-bs-fold-children it-children `(:complete ,it-comptime)
-      (->> (pcase `(,acc ,it)
-             (`((:complete ,_) (:complete ,_)) nil)
-             (`(,_ (:complete ,_)) nil)
-             (`((:complete ,_) ,_) t))
-           (either :right))
-      (pcase acc
-        (`(:complete ,_) nil)
-        (_ t))
-      (pcase it
-        (`(:complete ,_)
-         (either :right `(:complete ,it-comptime)))
-        (_ (either :left "Completed EPGs cannot have active children"))))
+    (org-x-dag-bs-check-children it-children
+        "Completed EPGs cannot have active children"
+        `(:complete ,it-comptime)
+        `(:complete ,it-comptime)
+      (lambda (child-bs)
+        (pcase child-bs
+          (`(:complete ,_) nil)
+          (_ t))))
     (cond
      ((-some->> it-planning (org-ml-get-property :scheduled))
       (either :left "EPGs cannot be scheduled"))
      ((equal it-todo org-x-kw-todo)
-      (org-x-dag-bs-fold-children it-children `(:active)
-        (->> (pcase `(,acc ,it)
-               (`((:active) (:active)) nil)
-               (`(,_ (:active)) t)
-               (`((:active) ,_) nil))
-             (either :right))
-        nil
-        (pcase it
-          ('(:active)
-           (either :right '(:active)))
-          (_
-           (either :left "Active EPGs must have at least one active child")))))
+      (org-x-dag-bs-check-children it-children
+          "Active EPGs must have at least one active child"
+          '(:active)
+          '(:active)
+        (lambda (child-bs)
+          (pcase child-bs
+            ('(:active) t)
+            (_ nil)))))
      (t
       (org-x-dag-bs-error-kw "Endpoint goal" it-todo)))))
 
