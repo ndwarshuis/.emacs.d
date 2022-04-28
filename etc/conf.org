@@ -28,6 +28,7 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#autosave][autosave]]
   - [[#async][async]]
   - [[#file-io][file IO]]
+  - [[#undo][undo]]
 - [[#editing][editing]]
   - [[#standardization][standardization]]
   - [[#auto-completion][auto completion]]
@@ -747,7 +748,16 @@ Emacs will warn user when opening a file over a certain limit. Raise this to 1GB
 #+begin_src emacs-lisp
 (setq large-file-warning-threshold 1000000000)
 #+end_src
-
+** undo
+:PROPERTIES:
+:CREATED:  [2022-04-28 Thu 12:00]
+:ID:       407e6b89-fd3b-4205-81a2-636c1d82bf5d
+:END:
+Memory is cheap (kinda). Keep more undo entries to make up for the fact that I don't commit enough.
+#+begin_src emacs-lisp
+(setq undo-limit 1600000
+      undo-strong-limit 2400000)
+#+end_src
 * editing
 For options that specifically affect programming or editing modes
 ** standardization
