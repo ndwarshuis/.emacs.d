@@ -581,19 +581,19 @@ used for optimization."
 
 ;; buffer status
 
-(defun org-x-dag-bs-check-children (bss msg nochild-def child-def fun)
+(defun org-x-dag-bs-check-children (bss msg nochild-def child-def stop-fun)
   (declare (indent 4))
   ;; this is almost like fold or foldM but I want to stop if `fun' returns nil
   (cl-labels
       ;; hopefully the TCO native comp actually works :)
       ((fold-while
         (xs)
-        (cond
-         ((not xs) (either :right child-def))
-         ((either-is-left-p (car xs)) (either :left "Child error"))
-         (t (if (funcall fun (car xs))
-                (fold-while (cdr xs))
-              (either :left msg))))))
+        (if (not xs) (either :right child-def)
+          (pcase (car xs)
+            (`(:right ,r) (if (funcall stop-fun r)
+                              (either :left msg)
+                            (fold-while (cdr xs))))
+            (_ (either :left "Child error"))))))
     (if (not bss) (either :right nochild-def)
       (fold-while bss))))
 
