@@ -660,10 +660,10 @@ used for optimization."
             (t
              ,open-form)))))))
 
-(defmacro org-x-dag-bs-action-with-closed (node-data ancestry child-bss type-name
+(defmacro org-x-dag-bs-action-with-closed (node-data ancestry type-name
                                                      canc-bs-form
                                                      done-form open-form)
-  (declare (indent 4))
+  (declare (indent 3))
   (cl-flet*
       ((wrap-ancestry
         (form)
@@ -674,18 +674,11 @@ used for optimization."
     (let ((canc-bs-form* (wrap-ancestry canc-bs-form))
           (done-form* (lift-form done-form))
           (open-form* (lift-form open-form)))
-      ;; TODO this seems excessive, I'm unwrapping some outer type for the
-      ;; sake of some inner type, but if any of these are left then
-      ;; they should short circuit the fold/check functions embedded in here
       `(org-x-dag-bs-check-created ,node-data
-         ;; (-let ((it-children (--map (either>>= it
-         ;;                              (->> (plist-get it :local)
-         ;;                                   (either :right)))
-         ;;                            ,child-bss)))
-           (org-x-dag-bs-with-closed ,node-data ,type-name
-             ,canc-bs-form*
-             ,done-form*
-             ,open-form*)))))
+         (org-x-dag-bs-with-closed ,node-data ,type-name
+           ,canc-bs-form*
+           ,done-form*
+           ,open-form*)))))
 
 (defun org-x-dag-bs-action-project-inner (node-data ancestry child-bss)
   (cl-flet
@@ -698,7 +691,7 @@ used for optimization."
           (or sched (equal todo org-x-kw-next)))))
     ;; rankings
     ;; *-active > proj-wait > proj-held > (proj-stuck == iter-empty) > *-complete
-    (org-x-dag-bs-action-with-closed node-data ancestry child-bss "projects"
+    (org-x-dag-bs-action-with-closed node-data ancestry "projects"
       (if child-bss
           `(:sp-proj :proj-complete ,it-comptime)
         `(:sp-task :task-complete ,it-comptime))
@@ -729,7 +722,7 @@ used for optimization."
          ((equal it-todo org-x-kw-todo)
           (org-x-dag-bs-rankfold-children child-bss task-default
             (lambda (acc next)
-              (->> (pcase `(,(plist-get :local acc) ,(plist-get :local next))
+              (->> (pcase `(,(plist-get acc :local) ,(plist-get next :local))
                      (`((:sp-task :task-active ,a) (:sp-task :task-active ,b))
                       (and (not (is-next a)) (is-next b)))
 
@@ -776,14 +769,14 @@ used for optimization."
                    (either :right)))
 
             (lambda (next)
-              (pcase (plist-get :local next)
+              (pcase (plist-get next :local)
                 (`(:sp-proj :proj-active) t)
                 (`(:sp-iter :iter-active ,_) t)
                 (`(:sp-task :task-active ,d) (is-next d))
                 (_ nil)))
 
             (lambda (acc)
-              (pcase (plist-get :local acc)
+              (pcase (plist-get acc :local)
                 ((or `(:sp-proj :proj-complete ,_)
                      `(:sp-task :task-complete ,_)
                      `(:sp-iter :iter-complete ,_))
@@ -824,7 +817,7 @@ used for optimization."
       (either :right `(,comp-key ,comptime))
       `(,comp-key ,comptime)
     (lambda (child-bs)
-      (pcase (plist-get :local child-bs)
+      (pcase (plist-get child-bs :local)
         (`(:si-complete ,_) t)
         (_ nil)))))
 
@@ -833,7 +826,7 @@ used for optimization."
   (declare (indent 1))
   (org-x-dag-bs-rankfold-children child-bss default
     (lambda (acc next)
-      (pcase `(,(plist-get :local acc) ,(plist-get :local next))
+      (pcase `(,(plist-get acc :local) ,(plist-get next :local))
         (`((:si-active ,a) (:si-active ,b))
          (-let (((&plist :sched as :dead ad) a)
                 ((&plist :sched bs :dead bd) b))
@@ -861,22 +854,23 @@ used for optimization."
         (`(,_ (:si-active ,_)) (either :right t))
         (`(,_ ,_) (either :right nil))))
     (lambda (next)
-      (pcase (plist-get :local next)
+      (pcase (plist-get next :local)
         (`(:si-active ,_) t)
         (_ nil)))
     (lambda (acc)
-      (pcase (plist-get :local acc)
+      (pcase (plist-get acc :local)
         (`(:si-complete ,_)
          (->> type-name
               (org-x-dag-left "Active %s must have at least one active child")))
         (`(:si-active ,ts-data)
-         (either :right `(,active-key ,ts-data)))))))
+         (either :right `(,active-key ,ts-data)))
+        (e (error "Invalid pattern: %s" e))))))
 
 (defun org-x-dag-node-is-iterator-p (node)
   (org-x-dag-node-data-is-iterator-p (plist-get node :node-meta)))
 
 (defun org-x-dag-bs-action-subiter-inner (node-data ancestry child-bss)
-  (org-x-dag-bs-action-with-closed node-data ancestry child-bss "sub-iterators"
+  (org-x-dag-bs-action-with-closed node-data ancestry "sub-iterators"
     `(:si-complete ,it-comptime)
     (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
       "sub-iterators" :si-complete)
@@ -897,7 +891,7 @@ used for optimization."
         (org-x-dag-bs-error-kw "Sub-iterator" it-todo))))))
 
 (defun org-x-dag-bs-action-iter-inner (node-data ancestry child-bss)
-  (org-x-dag-bs-action-with-closed node-data ancestry child-bss "iterators"
+  (org-x-dag-bs-action-with-closed node-data ancestry "iterators"
     `(:iter-complete ,it-comptime)
     (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
       "iterators" :iter-complete)
@@ -915,10 +909,10 @@ used for optimization."
 (defun org-x-dag-bs-epg-inner (node ancestry child-bss)
   (let ((is-complete
          (lambda (child-bs)
-           (pcase (plist-get :local child-bs)
+           (pcase (plist-get child-bs :local)
              (`(:complete ,_) t)
              (_ nil)))))
-    (org-x-dag-bs-action-with-closed node ancestry child-bss "endpoint goal"
+    (org-x-dag-bs-action-with-closed node ancestry "endpoint goal"
       `(:complete ,it-comptime)
       (org-x-dag-bs-check-children child-bss
           (either :left "Completed EPGs cannot have active children")
