@@ -1864,13 +1864,16 @@ plist holding the files to be used in the DAG."
     (plist-put org-x-dag :files file-state)
     (org-x-dag-build-network-status)))
 
+(defun org-x-dag-reset ()
+  (setq org-x-dag (org-x-dag-empty)
+        org-x-dag-sync-state nil))
+
 (defun org-x-dag-sync (&optional force)
   "Sync the DAG with files from `org-x-dag-get-files'.
 
 If FORCE is non-nil, sync no matter what."
   (when force
-    (setq org-x-dag-sync-state nil
-          org-x-dag (org-x-dag-empty)))
+    (org-x-dag-reset))
   (-let (((file-state to-remove to-insert to-update no-change)
           (org-x-dag-get-sync-state)))
     (org-x-dag-update file-state to-remove to-insert to-update)
@@ -1878,6 +1881,7 @@ If FORCE is non-nil, sync no matter what."
          (--map (cons (plist-get it :path) (plist-get it :md5)))
          (setq org-x-dag-sync-state))
     nil))
+
 
 ;; GLOBAL LOOKUP FUNCTIONS
 
@@ -4217,12 +4221,9 @@ FUTURE-LIMIT in a list."
   (let* ((org-tags-match-list-sublevels org-tags-match-list-sublevels)
          (completion-ignore-case t))
     (catch 'exit
-      ;; this should be run before `org-x-dag-sync' as it refreshes properties
-      ;; like effort and statistics
       (org-agenda-prepare (concat "DAG-TAG"))
       (org-compile-prefix-format 'tags)
       (org-set-sorting-strategy 'tags)
-      (org-x-dag-sync)
       (let ((org-agenda-redo-command `(org-x-dag-show-nodes ',get-nodes))
             (rtnall (funcall get-nodes org-agenda-files)))
         (org-agenda--insert-overriding-header
@@ -4256,7 +4257,6 @@ FUTURE-LIMIT in a list."
       (org-agenda-prepare "DAG-DAILY")
       (org-compile-prefix-format 'agenda)
       (org-set-sorting-strategy 'agenda)
-      (org-x-dag-sync)
       (-let* ((today (org-today))
               (sd (or start-day today))
               (org-agenda-redo-command
@@ -4292,12 +4292,20 @@ FUTURE-LIMIT in a list."
 
 ;; agenda helper functions/macros
 
+(defun org-x-dag-group->files (which)
+  (pcase which
+    ((or :daily :weekly :quarterly) (list (org-x-dag->planning-file which)))
+    ((or :lifetime :endpoint :survival) (list (org-x-dag->goal-file which)))
+    (:action (org-x-dag->action-files))))
+
 (defun org-x-dag-agenda-run-series (name files cmds)
   (declare (indent 2))
   (catch 'exit
-    (let ((org-agenda-buffer-name (format "*Agenda: %s*" name)))
+    (org-x-dag-sync)
+    (let ((org-agenda-buffer-name (format "*Agenda: %s*" name))
+          (fs (-mapcat #'org-x-dag-group->files files)))
       ;; files are actually needed (I think) for `org-agenda-prepare' to run
-      (org-agenda-run-series name `((,@cmds) ((org-agenda-files ',files)))))))
+      (org-agenda-run-series name `((,@cmds) ((org-agenda-files ',fs)))))))
 
 (defun org-x-dag-agenda-call-inner (buffer-name type match files settings)
   (declare (indent 4))
@@ -4393,8 +4401,7 @@ In the order of display
                     (->> (get-text-property 1 'x-id line)
                          (org-x-dag-id->has-node-property-p ,prop ,value)))))
           `(:name ,name :order ,order :pred ,f))))
-    (let ((files (cons (org-x-dag->planning-file :daily)
-                       (org-x-dag->action-files)))
+    (let ((files '(:action :daily))
           (conflict-fun (lambda (a)
                           (-when-let (i (get-text-property 1 'x-conflict-id a))
                             (->> (org-x-dag-id->title i)
@@ -4417,8 +4424,7 @@ In the order of display
 
 (defun org-x-dag-agenda-goals ()
   (interactive)
-  (let ((files (->> (list :lifetime :endpoint :survival)
-                    (-map #'org-x-dag->goal-file))))
+  (let ((files '(:lifetime :endpoint :survival)))
     (org-x-dag-agenda-show-nodes "Goals" #'org-x-dag-itemize-tl-goals files
       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
@@ -4448,7 +4454,7 @@ In the order of display
 
 (defun org-x-dag-agenda-quarterly-plan ()
   (interactive)
-  (let ((files (list (org-x-dag->planning-file :quarterly)))
+  (let ((files '(:quarterly))
         (quarter-header (lambda ()
                           (-let (((y q) (->> (org-x-dag->selected-date)
                                              (org-x-dag-date-to-quarter))))
@@ -4479,7 +4485,7 @@ In the order of display
 
 (defun org-x-dag-agenda-weekly-plan ()
   (interactive)
-  (let ((files (list (org-x-dag->planning-file :weekly)))
+  (let ((files '(:weekly))
         (weekly-header (lambda ()
                          (-let* (((date &as y m d) (org-x-dag->selected-date))
                                  (n (org-x-dag-date-to-week-number date)))
@@ -4514,7 +4520,7 @@ Distinguish between independent and project tasks, as well as
 tasks that are inert (which I may move to the incubator during a
 review phase)"
   (interactive)
-  (let ((files (org-x-dag->action-files)))
+  (let ((files '(:action)))
     (org-x-dag-agenda-show-nodes "Tasks" #'org-x-dag-itemize-tasks files
       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
@@ -4530,7 +4536,7 @@ review phase)"
 (defun org-x-dag-agenda-projects ()
   "Show the projects agenda view."
   (interactive)
-  (let ((files (org-x-dag->action-files)))
+  (let ((files (:action)))
     (org-x-dag-agenda-show-nodes "Projects" #'org-x-dag-itemize-projects files
       `((org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
@@ -4545,7 +4551,7 @@ review phase)"
 (defun org-x-dag-agenda-incubator ()
   "Show the incubator agenda view."
   (interactive)
-  (let ((files (org-x-dag->action-files)))
+  (let ((files (:action)))
     (org-x-dag-agenda-show-nodes "Incubator" #'org-x-dag-itemize-incubated files
       `((org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
@@ -4565,7 +4571,7 @@ review phase)"
 (defun org-x-dag-agenda-iterators ()
   "Show the iterator agenda view."
   (interactive)
-  (let ((files (org-x-dag->action-files)))
+  (let ((files (:action)))
     (org-x-dag-agenda-show-nodes "Iterators-0" #'org-x-dag-itemize-iterators files
       `((org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
@@ -4582,7 +4588,7 @@ review phase)"
 (defun org-x-dag-agenda-errors ()
   "Show the critical errors agenda view."
   (interactive)
-  (let ((files (org-x-dag->files)))
+  (let ((files '(:action :weekly :daily :quarterly :lifetime :endpoint :survival)))
     (org-x-dag-agenda-show-nodes "Errors" #'org-x-dag-itemize-errors files
       `((org-super-agenda-groups
          '((:auto-map
@@ -4597,7 +4603,7 @@ review phase)"
 (defun org-x-dag-agenda-archive ()
   "Show the archive agenda view."
   (interactive)
-  (let ((files (org-x-dag->action-files)))
+  (let ((files '(:action)))
     (org-x-dag-agenda-show-nodes "Archive-0" #'org-x-dag-itemize-archived files
     `((org-agenda-sorting-strategy '(category-keep))
       (org-super-agenda-groups
@@ -4649,7 +4655,7 @@ review phase)"
 (defun org-x-dag-agenda-tasks-by-goal ()
   (interactive)
   (let ((match #'org-x-dag-itemize-tasks-with-goals)
-        (files (org-x-dag->action-files)))
+        (files '(:action)))
     (org-x-dag-agenda-show-nodes "Tasks by Goal" match files
       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
@@ -4679,7 +4685,7 @@ review phase)"
 (defun org-x-dag-agenda-projects-by-goal ()
   (interactive)
   (let ((match #'org-x-dag-itemize-projects-with-goals)
-        (files (org-x-dag->action-files)))
+        (files '(:action)))
     (org-x-dag-agenda-show-nodes "Projects by Goal" match files
       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
@@ -4744,7 +4750,7 @@ review phase)"
 (defun org-x-dag-agenda-incubated ()
   (interactive)
   (let ((match #'org-x-dag-itemize-incubated)
-        (files (org-x-dag->action-files)))
+        (files '(:action)))
     (org-x-dag-agenda-show-nodes "Incubated-0" match files
       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
         (org-super-agenda-groups
