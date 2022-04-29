@@ -4254,6 +4254,8 @@ FUTURE-LIMIT in a list."
                                              (list nil start-day 'day nil))))
     (catch 'exit
       ;; ASSUME this is run already via `org-agenda-run-series'
+      ;; TODO THIS IS A STUPID HACK; I'M SYNCING TWICE FOR NO REASON
+      (org-x-dag-sync)
       (org-agenda-prepare "DAG-DAILY")
       (org-compile-prefix-format 'agenda)
       (org-set-sorting-strategy 'agenda)
