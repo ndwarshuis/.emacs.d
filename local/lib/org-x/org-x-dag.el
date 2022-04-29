@@ -581,20 +581,18 @@ used for optimization."
 
 ;; buffer status
 
-(defun org-x-dag-bs-check-children (bss msg nochild-def child-def stop-fun)
+(defun org-x-dag-bs-check-children (bss fail success nochild stop-fun)
   (declare (indent 4))
   ;; this is almost like fold or foldM but I want to stop if `fun' returns nil
   (cl-labels
       ;; hopefully the TCO native comp actually works :)
       ((fold-while
         (xs)
-        (if (not xs) (either :right child-def)
+        (if (not xs) success
           (pcase (car xs)
-            (`(:right ,r) (if (funcall stop-fun r)
-                              (either :left msg)
-                            (fold-while (cdr xs))))
+            (`(:right ,r) (if (funcall stop-fun r) (fold-while (cdr xs)) fail))
             (_ (either :left "Child error"))))))
-    (if (not bss) (either :right nochild-def)
+    (if (not bss) (either :right nochild)
       (fold-while bss))))
 
 ;; [Status a] -> b -> (a -> a -> Status Bool) -> (a -> Bool) -> (a -> Status b)
@@ -680,14 +678,14 @@ used for optimization."
       ;; sake of some inner type, but if any of these are left then
       ;; they should short circuit the fold/check functions embedded in here
       `(org-x-dag-bs-check-created ,node-data
-         (-let ((it-children (--map (either>>= it
-                                      (->> (plist-get it :local)
-                                           (either :right)))
-                                    ,child-bss)))
+         ;; (-let ((it-children (--map (either>>= it
+         ;;                              (->> (plist-get it :local)
+         ;;                                   (either :right)))
+         ;;                            ,child-bss)))
            (org-x-dag-bs-with-closed ,node-data ,type-name
              ,canc-bs-form*
              ,done-form*
-             ,open-form*))))))
+             ,open-form*)))))
 
 (defun org-x-dag-bs-action-project-inner (node-data ancestry child-bss)
   (cl-flet
@@ -701,23 +699,22 @@ used for optimization."
     ;; rankings
     ;; *-active > proj-wait > proj-held > (proj-stuck == iter-empty) > *-complete
     (org-x-dag-bs-action-with-closed node-data ancestry child-bss "projects"
-      (if it-children
+      (if child-bss
           `(:sp-proj :proj-complete ,it-comptime)
         `(:sp-task :task-complete ,it-comptime))
 
-      ;; done form
-      (org-x-dag-bs-check-children it-children
-          "Completed projects cannot have active children"
+      (org-x-dag-bs-check-children child-bss
+          (either :left "Completed projects cannot have active children")
+          (either :right `(:sp-proj :proj-complete ,it-comptime))
           `(:sp-task :task-complete ,it-comptime)
-          `(:sp-proj :proj-complete ,it-comptime)
         (lambda (child-bs)
-          (pcase child-bs
-            (`(:sp-proj :proj-complete ,_) nil)
-            (`(:sp-iter :iter-complete ,_) nil)
-            (`(:sp-task :task-complete ,_) nil)
-            (_ t))))
+          (-let (((&plist :local) child-bs))
+            (pcase local
+              (`(:sp-proj :proj-complete ,_) t)
+              (`(:sp-iter :iter-complete ,_) t)
+              (`(:sp-task :task-complete ,_) t)
+              (_ nil)))))
 
-      ;; undone form
       (-let* (((sched dead) (-some->> it-planning
                               (org-ml-get-properties '(:scheduled :deadline))))
               (task-default (->> (list :todo it-todo
@@ -730,9 +727,9 @@ used for optimization."
          ((and child-bss sched)
           (either :left "Projects cannot be scheduled"))
          ((equal it-todo org-x-kw-todo)
-          (org-x-dag-bs-rankfold-children it-children task-default
+          (org-x-dag-bs-rankfold-children child-bss task-default
             (lambda (acc next)
-              (->> (pcase `(,acc ,next)
+              (->> (pcase `(,(plist-get :local acc) ,(plist-get :local next))
                      (`((:sp-task :task-active ,a) (:sp-task :task-active ,b))
                       (and (not (is-next a)) (is-next b)))
 
@@ -778,17 +775,15 @@ used for optimization."
                      (`(,_ ,_) nil))
                    (either :right)))
 
-            ;; early stop
             (lambda (next)
-              (pcase next
+              (pcase (plist-get :local next)
                 (`(:sp-proj :proj-active) t)
                 (`(:sp-iter :iter-active ,_) t)
                 (`(:sp-task :task-active ,d) (is-next d))
                 (_ nil)))
 
-            ;; child -> parent translation
             (lambda (acc)
-              (pcase acc
+              (pcase (plist-get :local acc)
                 ((or `(:sp-proj :proj-complete ,_)
                      `(:sp-task :task-complete ,_)
                      `(:sp-iter :iter-complete ,_))
@@ -825,20 +820,20 @@ used for optimization."
                                                             comp-key)
   (declare (indent 2))
   (org-x-dag-bs-check-children child-bss
-      (format "Completed %s cannot have active children" type-name)
-      `(,comp-key ,comptime)
+      (org-x-dag-left "Completed %s cannot have active children" type-name)
+      (either :right `(,comp-key ,comptime))
       `(,comp-key ,comptime)
     (lambda (child-bs)
-      (pcase child-bs
-        (`(:si-complete ,_) nil)
-        (_ t)))))
+      (pcase (plist-get :local child-bs)
+        (`(:si-complete ,_) t)
+        (_ nil)))))
 
 (defun org-x-dag-bs-action-subiter-todo-fold (child-bss type-name active-key
                                                         default)
   (declare (indent 1))
   (org-x-dag-bs-rankfold-children child-bss default
     (lambda (acc next)
-      (pcase `(,acc ,next)
+      (pcase `(,(plist-get :local acc) ,(plist-get :local next))
         (`((:si-active ,a) (:si-active ,b))
          (-let (((&plist :sched as :dead ad) a)
                 ((&plist :sched bs :dead bd) b))
@@ -866,11 +861,11 @@ used for optimization."
         (`(,_ (:si-active ,_)) (either :right t))
         (`(,_ ,_) (either :right nil))))
     (lambda (next)
-      (pcase next
+      (pcase (plist-get :local next)
         (`(:si-active ,_) t)
         (_ nil)))
     (lambda (acc)
-      (pcase acc
+      (pcase (plist-get :local acc)
         (`(:si-complete ,_)
          (->> type-name
               (org-x-dag-left "Active %s must have at least one active child")))
@@ -883,21 +878,19 @@ used for optimization."
 (defun org-x-dag-bs-action-subiter-inner (node-data ancestry child-bss)
   (org-x-dag-bs-action-with-closed node-data ancestry child-bss "sub-iterators"
     `(:si-complete ,it-comptime)
-    (org-x-dag-bs-action-subiter-complete-fold it-children it-comptime
+    (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
       "sub-iterators" :si-complete)
     (-let (((sched dead) (-some->> it-planning
                            (org-ml-get-properties '(:scheduled :deadline)))))
       (cond
-       ((and sched it-children)
+       ((and sched child-bss)
         (either :left "Sub-iterators with children cannot be scheduled"))
-       ((and dead it-children)
+       ((and dead child-bss)
         (either :left "Sub-iterators with children cannot be deadlined"))
-       ;; ((and (not child-bss) (not (xor sched dead)))
-       ;;  (either :left "Sub-iterators must either be deadlined or scheduled"))
        ((org-x-dag-node-data-is-iterator-p node-data)
         (either :left "Iterators cannot be nested"))
        ((equal it-todo org-x-kw-todo)
-        (org-x-dag-bs-action-subiter-todo-fold it-children
+        (org-x-dag-bs-action-subiter-todo-fold child-bss
           "sub-iterator" :si-active
           `(:si-active (:sched ,sched :dead ,dead))))
        (t
@@ -906,44 +899,43 @@ used for optimization."
 (defun org-x-dag-bs-action-iter-inner (node-data ancestry child-bss)
   (org-x-dag-bs-action-with-closed node-data ancestry child-bss "iterators"
     `(:iter-complete ,it-comptime)
-    (org-x-dag-bs-action-subiter-complete-fold it-children it-comptime
+    (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
       "iterators" :iter-complete)
     (cond
-     ((and it-children (-some->> it-planning (org-ml-get-property :scheduled)))
+     ((and child-bss (-some->> it-planning (org-ml-get-property :scheduled)))
       (either :left "Iterators cannot be scheduled"))
      ;; TODO also check for timeshift and archive props
      ((equal it-todo org-x-kw-todo)
-      (org-x-dag-bs-action-subiter-todo-fold it-children
+      (org-x-dag-bs-action-subiter-todo-fold child-bss
         "iterator" :iter-active
         '(:iter-empty)))
      (t
       (org-x-dag-bs-error-kw "Iterator" it-todo)))))
 
 (defun org-x-dag-bs-epg-inner (node ancestry child-bss)
-  (org-x-dag-bs-action-with-closed node ancestry child-bss "endpoint goal"
-    `(:complete ,it-comptime)
-    (org-x-dag-bs-check-children it-children
-        "Completed EPGs cannot have active children"
-        `(:complete ,it-comptime)
-        `(:complete ,it-comptime)
-      (lambda (child-bs)
-        (pcase child-bs
-          (`(:complete ,_) nil)
-          (_ t))))
-    (cond
-     ((-some->> it-planning (org-ml-get-property :scheduled))
-      (either :left "EPGs cannot be scheduled"))
-     ((equal it-todo org-x-kw-todo)
-      (org-x-dag-bs-check-children it-children
-          "Active EPGs must have at least one active child"
-          '(:active)
-          '(:active)
-        (lambda (child-bs)
-          (pcase child-bs
-            ('(:active) t)
-            (_ nil)))))
-     (t
-      (org-x-dag-bs-error-kw "Endpoint goal" it-todo)))))
+  (let ((is-complete
+         (lambda (child-bs)
+           (pcase (plist-get :local child-bs)
+             (`(:complete ,_) t)
+             (_ nil)))))
+    (org-x-dag-bs-action-with-closed node ancestry child-bss "endpoint goal"
+      `(:complete ,it-comptime)
+      (org-x-dag-bs-check-children child-bss
+          (either :left "Completed EPGs cannot have active children")
+          (either :right `(:complete ,it-comptime))
+          `(:complete ,it-comptime)
+        is-complete)
+      (cond
+       ((-some->> it-planning (org-ml-get-property :scheduled))
+        (either :left "EPGs cannot be scheduled"))
+       ((equal it-todo org-x-kw-todo)
+        (org-x-dag-bs-check-children child-bss
+            (either :right '(:active))
+            (either :left "Active EPGs must have at least one active child")
+            '(:active)
+          is-complete))
+       (t
+        (org-x-dag-bs-error-kw "Endpoint goal" it-todo))))))
 
 (defun org-x-dag-bs-with-treetop-error (tree)
   (declare (indent 3))
