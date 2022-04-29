@@ -2972,12 +2972,15 @@ original function being advised and ARGS are the arguments."
         (funcall fun name settings)
       (funcall fun name settings))))
 
-(advice-add #'org-agenda-run-series :around #'org-x-agenda-run-series-advice)
+;; (advice-add #'org-agenda-run-series :around #'org-x-agenda-run-series-advice)
 
 ;; hide the daily tags
 (setq org-agenda-hide-tags-regexp "[DMYQ][0-9]\\{2\\}")
 
 ;; (advice-remove #'org-agenda-run-series #'org-x-agenda-run-series-advice)
+(org-x-dag-set-series-advice t)
+
+(setq org-agenda-ignore-properties '(effort stats appt category))
 
 (defun nd/org-agenda-run-series (name files cmds)
   (declare (indent 2))
@@ -4727,16 +4730,32 @@ The function keys are nice because they are almost (not always) free in every mo
 #+BEGIN_SRC emacs-lisp
 (defhydra hydra-modes (global-map "<f1>" :exit t)
   "agenda views"
-  ("b" #'nd/org-agenda-timeblock)
-  ("d" #'nd/org-agenda-daily)
-  ("g" #'nd/org-agenda-goals)
+  ;; ("b" #'nd/org-agenda-timeblock)
+  ;; ("d" #'nd/org-agenda-daily)
+  ;; ("g" #'nd/org-agenda-goals)
+  ;; ("r" #'nd/org-agenda-refile)
+  ;; ("t" #'nd/org-agenda-tasks)
+  ;; ("p" #'nd/org-agenda-projects)
+  ;; ("i" #'nd/org-agenda-incubator)
+  ;; ("I" #'nd/org-agenda-iterators)
+  ;; ("P" #'nd/org-agenda-periodical)
+  ;; ("a" #'nd/org-agenda-archive)
+  ;; ("M" #'org-x-dag-add-daily-metablock)
+  ;; ("D" #'org-x-dag-set-date)
+  ;; ("C" #'org-x-dag-show-date)
+  ;; ;; ("m" #'nd/org-agenda-meetings)
+  ;; ("e" #'nd/org-agenda-errors))
+
+  ("b" #'org-x-dag-agenda-timeblock)
+  ("d" #'org-x-dag-agenda-daily)
+  ("g" #'org-x-dag-agenda-goals)
   ("r" #'nd/org-agenda-refile)
-  ("t" #'nd/org-agenda-tasks)
-  ("p" #'nd/org-agenda-projects)
-  ("i" #'nd/org-agenda-incubator)
-  ("I" #'nd/org-agenda-iterators)
-  ("P" #'nd/org-agenda-periodical)
-  ("a" #'nd/org-agenda-archive)
+  ("t" #'org-x-dag-agenda-tasks)
+  ("p" #'org-x-dag-agenda-projects)
+  ("i" #'org-x-dag-agenda-incubator)
+  ("I" #'org-x-dag-agenda-iterators)
+  ;; ("P" #'org-x-dag-agenda-periodical)
+  ("a" #'org-x-dag-agenda-archive)
   ("M" #'org-x-dag-add-daily-metablock)
   ("D" #'org-x-dag-set-date)
   ("C" #'org-x-dag-show-date)
