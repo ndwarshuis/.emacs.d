@@ -4760,7 +4760,7 @@ The function keys are nice because they are almost (not always) free in every mo
   ("D" #'org-x-dag-set-date)
   ("C" #'org-x-dag-show-date)
   ;; ("m" #'nd/org-agenda-meetings)
-  ("e" #'nd/org-agenda-errors))
+  ("e" #'org-x-dag-agenda-errors))
 
 (global-set-key (kbd "<f2>") 'org-capture)
 (global-set-key (kbd "<f3>") 'cfw:open-org-calendar)
