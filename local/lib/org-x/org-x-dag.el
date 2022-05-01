@@ -353,21 +353,19 @@
 
 ;; global state
 
-(defun org-x-dag-create (d fis fls c s fs)
+(defun org-x-dag-create (d fis fls c s)
   (list :dag d
         :file->ids fis
         :file->links fls
         :current-date c
-        :selected-date s
-        :files fs))
+        :selected-date s))
 
 (defun org-x-dag-empty ()
   (org-x-dag-create (dag-empty)
                     (ht-create #'equal)
                     (ht-create #'equal)
                     (org-x-dag-current-date)
-                    (org-x-dag-current-date)
-                    nil))
+                    (org-x-dag-current-date)))
 
 (defvar org-x-dag (org-x-dag-empty)
   "The org-x DAG.
@@ -383,6 +381,14 @@ Each node is represented by a key, which is either a string
 representing the headlines's ID property or a cons cell
 like (FILE POS) representing the staring position in file/buffer
 of the headline (aka a \"pseudo-marker\").")
+
+(defvar org-x-dag-files nil
+  "The files which will be read to make the DAG.
+
+This is a plist like:
+(:goals (:lifetime FILE :endpoint FILE :survival FILE)
+ :plan-files (:quarterly FILE :weekly FILE :daily FILE)
+ :action-files FILES)")
 
 (defvar org-x-dag-sync-state nil
   "An alist representing the sync state of the DAG.
@@ -1765,15 +1771,14 @@ removed from, added to, or edited within the DAG respectively."
            ((not old-md5) 'to-insert)
            ((equal old-md5 new-md5) 'no-change)
            (t 'to-update)))))
-    (-let* ((file-state (org-x-dag-read-file-paths))
-            (existing-files (org-x-dag-flatten-file-state file-state))
+    (-let* ((existing-files (org-x-dag-flatten-file-state org-x-dag-files))
             (state-files (-map #'car org-x-dag-sync-state))
             (to-remove (->> (-map #'car existing-files)
                             (-difference state-files)))
             ((&alist 'to-insert 'to-update 'no-change)
              (->> (-map #'get-file-md5 existing-files)
                   (-group-by #'file-status))))
-      (list file-state to-remove to-insert to-update no-change))))
+      (list to-remove to-insert to-update no-change))))
 
 (defun org-x-dag-get-file-nodes (file group)
   (-let* ((meta (list :file file
@@ -1848,12 +1853,11 @@ removed from, added to, or edited within the DAG respectively."
 ;; the look things up) and a 'node' (which is a cons cell, the car of which is a
 ;; 'key' and the cdr of which is a 'relation'). These names suck, but the point
 ;; is we need to distinguish between them otherwise really strange things happen
-(defun org-x-dag-update (file-state to-remove to-insert to-update)
+(defun org-x-dag-update (to-remove to-insert to-update)
   "Update the DAG given files to add and remove.
 
 TO-REMOVE, TO-INSERT, and TO-UPDATE are lists of files to remove
-from, add to, and update with the DAG. FILE-STATE is a nested
-plist holding the files to be used in the DAG."
+from, add to, and update with the DAG."
   (-let* ((files2rem (append to-update to-remove))
           (files2ins (append to-update to-insert))
           (ids2rem (org-x-dag-files->ids files2rem))
@@ -1861,22 +1865,26 @@ plist holding the files to be used in the DAG."
     (org-x-dag-update-dag ids2rem ids2ins)
     (org-x-dag-update-ht files2rem fms2ins :file->ids)
     (org-x-dag-update-ht files2rem links2ins :file->links)
-    (plist-put org-x-dag :files file-state)
     (org-x-dag-build-network-status)))
 
+(defun org-x-dag-update-files ()
+  (setq org-x-dag-files (org-x-dag-read-file-paths)))
+
 (defun org-x-dag-reset ()
+  (org-x-dag-update-files)
   (setq org-x-dag (org-x-dag-empty)
         org-x-dag-sync-state nil))
 
-(defun org-x-dag-sync (&optional force)
+(defun org-x-dag-sync (&optional force no-read-files)
   "Sync the DAG with files from `org-x-dag-get-files'.
 
 If FORCE is non-nil, sync no matter what."
   (when force
     (org-x-dag-reset))
-  (-let (((file-state to-remove to-insert to-update no-change)
-          (org-x-dag-get-sync-state)))
-    (org-x-dag-update file-state to-remove to-insert to-update)
+  (unless no-read-files
+    (org-x-dag-update-files))
+  (-let* (((to-remove to-insert to-update no-change) (org-x-dag-get-sync-state)))
+    (org-x-dag-update to-remove to-insert to-update)
     (->> (append to-update to-insert no-change)
          (--map (cons (plist-get it :path) (plist-get it :md5)))
          (setq org-x-dag-sync-state))
@@ -1903,7 +1911,7 @@ If FORCE is non-nil, sync no matter what."
   (plist-get org-x-dag :selected-date))
 
 (defun org-x-dag->file-state ()
-  (plist-get org-x-dag :files))
+  org-x-dag-files)
 
 ;; state files
 
@@ -4224,6 +4232,7 @@ FUTURE-LIMIT in a list."
       (org-agenda-prepare (concat "DAG-TAG"))
       (org-compile-prefix-format 'tags)
       (org-set-sorting-strategy 'tags)
+      (org-x-dag-sync nil t)
       (let ((org-agenda-redo-command `(org-x-dag-show-nodes ',get-nodes))
             (rtnall (funcall get-nodes org-agenda-files)))
         (org-agenda--insert-overriding-header
@@ -4253,12 +4262,10 @@ FUTURE-LIMIT in a list."
          ((arg start-day span with-hour) (or org-agenda-overriding-arguments
                                              (list nil start-day 'day nil))))
     (catch 'exit
-      ;; ASSUME this is run already via `org-agenda-run-series'
-      ;; TODO THIS IS A STUPID HACK; I'M SYNCING TWICE FOR NO REASON
-      (org-x-dag-sync)
       (org-agenda-prepare "DAG-DAILY")
       (org-compile-prefix-format 'agenda)
       (org-set-sorting-strategy 'agenda)
+      (org-x-dag-sync nil t)
       (-let* ((today (org-today))
               (sd (or start-day today))
               (org-agenda-redo-command
@@ -4288,7 +4295,6 @@ FUTURE-LIMIT in a list."
                            org-last-args (,arg ,start-day ,span)
                            org-redo-cmd ,org-agenda-redo-command
                            org-series-cmd ,org-cmd))
-        ;; ASSUME this will be run via `org-agenda-run-series'
         (org-agenda-finalize)
         (setq buffer-read-only t)))))
 
@@ -4303,7 +4309,7 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-agenda-run-series (name files cmds)
   (declare (indent 2))
   (catch 'exit
-    (org-x-dag-sync)
+    (org-x-dag-update-files)
     (let ((org-agenda-buffer-name (format "*Agenda: %s*" name))
           (fs (-mapcat #'org-x-dag-group->files files)))
       ;; files are actually needed (I think) for `org-agenda-prepare' to run
