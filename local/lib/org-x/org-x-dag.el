@@ -2711,7 +2711,7 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-itemize-iterators (files)
   (org-x-dag-with-unmasked-action-ids files
     (pcase it-local
-      (`(:sp-proj . ,status-data)
+      (`(:sp-iter . ,status-data)
        (let ((status (car status-data)))
          (when (memq status '(:iter-empty :iter-active))
            (let ((tags (org-x-dag-id->tags it)))
@@ -4528,12 +4528,8 @@ review phase)"
         (org-super-agenda-groups
          '((:auto-map
             (lambda (line)
-              (-let* ((i (get-text-property 1 'x-is-standalone line))
-                      (s (get-text-property 1 'x-status line))
-                      (s* (if (and (not i) (eq s :inert)) :active s))
-                      ((level1 subtitle) (if i '(1 "α") '(0 "σ")))
-                      (p (alist-get s* nd/org-headline-task-status-priorities)))
-                (org-x-dag-org-mapper-title level1 p s* subtitle))))))))))
+              (-let* ((i (get-text-property 1 'x-is-standalone line)))
+                (if i "2. Standalone" "1. Subproject"))))))))))
 
 (defun org-x-dag-agenda-projects ()
   "Show the projects agenda view."
@@ -4577,15 +4573,12 @@ review phase)"
     (org-x-dag-agenda-show-nodes "Iterators" #'org-x-dag-itemize-iterators files
       `((org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
-         ;; TODO this is wrong
-         ',(nd/org-def-super-agenda-automap
-             (cl-case (org-x-headline-get-iterator-status)
-               (:uninit "0. Uninitialized")
-               (:project-error "0. Project Error")
-               (:unscheduled "0. Unscheduled")
-               (:empt "1. Empty")
-               (:actv "2. Active")
-               (t "3. Other"))))))))
+         `((:auto-map
+            (lambda (line)
+              (let ((s (get-text-property 1 'x-status line)))
+                (pcase s
+                  (:iter-empty "1. Empty")
+                  (:iter-active "2. Active")))))))))))
 
 (defun org-x-dag-agenda-errors ()
   "Show the critical errors agenda view."
