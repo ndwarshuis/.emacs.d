@@ -4538,7 +4538,7 @@ review phase)"
 (defun org-x-dag-agenda-projects ()
   "Show the projects agenda view."
   (interactive)
-  (let ((files (:action)))
+  (let ((files '(:action)))
     (org-x-dag-agenda-show-nodes "Projects" #'org-x-dag-itemize-projects files
       `((org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
@@ -4553,7 +4553,7 @@ review phase)"
 (defun org-x-dag-agenda-incubator ()
   "Show the incubator agenda view."
   (interactive)
-  (let ((files (:action)))
+  (let ((files '(:action)))
     (org-x-dag-agenda-show-nodes "Incubator" #'org-x-dag-itemize-incubated files
       `((org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
@@ -4573,8 +4573,8 @@ review phase)"
 (defun org-x-dag-agenda-iterators ()
   "Show the iterator agenda view."
   (interactive)
-  (let ((files (:action)))
-    (org-x-dag-agenda-show-nodes "Iterators-0" #'org-x-dag-itemize-iterators files
+  (let ((files '(:action)))
+    (org-x-dag-agenda-show-nodes "Iterators" #'org-x-dag-itemize-iterators files
       `((org-agenda-sorting-strategy '(category-keep))
         (org-super-agenda-groups
          ;; TODO this is wrong
