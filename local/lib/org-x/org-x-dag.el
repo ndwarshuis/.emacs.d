@@ -739,6 +739,8 @@ used for optimization."
           (new-proj :proj-held))
          ((and child-bss sched)
           (either :left "Projects cannot be scheduled"))
+         ((and child-bss (plist-get node-data :effort))
+          (either :left "Projects cannot have effort"))
          ((equal it-todo org-x-kw-todo)
           (org-x-dag-bs-action-rankfold-children child-bss task-default
             (lambda (acc next)
