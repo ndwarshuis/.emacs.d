@@ -2512,7 +2512,7 @@ FUTURE-LIMIT in a list."
      'org-hd-marker (org-agenda-new-marker (org-x-dag-id->marker id))
      'org-marker (org-agenda-new-marker (org-x-dag-id->marker id pos))
      ;; headline stuff
-     'date (org-x-dag-date-to-absolute date)
+     'date (org-x-dag-date-to-gregorian date)
      'ts-date (org-x-dag-date-to-absolute ts-date)
      'type type)))
 
@@ -4287,6 +4287,10 @@ FUTURE-LIMIT in a list."
         (-some--> (org-agenda-add-time-grid-maybe rtnall 1 (= sd today))
           (org-agenda-finalize-entries it 'agenda)
           (insert it "\n"))
+        ;; `org-agenda-list' adds these properties for every day block; add
+        ;; them here for one day just to be consistent
+        (put-text-property (point-min) (1- (point-max)) 'day sd)
+        (put-text-property (point-min) (1- (point-max)) 'org-day-cnt 1)
         (goto-char (point-min))
         (or org-agenda-multi (org-agenda-fit-window-to-buffer))
         (add-text-properties
