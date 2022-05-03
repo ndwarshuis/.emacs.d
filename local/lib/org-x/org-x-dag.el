@@ -2951,6 +2951,11 @@ FUTURE-LIMIT in a list."
           (-let (((acc-d acc-s) acc)
                  (ss (scheduled-datetimes id donep)))
             `(,acc-d (,@ss ,@acc-s))))
+         (add-dead
+          (acc id donep)
+          (-let (((acc-d acc-s) acc)
+                 (ds (deadlined-datetimes id donep)))
+            `((,@ds ,@acc-d) ,acc-s)))
          (add-dead-sched
           (acc id donep)
           (-let (((acc-d acc-s) acc)
@@ -2974,6 +2979,11 @@ FUTURE-LIMIT in a list."
                        (plist-get a :held-parent-p))
                    acc
                  (pcase l
+                   (`(:sp-proj ,(or :proj-active
+                                    :proj-wait
+                                    :proj-held
+                                    :proj-stuck))
+                    (add-dead acc id nil))
                    (`(:sp-task :task-active ,_)
                     (add-dead-sched acc id nil))
                    (`(:sp-task :task-complete ,_)
@@ -4423,14 +4433,16 @@ In the order of display
            (lambda (a)
              (let* ((id (get-text-property 1 'x-id a))
                     (ts-type (get-text-property 1 'type a))
-                    (ns (-some-> (org-x-dag-id->ns id)
-                          (either-from-right nil)
-                          (plist-get :planned))))
-               (cond
-                ((member ts-type '("past-scheduled" "scheduled"))
-                 (if ns "Scheduled (Planned)" "Scheduled"))
-                ((member ts-type '("upcoming-deadline" "deadline"))
-                 (if ns "Deadlined (Planned)" "Deadlined")))))))
+                    (is-proj (org-x-dag-id->buffer-children id))
+                    (is-planned (-some-> (org-x-dag-id->ns id)
+                                  (either-from-right nil)
+                                  (plist-get :planned))))
+               (->> (cond
+                     ((member ts-type '("past-scheduled" "scheduled"))
+                      "Scheduled")
+                     ((member ts-type '("upcoming-deadline" "deadline"))
+                      (if is-proj "Deadlined Projects" "Deadlined Tasks")))
+                    (format (if is-planned "%s (Planned)" "%s")))))))
       (org-x-dag-agenda-call-inner "Timeblock" 'agenda "" files
         `((org-agenda-sorting-strategy '(time-up category-keep))
           (org-super-agenda-groups
