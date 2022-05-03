@@ -4414,14 +4414,27 @@ In the order of display
                          (org-x-dag-id->has-node-property-p ,prop ,value)))))
           `(:name ,name :order ,order :pred ,f))))
     (let ((files '(:action :daily))
-          (conflict-fun (lambda (a)
-                          (-when-let (i (get-text-property 1 'x-conflict-id a))
-                            (->> (org-x-dag-id->title i)
-                                 (format "Conflict: %s"))))))
+          (conflict-fun
+           (lambda (a)
+             (-when-let (i (get-text-property 1 'x-conflict-id a))
+               (->> (org-x-dag-id->title i)
+                    (format "Conflict: %s")))))
+          (timestamp-fun
+           (lambda (a)
+             (let* ((id (get-text-property 1 'x-id a))
+                    (ts-type (get-text-property 1 'type a))
+                    (ns (-some-> (org-x-dag-id->ns id)
+                          (either-from-right nil)
+                          (plist-get :planned))))
+               (cond
+                ((member ts-type '("past-scheduled" "scheduled"))
+                 (if ns "Scheduled (Planned)" "Scheduled"))
+                ((member ts-type '("upcoming-deadline" "deadline"))
+                 (if ns "Deadlined (Planned)" "Deadlined")))))))
       (org-x-dag-agenda-call-inner "Timeblock" 'agenda "" files
         `((org-agenda-sorting-strategy '(time-up category-keep))
           (org-super-agenda-groups
-           '((:auto-map ,conflict-fun :order 5)
+           '((:auto-map ,conflict-fun :order 4)
              ,(routine-form "Morning Routine"
                             0
                             org-x-prop-routine
@@ -4431,8 +4444,7 @@ In the order of display
                             org-x-prop-routine
                             org-x-prop-routine-evening)
              (:name "Calendar" :order 1 :time-grid t)
-             (:name "Deadlined" :order 3 :deadline t)
-             (:name "Scheduled" :order 4 :scheduled t))))))))
+             (:auto-map ,timestamp-fun :order 3))))))))
 
 (defun org-x-dag-agenda-goals ()
   (interactive)
