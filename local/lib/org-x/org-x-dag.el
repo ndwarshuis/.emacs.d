@@ -813,7 +813,7 @@ used for optimization."
                                                   (new-proj)))
                     ((equal o org-x-kw-next) (new-proj :proj-active))
                     ((equal o org-x-kw-wait) (new-proj :proj-wait))
-                    ((equal o org-x-kw-hold) (new-proj :proj-hold))
+                    ((equal o org-x-kw-hold) (new-proj :proj-held))
                     (t (org-x-dag-bs-error-kw "Task action" o)))))
                 (e (error "Pattern fail: %s" e))))))
          (child-bss
@@ -2704,7 +2704,7 @@ FUTURE-LIMIT in a list."
          (-when-let (priority (cl-case status
                                 (:proj-active 4)
                                 (:proj-wait 3)
-                                (:proj-hold 2)
+                                (:proj-held 2)
                                 (:proj-stuck 1)))
            (-when-let ((&plist :committed) (-when-let (ns (org-x-dag-id->ns it))
                                              (either-from-right ns nil)))
@@ -3997,7 +3997,7 @@ FUTURE-LIMIT in a list."
                    "Active Project")
                   (`(:sp-proj :proj-wait)
                    "Waiting Project")
-                  (`(:sp-proj :proj-hold)
+                  (`(:sp-proj :proj-held)
                    "Held Project")
                   (`(:sp-proj :proj-stuck)
                    "Stuck Project")
