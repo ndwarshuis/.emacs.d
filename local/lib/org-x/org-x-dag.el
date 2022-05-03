@@ -2278,19 +2278,19 @@ Return value is a list like (BUFFER NON-BUFFER)."
   (cl-labels
       ((get-overlaps
         (acc ss)
-        (-let* (((acc+ acc-) acc)
-                (s0 (car ss))
-                (A (cdr s0)))
-          (-if-let (rest (cdr ss))
-              (let ((a1 (cadr (car s0))))
-                ;; add members while if the starting value is less than the ending
-                ;; value of the current member
-                (-if-let (over (->> (--take-while (< (car (car it)) a1) rest)
-                                    (--map (list A (cdr it)))
-                                    (reverse)))
-                    (get-overlaps `((,@over ,@acc+) ,acc-) rest)
-                  (get-overlaps `(,acc+ (,A ,@acc-)) rest)))
-            `(,acc+ (,A ,@acc-))))))
+        (-if-let (s0 (car ss))
+            (-let* (((acc+ acc-) acc)
+                    (A (cdr s0))
+                    (a1 (cadr (car s0)))
+                    (rest (cdr ss)))
+              ;; add members while if the starting value is less than the ending
+              ;; value of the current member
+              (-if-let (over (->> (--take-while (< (car (car it)) a1) rest)
+                                  (--map (list A (cdr it)))
+                                  (reverse)))
+                  (get-overlaps `((,@over ,@acc+) ,acc-) rest)
+                (get-overlaps `(,acc+ (,A ,@acc-)) rest)))
+          acc)))
     (-let (((over non-over) (->> (-annotate interval-fun xs)
                                  (--sort (< (car (car it)) (car (car other))))
                                  (get-overlaps nil))))
