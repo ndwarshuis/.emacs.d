@@ -4304,7 +4304,8 @@ FUTURE-LIMIT in a list."
               (sd (or start-day today))
               (org-agenda-redo-command
                `(org-x-dag-show-daily-nodes 'nil ,start-day ',span ,with-hour))
-              ((m d y) (calendar-gregorian-from-absolute sd))
+              ((greg &as m d y) (calendar-gregorian-from-absolute sd))
+              (day-name (calendar-day-name greg))
               (rtnall (org-x-dag-itemize-agenda org-agenda-files `(,y ,m ,d))))
         (setq-local org-starting-day sd)
         (setq-local org-arg-loc arg)
@@ -4312,7 +4313,7 @@ FUTURE-LIMIT in a list."
         (setq-local org-agenda-current-span span)
         (org-agenda--insert-overriding-header
           (with-temp-buffer
-            (insert (format "Agenda for %d-%02d-%02d\n" y m d))
+            (insert (format "Agenda for %s, %d-%02d-%02d\n" day-name y m d))
             (add-text-properties (point-min) (1- (point))
                                  (list 'face 'org-agenda-structure))
             (buffer-string)))
