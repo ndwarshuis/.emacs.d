@@ -701,6 +701,14 @@ used for optimization."
            ,done-form*
            ,open-form*)))))
 
+(defun org-x-dag-action-dead-after-parent-p (ancestry deadline)
+  (let ((this (-some->> deadline
+                (org-ml-timestamp-get-start-time)
+                (org-ml-time-to-unixtime)))
+        (parent (plist-get ancestry :parent-deadline)))
+    (when (and this parent)
+      (< parent this))))
+
 (defun org-x-dag-bs-action-project-inner (node-data ancestry child-bss)
   (cl-flet
       ((new-proj
@@ -741,6 +749,8 @@ used for optimization."
           (either :left "Projects cannot be scheduled"))
          ((and child-bss (plist-get node-data :effort))
           (either :left "Projects cannot have effort"))
+         ((org-x-dag-action-dead-after-parent-p ancestry dead)
+          (either :left "Action deadline cannot end after parent deadline"))
          ((equal it-todo org-x-kw-todo)
           (org-x-dag-bs-action-rankfold-children child-bss task-default
             (lambda (acc next)
@@ -905,6 +915,8 @@ used for optimization."
         (either :left "Sub-iterators with children cannot be deadlined"))
        ((org-x-dag-node-data-is-iterator-p node-data)
         (either :left "Iterators cannot be nested"))
+       ((org-x-dag-action-dead-after-parent-p ancestry dead)
+        (either :left "Sub-iterator deadline must not start after parent"))
        ((equal it-todo org-x-kw-todo)
         (org-x-dag-bs-action-subiter-todo-fold child-bss
           "sub-iterator" :si-active
@@ -918,8 +930,8 @@ used for optimization."
     (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
       "iterators" :iter-complete)
     (cond
-     ((and child-bss (-some->> it-planning (org-ml-get-property :scheduled)))
-      (either :left "Iterators cannot be scheduled"))
+     (it-planning
+      (either :left "Iterators cannot be scheduled or deadlined"))
      ;; TODO also check for timeshift and archive props
      ((equal it-todo org-x-kw-todo)
       (org-x-dag-bs-action-subiter-todo-fold child-bss
@@ -1020,10 +1032,20 @@ used for optimization."
                      deep))))
 
 (defun org-x-dag-bs-action-new-ancestry (node-meta parent-ancestry)
-  (-let (((&plist :canceled-parent-p c :held-parent-p h) parent-ancestry)
-         ((&plist :todo) node-meta))
+  (-let* (((&plist :canceled-parent-p c :held-parent-p h :parent-deadline d)
+           parent-ancestry)
+          ((&plist :todo :planning) node-meta)
+          (deadline (-some->> planning
+                      (org-ml-get-property :deadline)
+                      (org-ml-timestamp-get-start-time)
+                      (org-ml-time-to-unixtime))))
     (list :canceled-parent-p (or c (equal todo org-x-kw-canc))
-          :held-parent-p (or h (equal todo org-x-kw-hold)))))
+          :held-parent-p (or h (equal todo org-x-kw-hold))
+          :parent-deadline (cond
+                            ((not d) deadline)
+                            ((not deadline) d)
+                            ((< deadline d) deadline)
+                            (t d)))))
 
 (defun org-x-dag-bs-action-subiter (tree ancestry)
   (org-x-dag-bs-with-children-1
