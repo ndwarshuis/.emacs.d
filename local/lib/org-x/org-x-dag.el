@@ -2490,12 +2490,15 @@ encountered will be returned."
      ;; (DST, leap year, different days in each month, etc). Think of this like
      ;; a path function from p-chem; shifting 3 months once might be different
      ;; than shifting by 1 month three times.
-     (let ((next datetime)
-           (pastp t))
-       (while pastp
-         (setq next (org-x-dag-datetime-shift next shift shifttype)
-               pastp (org-x-dag-datetime< next sel-datetime)))
-       next))
+     (->> (list t datetime)
+          (--unfold
+           (-let (((pastp datetime) it))
+             (print pastp)
+             (when pastp
+               (let* ((next (org-x-dag-datetime-shift datetime shift shifttype))
+                      (pastp (org-x-dag-datetime< next sel-datetime)))
+                 `(,next . (,pastp ,next))))))
+          (-last-item)))
     ('restart
      ;; Next time is one repeater interval after now
      ;;
