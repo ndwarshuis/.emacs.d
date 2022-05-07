@@ -2490,14 +2490,13 @@ encountered will be returned."
      ;; (DST, leap year, different days in each month, etc). Think of this like
      ;; a path function from p-chem; shifting 3 months once might be different
      ;; than shifting by 1 month three times.
-     (->> (list t datetime)
+     (->> `(nil . ,datetime)
           (--unfold
-           (-let (((pastp datetime) it))
-             (print pastp)
-             (when pastp
-               (let* ((next (org-x-dag-datetime-shift datetime shift shifttype))
-                      (pastp (org-x-dag-datetime< next sel-datetime)))
-                 `(,next . (,pastp ,next))))))
+           (unless (car it)
+             (let* ((next (org-x-dag-datetime-shift (cdr it) shift shifttype))
+                    (futurep (org-x-dag-datetime< sel-datetime next)))
+                    ;; (futurep (org-x-dag-date< sel-datetime next)))
+               `(,next . (,futurep . ,next)))))
           (-last-item)))
     ('restart
      ;; Next time is one repeater interval after now
@@ -2527,9 +2526,13 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-get-scheduled-at (sel-date pts)
   (-let* (((&plist :datetime d :repeater r) pts)
           (islongp (org-ml-time-is-long d))
-          (future-limit (if islongp `(,@sel-date 23 59) sel-date))
-          (sel-datetime (if islongp (org-x-dag-date-at-current-time sel-date) sel-date)))
-    (org-x-dag-unfold-timestamp sel-datetime d r future-limit)))
+          ((future-limit sel-datetime cur)
+           (if islongp
+               `((,@sel-date 23 59)
+                 ,(org-x-dag-date-at-current-time sel-date)
+                 ,(org-x-dag-current-datetime))
+             `(,sel-date ,sel-date ,(org-x-dag-current-date)))))
+    (org-x-dag-unfold-timestamp cur d r future-limit)))
 
 (defun org-x-dag-get-deadlines-at (sel-date pts)
   (-let* (((&plist :datetime d :repeater r :warning w) pts)
@@ -2538,9 +2541,13 @@ FUTURE-LIMIT in a list."
            (if w w
              (let ((f (if islongp 1440 1)))
                `(,(* f org-deadline-warning-days) submonth))))
-          (sel-datetime (if islongp (org-x-dag-date-at-current-time sel-date) sel-date))
+          ((sel-datetime cur)
+           (if islongp
+               `(,(org-x-dag-date-at-current-time sel-date)
+                 ,(org-x-dag-current-datetime))
+             `(,sel-date ,(org-x-dag-current-date))))
           (future-limit (org-x-dag-datetime-shift sel-datetime warn-shift warn-shifttype)))
-    (org-x-dag-unfold-timestamp sel-datetime d r future-limit)))
+    (org-x-dag-unfold-timestamp cur d r future-limit)))
 
 
 (defun org-x-dag-id->marker (id &optional point)
