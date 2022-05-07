@@ -125,9 +125,9 @@
       ((enc-dec-long
         (y m d H M)
         (-let (((_ M* H* d* m* y* _ _ _)
-                (->> (list 0 M H d m y nil nil (current-time-zone))
-                     (encode-time)
-                     (decode-time))))
+                (-> (list 0 M H d m y nil nil (current-time-zone))
+                    (encode-time)
+                    (decode-time (current-time-zone)))))
           (list y* m* d* H* M*)))
        (enc-dec-short
         (y m d)
@@ -157,9 +157,9 @@
 
 ;; date <-> week
 
-(defun org-x-dag-date-to-day-of-week (date)
-  (->> (org-x-dag-date-to-gregorian date)
-       (calendar-day-of-week)))
+;; (defun org-x-dag-date-to-day-of-week (date)
+;;   (->> (org-x-dag-date-to-gregorian date)
+;;        (calendar-day-of-week)))
 
 (defun org-x-dag-date-to-week-number (date)
   (-let* (((y m d) date)
@@ -184,17 +184,48 @@
          (+ start-abs start-diff)
          (org-x-dag-absolute-to-date))))
 
+(defvar org-x-dag-weekday-start 1
+  "Index of day to be considered start of week.
+Must be an integer from 0 - 6, with 0 = Sunday.")
+
 (defun org-x-dag-date-to-week-start (date)
   ""
-  (let* ((greg (org-x-dag-date-to-gregorian date))
-         (daynum (calendar-day-of-week greg)))
-    (-> (calendar-absolute-from-gregorian greg)
-        (- daynum)
+  (let* ((abs (-> (org-x-dag-date-to-absolute date)
+                  (- org-x-dag-weekday-start)))
+         (daynum (mod abs 7)))
+    (-> (- abs daynum)
+        (+ org-x-dag-weekday-start)
         (org-x-dag-absolute-to-date))))
 
 (defun org-x-dag-date-to-day-number (date)
   (->> (org-x-dag-date-to-gregorian date)
        (calendar-day-number)))
+
+(defconst org-x-dag-weekly-offset-limit 11)
+
+(defun org-x-dag-filter-weekly (get-date-fun sel-date xs)
+  (cl-flet
+      ((from-tags
+        (start-date acc x)
+        (-let (((this-date offset) (funcall get-date-fun x)))
+          (if (and (org-x-dag-datetime< start-date this-date)
+                   (not (org-x-dag-datetime< sel-date this-date)))
+              (-if-let (grp (assoc this-date acc))
+                  (-let (((_ grp-offset grp-xs) grp))
+                    (setcdr grp `(,(if (< grp-offset offset) offset grp-offset)
+                                  ,(cons x grp-xs)))
+                    acc)
+                (cons `(,this-date ,offset (,x)) acc))
+            acc)))
+       (collect-xs
+        (acc group)
+        (-let* (((start-date offset xs) group)
+                (end-date (org-x-dag-datetime-shift start-date offset 'submonth)))
+          (if (org-x-dag-datetime< end-date sel-date) acc (append xs acc)))))
+    (let* ((shift (- org-x-dag-weekly-offset-limit))
+           (start-date (org-x-dag-datetime-shift sel-date shift 'submonth)))
+      (->> (--reduce-from (from-tags start-date acc it) nil xs)
+           (-reduce-from #'collect-xs nil)))))
 
 ;; date <-> quarter
 
@@ -231,13 +262,13 @@
 ;; tags <-> date
 
 (defconst org-x-dag-weekly-tags
-  '((0 . "SUN")
-    (1 . "MON")
-    (2 . "TUE")
-    (3 . "WED")
-    (4 . "THU")
-    (5 . "FRI")
-    (6 . "SAT")))
+  '((0 . "Sunday")
+    (1 . "Monday")
+    (2 . "Tuesday")
+    (3 . "Wednesday")
+    (4 . "Thursday")
+    (5 . "Friday")
+    (6 . "Saturday")))
 
 (defun org-x-dag--parse-date-tag (prefix tag)
   (let ((re (format "%s\\([0-9]+\\)" prefix)))
@@ -255,14 +286,17 @@
 (defun org-x-dag-tag-to-week (tag)
   (org-x-dag--parse-date-tag "W" tag))
 
-(defun org-x-dag-tag-to-day-of-week (tag)
-  (car (rassoc tag org-x-dag-weekly-tags)))
+;; (defun org-x-dag-tag-to-day-of-week (tag)
+;;   (car (rassoc tag org-x-dag-weekly-tags)))
 
 (defun org-x-dag-tag-to-month (tag)
   (org-x-dag--parse-date-tag "M" tag))
 
 (defun org-x-dag-tag-to-day (tag)
   (org-x-dag--parse-date-tag "D" tag))
+
+(defun org-x-dag-tag-to-offset (tag)
+  (org-x-dag--parse-date-tag "d" tag))
 
 (defun org-x-dag-format-year-tag (year)
   (format "Y%02d" (mod year 2000)))
@@ -276,11 +310,14 @@
 (defun org-x-dag-format-week-tag (week)
   (format "W%02d" week))
 
-(defun org-x-dag-format-day-of-week-tag (daynum)
-  (alist-get daynum org-x-dag-weekly-tags))
+;; (defun org-x-dag-format-day-of-week-tag (daynum)
+;;   (alist-get daynum org-x-dag-weekly-tags))
 
 (defun org-x-dag-format-day-tag (day)
   (format "D%02d" day))
+
+(defun org-x-dag-format-offset-tag (offset)
+  (format "d%d" day))
 
 (defun org-x-dag-quarter-tags-to-date (tags)
   (-let (((y q) (reverse tags)))
@@ -288,9 +325,10 @@
                                      (org-x-dag-tag-to-quarter q)))))
 
 (defun org-x-dag-weekly-tags-to-date (tags)
-  (-let (((y w) (reverse tags)))
-    (org-x-dag-week-number-to-date (org-x-dag-tag-to-year y)
-                                   (org-x-dag-tag-to-week w))))
+  (-let (((y m d o) (reverse tags))
+         (this-date (org-x-dag-daily-tags-to-date (list y m d)))
+         (offset (org-x-dag-tag-to-offset o)))
+    (org-x-dag-datetime-shift this-date offset 'submonth)))
 
 (defun org-x-dag-daily-tags-to-date (tags)
   (-let (((y m d) (reverse tags)))
@@ -298,22 +336,22 @@
           (org-x-dag-tag-to-month m)
           (org-x-dag-tag-to-day d))))
 
-(defun org-x-dag-date-to-quarter-tags (date)
-  (-let (((y q) (org-x-dag-date-to-quarter date)))
-    (list (org-x-dag-format-year-tag y)
-          (org-x-dag-format-quarter-tag q))))
+;; (defun org-x-dag-date-to-quarter-tags (date)
+;;   (-let (((y q) (org-x-dag-date-to-quarter date)))
+;;     (list (org-x-dag-format-year-tag y)
+;;           (org-x-dag-format-quarter-tag q))))
 
-(defun org-x-dag-date-to-week-tags (date)
-  (-let (((y _ _) date)
-         (w (org-x-dag-date-to-week-number date)))
-    (list (org-x-dag-format-year-tag y)
-          (org-x-dag-format-week-tag w))))
+;; (defun org-x-dag-date-to-week-tags (date)
+;;   (-let (((y _ _) date)
+;;          (w (org-x-dag-date-to-week-number date)))
+;;     (list (org-x-dag-format-year-tag y)
+;;           (org-x-dag-format-week-tag w))))
 
-(defun org-x-dag-date-to-daily-tags (date)
-  (-let (((y m d) date))
-    (list (org-x-dag-format-year-tag y)
-          (org-x-dag-format-month-tag m)
-          (org-x-dag-format-day-tag d))))
+;; (defun org-x-dag-date-to-daily-tags (date)
+;;   (-let (((y m d) date))
+;;     (list (org-x-dag-format-year-tag y)
+;;           (org-x-dag-format-month-tag m)
+;;           (org-x-dag-format-day-tag d))))
 
 ;; allocation
 
@@ -1672,6 +1710,18 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
       (--each (ht-keys h)
         (propagate h it )))))
 
+(defun org-x-dag-filter-weekly-ids (adjlist sel-date ids)
+  (let ((id2date
+         (lambda (id)
+           (-let* (((o d m y)
+                    (org-x-dag-adjlist-id-hl-meta-prop adjlist :parent-tags id))
+                   (this-date (list (org-x-dag-tag-to-year y)
+                                    (org-x-dag-tag-to-month m)
+                                    (org-x-dag-tag-to-day d)))
+                   (offset (org-x-dag-tag-to-offset o)))
+             `(,this-date offset)))))
+    (org-x-dag-filter-weekly id2date sel-date ids)))
+
 (defun org-x-dag-get-network-status (sel-date adjlist links)
   (cl-flet*
       ((plan-tags
@@ -1706,9 +1756,9 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
             ;; processing to distinguish between current and not current. Bonus,
             ;; this is much faster (less stuff to deal with)
             (q-date (org-x-dag-date-to-quarter-start sel-date))
-            (w-date (org-x-dag-date-to-week-start sel-date))
             (cur-q (cur-links #'org-x-dag-quarter-tags-to-date q-date q))
-            (cur-w (cur-links #'org-x-dag-weekly-tags-to-date w-date w))
+            (cur-w (->> (-map #'car w)
+                        (org-x-dag-filter-weekly-ids adjlist sel-date)))
             (cur-d (cur-links #'org-x-dag-daily-tags-to-date sel-date d)))
       ;; add all links to the network status object (ew side effects)
       (org-x-dag-ns-ltg adjlist l ns)
@@ -1767,6 +1817,7 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
       ((flat-flip
         (plist)
         (->> (-partition-all 2 plist)
+             (-filter #'cadr)
              (--map (cons (cadr it) (car it))))))
   (-let (((&plist :goal-files g :plan-files p :action-files a) state))
     (append (flat-flip g) (flat-flip p) (--map (cons it :action) a)))))
@@ -2256,9 +2307,9 @@ Return value is a list like (BUFFER NON-BUFFER)."
                               date))
 
 (defun org-x-dag-date->wkp-ids (date)
-  (org-x-dag-date->tagged-ids (org-x-dag->wkp-ids)
-                              #'org-x-dag-weekly-tags-to-date
-                              date))
+  (let ((adjlist (org-x-dag->adjacency-list)))
+    (->> (org-x-dag->wkp-ids)
+         (org-x-dag-filter-weekly-ids adjlist date))))
 
 (defun org-x-dag-date->dlp-ids (date)
   (org-x-dag-date->tagged-ids
@@ -2273,7 +2324,6 @@ Return value is a list like (BUFFER NON-BUFFER)."
 
 (defun org-x-dag->current-wkp-ids ()
   (-> (org-x-dag->selected-date)
-      (org-x-dag-date-to-week-start)
       (org-x-dag-date->wkp-ids)))
 
 (defun org-x-dag->current-dlp-ids ()
@@ -2818,6 +2868,10 @@ FUTURE-LIMIT in a list."
   (let* ((wkp-ids (org-x-dag->current-wkp-ids))
          (sel-date (org-x-dag->selected-date))
          (q-date (org-x-dag-date-to-quarter-start sel-date))
+         ;; TODO this time range is meant to figure out which nodes are
+         ;; "scheduled" which also intersect with the qtp, but it has a fixed
+         ;; range of 7 days; this may not always be true now that my weekly plan
+         ;; is fuzzier
          (week-start (org-x-dag-date-to-week-start sel-date))
          (week-end (org-x-dag-datetime-shift week-start 7 'submonth)))
     (cl-flet
@@ -2847,6 +2901,9 @@ FUTURE-LIMIT in a list."
                      (list))))))))))))
 
 ;; TODO not DRY
+;; TODO this can be made way simpler by just pulling the current weekly ids
+;; and not doing these convoluted date checks (which won't work in all cases
+;; anyways because they assume the week start will never change)
 (defun org-x-dag-itemize-wkp (files)
   (let ((sel-date (->> (org-x-dag->selected-date)
                        (org-x-dag-date-to-week-start))))
@@ -3160,13 +3217,13 @@ FUTURE-LIMIT in a list."
   (-> (org-x-dag-format-quarter-tag quarter)
       (org-x-dag-headlines-find-tag headlines)))
 
-(defun org-x-dag-headlines-find-week (weeknum headlines)
-  (-> (org-x-dag-format-week-tag weeknum)
-      (org-x-dag-headlines-find-tag headlines)))
+;; (defun org-x-dag-headlines-find-week (weeknum headlines)
+;;   (-> (org-x-dag-format-week-tag weeknum)
+;;       (org-x-dag-headlines-find-tag headlines)))
 
-(defun org-x-dag-headlines-find-day-of-week (daynum headlines)
-  (-> (org-x-dag-format-day-of-week-tag daynum)
-      (org-x-dag-headlines-find-tag headlines)))
+;; (defun org-x-dag-headlines-find-day-of-week (daynum headlines)
+;;   (-> (org-x-dag-format-day-of-week-tag daynum)
+;;       (org-x-dag-headlines-find-tag headlines)))
 
 (defun org-x-dag-headlines-find-month (month headlines)
   (-> (org-x-dag-format-month-tag month)
@@ -3196,12 +3253,12 @@ FUTURE-LIMIT in a list."
         (tag (org-x-dag-format-quarter-tag quarter)))
     (org-x-dag-build-planning-headline title tag 2 section subheadlines)))
 
-(defun org-x-dag-build-week-headline (year weeknum subheadlines)
-  (-let* (((_ m d) (org-x-dag-week-number-to-date year weeknum))
-          (m* (calendar-month-name m))
-          (title (format "%s %s" m* d))
-          (tag (org-x-dag-format-week-tag weeknum)))
-    (org-x-dag-build-planning-headline title tag 2 nil subheadlines)))
+;; (defun org-x-dag-build-week-headline (year weeknum subheadlines)
+;;   (-let* (((_ m d) (org-x-dag-week-number-to-date year weeknum))
+;;           (m* (calendar-month-name m))
+;;           (title (format "%s %s" m* d))
+;;           (tag (org-x-dag-format-week-tag weeknum)))
+;;     (org-x-dag-build-planning-headline title tag 2 nil subheadlines)))
 
 (defun org-x-dag-build-month-headline (month subheadlines)
   (let ((title (calendar-month-name month))
@@ -3214,9 +3271,9 @@ FUTURE-LIMIT in a list."
           (tag (org-x-dag-format-day-tag d)))
     (org-x-dag-build-planning-headline title tag 3 nil subheadlines)))
 
-(defun org-x-dag-build-day-of-week-headline (daynum subheadlines)
+(defun org-x-dag-build-day-of-week-headline (daynum offset subheadlines)
   (let ((title (elt calendar-day-name-array daynum))
-        (tag (alist-get daynum org-x-dag-weekly-tags)))
+        (tag (org-x-dag-format-offset-tag offset)))
     (org-x-dag-build-planning-headline title tag 3 nil subheadlines)))
 
 ;; headline ids
@@ -3261,8 +3318,9 @@ FUTURE-LIMIT in a list."
                                       :tags `(,(plist-get it :tag))))))
 
 (defun org-x-dag-wkp-empty ()
-  (->> (-map #'car org-x-dag-weekly-tags)
-       (--map (org-x-dag-build-day-of-week-headline it nil))))
+  (->> (-iterate #'1+ 0 7)
+       (--annotate (mod (+ org-x-dag-weekday-start it) 7))
+       (--map (org-x-dag-build-day-of-week-headline (cdr it) (car it) nil))))
 
 ;;; stateful buffer function
 
@@ -3436,47 +3494,80 @@ FUTURE-LIMIT in a list."
 
 ;; weekly plan
 
-(defun org-x-dag-weekly-headlines-to-alist (headlines)
-  (->> (-map #'car org-x-dag-weekly-tags)
-       (--map (->> (org-x-dag-headlines-find-day-of-week it headlines)
-                   (org-ml-headline-get-subheadlines)
-                   (cons it)))))
+;; (defun org-x-dag-weekly-headlines-to-alist (headlines)
+;;   (->> (-map #'car org-x-dag-weekly-tags)
+;;        (--map (->> (org-x-dag-headlines-find-day-of-week it headlines)
+;;                    (org-ml-headline-get-subheadlines)
+;;                    (cons it)))))
 
-(defun org-x-dag-weekly-alist-to-headlines (plan)
-  (--map (-let (((daynum . hls) it))
-           (org-x-dag-build-day-of-week-headline daynum hls))
-         plan))
-
-(defun org-x-dag-wkp-get-week-headline (date)
-  (-let (((y _ _) date)
-         (w (org-x-dag-date-to-week-number date)))
-    (org-x-dag-headline-get-nested (org-x-dag->planning-file :weekly)
-      (list (-partial #'org-x-dag-headlines-find-year y)
-            (-partial #'org-x-dag-headlines-find-week w)))))
+;; (defun org-x-dag-weekly-alist-to-headlines (plan)
+;;   (--map (-let (((daynum . hls) it))
+;;            (org-x-dag-build-day-of-week-headline daynum hls))
+;;          plan))
 
 (defun org-x-dag-wkp-get-day-headline (date)
-  (-let ((n (org-x-dag-date-to-day-number date)))
-    (->> (org-x-dag-wkp-get-week-headline date)
-         (org-ml-headline-get-subheadlines)
-         (org-x-dag-headlines-find-day-of-week n))))
+  (cl-labels
+      ((get-tag
+        (re hl)
+        (-when-let (tag (car (org-ml-get-property :tags hl)))
+          (when (s-matches? re tag) tag)))
+       (flatten-subtrees
+        (regexps st)
+        (-let (((re0 . reN) regexps))
+          (if (not re0)
+              (-when-let (tag (get-tag "d[0-9]\\{1,2\\}" st))
+                `((,st (,tag))))
+            (-when-let (tag (get-tag re0 st))
+              (->> (org-ml-headline-get-subheadlines st)
+                   (--mapcat (flatten-subtrees reN it))
+                   (--map (-let (((hl tags) it))
+                            `(,hl (,tag ,@tags)))))))))
+       (convert-tags
+        (x)
+        (-let* (((st (yt mt dt ot)) x)
+                (parent-date (list (org-x-dag-tag-to-year yt)
+                                   (org-x-dag-tag-to-month mt)
+                                   (org-x-dag-tag-to-day dt)))
+                (offset (org-x-dag-tag-to-offset ot)))
+          `(,st (,parent-date ,offset))))
+       (date=
+        (x)
+        (-let* (((hl (parent-date offset)) x)
+                (this-date (org-x-dag-datetime-shift parent-date offset 'submonth)))
+          (org-x-dag-date= date this-date))))
+    (org-x-with-file (org-x-dag->planning-file :weekly)
+      (let ((regexps '("Y[0-9]\\{2\\}" "M[0-9]\\{2\\}" "D[0-9]\\{2\\}")))
+        (->> (org-ml-parse-subtrees 'all)
+             (--mapcat (flatten-subtrees regexps it))
+             (-map #'convert-tags)
+             (org-x-dag-filter-weekly #'cadr date)
+             (-filter #'date=)
+             (-map #'car))))))
+
+(defun org-x-dag-wkp-get-week-headline (date)
+  (-some->> (org-x-dag-wkp-get-day-headline date)
+    (car)
+    (org-ml-get-property :parent)))
 
 (defun org-x-dag-wkp-set-headlines (date headlines)
-  (-let* (((y _ _) date)
-          (w (org-x-dag-date-to-week-number date))
+  (-let* (((y m d) (org-x-dag-date-to-week-start date))
           (path (org-x-dag->planning-file :weekly))
           (find-year (-partial #'org-x-dag-headlines-find-year y))
-          (find-week (-partial #'org-x-dag-headlines-find-week w))
+          (find-month (-partial #'org-x-dag-headlines-find-month d))
+          (find-day (-partial #'org-x-dag-headlines-find-day d))
           (build-year (-partial #'org-x-dag-build-year-headline y))
-          (build-week (-partial #'org-x-dag-build-week-headline y w)))
+          (build-month (-partial #'org-x-dag-build-month-headline m))
+          (build-day (-partial #'org-x-dag-build-day-headline d)))
     (org-x-dag-headline-set-nested path headlines
       `((,find-year ,build-year)
-        (,find-week ,build-week)))))
+        (,find-month ,build-month)
+        (,find-day ,build-day)))))
 
 ;; TODO these functions need to take dates and not 'week's (whatever those are)
-(defun org-x-dag-wkp-get (date)
-  (->> (org-x-dag-wkp-get-day-headline date)
-       (org-ml-headline-get-subheadlines)
-       (org-x-dag-weekly-headlines-to-alist)))
+;; (defun org-x-dag-wkp-get (date)
+;;   (->> (org-x-dag-wkp-get-day-headline date)
+;;        (org-ml-headline-get-subheadlines)
+;;        (org-x-dag-weekly-headlines-to-alist)))
 
 ;; (defun org-x-dag-wkp-set (week plan)
 ;;   (cl-flet*
@@ -3628,7 +3719,7 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-goto-current-weekly-plan-day ()
   (interactive)
   (org-x-dag--goto-current "Weekly plan (day)" :weekly
-    #'org-x-dag-wkp-get-day-headline))
+    (lambda (date) (car (org-x-dag-wkp-get-day-headline date)))))
 
 (defun org-x-dag-goto-current-daily-plan ()
   (interactive)
@@ -4548,9 +4639,8 @@ In the order of display
   (interactive)
   (let ((files '(:weekly))
         (weekly-header (lambda ()
-                         (-let* (((date &as y m d) (org-x-dag->selected-date))
-                                 (n (org-x-dag-date-to-week-number date)))
-                           (-> (format "Week %d - %d-%d-%d\n" n y m d)
+                         (-let* (((date &as y m d) (org-x-dag->selected-date)))
+                           (-> (format "Week starting on %d-%d-%d\n" y m d)
                                (org-x-dag-format-header))))))
     (org-x-dag-agenda-show-nodes "Weekly Plan" #'org-x-dag-itemize-wkp files
       `((org-agenda-sorting-strategy '(user-defined-up category-keep))
@@ -4561,6 +4651,7 @@ In the order of display
               (-let* ((c (get-text-property 1 'x-committedp line))
                       (p (get-text-property 1 'x-plannedp line))
                       (day (get-text-property 1 'x-day line))
+                      ;; TODO not sure if this will work anymore
                       (n (car (rassoc day org-x-dag-weekly-tags)))
                       ((rank text)
                        (cond
