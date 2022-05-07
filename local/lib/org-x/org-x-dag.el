@@ -1802,6 +1802,17 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
     (:daily "DLP")
     (_ "???")))
 
+(defun org-x-dag-group-order (group)
+  (pcase group
+    (:lifetime 7)
+    (:survival 6)
+    (:endpoint 5)
+    (:action 4)
+    (:quarterly 3)
+    (:weekly 2)
+    (:daily 1)
+    (_ 0)))
+
 (defun org-x-dag-read-file-paths ()
   (list :goal-files (list :lifetime (org-x-get-lifetime-goal-file)
                           :endpoint (org-x-get-endpoint-goal-file)
@@ -2140,6 +2151,10 @@ highest in the tree."
 (defun org-x-dag-id->planning-datetime (which id)
   (-some->> (org-x-dag-id->planning-timestamp which id)
     (org-ml-timestamp-get-start-time)))
+
+(defun org-x-dag-id->planning-epoch (which id)
+  (-some->> (org-x-dag-id->planning-datetime which id)
+    (org-ml-time-to-unixtime)))
 
 (defun org-x-dag-id->agenda-timestamp (id)
   "Retrieve timestamp information of ID for sorting agenda views.
@@ -3772,7 +3787,8 @@ FUTURE-LIMIT in a list."
           (org-x-dag-id->title id)
         (org-x-dag-id->path (eq group :action) id)))))
 
-(defun org-x-dag--link-parent-to-child (parent-id-fun child-id-fun fmt-fun)
+(defun org-x-dag--link-parent-to-child (parent-id-fun child-id-fun fmt-fun
+                                                      sort-fun)
   (cl-flet*
       (;; (is-valid-node
        ;;  (id)
@@ -3788,6 +3804,7 @@ FUTURE-LIMIT in a list."
         (this-id)
         (-if-let (collection (->> (funcall child-id-fun)
                                   ;; (-filter #'is-valid-node)
+                                  (-sort sort-fun)
                                   (--map (to-menu-line this-id it))))
             (-let* (((&plist :id :presentp)
                      (-> (completing-read "Child: " collection nil t)
@@ -3812,11 +3829,19 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-link-parent-to-child ()
   (interactive)
   (cl-flet*
+      ((id-group-order
+        (id)
+        (->> (org-x-dag-id->group id)
+             (org-x-dag-group-order)))
+       (id-epoch
+        (id)
+        (or (org-x-dag-id->planning-epoch :scheduled id) 0))
+
       ;; parent id functions
       ;;
       ;; TODO might make sense to check for validity here so I don't link
       ;; poisoned nodes together
-      ((id-getter
+       (id-getter
         ()
         (-if-let (id (org-id-get))
             (either :right id)
@@ -3855,7 +3880,30 @@ FUTURE-LIMIT in a list."
                             (not (org-x-dag-id->ns-key :survivalp it))))))
        (epg-action-qtp-getter
         ()
-        `(,@(org-x-dag->epg-ids) ,@(action-qtp-getter))))
+        `(,@(org-x-dag->epg-ids) ,@(action-qtp-getter)))
+
+       ;; format functions
+       (dlp-formatter
+        (id)
+        (let ((title (org-x-dag-id->title id))
+              (time (-some->> (org-x-dag-id->planning-datetime :scheduled id)
+                      (org-x-dag-datetime-split)
+                      (nth 1)
+                      (apply #'format "%02d:%02d"))))
+          (format "%s | %s" (or time "??:??") title)))
+
+       ;; sort functions
+       (pos-sort
+        (id-a id-b)
+        (let ((ga (id-group-order id-a))
+              (gb (id-group-order id-b)))
+          (if (= ga gb) (< ga gb)
+            (let ((pa (org-x-dag-id->point id-a))
+                  (pb (org-x-dag-id->point id-a)))
+              (< pa pb)))))
+       (time-sort
+        (id-a id-b)
+        (< (id-epoch id-a) (id-epoch id-b))))
 
     (org-x-dag-sync)
     (let ((f (buffer-file-name)))
@@ -3864,32 +3912,32 @@ FUTURE-LIMIT in a list."
         (org-x-dag--link-parent-to-child
          #'leaf-id-getter
          #'epg-action-qtp-getter
-         #'org-x-dag--format-link-menu-line-expanded))
+         #'org-x-dag--format-link-menu-line-expanded
+         #'pos-sort))
        ((equal f (org-x-dag->goal-file :endpoint))
         (org-x-dag--link-parent-to-child
          #'leaf-id-getter
          #'action-qtp-getter
-         #'org-x-dag--format-link-menu-line-expanded))
+         #'org-x-dag--format-link-menu-line-expanded
+         #'pos-sort))
        ((equal f (org-x-dag->goal-file :survival))
         (org-x-dag--link-parent-to-child
          #'leaf-id-getter
          #'svg-action-getter
-         (-partial #'org-x-dag-id->path t)))
+         (-partial #'org-x-dag-id->path t)
+         #'pos-sort))
        ((member f (org-x-dag->action-files))
         (org-x-dag--link-parent-to-child
          #'action-id-getter
          #'org-x-dag->current-dlp-ids
-         #'org-x-dag-id->title))
+         #'dlp-formatter
+         #'time-sort))
        ((equal f (org-x-dag->planning-file :quarterly))
         (org-x-dag--link-parent-to-child
          #'id-getter
          #'org-x-dag->current-wkp-ids
-         #'org-x-dag-id->title))
-       ((equal f (org-x-dag->planning-file :weekly))
-        (org-x-dag--link-parent-to-child
-         #'id-getter
-         #'org-x-dag->current-dlp-ids
-         #'org-x-dag-id->title))
+         #'org-x-dag-id->title
+         #'pos-sort))
        (t
         (message "Cannot link child from parent in current file"))))))
 
