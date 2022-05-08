@@ -2122,17 +2122,20 @@ highest in the tree."
 ;;     (s-chop-prefix "_")
 ;;     (intern)))
 
-(defun org-x-dag-id->link (id)
+(defun org-x-dag-id->link (fullpath id)
   "Return the link node for ID."
-  (let ((desc (org-x-dag-id->title id)))
-    (->> (org-ml-build-secondary-string! desc)
-         (apply #'org-ml-build-link id :type "id"))))
+  (->> (if fullpath (org-x-dag-id->path nil id) (org-x-dag-id->title id))
+       (org-ml-build-secondary-string!)
+       (apply #'org-ml-build-link id :type "id")))
 
 (defun org-x-dag-id->link-item (id)
   "Return the link node of ID wrapped in an item node."
-  (->> (org-x-dag-id->link id)
-       (org-ml-build-paragraph)
-       (org-ml-build-item)))
+  (let* ((group (org-x-dag-id->group id))
+         (tag (if (eq group :action) (org-x-dag-id->category id)
+                (org-x-dag-group-code group)))
+         (fullpathp (memq group `(:action :endpoint :lifetime :survival)))
+         (link (org-x-dag-id->link fullpathp id)))
+    (org-ml-build-item :tag `(,tag) (org-ml-build-paragraph link))))
 
 (defun org-x-dag-id->ns (id)
   (-if-let (nst (plist-get org-x-dag :netstat))
@@ -4186,90 +4189,94 @@ FUTURE-LIMIT in a list."
   (let ((s (make-string n ?\s)))
     (--map (s-prepend s it) lines)))
 
-(defun org-x-dag--format-bs (bs-data)
-  (cl-flet
-      ((format-comptime
+(defun org-x-dag--build-bs-paragraph (bs-data)
+  (cl-flet*
+      ((format-event
+        (verb what y m d H M)
+        (format "%s %s on %d-%02d-%02d at %02d:%02d" verb what y m d H M))
+       (format-comptime
         (what comptime)
         (-let* (((&plist :epoch e :canceledp c) comptime)
                 ((y m d H M) (org-ml-unixtime-to-time-long e))
                 (verb (if c "Canceled" "Completed")))
-          (format "%s %s on %d-%d-%d at %02d:%02d" verb what y m d H M))))
+          (format-event verb what y m d H M))))
     ;; TODO this could show more detail if I wanted
-    (pcase bs-data
-      (`(:action . ,d)
-       (-let* (((&plist :ancestry a :local l) d)
-               (local-status
-                (pcase l
-                  (`(:sp-proj :proj-active)
-                   "Active Project")
-                  (`(:sp-proj :proj-wait)
-                   "Waiting Project")
-                  (`(:sp-proj :proj-held)
-                   "Held Project")
-                  (`(:sp-proj :proj-stuck)
-                   "Stuck Project")
-                  (`(:sp-proj :proj-complete ,comptime)
-                   (format-comptime "project" comptime))
-                  (`(:sp-task :task-complete ,comptime)
-                   (format-comptime "task" comptime))
-                  (`(:sp-task :task-active ,_)
-                   "Active Task")
-                  (`(:sp-iter :iter-active ,_)
-                   "Active Iterator")
-                  (`(:sp-iter :iter-empty)
-                   "Empty Iterator")
-                  (`(:sp-iter :iter-complete ,comptime)
-                   (format-comptime "iterator" comptime))
-                  (`(:sp-subiter :si-active ,_)
-                   "Active sub-iterator")
-                  (`(:sp-subiter :si-complete ,comptime)
-                   (format-comptime "sub-iterator" comptime))
-                  (e (error "Unmatched pattern: %s" e))))
-               ((&plist :canceled-parent-p c :held-parent-p h) a)
-               (ancestry-status (cond
-                                 ((and c h) "Held/Canceled")
-                                 (c "Canceled")
-                                 (h "Held")
-                                 (t "Unmasked"))))
-         (list (format "Action status: %s" local-status)
-               (format "Mask status: %s" ancestry-status))))
+    (let ((ls (pcase bs-data
+                (`(:action . ,d)
+                 (-let* (((&plist :ancestry a :local l) d)
+                         (local-status
+                          (pcase l
+                            (`(:sp-proj :proj-active)
+                             "Active Project")
+                            (`(:sp-proj :proj-wait)
+                             "Waiting Project")
+                            (`(:sp-proj :proj-held)
+                             "Held Project")
+                            (`(:sp-proj :proj-stuck)
+                             "Stuck Project")
+                            (`(:sp-proj :proj-complete ,comptime)
+                             (format-comptime "project" comptime))
+                            (`(:sp-task :task-complete ,comptime)
+                             (format-comptime "task" comptime))
+                            (`(:sp-task :task-active ,_)
+                             "Active Task")
+                            (`(:sp-iter :iter-active ,_)
+                             "Active Iterator")
+                            (`(:sp-iter :iter-empty)
+                             "Empty Iterator")
+                            (`(:sp-iter :iter-complete ,comptime)
+                             (format-comptime "iterator" comptime))
+                            (`(:sp-subiter :si-active ,_)
+                             "Active sub-iterator")
+                            (`(:sp-subiter :si-complete ,comptime)
+                             (format-comptime "sub-iterator" comptime))
+                            (e (error "Unmatched pattern: %s" e))))
+                         ((&plist :canceled-parent-p c :held-parent-p h) a)
+                         (ancestry-status (cond
+                                           ((and c h) "Held/Canceled")
+                                           (c "Canceled")
+                                           (h "Held")
+                                           (t "Unmasked"))))
+                   (list (format "Action status: %s" local-status)
+                         (format "Mask status: %s" ancestry-status))))
 
-      (`(:endpoint . ,d)
-       (-let* (((&plist :ancestry a :local l) d)
-               (local-status (pcase l
-                               (`(:active)
-                                "Active Endpoint Goal")
-                               (`(:complete ,comptime)
-                                (format-comptime "EPG" comptime))))
-               (ancestry-status (if (plist-get a :canceled-parent-p)
-                                    "Canceled"
-                                  "Unmasked")))
-         (list (format "Goal status: %s" local-status)
-               (format "Mask status: %s" ancestry-status))))
-      ;; TODO I currently don't allow either of these to be anything other than
-      ;; "TODO"
-      (`(,(or :lifetime :survival) . ,d)
-       (-let* (((&plist :ancestry a :local _) d)
-               (ancestry-status (plist-get a :canceled-parent-p)))
-         (list "Active" (format "Mask Status: %s" ancestry-status))))
+                (`(:endpoint . ,d)
+                 (-let* (((&plist :ancestry a :local l) d)
+                         (local-status (pcase l
+                                         (`(:active)
+                                          "Active Endpoint Goal")
+                                         (`(:complete ,comptime)
+                                          (format-comptime "EPG" comptime))))
+                         (ancestry-status (if (plist-get a :canceled-parent-p)
+                                              "Canceled"
+                                            "Unmasked")))
+                   (list (format "Goal status: %s" local-status)
+                         (format "Mask status: %s" ancestry-status))))
+                ;; TODO I currently don't allow either of these to be
+                ;; anything other than "TODO"
+                (`(,(or :lifetime :survival) . ,d)
+                 (-let* (((&plist :ancestry a :local _) d)
+                         (ancestry-status (plist-get a :canceled-parent-p)))
+                   (list "Active" (format "Mask Status: %s" ancestry-status))))
 
-      (`(:quarterly :active ,dead)
-       (->> (if dead (->> (org-ml-to-trimmed-string dead)
-                          (format "deadline: %s"))
-              "no deadline")
-            (format "Active with %s")
-            (list)))
-      (`(:quarterly :complete ,comptime)
-       (list (format-comptime "quarterly plan" comptime)))
-      (`(:weekly :active)
-       "Active")
-      (`(:weekly :complete ,comptime)
-       (list (format-comptime "weekly plan" comptime)))
-      (`(:daily :active (:sched ,sched))
-       (-let (((y m d H M) (org-ml-timestamp-get-start-time sched)))
-         (list (format "Open and scheduled on %d-%d-%d at %02d:%02d" y m d H M))))
-      (`(:daily :complete ,comptime)
-       (list (format-comptime "daily metablock" comptime))))))
+                (`(:quarterly :active ,dead)
+                 (->> (if dead (->> (org-ml-to-trimmed-string dead)
+                                    (format "deadline: %s"))
+                        "no deadline")
+                      (format "Active with %s")
+                      (list)))
+                (`(:quarterly :complete ,comptime)
+                 (list (format-comptime "quarterly plan" comptime)))
+                (`(:weekly :active)
+                 "Active")
+                (`(:weekly :complete ,comptime)
+                 (list (format-comptime "weekly plan" comptime)))
+                (`(:daily :active (:sched ,sched))
+                 (-let (((y m d H M) (org-ml-timestamp-get-start-time sched)))
+                   (list (format-event "Scheduled" "metablock" y m d H M))))
+                (`(:daily :complete ,comptime)
+                 (list (format-comptime "daily metablock" comptime))))))
+      (org-ml-build-paragraph (s-join "\n" ls)))))
 
 (defun org-x-dag--format-title-with-group (id)
   (let ((title (org-x-dag-id->title id))
@@ -4277,132 +4284,98 @@ FUTURE-LIMIT in a list."
                     (org-x-dag-group-code))))
     (format "%s - %s" group title)))
 
-(defun org-x-dag--format-ns (id ns-data)
-  (cl-flet
-      ((format-group
-        (header key fun)
-        (-some->> (plist-get ns-data key)
-          (--map (funcall fun it))
-          (org-x-dag--indent-lines 2)
-          (cons (format "%s:" header))))
-       (append-groups
-        (&rest groups)
-        (or (->> (-non-nil groups)
-                 (-interpose '(""))
-                 (-flatten-n 1))
-            '("none"))))
-    (let ((group (org-x-dag-id->group id)))
-      (pcase group
-        (:action
-         (append-groups
-          (format-group "Planned"
-                        :planned
-                        #'org-x-dag-id->title)
-          (format-group "Committed Goals"
-                        :committed
-                        #'org-x-dag--format-title-with-group)))
-        (:lifetime
-         (append-groups
-          (format-group "Planned"
-                        :planned
-                        #'org-x-dag-id->title)
-          (format-group "Fulfilled"
-                        :committed
-                        #'org-x-dag--format-title-with-group)))
-        (:endpoint
-         (append-groups
-          (format-group "Planned"
-                        :planned
-                        #'org-x-dag-id->title)
-          (format-group "Committed"
-                        :committed
-                        (lambda (id)
-                          (org-x-dag-id->path nil id)))
-          (format-group "Fulfilled"
-                        :fulfilled
-                        (lambda (id)
-                          (org-x-dag-id->path t id)))))
-        (:survival
-         (append-groups
-          ;; TODO not sure if this works
-          (format-group "Planned"
-                        :planned
-                        (lambda (id)
-                          (org-x-dag-id->path t id)))
-          (format-group "Fulfilled"
-                        :fulfilled
-                        (lambda (id)
-                          (org-x-dag-id->path t id)))))
-        (:quarterly
-         (append-groups
-          (format-group "Scheduled actions"
-                        :scheduled-actions
-                        (lambda (id)
-                          (org-x-dag-id->path t id)))
-          (format-group "Planned"
-                        :planned
-                        #'org-x-dag-id->title)
-          (format-group "Committed Goals"
-                        :committed
-                        #'org-x-dag--format-title-with-group)))
-        (:weekly
-         (append-groups
-          (format-group "Planned"
-                        :planned
-                        (lambda (id)
-                          (org-x-dag-id->path t id)))
-          (format-group "Committed"
-                        :committed
-                        #'org-x-dag-id->title)))
-        (:daily
-         (append-groups
-          (format-group "Planned"
-                        :planned
-                        (lambda (id)
-                          (org-x-dag-id->path t id)))
-          (format-group "Committed"
-                        :committed
-                        #'org-x-dag-id->title)))))))
+(defun org-x-dag--build-ns-list (id ns-data)
+  (cl-flet*
+      ((build-item
+        (header &rest children)
+        (apply #'org-ml-build-item! :post-blank 1 :paragraph header children))
+       (format-group
+        (header key)
+        (-if-let (subitems (-some->> (plist-get ns-data key)
+                             (-map #'org-x-dag-id->link-item)))
+            (->> (apply #'org-ml-build-plain-list subitems)
+                 (build-item (format "%s:" header)))
+          (build-item (format "%s: none" header)))))
+    (let* ((group (org-x-dag-id->group id))
+           (args (pcase group
+                   (:action
+                    '(("Planned" :planned)
+                      ("Committed Goals" :committed)))
+                   (:lifetime
+                    '(("Planned" :planned)
+                      ("Fulfilled" :committed)))
+                   (:endpoint
+                    '(("Planned" :planned)
+                      ("Committed" :committed)
+                      ("Fulfilled" :fulfilled)))
+                   (:survival
+                    ;; TODO not sure if this works
+                    '(("Planned" :planned)
+                      ("Fulfilled" :fulfilled)))
+                   (:quarterly
+                    '(("Scheduled actions" :scheduled-actions)
+                      ("Planned" :planned)
+                      ("Committed Goals" :committed)))
+                   (:weekly
+                    '(("Planned" :planned)
+                      ("Committed" :committed)))
+                   (:daily
+                    '(("Planned" :planned)
+                      ("Committed" :committed))))))
+      (->> (--map (apply #'format-group it) args)
+           (apply #'org-ml-build-plain-list)))))
+
+(defun org-x-dag-pop-buffer (name to-insert)
+  (pop-to-buffer (format "*%s*" name))
+  (read-only-mode 0)
+  (org-mode)
+  (erase-buffer)
+  (insert to-insert)
+  (read-only-mode 1))
 
 (defun org-x-dag-show-status ()
   (interactive)
   (cl-flet*
-      ((format-maybe
+      ((paragraph-maybe
         (x alt)
-        (if (not x) (list "none") (funcall alt x)))
-       (format-header
-        (header lines)
-        (->> (org-x-dag--indent-lines 2 lines)
-             (s-join "\n")
-             (format "%s:\n%s" header)))
-       (format-titles
+        (if (not x) (list (org-ml-build-paragraph "none")) (funcall alt x)))
+       (build-headline
+        (title section)
+        (org-ml-build-headline! :title-text title
+                                :post-blank 0
+                                :section-children section))
+       (build-id-list
         (ids)
-        (-map #'org-x-dag--format-title-with-group ids))
-       (format-ids
+        (->> (-map #'org-x-dag-id->link-item ids)
+             (apply #'org-ml-build-plain-list)
+             (list)))
+       (build-id-headline
         (what ids)
-        (->> (format-maybe ids #'format-titles)
-             (format-header what)))
-       (format-either
-        (e right)
-        (either-from e (lambda (e) (list (format "Error: %s" e))) right))
+        (->> (paragraph-maybe ids #'build-id-list)
+             (build-headline what)))
        (format-bs
         (bs)
-        (->> (format-either bs (lambda (b) (org-x-dag--format-bs b)))
-             (format-header "Buffer Status")))
+        (->> (either-from* bs
+               (org-ml-build-paragraph (format "Error: %s" it))
+               (org-x-dag--build-bs-paragraph it))
+             (list)
+             (build-headline "Buffer Status")))
        (format-ns-either
         (id ns-either)
         (either-from* ns-either
           (->> it
                (--mapcat
-                (-let (((&plist :msg :ids) it))
-                  (->> (-map #'org-x-dag--format-title-with-group ids)
-                       (org-x-dag--indent-lines 2)
-                       (cons (format "Error: %s" msg))))))
-          (org-x-dag--format-ns id it)))
+                (-let (((&plist :msg :ids) it)
+                       (para (org-ml-build-paragraph (format "Error: %s" msg))))
+                  (->> (-map #'org-x-dag-id->link-item ids)
+                       (apply #'org-ml-build-plain-list)
+                       (org-ml-build-item para))))
+               (apply #'org-ml-build-plain-list))
+          (org-x-dag--build-ns-list id it)))
        (format-ns
         (id ns)
-        (->> (format-maybe ns (lambda (x) (format-ns-either id x)))
-             (format-header "Network Status"))))
+        (->> (paragraph-maybe ns (lambda (x) (list (format-ns-either id x))))
+             (build-headline "Network Status"))))
     (org-x-dag-sync)
     (-if-let (hl (org-ml-parse-this-headline))
         (let* ((id (org-x-dag-headline-get-id hl))
@@ -4411,17 +4384,15 @@ FUTURE-LIMIT in a list."
                      (format-bs))))
           (if (not bs) (message "Headline is not node")
             (let ((lps (->> (org-x-dag-id->linked-parents id)
-                            (format-ids "Parent Links")))
+                            (build-id-headline "Parent Links")))
                   (lcs (->> (org-x-dag-id->linked-children id)
-                            (format-ids "Child Links")))
+                            (build-id-headline "Child Links")))
                   (ns (->> (org-x-dag-id->ns id)
                            (format-ns id))))
-              ;; TODO there is probably a better way to do this
-              (pop-to-buffer "*Org-DAG Node Status*")
-              (read-only-mode 0)
-              (erase-buffer)
-              (insert (s-join "\n\n" (list lps lcs bs ns)))
-              (read-only-mode 1))))
+              (->> (list lps lcs bs ns)
+                   (-map #'org-ml-to-string)
+                   (s-join "\n")
+                   (org-x-dag-pop-buffer "Org-DAG Node Status")))))
       (message "Not on headline"))))
 
 (defun org-x-dag-agenda-show-status ()
