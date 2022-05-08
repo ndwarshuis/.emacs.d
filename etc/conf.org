@@ -1895,6 +1895,7 @@ The advantage of doing it this way is that I can byte-compile and test independe
   (--each (directory-files dir t ".*\\.el$") (byte-recompile-file it nil 0)))
 
 (nd/load-and-compile (nd/expand-lib-directory "either"))
+(nd/load-and-compile (nd/expand-lib-directory "interval"))
 (nd/load-and-compile (nd/expand-lib-directory "dag"))
 (nd/load-and-compile (nd/expand-lib-directory "org-x"))
 
