@@ -27,6 +27,7 @@
 (require 'dash)
 (require 'dag)
 (require 'either)
+(require 'interval)
 (require 'ht)
 
 (require 'org-x-files)
@@ -2360,31 +2361,6 @@ Return value is a list like (BUFFER NON-BUFFER)."
                                            org-x-tag-category-prefix)
   "Order in which tags should appear in the agenda buffer (from right to left.")
 
-(defun org-x-dag--group-overlaps (interval-fun xs)
-  ;; worst case = O(N^2) (all conflicts)
-  ;; best case = O(N) (no conflicts)
-  ;; interval function returns a list like (START END) where both are numbers
-  (cl-labels
-      ((get-overlaps
-        (acc ss)
-        (-if-let (s0 (car ss))
-            (-let* (((acc+ acc-) acc)
-                    (A (cdr s0))
-                    (a1 (cadr (car s0)))
-                    (rest (cdr ss)))
-              ;; add members while if the starting value is less than the ending
-              ;; value of the current member
-              (-if-let (over (->> (--take-while (< (car (car it)) a1) rest)
-                                  (--map (list A (cdr it)))
-                                  (reverse)))
-                  (get-overlaps `((,@over ,@acc+) ,acc-) rest)
-                (get-overlaps `(,acc+ (,A ,@acc-)) rest)))
-          acc)))
-    (-let (((over non-over) (->> (-annotate interval-fun xs)
-                                 (--sort (< (car (car it)) (car (car other))))
-                                 (get-overlaps nil))))
-      (list (nreverse over) (nreverse non-over)))))
-
 (defun org-x-dag-collapse-tags (tags)
   "Return TAGS with duplicates removed.
 
@@ -3026,6 +3002,54 @@ FUTURE-LIMIT in a list."
 
 ;; agenda/calendar
 
+(defun org-x-dag-show-gaps (sel-date ids)
+  (let* ((epoch (org-ml-time-to-unixtime sel-date))
+         (epoch+ (+ epoch 86400))
+         (epoch- (- epoch 86400)))
+    (cl-flet*
+        ((to-interval
+          (duration datetime)
+          (when (and (< 0 duration) (org-ml-time-is-long datetime))
+            (let* ((start (org-ml-time-to-unixtime datetime))
+                   (end (+ start duration)))
+              (when (or (and (<= epoch start) (<= start epoch+))
+                        (and (<= epoch- start) (<= epoch end)))
+                `(,start ,end)))))
+         (expand-datetimes
+          (id)
+          (-when-let (d (-some->> (org-x-dag-id->duration id)
+                          (* 60)))
+            (-some->> (org-x-dag-id->planning-timestamp :scheduled id)
+              (org-x-dag-partition-timestamp)
+              (org-x-dag-get-scheduled-at sel-date)
+              (--map (to-interval d it))
+              (-non-nil))))
+         (get-intervals
+          (id)
+          (pcase (either-from-right (org-x-dag-id->bs id) nil)
+            (`(:daily :active (:sched ,sched))
+             (-when-let (dt (org-ml-timestamp-get-start-time sched))
+                 (when (org-x-dag-date= sel-date dt)
+                   (expand-datetimes id))))
+            (`(:action . ,bs)
+             (-let (((&plist :ancestry a :local l) bs))
+               (unless (or (plist-get a :canceled-parent-p)
+                           (plist-get a :held-parent-p))
+                 (pcase l
+                   (`(:sp-task :task-active ,_)
+                    (expand-datetimes id))
+                   (`(:sp-subiter :si-active ,_)
+                    (expand-datetimes id)))))))))
+         ;; (epoch-to-time
+         ;;  (epoch)
+         ;;  (-let (((_ MM HH) (decode-time epoch (current-time-zone))))
+         ;;    `(,HH ,MM))))
+      (->> (-mapcat #'get-intervals ids)
+           (interval-sort)
+           (interval-merge)
+           (interval-complement epoch epoch+)))))
+           ;; (--map (interval-bimap #'epoch-to-time it))))))
+
 (defun org-x-dag-itemize-agenda (files sel-date)
   (let ((todayp (org-x-dag-date= (org-x-dag-current-date) sel-date)))
     (cl-flet*
@@ -3128,7 +3152,7 @@ FUTURE-LIMIT in a list."
                               (-reduce-from #'format-id nil)))
                 ((long-ss short-ss) (-separate #'can-conflict-p ss))
                 ((long-ss+ long-ss-)
-                 (org-x-dag--group-overlaps #'get-interval long-ss)))
+                 (interval-group-overlaps #'get-interval long-ss)))
           (append
            (--map (format-dead it nil) ds)
            (--map (format-sched it nil) (append long-ss- short-ss))
