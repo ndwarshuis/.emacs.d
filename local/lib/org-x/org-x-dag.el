@@ -318,7 +318,7 @@ Must be an integer from 0 - 6, with 0 = Sunday.")
   (format "D%02d" day))
 
 (defun org-x-dag-format-offset-tag (offset)
-  (format "d%d" day))
+  (format "d%d" offset))
 
 (defun org-x-dag-quarter-tags-to-date (tags)
   (-let (((y q) (reverse tags)))
@@ -3369,7 +3369,7 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-wkp-empty ()
   (->> (-iterate #'1+ 0 7)
        (--annotate (mod (+ org-x-dag-weekday-start it) 7))
-       (--map (org-x-dag-build-day-of-week-headline (cdr it) (car it) nil))))
+       (--map (org-x-dag-build-day-of-week-headline (car it) (cdr it) nil))))
 
 ;;; stateful buffer function
 
@@ -3602,11 +3602,11 @@ FUTURE-LIMIT in a list."
   (-let* (((y m d) (org-x-dag-date-to-week-start date))
           (path (org-x-dag->planning-file :weekly))
           (find-year (-partial #'org-x-dag-headlines-find-year y))
-          (find-month (-partial #'org-x-dag-headlines-find-month d))
+          (find-month (-partial #'org-x-dag-headlines-find-month m))
           (find-day (-partial #'org-x-dag-headlines-find-day d))
           (build-year (-partial #'org-x-dag-build-year-headline y))
           (build-month (-partial #'org-x-dag-build-month-headline m))
-          (build-day (-partial #'org-x-dag-build-day-headline d)))
+          (build-day (-partial #'org-x-dag-build-day-headline date)))
     (org-x-dag-headline-set-nested path headlines
       `((,find-year ,build-year)
         (,find-month ,build-month)
