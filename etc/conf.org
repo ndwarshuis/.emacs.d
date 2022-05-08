@@ -2737,6 +2737,16 @@ Make tags appear on the right side of the screen.
 #+BEGIN_SRC emacs-lisp
 (setq org-agenda-tags-column 'auto)
 #+END_SRC 
+***** time grid
+#+begin_src emacs-lisp
+(let ((intervals (->> (--unfold (when (<= it 20) (cons it (1+ it))) 8)
+                      (--map (* 100 it)))))
+  (setq org-agenda-time-grid
+        `((daily today require-timed remove-match)
+          ,intervals
+          "......" "----------------")))
+
+#+end_src
 ***** prefix format
 :PROPERTIES:
 :ID:       e0e6d1e6-889d-489a-a542-f750551fd765
