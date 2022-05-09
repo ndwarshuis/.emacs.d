@@ -2063,7 +2063,7 @@ If FORCE is non-nil, sync no matter what."
   (org-x-dag-id->hl-meta-prop id :file))
 
 (defun org-x-dag-id->category (id)
-  "Return file for ID."
+  "Return category for ID."
   (org-x-dag-id->hl-meta-prop id :category))
 
 (defun org-x-dag-id->duration (id)
