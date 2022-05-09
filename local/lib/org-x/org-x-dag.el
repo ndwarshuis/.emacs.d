@@ -1482,14 +1482,20 @@ used for optimization."
 
 (defun org-x-dag-ns-action (adjlist links ns)
   (cl-flet
-      ((get-planned
-        (htbl ids)
-        (--mapcat (org-x-dag-ht-get-maybe htbl it :planned) ids)))
+      ((ns-overlaps
+        (ids key ns)
+        (-intersection (plist-get (either-from-right ns nil) key) ids)))
     (-let* (((&alist :endpoint ht-e
                      :lifetime ht-l
                      :survival ht-s
                      :quarterly ht-q)
              ns)
+            (q-committed
+             (->> (ht->alist ht-q)
+                  (--map (cons (car it)
+                               (-> (either-from-right (cdr it) nil)
+                                   (plist-get :committed))))
+                  (-filter #'cdr)))
             (is-committed-leaf-p
              (lambda (id)
                (if (org-x-dag-ht-get-maybe ht-e id :committed)
@@ -1513,10 +1519,14 @@ used for optimization."
                   (t
                    (either :right `(:committed (,@e ,@l) :survivalp nil))))
                  (ht-set this-h id))
-            (when (-some->> (org-x-dag-adjlist-id-hl-meta-prop adjlist :planning id)
-                    (org-ml-get-property :scheduled))
-              (->> (-union (get-planned ht-e e) (get-planned ht-l l))
-                   (org-x-dag-ht-add-links id ht-q :scheduled-actions)))
+            ;; TODO add additional restriction that these must be scheduled
+            ;; within the current week
+            (when (org-x-dag-adjlist-id-planning adjlist :scheduled id)
+              (-when-let (committed-ids (-union e l))
+                (->> q-committed
+                     (--filter (-intersection committed-ids (cdr it)))
+                     (-map #'car)
+                     (org-x-dag-ht-add-links id ht-q :scheduled-actions))))
             (org-x-dag-ht-add-links id ht-l :fulfilled l)
             (org-x-dag-ht-add-links id ht-s :fulfilled s)
             (org-x-dag-ht-add-links id ht-e :fulfilled e)
