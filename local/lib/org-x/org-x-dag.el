@@ -2035,7 +2035,6 @@ If FORCE is non-nil, sync no matter what."
          (setq org-x-dag-sync-state))
     nil))
 
-
 ;; GLOBAL LOOKUP FUNCTIONS
 
 ;; all functions with `org-x-dag->' or `org-x-dag-id->' depend on the value of
@@ -2930,22 +2929,24 @@ FUTURE-LIMIT in a list."
   (let* ((wkp-ids (org-x-dag->current-wkp-ids))
          (sel-date (org-x-dag->selected-date))
          (q-date (org-x-dag-date-to-quarter-start sel-date)))
-    (org-x-dag-with-ids files
-      (pcase (either-from-right (org-x-dag-id->bs it) nil)
-        (`(:quarterly :active ,dead)
-         (let* ((tags (org-x-dag-id->tags it))
-                (date (org-x-dag-quarter-tags-to-date tags)))
-           (when (org-x-dag-datetime= q-date date)
-             (-when-let (ns (org-x-dag-id->ns it))
-               (-let (((&plist :planned p :committed c :scheduled-actions s)
-                       (either-from-right ns nil)))
+    (cl-flet
+        ((map-ns
+          (ns)
+          (-let (((&plist :planned p :committed c :scheduled-actions s) ns))
+            (list (-intersection p wkp-ids) c s))))
+      (org-x-dag-with-ids files
+        (pcase (either-from-right (org-x-dag-id->bs it) nil)
+          (`(:quarterly :active ,dead)
+           (let* ((tags (org-x-dag-id->tags it))
+                  (date (org-x-dag-quarter-tags-to-date tags)))
+             (when (org-x-dag-datetime= q-date date)
+               (let ((ns (-some-> (org-x-dag-id->ns it)
+                           (either-from (-const nil) #'map-ns))))
                  ;; TODO actually handle deadlines
                  (-> (org-x-dag-format-tag-node tags it)
                      (org-add-props nil
                          'x-deadline dead
-                         'x-scheduled s
-                         'x-plannedp (-intersection p wkp-ids)
-                         'x-committedp c)
+                         'x-network-status ns)
                      (list)))))))))))
 
 ;; TODO not DRY
@@ -4720,21 +4721,21 @@ In the order of display
         (org-super-agenda-groups
          '((:auto-map
             (lambda (line)
-              (-let* ((c (get-text-property 1 'x-committedp line))
-                      (p (get-text-property 1 'x-plannedp line))
-                      (s (get-text-property 1 'x-scheduled line))
+              (-let* ((ns (get-text-property 1 'x-network-status line))
                       ((rank text)
-                       (cond
-                        ((and s c)
-                         '(5 "Committed | Scheduled"))
-                        ((and p c)
-                         '(4 "Committed | Planned"))
-                        ((and (not p) c)
-                         '(3 "Committed | Unplanned"))
-                        ((and p (not c))
-                         '(2 "Uncommitted | Planned"))
-                        (t
-                         '(1 "Unfulfilled | Unplanned")))))
+                       (if (not ns) '(0 "No Network Status")
+                         (-let (((p s c) ns))
+                           (cond
+                            ((and s c)
+                             '(5 "Committed | Scheduled"))
+                            ((and p c)
+                             '(4 "Committed | Planned"))
+                            ((and (not p) c)
+                             '(3 "Committed | Unplanned"))
+                            ((and p (not c))
+                             '(2 "Uncommitted | Planned"))
+                            (t
+                             '(1 "Unfulfilled | Unplanned")))))))
                 (format "%d. %s" rank text))))))))))
 
 (defun org-x-dag-agenda-weekly-plan ()
