@@ -1459,7 +1459,7 @@ deadline (eg via epoch time) or if it has a repeater."
         (:endpoint))
       (lambda (id this-h res)
         (-let (((&alist :lifetime l) res)
-               (d (org-x-dag-adjlist-id-planning adjlist :scheduled id)))
+               (d (org-x-dag-adjlist-id-planning adjlist :deadline id)))
           (ht-set this-h id (either :right `(:committed ,l :deadline ,d)))
           (org-x-dag-ht-add-links id ht-l :fulfilled l))))))
 
