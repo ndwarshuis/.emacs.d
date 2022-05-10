@@ -1329,6 +1329,10 @@ used for optimization."
   (-some->> (org-x-dag-adjlist-id-hl-meta-prop adjlist :planning id)
     (org-ml-get-property which)))
 
+(defun org-x-dag-adjlist-id-planning-datetime (adjlist which id)
+  (-some->> (org-x-dag-adjlist-id-planning adjlist which id)
+    (org-ml-timestamp-get-start-time)))
+
 (defun org-x-dag-get-children (adjlist id)
   (->> (plist-get (ht-get adjlist id) :children)
        (--filter (-> (org-x-dag-adjlist-id-hl-meta adjlist it)
@@ -1480,7 +1484,7 @@ used for optimization."
           (ht-set this-h id (either :right `(:committed ,q)))
           (org-x-dag-ht-add-links id ht-q :planned q))))))
 
-(defun org-x-dag-ns-action (adjlist links ns)
+(defun org-x-dag-ns-action (adjlist links weekly-span ns)
   (cl-flet
       ((ns-overlaps
         (ids key ns)
@@ -1501,7 +1505,19 @@ used for optimization."
                (if (org-x-dag-ht-get-maybe ht-e id :committed)
                    (org-x-dag-ns-is-leaf-p adjlist id)
                  (->> (list "Linked to non-committed endpoint node" id)
-                      (either :left))))))
+                      (either :left)))))
+            ((week-start week-end) weekly-span)
+            (put-scheduled-action-maybe
+             (lambda (id committed-ids)
+               (-when-let (sched (org-x-dag-adjlist-id-planning-datetime
+                                  adjlist :scheduled id))
+                 (when (and (not (or (org-x-dag-date< sched week-start)
+                                     (org-x-dag-date< week-start sched)))
+                            committed-ids)
+                   (->> q-committed
+                        (--filter (-intersection committed-ids (cdr it)))
+                        (-map #'car)
+                        (org-x-dag-ht-add-links id ht-q :scheduled-actions)))))))
       (org-x-dag-ns-with-valid ns adjlist :action links
         `((:survival (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id)))
           (:endpoint ,is-committed-leaf-p)
@@ -1521,12 +1537,7 @@ used for optimization."
                  (ht-set this-h id))
             ;; TODO add additional restriction that these must be scheduled
             ;; within the current week
-            (when (org-x-dag-adjlist-id-planning adjlist :scheduled id)
-              (-when-let (committed-ids (-union e l))
-                (->> q-committed
-                     (--filter (-intersection committed-ids (cdr it)))
-                     (-map #'car)
-                     (org-x-dag-ht-add-links id ht-q :scheduled-actions))))
+            (funcall put-scheduled-action-maybe id (-union e l))
             (org-x-dag-ht-add-links id ht-l :fulfilled l)
             (org-x-dag-ht-add-links id ht-s :fulfilled s)
             (org-x-dag-ht-add-links id ht-e :fulfilled e)
@@ -1721,17 +1732,49 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
       (--each (ht-keys h)
         (propagate h it )))))
 
+(defun org-x-dag-annotate-weekly-ids (adjlist sel-date ids)
+  (cl-flet
+      ((id2date
+        (id)
+        (-let* (((o d m y)
+                 (org-x-dag-adjlist-id-hl-meta-prop adjlist :parent-tags id))
+                (this-date (list (org-x-dag-tag-to-year y)
+                                 (org-x-dag-tag-to-month m)
+                                 (org-x-dag-tag-to-day d)))
+                (offset (org-x-dag-tag-to-offset o)))
+          `(,id ,this-date ,offset))))
+    (-map #'id2date ids)))
+
 (defun org-x-dag-filter-weekly-ids (adjlist sel-date ids)
-  (let ((id2date
-         (lambda (id)
-           (-let* (((o d m y)
-                    (org-x-dag-adjlist-id-hl-meta-prop adjlist :parent-tags id))
-                   (this-date (list (org-x-dag-tag-to-year y)
-                                    (org-x-dag-tag-to-month m)
-                                    (org-x-dag-tag-to-day d)))
-                   (offset (org-x-dag-tag-to-offset o)))
-             `(,this-date offset)))))
-    (org-x-dag-filter-weekly id2date sel-date ids)))
+  (->> (org-x-dag-annotate-weekly-ids adjlist sel-date ids)
+       (org-x-dag-filter-weekly #'cdr sel-date)
+       (-map #'car)))
+
+(defun org-x-dag-filter-and-span-weekly-ids (adjlist sel-date ids)
+  (cl-flet*
+      ((shift
+        (fun group)
+        (-let* (((datetime . filtered) group)
+                (shift (funcall fun (-map #'cadr filtered))))
+          (org-x-dag-datetime-shift datetime shift 'submonth)))
+       (get-span
+        (groups)
+        (cond
+         ((null groups) nil)
+         ;; TODO this could be better (like actually label the nodes that
+         ;; overlap
+         ((< 1 (length groups)) (warn "Overlapping weeks found"))
+         (t (let ((start (shift #'-min (car groups)))
+                  (end (shift #'-max (-last-item groups))))
+              `(,start ,end))))))
+    (let* ((filtered (->> (org-x-dag-annotate-weekly-ids adjlist sel-date ids)
+                          (org-x-dag-filter-weekly #'cdr sel-date)))
+           (filtered-ids (-map #'car filtered))
+           (span (->> (-map #'cdr filtered)
+                      (-group-by #'car)
+                      (--sort (org-x-dag-date< (car it) (car other)))
+                      (get-span))))
+      `(,filtered-ids ,span))))
 
 (defun org-x-dag-get-network-status (sel-date adjlist links)
   (cl-flet*
@@ -1768,8 +1811,9 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
             ;; this is much faster (less stuff to deal with)
             (q-date (org-x-dag-date-to-quarter-start sel-date))
             (cur-q (cur-links #'org-x-dag-quarter-tags-to-date q-date q))
-            (cur-w (->> (-map #'car w)
-                        (org-x-dag-filter-weekly-ids adjlist sel-date)))
+            ((cur-w span-w)
+             (->> (-map #'car w)
+                  (org-x-dag-filter-and-span-weekly-ids adjlist sel-date)))
             (cur-d (cur-links #'org-x-dag-daily-tags-to-date sel-date d)))
       ;; add all links to the network status object (ew side effects)
       (org-x-dag-ns-ltg adjlist l ns)
@@ -1786,7 +1830,7 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
 
       (org-x-dag-ns-wkp adjlist cur-w ns)
 
-      (org-x-dag-ns-action adjlist a ns)
+      (org-x-dag-ns-action adjlist a span-w ns)
       (org-x-dag-ht-propagate-up adjlist :lifetime :fulfilled ns)
       (org-x-dag-ht-propagate-up adjlist :survival :fulfilled ns)
       (org-x-dag-ht-propagate-action-down adjlist ns)
@@ -2881,21 +2925,7 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-itemize-qtp (files)
   (let* ((wkp-ids (org-x-dag->current-wkp-ids))
          (sel-date (org-x-dag->selected-date))
-         (q-date (org-x-dag-date-to-quarter-start sel-date))
-         ;; TODO this time range is meant to figure out which nodes are
-         ;; "scheduled" which also intersect with the qtp, but it has a fixed
-         ;; range of 7 days; this may not always be true now that my weekly plan
-         ;; is fuzzier
-         (week-start (org-x-dag-date-to-week-start sel-date))
-         (week-end (org-x-dag-datetime-shift week-start 7 'submonth)))
-    (cl-flet
-        ((is-scheduled-current
-          (id)
-          (-when-let (d (-some->> (org-x-dag-id->planning-datetime :scheduled id)
-                          (org-x-dag-datetime-split)
-                          (car)))
-            (and (not (org-x-dag-datetime< d week-start))
-                 (org-x-dag-datetime< d week-end)))))
+         (q-date (org-x-dag-date-to-quarter-start sel-date)))
     (org-x-dag-with-ids files
       (pcase (either-from-right (org-x-dag-id->bs it) nil)
         (`(:quarterly :active ,dead)
@@ -2903,16 +2933,16 @@ FUTURE-LIMIT in a list."
                 (date (org-x-dag-quarter-tags-to-date tags)))
            (when (org-x-dag-datetime= q-date date)
              (-when-let (ns (org-x-dag-id->ns it))
-               (-let (((&plist :planned p :committed c :scheduled-actions a)
+               (-let (((&plist :planned p :committed c :scheduled-actions s)
                        (either-from-right ns nil)))
                  ;; TODO actually handle deadlines
                  (-> (org-x-dag-format-tag-node tags it)
                      (org-add-props nil
                          'x-deadline dead
-                         'x-scheduled (-any-p #'is-scheduled-current a)
+                         'x-scheduled s
                          'x-plannedp (-intersection p wkp-ids)
                          'x-committedp c)
-                     (list))))))))))))
+                     (list)))))))))))
 
 ;; TODO not DRY
 ;; TODO this can be made way simpler by just pulling the current weekly ids
@@ -4489,7 +4519,7 @@ FUTURE-LIMIT in a list."
         (add-text-properties
          (point-min) (point-max)
          `(org-agenda-type agenda
-                           org-last-args (,arg ,start-day ,span)
+                           org-last-args (,arg ,start-day* ,span)
                            org-redo-cmd ,org-agenda-redo-command
                            org-series-cmd ,org-cmd))
         (org-agenda-finalize)
