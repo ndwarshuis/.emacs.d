@@ -1272,8 +1272,14 @@ deadline (eg via epoch time) or if it has a repeater."
 ;; - scheduled: x -> plan
 ;; - active: x -> action
 
-(defun org-x-dag--ns-error (msg ids)
-  (either :left `(:msg ,msg :ids ,ids)))
+(defun org-x-dag--ns-err (msg ids)
+  (either :left `((:msg ,msg :ids ,ids))))
+
+(defun org-x-dag--ns-errN (pairs)
+  (either :left (--map `(:msg ,(car it) :ids ,(cadr it)) pairs)))
+
+(defun org-x-dag--link-err (msg id)
+  (either :left `(,msg ,id)))
 
 (defun org-x-dag-id-link-group (adjlist id)
   (-> (ht-get adjlist id)
@@ -1299,17 +1305,6 @@ deadline (eg via epoch time) or if it has a repeater."
              it-targets (cdr (car ,links)))
        ,@body
        (!cdr ,links))))
-
-(defun org-x-dag-bs-error-links (msg links)
-  (->> (s-join ", " links)
-       (format "%s: %s" msg)
-       (either :left)))
-
-;; (defun org-x-dag-ns-toplevel (tbl links ns)
-;;   (let ((h (alist-get tbl ns)))
-;;     (org-x-dag-each-links links
-;;       (ht-set h it (org-x-dag-bs-error-links "Invalid links" it-targets)))
-;;     ns))
 
 (defun org-x-dag-ht-add-links (id htbl key targets)
   (let (r)
@@ -1348,7 +1343,7 @@ deadline (eg via epoch time) or if it has a repeater."
 
 (defun org-x-dag-ns-is-leaf-p (adjlist id)
   (if (org-x-dag-get-children adjlist id)
-      (either :left `("Linked to non-leaf node" ,id))
+      (org-x-dag--link-err "Linked to non-leaf node" id)
     (either :right id)))
 
 (defun org-x-dag-ns-with-valid (ns adjlist cur-key links keypairs valid-fun)
@@ -1362,7 +1357,7 @@ deadline (eg via epoch time) or if it has a repeater."
         (h valid-fun id)
         (cond
          ((either-is-left-p (ht-get h id))
-          (either :left `("Linked to non-leaf node" ,id)))
+          (org-x-dag--link-err "Linked to node with error" id))
          (valid-fun
           ;; NOTE this valid-fun doesn't just have to return a Right ID upon
           ;; success, it can return a Right anything which might be useful
@@ -1383,14 +1378,14 @@ deadline (eg via epoch time) or if it has a repeater."
        (group-errors
         (errors)
         (->> (-group-by #'car errors)
-             (--map (list :msg (car it) :ids (-map #'cadr (cdr it))))
-             (either :left))))
+             (--map `(,(car it) ,(-map #'cadr (cdr it))))
+             (org-x-dag--ns-errN))))
     (org-x-dag-each-links links
       (let* ((keys (-map #'car keypairs))
              (grouped (--group-by (key-group keys it) it-targets))
              (cur-h (alist-get cur-key ns)))
         (-if-let (invalid (alist-get :invalid grouped))
-            (->> (org-x-dag--ns-error "Invalid links" invalid)
+            (->> (org-x-dag--ns-err "Invalid links" invalid)
                  (ht-set cur-h it))
           (-let (((valid errors)
                   (--reduce-from (reduce-valid grouped acc it) nil keypairs)))
@@ -1417,7 +1412,7 @@ deadline (eg via epoch time) or if it has a repeater."
         (-let* (((&alist :lifetime l) res)
                 (d (org-x-dag-adjlist-id-planning adjlist :deadline id))
                 (ns (if (car (org-ml-timestamp-get-repeater d))
-                        (either :left '((:msg "EPG has deadline with repeater")))
+                        (org-x-dag--ns-err "EPG has deadline with repeater" nil)
                       (either :right `(:committed ,l :deadline ,d)))))
           (ht-set this-h id ns)
           (org-x-dag-ht-add-links id ht-l :fulfilled l))))))
@@ -1468,8 +1463,8 @@ deadline (eg via epoch time) or if it has a repeater."
              (lambda (id)
                (if (org-x-dag-ht-get-maybe ht-e id :committed)
                    (org-x-dag-ns-is-leaf-p adjlist id)
-                 (->> (list "Linked to non-committed endpoint node" id)
-                      (either :left)))))
+                 (-> "Linked to non-committed endpoint node"
+                     (org-x-dag--link-err id)))))
             ((week-start week-end) weekly-span)
             (put-scheduled-action-maybe
              (lambda (id committed-ids)
@@ -1491,10 +1486,8 @@ deadline (eg via epoch time) or if it has a repeater."
           (-let (((&alist :survival s :endpoint e :lifetime l) res))
             (->> (cond
                   ((and s (or e l))
-                   (->> (list :msg "Action has SVG and EPG/LTG links"
-                              :ids (append s e l))
-                        (list)
-                        (either :left)))
+                   (-> "Action has SVG and EPG/LTG links"
+                       (org-x-dag--ns-error (append s e l))))
                   (s
                    (either :right `(:committed ,s :survivalp t)))
                   (t
@@ -1545,24 +1538,25 @@ deadline (eg via epoch time) or if it has a repeater."
                    ;; buffer status
                    (-let (((_ time) (org-x-dag-datetime-split sched)))
                      (if time
-                         (->> (list "Linked to action with HH:MM timestamp" id)
-                              (either :left))
+                         (-> "Linked to action with HH:MM timestamp"
+                             (org-x-dag--link-err id))
                        (if (org-x-dag-ht-get-maybe ht-a id :survivalp)
                            (to-valid id :survival committed-ids)
                          (-if-let (q (funcall get-planned committed-ids))
                              (to-valid id :quarterly q)
-                           (->> (list "Linked to scheduled action that isn't on QTP" id)
-                                (either :left))))))
+                           (-> "Linked to scheduled action that isn't on QTP"
+                               (org-x-dag--link-err id))))))
                  (-if-let (w (->> (funcall get-planned committed-ids)
                                   (--mapcat (org-x-dag-ht-get-maybe ht-q it :planned))))
                      (to-valid id :weekly w)
-                   (->> (list "Linked to unscheduled action that isn't on WKP" id)
-                        (either :left))))))
+                   (-> "Linked to unscheduled action that isn't on WKP"
+                       (org-x-dag--link-err id))))))
             (is-valid-action
              (lambda (id)
                (-if-let (c (org-x-dag-ht-get-maybe ht-a id :committed))
                    (funcall is-scheduled-action id c)
-                 (either :left (list "Linked to uncommitted action" id))))))
+                   (-> "Linked to uncommitted action"
+                       (org-x-dag--link-err id))))))
       (org-x-dag-ns-with-valid ns adjlist :daily links
         `((:action ,is-valid-action))
         (lambda (id this-h res)
@@ -1641,10 +1635,11 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
             (cond
              ((xor (org-ml-time-is-long this-dead)
                    (org-ml-time-is-long set-dead))
-              (either :left '(("EPG has parent with different deadline precision"))))
+              (-> "EPG as parent with different deadline precision"
+                  (org-x-dag--ns-err nil)))
              ((org-x-dag-datetime< set-dead this-dead)
-              (->> '(("EPG has deadline that ends after parent deadline"))
-                   (either :left)))
+              (-> "EPG has deadline that ends after parent deadline"
+                  (org-x-dag--ns-err nil)))
              (t
               (either :right plist)))))
         (either :right plist))
