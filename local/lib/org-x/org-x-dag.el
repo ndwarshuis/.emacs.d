@@ -1406,7 +1406,7 @@ deadline (eg via epoch time) or if it has a repeater."
 (defun org-x-dag-ns-epg (adjlist links ns)
   (-let (((&alist :lifetime ht-l) ns))
     (org-x-dag-ns-with-valid ns adjlist :endpoint links
-      `((:lifetime (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id)))
+      `((:lifetime ,(-partial #'org-x-dag-ns-is-leaf-p adjlist))
         (:endpoint))
       (lambda (id this-h res)
         (-let* (((&alist :lifetime l) res)
@@ -1422,10 +1422,11 @@ deadline (eg via epoch time) or if it has a repeater."
     (either-from* x nil (plist-get it key))))
 
 (defun org-x-dag-ns-qtp (adjlist links ns)
-  (-let (((&alist :lifetime ht-l :endpoint ht-e) ns))
+  (-let (((&alist :lifetime ht-l :endpoint ht-e) ns)
+         (is-leaf-p (-partial #'org-x-dag-ns-is-leaf-p adjlist)))
     (org-x-dag-ns-with-valid ns adjlist :quarterly links
-      `((:lifetime (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id)))
-        (:endpoint (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id))))
+      `((:lifetime ,is-leaf-p)
+        (:endpoint ,is-leaf-p))
       (lambda (id this-h res)
         (-let (((&alist :lifetime l :endpoint e) res))
           (ht-set this-h id (either :right `(:committed (,@e ,@l))))
@@ -1437,7 +1438,7 @@ deadline (eg via epoch time) or if it has a repeater."
 (defun org-x-dag-ns-wkp (adjlist links ns)
   (-let (((&alist :quarterly ht-q) ns))
     (org-x-dag-ns-with-valid ns adjlist :weekly links
-      `((:quarterly (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id))))
+      `((:quarterly ,(-partial #'org-x-dag-ns-is-leaf-p adjlist)))
       (lambda (id this-h res)
         (-let (((&alist :quarterly q) res))
           (ht-set this-h id (either :right `(:committed ,q)))
@@ -1453,6 +1454,7 @@ deadline (eg via epoch time) or if it has a repeater."
                      :survival ht-s
                      :quarterly ht-q)
              ns)
+            (is-leaf-p (-partial #'org-x-dag-ns-is-leaf-p adjlist))
             (q-committed
              (->> (ht->alist ht-q)
                   (--map (cons (car it)
@@ -1479,9 +1481,9 @@ deadline (eg via epoch time) or if it has a repeater."
                         (-map #'car)
                         (org-x-dag-ht-add-links id ht-q :scheduled-actions)))))))
       (org-x-dag-ns-with-valid ns adjlist :action links
-        `((:survival (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id)))
+        `((:survival ,is-leaf-p)
           (:endpoint ,is-committed-leaf-p)
-          (:lifetime (lambda (id) (org-x-dag-ns-is-leaf-p ,adjlist id))))
+          (:lifetime ,is-leaf-p))
         (lambda (id this-h res)
           (-let (((&alist :survival s :endpoint e :lifetime l) res))
             (->> (cond
