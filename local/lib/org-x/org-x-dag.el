@@ -1346,7 +1346,51 @@ deadline (eg via epoch time) or if it has a repeater."
       (org-x-dag--link-err "Linked to non-leaf node" id)
     (either :right id)))
 
-(defun org-x-dag-ns-with-valid (ns adjlist cur-key links keypairs valid-fun)
+(defun org-x-dag-ns-with-valid (ns adjlist cur-key links key-funs valid-fun)
+  "Apply function on valid LINKS.
+
+Intended type for Haskell fanboiz:
+
+Map Group (Map ID NS)
+-> Map ID Node
+-> [(ID, [ID])]
+-> Map Group (ID -> Either (String, ID) a)
+-> Maybe (
+   ID
+   -> Map ID NS
+   -> Map Group (Either (String, ID) a)
+   -> IO ()
+   )
+-> IO ()
+
+NS is the network status alist and CUR-KEY references the hash
+table in this plist that will be used to store valid child ids in
+LINKS.
+
+ADJLIST is the adjacency list for the org DAG.
+
+KEY-FUNS is an alist where the car is a key referencing a hash
+table in NS, and the CDR is a function to be applied to any of
+the parents in LINKS that refer to this table. Any table that is
+not included here will be an invalid target for any parent in
+LINKS. The function in each CDR must take an ID and return an
+either as like \"Either (String, ID) a\" (see value returned by
+`org-x-dag--link-err'.
+
+VALID-FUN is a function that takes three arguments:
+1. a valid child id
+2. the hash table returned via CUR-KEY and NS
+3. an alist corresponding to KEY-FUNS where the cars are the same
+   and the cdrs are all valid ids returned by the corresponding
+   function.
+
+Note that VALID-FUN will only be called when a given child id is
+valid (that is not linked to any invalid groups or parents with
+errors) and there were no errors return from any in KEY-FUNS.
+
+Also note that in the case where VALID-FUN is nil, the only
+consequence of this function will be setting the hash table
+denoted by CUR-KEY with any errors that are found."
   (declare (indent 4))
   (cl-flet*
       ((key-group
@@ -1381,14 +1425,14 @@ deadline (eg via epoch time) or if it has a repeater."
              (--map `(,(car it) ,(-map #'cadr (cdr it))))
              (org-x-dag--ns-errN))))
     (org-x-dag-each-links links
-      (let* ((keys (-map #'car keypairs))
+      (let* ((keys (-map #'car key-funs))
              (grouped (--group-by (key-group keys it) it-targets))
              (cur-h (alist-get cur-key ns)))
         (-if-let (invalid (alist-get :invalid grouped))
             (->> (org-x-dag--ns-err "Invalid links" invalid)
                  (ht-set cur-h it))
           (-let (((valid errors)
-                  (--reduce-from (reduce-valid grouped acc it) nil keypairs)))
+                  (--reduce-from (reduce-valid grouped acc it) nil key-funs)))
             (if errors (ht-set cur-h it (group-errors errors))
               (when valid-fun
                 (funcall valid-fun it cur-h valid)))))))))
