@@ -741,12 +741,17 @@ used for optimization."
            ,open-form*)))))
 
 (defun org-x-dag-action-dead-after-parent-p (ancestry deadline)
-  (let ((this (-some->> deadline
-                (org-ml-timestamp-get-start-time)
-                (org-ml-time-to-unixtime)))
-        (parent (plist-get ancestry :parent-deadline)))
-    (when (and this parent)
-      (< parent this))))
+  "Return t if DEADLINE is after the deadline in ANCESTRY.
+
+This can happen if DEADLINE is literally after the ancestral
+deadline (eg via epoch time) or if it has a repeater."
+  (if (org-ml-timestamp-get-repeater deadline) t
+    (let ((this (-some->> deadline
+                  (org-ml-timestamp-get-start-time)
+                  (org-ml-time-to-unixtime)))
+          (parent (plist-get ancestry :parent-deadline)))
+      (when (and this parent)
+        (< parent this)))))
 
 (defun org-x-dag-bs-action-project-inner (node-data ancestry child-bss)
   (cl-flet
@@ -1509,6 +1514,7 @@ used for optimization."
             ((week-start week-end) weekly-span)
             (put-scheduled-action-maybe
              (lambda (id committed-ids)
+               ;; TODO what about repeaters?
                (-when-let (sched (org-x-dag-adjlist-id-planning-datetime
                                   adjlist :scheduled id))
                  (when (and (not (or (org-x-dag-date< sched week-start)
@@ -1535,8 +1541,6 @@ used for optimization."
                   (t
                    (either :right `(:committed (,@e ,@l) :survivalp nil))))
                  (ht-set this-h id))
-            ;; TODO add additional restriction that these must be scheduled
-            ;; within the current week
             (funcall put-scheduled-action-maybe id (-union e l))
             (org-x-dag-ht-add-links id ht-l :fulfilled l)
             (org-x-dag-ht-add-links id ht-s :fulfilled s)
