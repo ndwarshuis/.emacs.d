@@ -745,13 +745,15 @@ used for optimization."
 
 This can happen if DEADLINE is literally after the ancestral
 deadline (eg via epoch time) or if it has a repeater."
-  (if (org-ml-timestamp-get-repeater deadline) t
-    (let ((this (-some->> deadline
-                  (org-ml-timestamp-get-start-time)
-                  (org-ml-time-to-unixtime)))
-          (parent (plist-get ancestry :parent-deadline)))
-      (when (and this parent)
-        (< parent this)))))
+    (let ((parent-epoch (plist-get ancestry :parent-deadline)))
+      (when (and deadline parent-epoch)
+        ;; TODO this function returns (nil nil nil) when there is no repeater,
+        ;; which is weird and should be fixed
+        (if (car (org-ml-timestamp-get-repeater deadline)) t
+          (let ((this-epoch (-some->> deadline
+                              (org-ml-timestamp-get-start-time)
+                              (org-ml-time-to-unixtime))))
+            (< parent-epoch this-epoch))))))
 
 (defun org-x-dag-bs-action-project-inner (node-data ancestry child-bss)
   (cl-flet
