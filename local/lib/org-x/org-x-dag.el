@@ -4446,19 +4446,22 @@ FUTURE-LIMIT in a list."
 
 ;; make the signature exactly like `org-agenda-list' ...for now
 (defun org-x-dag-show-daily-nodes (&optional _ start-day _ _)
-  (-let ((completion-ignore-case t)
-         ;; TODO not sure if this if thing is actually necessary
-         ((arg start-day span with-hour) (or org-agenda-overriding-arguments
-                                             (list nil start-day 'day nil))))
+  (-let* ((completion-ignore-case t)
+          ;; TODO not sure if this if thing is actually necessary
+          ((arg start-day span with-hour) (or org-agenda-overriding-arguments
+                                              (list nil start-day 'day nil)))
+          (start-day* (if (stringp start-day)
+                          (time-to-days (org-read-date nil t start-day))
+                        start-day)))
     (catch 'exit
       (org-agenda-prepare "DAG-DAILY")
       (org-compile-prefix-format 'agenda)
       (org-set-sorting-strategy 'agenda)
       (org-x-dag-sync nil t)
       (-let* ((today (org-today))
-              (sd (or start-day today))
+              (sd (or start-day* today))
               (org-agenda-redo-command
-               `(org-x-dag-show-daily-nodes 'nil ,start-day ',span ,with-hour))
+               `(org-x-dag-show-daily-nodes 'nil ,start-day* ',span ,with-hour))
               ((greg &as m d y) (calendar-gregorian-from-absolute sd))
               (day-name (calendar-day-name greg))
               (rtnall (org-x-dag-itemize-agenda org-agenda-files `(,y ,m ,d))))
