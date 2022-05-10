@@ -4414,11 +4414,12 @@ FUTURE-LIMIT in a list."
         (either-from* ns-either
           (->> it
                (--mapcat
-                (-let (((&plist :msg :ids) it)
-                       (para (org-ml-build-paragraph (format "Error: %s" msg))))
+                (-let* (((&plist :msg :ids) it)
+                        (para (org-ml-build-paragraph (format "Error: %s" msg))))
                   (->> (-map #'org-x-dag-id->link-item ids)
                        (apply #'org-ml-build-plain-list)
-                       (org-ml-build-item para))))
+                       (org-ml-build-item para)
+                       (list))))
                (apply #'org-ml-build-plain-list))
           (org-x-dag--build-ns-list id it)))
        (format-ns
