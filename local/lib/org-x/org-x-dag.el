@@ -1346,52 +1346,6 @@ deadline (eg via epoch time) or if it has a repeater."
                      (plist-get :buffer-parent)
                      (equal id)))))
 
-;; (defun org-x-dag-ns-with-valid (ns adjlist cur-key links keypairs valid-fun)
-;;   (declare (indent 4))
-;;   (cl-flet*
-;;       ((key-group
-;;         (keys id)
-;;         (let ((g (org-x-dag-id-link-group adjlist id)))
-;;           (if (member g keys) g :invalid)))
-;;        (parent-group
-;;         (h permitleafp adjlist id)
-;;         (cond
-;;          ((either-is-left-p (ht-get h id))
-;;           :error)
-;;          ((and (not permitleafp) (org-x-dag-get-children adjlist id))
-;;           :non-leaf)
-;;          (t :valid)))
-;;        (reduce-valid
-;;         (grouped-targets acc keypair)
-;;         (-let* (((key . permitleafp) keypair)
-;;                 ((acc-keyed acc-error acc-non-leaf) acc)
-;;                 (h (alist-get key ns))
-;;                 ((&alist :valid v :error e :non-leaf n)
-;;                  (->> (alist-get key grouped-targets)
-;;                       (--group-by (parent-group h permitleafp adjlist it)))))
-;;           `(((,key ,@v) ,@acc-keyed)
-;;             (,@e ,@acc-error)
-;;             (,@n ,@acc-non-leaf)))))
-;;     (org-x-dag-each-links links
-;;       (let* ((keys (-map #'car keypairs))
-;;              (grouped (--group-by (key-group keys it) it-targets))
-;;              (cur-h (alist-get cur-key ns)))
-;;         (-if-let (invalid (alist-get :invalid grouped))
-;;             (ht-set cur-h it (org-x-dag-bs-error-links "Invalid links" invalid))
-;;           (-let (((valid err non-leaf)
-;;                   ;; TODO this could be more efficient if we break early when
-;;                   ;; encountering an error/non-leaf node
-;;                   (--reduce-from (reduce-valid grouped acc it) nil keypairs)))
-;;             (cond
-;;              (err
-;;               (->> (org-x-dag-bs-error-links "Linked to invalid links" err)
-;;                    (ht-set cur-h it)))
-;;              (non-leaf
-;;               (->> (org-x-dag-bs-error-links "Linked to non-leaf nodes" non-leaf)
-;;                    (ht-set cur-h it)))
-;;              (t
-;;               (funcall valid-fun it cur-h valid)))))))))
-
 (defun org-x-dag-ns-is-leaf-p (adjlist id)
   (if (org-x-dag-get-children adjlist id)
       (either :left `("Linked to non-leaf node" ,id))
