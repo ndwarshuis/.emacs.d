@@ -41,6 +41,11 @@ and they have the same start time."
   "Test if A comes before B or is the same as B."
   (not (interval< b a)))
 
+(defun interval-contains-p (x int)
+  "Return t if X is in INT (inclusive)."
+  (-let (((a b) int))
+    (and (<= a x) (< x b))))
+
 (defun interval-bimap (fun int)
   "Apply FUN to both numbers in INT."
   `(,(funcall fun (car int)) ,(funcall fun (cadr int))))
@@ -99,6 +104,39 @@ O(N) in case there are no conflicts."
                                  (--sort (interval< (car it) (car other)))
                                  (get-overlaps nil))))
       (list (nreverse over) (nreverse non-over)))))
+
+(defun interval-overlaps (ints)
+  "Return all pairs of INTS that overlap.
+
+Assume that INTS is sorted according to `interval-sort'.
+
+Complexity is O(N^2) in case all in INTS overlap with each other,
+and O(N) in case there are no overlaps."
+  ;; TODO not dry but making it more general seems like it would unnecessarily
+  ;; slow it down, a I would need to add accessor functions that allow this
+  ;; function to be put in terms of the annotated version above. If the compiler
+  ;; is good enough to inline `identity' this might work.
+  ;;
+  ;; Would also have to deal with sorting, as this function isn't necessary to
+  ;; force a sort.
+  (cl-labels
+      ((get-overlaps
+        (acc ss)
+        (-if-let (s0 (car ss))
+            (-let* (((acc+ acc-) acc)
+                    (s0-end (cadr s0))
+                    (rest (cdr ss))
+                    ;; add members while if the starting value is less than the
+                    ;; ending value of the current member
+                    (over (->> (--take-while (< (car it) s0-end) rest)
+                               (--map `(,s0 ,it))
+                               (reverse))))
+              (-> (if over `((,@over ,@acc+) ,acc-) `(,acc+ (,s0 ,@acc-)))
+                  (get-overlaps rest)))
+          acc)))
+    (-let (((over non-over) (get-overlaps nil ints)))
+      (list (nreverse over) (nreverse non-over)))))
+
 
 (defun interval-sort (ints)
   "Sort INTS according to `interval-rank'."

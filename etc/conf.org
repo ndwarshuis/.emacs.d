@@ -4759,6 +4759,7 @@ The function keys are nice because they are almost (not always) free in every mo
 
   ("b" #'org-x-dag-agenda-timeblock)
   ("q" #'org-x-dag-agenda-quarterly-plan)
+  ("w" #'org-x-dag-agenda-weekly-plan)
   ;; ("d" #'org-x-dag-agenda-daily)
   ("g" #'org-x-dag-agenda-goals)
   ("r" #'nd/org-agenda-refile)
