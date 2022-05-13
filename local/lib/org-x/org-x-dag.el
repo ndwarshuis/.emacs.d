@@ -4803,9 +4803,9 @@ In the order of display
               (-let* ((ns (get-text-property 1 'x-network-status line))
                       (day (get-text-property 1 'x-day line))
                       ;; TODO not sure if this will work anymore
-                      ;; (n (car (rassoc day org-x-dag-weekly-tags)))
+                      (day-name (alist-get day org-x-dag-weekly-tags))
                       ((rank text)
-                       (if (not ns) '(0 "No Netowrk Status")
+                       (if (not ns) '(0 "No Network Status")
                          (-let (((&plist :planned p :committed c) ns))
                            (cond
                             ((and p c)
@@ -4816,7 +4816,7 @@ In the order of display
                              '(2 "Uncommitted | Planned"))
                             (t
                              '(1 "Unfulfilled | Unplanned")))))))
-                (format "%d.%d %s (%s)" day rank day text))))))))))
+                (format "%d.%d %-10s (%s)" day rank day-name text))))))))))
 
 (defun org-x-dag-agenda-tasks ()
   "Show the tasks agenda view.
