@@ -1056,6 +1056,8 @@ deadline (eg via epoch time) or if it has a repeater."
   ;; TODO this is super inefficient, make a plist mapper function
   (-let* (((node . children) tree)
           ((&plist :id i :parents ps :node-meta m) node)
+          ;; TODO don't calculate this unless there are actually children
+          ;; that need to use it
           (new-ancestry (funcall ancestry-fun m ancestry))
           ((shallow rest) (->> children
                                (--map (funcall child-fun it new-ancestry))
@@ -1226,24 +1228,51 @@ deadline (eg via epoch time) or if it has a repeater."
          (t
           (org-x-dag-bs-error-kw "QTP" it-todo)))))))
 
-(defun org-x-dag-bs-wkp-inner (node-data)
-  (-let* (((&plist :parent-tags (o d m y)) node-data)
-          (date-abs (->> (org-x-dag-tags-to-date y m d)
-                         (org-x-dag-date-to-absolute)))
-          (offset (org-x-dag-tag-to-offset o))
-          (pair `(:date ,date-abs :offset ,offset)))
+(defun org-x-dag-bs-wkp-leaf-inner (node-data ancestry child-bss)
+  (if (child-bss) (either :left "Weekly plan nodes cannot have children")
     (org-x-dag-bs-with-closed node-data "weekly plan"
-      `(:complete (,@it-comptime ,@pair))
-      (either :right `(:complete (,@it-comptime ,@pair)))
+      `(:complete ,it-comptime)
+      (either :right `(:complete ,it-comptime))
       (cond
        ((-some->> it-planning (org-ml-get-properties :scheduled))
         (either :left "WKPs cannot be scheduled"))
        ((-some->> it-planning (org-ml-get-properties :deadline))
         (either :left "WKPs cannot be deadlined"))
        ((equal it-todo org-x-kw-todo)
-        (either :right `(:active ,pair)))
+        (either :right `(:active)))
        (t
         (org-x-dag-bs-error-kw "WKP" it-todo))))))
+
+(defun org-x-dag-bs-wkp-branch-inner (node-data ancestry child-bss)
+  (org-x-dag-bs-with-closed node-data "weekly plan"
+    `(:complete ,it-comptime)
+    (either :right `(:complete ,it-comptime))
+    (let ((sched (-some->> it-planning (org-ml-get-properties :scheduled))))
+      (cond
+       ((or (not sched) (org-ml-time-is-long sched))
+        (either :left "WKP day nodes must be short scheduled"))
+       ((-some->> it-planning (org-ml-get-properties :deadline))
+        (either :left "WKP day nodes cannot be deadlined"))
+       ((equal it-todo org-x-kw-todo)
+        (either :right `(:active)))
+       (t
+        (org-x-dag-bs-error-kw "WKP day node" it-todo))))))
+
+(defun org-x-dag-bs-wkp-root-inner (node-data ancestry child-bss)
+  (org-x-dag-bs-with-closed node-data "weekly plan"
+    `(:complete ,it-comptime)
+    ;; TODO need to check the week length and the scheduled children
+    (either :right `(:complete ,it-comptime))
+    (let ((sched (-some->> it-planning (org-ml-get-properties :scheduled))))
+      (cond
+       ((or (not sched) (org-ml-time-is-long sched))
+        (either :left "WKP root nodes must be short scheduled"))
+       ((-some->> it-planning (org-ml-get-properties :deadline))
+        (either :left "WKP root nodes cannot be deadlined"))
+       ((equal it-todo org-x-kw-todo)
+        (either :right `(:active)))
+       (t
+        (org-x-dag-bs-error-kw "WKP day node" it-todo))))))
 
 (defun org-x-dag-bs-dlp-inner (node-data)
   (org-x-dag-bs-with-closed node-data "daily metablock"
@@ -1275,6 +1304,30 @@ deadline (eg via epoch time) or if it has a repeater."
 (defun org-x-dag-bs-qtp (tree)
   (-let (((n ns) (org-x-dag-bs-with-treetop tree #'org-x-dag-bs-qtp-inner)))
     (org-x-dag-bs-prefix :quarterly `(,n ,@ns))))
+
+(defun org-x-dag-bs-wkp-leaf (tree ancestry)
+  (org-x-dag-bs-with-children-1
+   tree
+   ancestry
+   (lambda (_ _) nil)
+   #'org-x-dag-bs-wkp-leaf
+   #'org-x-dag-bs-wkp-leaf-inner))
+
+(defun org-x-dag-bs-wkp-branch (tree ancestry)
+  (org-x-dag-bs-with-children-1
+   tree
+   ancestry
+   (lambda (_ _) nil)
+   #'org-x-dag-bs-wkp-leaf
+   #'org-x-dag-bs-wkp-branch-inner))
+
+(defun org-x-dag-bs-wkp-root (tree ancestry)
+  (org-x-dag-bs-with-children-1
+   tree
+   ancestry
+   (lambda (_ _) nil)
+   #'org-x-dag-bs-wkp-branch
+   #'org-x-dag-bs-wkp-root-inner))
 
 (defun org-x-dag-bs-wkp (tree)
   (-let (((n ns) (org-x-dag-bs-with-treetop tree #'org-x-dag-bs-wkp-inner)))
