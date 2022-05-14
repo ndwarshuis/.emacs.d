@@ -222,6 +222,7 @@ Must be an integer from 0 - 6, with 0 = Sunday.")
 DATE-OFFSETS is a list of lists like (ABS OFFSET) where ABS is an
 absolute date and OFFSET is a positive integer representing a
 relative shift in days from ABS."
+  (print date-offsets)
   (cl-flet
       ((to-interval
         (acc date-offset)
@@ -1210,11 +1211,11 @@ deadline (eg via epoch time) or if it has a repeater."
         `(:complete (,@it-comptime :date ,date-abs))
         (either :right `(:complete (,@it-comptime :date ,date-abs)))
         (cond
-         ((-some->> it-planning (org-ml-get-properties :scheduled))
+         ((-some->> it-planning (org-ml-get-property :scheduled))
           (either :left "QTPs cannot be scheduled"))
          ((equal it-todo org-x-kw-todo)
           (-if-let (dead (-some->> it-planning
-                           (org-ml-get-properties :deadline)))
+                           (org-ml-get-property :deadline)))
               ;; ASSUME :parent-tags will contain the date tags as the level of
               ;; the plan will never exceed one
               (let ((dead-dt (->> (org-ml-timestamp-get-start-time dead)
@@ -1229,48 +1230,58 @@ deadline (eg via epoch time) or if it has a repeater."
           (org-x-dag-bs-error-kw "QTP" it-todo)))))))
 
 (defun org-x-dag-bs-wkp-leaf-inner (node-data ancestry child-bss)
-  (if (child-bss) (either :left "Weekly plan nodes cannot have children")
+  (if child-bss (either :left "Weekly plan nodes cannot have children")
     (org-x-dag-bs-with-closed node-data "weekly plan"
-      `(:complete ,it-comptime)
-      (either :right `(:complete ,it-comptime))
+      `(:leaf :complete ,it-comptime)
+      (either :right `(:leaf :complete ,it-comptime))
       (cond
-       ((-some->> it-planning (org-ml-get-properties :scheduled))
+       ((-some->> it-planning (org-ml-get-property :scheduled))
         (either :left "WKPs cannot be scheduled"))
-       ((-some->> it-planning (org-ml-get-properties :deadline))
+       ((-some->> it-planning (org-ml-get-property :deadline))
         (either :left "WKPs cannot be deadlined"))
        ((equal it-todo org-x-kw-todo)
-        (either :right `(:active)))
+        (either :right `(:leaf :active)))
        (t
         (org-x-dag-bs-error-kw "WKP" it-todo))))))
 
 (defun org-x-dag-bs-wkp-branch-inner (node-data ancestry child-bss)
   (org-x-dag-bs-with-closed node-data "weekly plan"
-    `(:complete ,it-comptime)
-    (either :right `(:complete ,it-comptime))
-    (let ((sched (-some->> it-planning (org-ml-get-properties :scheduled))))
+    `(:branch :complete ,it-comptime)
+    (either :right `(:branch :complete ,it-comptime))
+    (let ((sched (-some->> it-planning (org-ml-get-property :scheduled))))
       (cond
        ((or (not sched) (org-ml-time-is-long sched))
         (either :left "WKP day nodes must be short scheduled"))
-       ((-some->> it-planning (org-ml-get-properties :deadline))
+       ((-some->> it-planning (org-ml-get-property :deadline))
         (either :left "WKP day nodes cannot be deadlined"))
        ((equal it-todo org-x-kw-todo)
-        (either :right `(:active)))
+        (either :right `(:branch :active)))
        (t
         (org-x-dag-bs-error-kw "WKP day node" it-todo))))))
 
 (defun org-x-dag-bs-wkp-root-inner (node-data ancestry child-bss)
   (org-x-dag-bs-with-closed node-data "weekly plan"
-    `(:complete ,it-comptime)
+    `(:root :complete ,it-comptime)
     ;; TODO need to check the week length and the scheduled children
-    (either :right `(:complete ,it-comptime))
-    (let ((sched (-some->> it-planning (org-ml-get-properties :scheduled))))
+    (either :right `(:root :complete ,it-comptime))
+    (let ((sched (-some->> it-planning (org-ml-get-property :scheduled)))
+          ;; ASSUME anything that isn't actually a number will be converted to
+          ;; a zero and will fail the test below
+          (offset (->> (alist-get org-x-prop-week-len
+                                  (plist-get node-data :props)
+                                  nil nil #'equal)
+                       (string-to-number))))
       (cond
        ((or (not sched) (org-ml-time-is-long sched))
         (either :left "WKP root nodes must be short scheduled"))
-       ((-some->> it-planning (org-ml-get-properties :deadline))
+       ((-some->> it-planning (org-ml-get-property :deadline))
         (either :left "WKP root nodes cannot be deadlined"))
+       ((< offset 1)
+        (either :left "WKP root week length must be an int >= 1"))
        ((equal it-todo org-x-kw-todo)
-        (either :right `(:active)))
+        (let ((date (->> (org-ml-timestamp-get-start-time sched)
+                         (org-x-dag-date-to-absolute))))
+          (either :right `(:root :active (:date ,date :offset ,offset)))))
        (t
         (org-x-dag-bs-error-kw "WKP day node" it-todo))))))
 
@@ -1330,7 +1341,7 @@ deadline (eg via epoch time) or if it has a repeater."
    #'org-x-dag-bs-wkp-root-inner))
 
 (defun org-x-dag-bs-wkp (tree)
-  (-let (((n ns) (org-x-dag-bs-with-treetop tree #'org-x-dag-bs-wkp-inner)))
+  (-let (((n ns) (org-x-dag-bs-wkp-root tree nil)))
     (org-x-dag-bs-prefix :weekly `(,n ,@ns))))
 
 (defun org-x-dag-bs-dlp (tree)
@@ -2001,7 +2012,8 @@ removed from, added to, or edited within the DAG respectively."
                         (:action (list org-x-prop-parent-type
                                        org-x-prop-time-shift
                                        org-x-prop-routine
-                                       "ARCHIVE")))
+                                       "ARCHIVE"))
+                        (:weekly (list org-x-prop-week-len)))
                       (append def-props)))
           (bs-fun (pcase group
                     (:action #'org-x-dag-bs-action)
@@ -2060,19 +2072,23 @@ removed from, added to, or edited within the DAG respectively."
 
 (defun org-x-dag-weekly-span (date)
   (cl-flet
-      ((bs2date-offset
-        (bs)
-        (-let (((_ _ (&plist :date d :offset o)) bs))
-          `(,d ,o))))
+      ((id-date-offset
+        (adjlist id)
+        (either-from (org-x-dag-adjlist-id-bs adjlist id)
+          (-const nil)
+          (lambda (r)
+            (pcase r
+              (`(:weekly :root :active ,p)
+               (-let (((&plist :date d :offset o) p))
+                 `(,d ,o))))))))
     (-let* (((&plist :dag d :file->ids f) org-x-dag)
             (adjlist (dag-get-adjacency-list d))
             (weekly-file (-> (plist-get org-x-dag-files :plan-files)
                              (plist-get :weekly)))
             (abs (org-x-dag-date-to-absolute date))
             (ints (->> (ht-get f weekly-file)
-                       (--map (org-x-dag-adjlist-id-bs adjlist it))
-                       (either-rights)
-                       (-map #'bs2date-offset)
+                       (--map (id-date-offset adjlist it))
+                       (-non-nil)
                        (org-x-dag-weekly-intervals)
                        (interval-sort))))
       (-when-let (overlaps (nth 0 (interval-overlaps ints)))
