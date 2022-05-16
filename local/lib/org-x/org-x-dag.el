@@ -1260,28 +1260,16 @@ deadline (eg via epoch time) or if it has a repeater."
         (org-x-dag-bs-error-kw "WKP day node" it-todo))))))
 
 (defun org-x-dag-bs-wkp-root-inner (node-data ancestry child-bss)
-  (org-x-dag-bs-with-closed node-data "weekly plan"
-    `(:root :complete ,it-comptime)
-    ;; TODO need to check the week length and the scheduled children
-    (either :right `(:root :complete ,it-comptime))
-    (let ((sched (-some->> it-planning (org-ml-get-property :scheduled)))
-          ;; ASSUME anything that isn't actually a number will be converted to
-          ;; a zero and will fail the test below
-          (offset (->> (alist-get org-x-prop-week-len
-                                  (plist-get node-data :props)
-                                  nil nil #'equal)
-                       (string-to-number))))
+  (either<$> ancestry
+    (org-x-dag-bs-with-closed node-data "weekly plan"
+      `(:root :complete ,it-comptime)
+      ;; TODO need to check the week length and the scheduled children
+      (either :right `(:root :complete ,it-comptime))
       (cond
-       ((or (not sched) (org-ml-time-is-long sched))
-        (either :left "WKP root nodes must be short scheduled"))
        ((-some->> it-planning (org-ml-get-property :deadline))
         (either :left "WKP root nodes cannot be deadlined"))
-       ((< offset 1)
-        (either :left "WKP root week length must be an int >= 1"))
        ((equal it-todo org-x-kw-todo)
-        (let ((date (->> (org-ml-timestamp-get-start-time sched)
-                         (org-x-dag-date-to-absolute))))
-          (either :right `(:root :active (:date ,date :offset ,offset)))))
+        (either :right `(:root :active ,it)))
        (t
         (org-x-dag-bs-error-kw "WKP day node" it-todo))))))
 
@@ -1332,16 +1320,42 @@ deadline (eg via epoch time) or if it has a repeater."
    #'org-x-dag-bs-wkp-leaf
    #'org-x-dag-bs-wkp-branch-inner))
 
-(defun org-x-dag-bs-wkp-root (tree ancestry)
-  (org-x-dag-bs-with-children-1
-   tree
-   ancestry
-   (lambda (_ _) nil)
-   #'org-x-dag-bs-wkp-branch
-   #'org-x-dag-bs-wkp-root-inner))
+(defun org-x-dag-bs-wkp-root (tree)
+  (-let* (((&plist :node-meta m) (car tree))
+          (datetime (->> (plist-get m :planning)
+                         (org-ml-get-property :scheduled)
+                         (org-ml-timestamp-get-start-time)))
+          (props (plist-get m :props))
+          ;; ASSUME anything that isn't actually a number will be converted to
+          ;; a zero and will fail the test below
+          (offset (->> (alist-get org-x-prop-week-len props nil nil #'equal)
+                       (string-to-number)))
+          (ancestry (cond
+                     ((or (not datetime) (org-ml-time-is-long datetime))
+                      (either :left "WKP root nodes must be short scheduled"))
+                     ((< offset 1)
+                      (either :left "WKP root week length must be an int >= 1"))
+                     (t
+                      (let ((date (org-x-dag-date-to-absolute datetime)))
+                        (either :right `(:date ,date :offset ,offset)))))))
+    (org-x-dag-bs-with-children-1
+     tree
+     ancestry
+     (lambda (node-meta ancestry)
+       (either>>= ancestry
+         (-if-let (sched (-some->> (plist-get node-meta :planning)
+                           (org-ml-get-property :scheduled)
+                           (org-ml-timestamp-get-start-time)))
+             (if (org-ml-time-is-long sched)
+                 (either :left "WKP branch node must be short scheduled")
+               ;; TODO test if this is in bounds
+               (either :right (org-x-dag-date-to-absolute sched)))
+           (either :left "WKP branch node must be scheduled"))))
+     #'org-x-dag-bs-wkp-branch
+     #'org-x-dag-bs-wkp-root-inner)))
 
 (defun org-x-dag-bs-wkp (tree)
-  (-let (((n ns) (org-x-dag-bs-wkp-root tree nil)))
+  (-let (((n ns) (org-x-dag-bs-wkp-root tree)))
     (org-x-dag-bs-prefix :weekly `(,n ,@ns))))
 
 (defun org-x-dag-bs-dlp (tree)
@@ -1443,6 +1457,7 @@ deadline (eg via epoch time) or if it has a repeater."
   (either-from (org-x-dag-adjlist-id-bs adjlist id)
     (-const nil)
     (lambda (r)
+      (print r)
       (-let (((_ _ (&plist :date d :offset o)) r))
         (+ d o)))))
 
@@ -1591,13 +1606,23 @@ denoted by CUR-KEY with any errors that are found."
           (org-x-dag-ht-add-links id ht-l :planned l))))))
 
 (defun org-x-dag-ns-wkp (adjlist links ns)
-  (-let (((&alist :quarterly ht-q) ns))
-    (org-x-dag-ns-with-valid ns adjlist :weekly links
-      `((:quarterly ,(-partial #'org-x-dag-ns-is-leaf-p adjlist)))
-      (lambda (id this-h res)
-        (-let (((&alist :quarterly q) res))
-          (ht-set this-h id (either :right `(:committed ,q)))
-          (org-x-dag-ht-add-links id ht-q :planned q))))))
+  (cl-flet
+      ((is-valid-leaf-p
+        (id)
+        (-when-let (bs (-> (org-x-dag-adjlist-id-bs adjlist id)
+                           (either-from-right nil)))
+          (eq (nth bs 1) :leaf))))
+    (-let (((&alist :quarterly ht-q) ns))
+      (org-x-dag-ns-with-valid ns adjlist :weekly links
+        `((:quarterly ,(-partial #'org-x-dag-ns-is-leaf-p adjlist)))
+        (lambda (id this-h res)
+          (-let (((&alist :quarterly q) res))
+            (->> (if (is-valid-leaf-p id)
+                     (either :right `(:committed ,q))
+                   (-> "WKP links can only originate from leaves"
+                       (org-x-dag--ns-err)))
+                 (ht-set this-h id))
+            (org-x-dag-ht-add-links id ht-q :planned q)))))))
 
 (defun org-x-dag-ns-action (adjlist links ns)
   (cl-flet
@@ -1848,6 +1873,7 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
         (propagate h it )))))
 
 (defun org-x-dag-get-network-status (sel-date spans adjlist links)
+  (print spans)
   (cl-flet
       ((d-cur-p
         (link)
@@ -1895,7 +1921,7 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
             (q-cur-p (-partial #'cur-p #'org-x-dag-adjlist-id-qtp-abs qspan))
             (w-cur-p (-partial #'cur-p #'org-x-dag-adjlist-id-wkp-abs wspan))
             (cur-q (-filter q-cur-p q))
-            (cur-w (-filter w-cur-p w))
+            (cur-w (when wspan (-filter w-cur-p w)))
             (cur-d (-filter #'d-cur-p d)))
       ;; add all links to the network status object (ew side effects)
       (org-x-dag-ns-ltg adjlist l ns)
