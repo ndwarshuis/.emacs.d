@@ -3492,6 +3492,19 @@ FUTURE-LIMIT in a list."
   (-> (org-x-dag-format-month-tag month)
       (org-x-dag-headlines-find-tag headlines)))
 
+(defun org-x-dag-headlines-find-date (date headlines)
+  (cl-flet
+      ((has-date-p
+        (date headline)
+        (-when-let (sched (-some->> (org-ml-headline-get-planning headline)
+                            (org-ml-get-property :scheduled)
+                            (org-ml-timestamp-get-start-time)
+                            (org-x-dag-datetime-split)
+                            (car)
+                            (org-x-dag-date-to-absolute)))
+          (= sched date))))
+    (--find (has-date-p date it) headlines)))
+
 (defun org-x-dag-headlines-find-day (day headlines)
   (-> (org-x-dag-format-day-tag day)
       (org-x-dag-headlines-find-tag headlines)))
@@ -3532,16 +3545,36 @@ FUTURE-LIMIT in a list."
         (tag (org-x-dag-format-month-tag month)))
     (org-x-dag-build-planning-headline title tag 2 nil subheadlines)))
 
+(defun org-x-dag-build-week-headline (y m d level subheadlines)
+  (let ((title (format "%d-%02d-%02d" y m d)))
+    (->> (apply #'org-ml-build-headline!
+                :title-text title
+                :level level
+                :todo-keyword org-x-kw-todo
+                :planning `(:scheduled (,y ,m ,d))
+                subheadlines)
+         (org-ml-headline-set-node-property org-x-prop-week-len "7")
+         (org-x-dag-headline-add-id))))
+
+(defun org-x-dag-build-day-of-week-headline (level date subheadlines)
+  (-let* (((y m d) date)
+          (daynum (->> (org-x-dag-date-to-gregorian date)
+                       (calendar-day-of-week)))
+          (title (elt calendar-day-name-array daynum)))
+    (->> (apply #'org-ml-build-headline!
+                :title-text title
+                :level level
+                :todo-keyword org-x-kw-todo
+                :planning `(:scheduled (,y ,m ,d))
+                subheadlines)
+         (org-x-dag-headline-add-id))))
+
 (defun org-x-dag-build-day-headline (date subheadlines)
   (-let* (((y m d) date)
           (title (format "%d-%02d-%02d" y m d))
           (tag (org-x-dag-format-day-tag d)))
     (org-x-dag-build-planning-headline title tag 3 nil subheadlines)))
 
-(defun org-x-dag-build-day-of-week-headline (daynum offset subheadlines)
-  (let ((title (elt calendar-day-name-array daynum))
-        (tag (org-x-dag-format-offset-tag offset)))
-    (org-x-dag-build-planning-headline title tag 3 nil subheadlines)))
 
 ;; headline ids
 
@@ -3584,11 +3617,15 @@ FUTURE-LIMIT in a list."
                                       :title-text (plist-get it :desc)
                                       :tags `(,(plist-get it :tag))))))
 
-(defun org-x-dag-wkp-empty ()
-  (->> (-iterate #'1+ 0 7)
-       (--annotate (mod (+ org-x-dag-weekday-start it) 7))
-       (--map (org-x-dag-build-day-of-week-headline (car it) (cdr it) nil))))
-
+(defun org-x-dag-wkp-empty (date)
+  (let ((abs (-if-let (span (org-x-dag-weekly-span date))
+                 (car span)
+               (->> (org-x-dag-date-to-week-start date)
+                    (org-x-dag-date-to-absolute)))))
+    (->> (-iterate #'1+ 0 7)
+         (--map (org-x-dag-absolute-to-date (+ abs it)))
+         (--map (org-x-dag-build-day-of-week-headline 4 it nil)))))
+  
 ;;; stateful buffer function
 
 ;; nested headline manipulation
@@ -3772,43 +3809,45 @@ FUTURE-LIMIT in a list."
 ;;            (org-x-dag-build-day-of-week-headline daynum hls))
 ;;          plan))
 
-(defun org-x-dag-wkp-get-headline-inner (y m d)
+(defun org-x-dag-wkp-get-headline-inner (date-abs)
   (org-x-with-file (org-x-dag->planning-file :weekly)
-    (->> (org-ml-parse-subtrees 'all)
-         (org-x-dag-headlines-find-year y)
-         (org-ml-headline-get-subheadlines)
-         (org-x-dag-headlines-find-month m)
-         (org-ml-headline-get-subheadlines)
-         (org-x-dag-headlines-find-day d))))
+    (-let (((m d y) (calendar-gregorian-from-absolute date-abs)))
+      (->> (org-ml-parse-subtrees 'all)
+           (org-x-dag-headlines-find-year y)
+           (org-ml-headline-get-subheadlines)
+           (org-x-dag-headlines-find-month m)
+           (org-ml-headline-get-subheadlines)
+           (org-x-dag-headlines-find-date date-abs)))))
 
 (defun org-x-dag-wkp-get-week-headline (date)
-  (-let (((y m d) (->> (org-x-dag-weekly-span date)
-                       (car)
-                       (org-x-dag-absolute-to-date))))
-    (org-x-dag-wkp-get-headline-inner y m d)))
+  (-when-let (abs (car (org-x-dag-weekly-span date)))
+    (org-x-dag-wkp-get-headline-inner abs)))
 
 (defun org-x-dag-wkp-get-day-headline (date)
-  (-let ((abs (car (org-x-dag-weekly-span date)))
-         ((y m d) (org-x-dag-absolute-to-date abs))
-         (offset (- (org-x-dag-date-to-absolute date) abs)))
-    (->> (org-x-dag-wkp-get-headline-inner y m d)
-         (org-x-dag-headlines-find-offset o))))
+  (-when-let (abs (car (org-x-dag-weekly-span date)))
+    (let ((day-abs (org-x-dag-date-to-absolute date)))
+      (->> (org-x-dag-wkp-get-headline-inner abs)
+           (org-ml-headline-get-subheadlines)
+           (org-x-dag-headlines-find-date day-abs)))))
 
 (defun org-x-dag-wkp-set-headlines (date headlines)
-  (-let* (((y m d) (->> (org-x-dag->weekly-span)
-                        (car)
-                        (org-x-dag-absolute-to-date)))
+  (-let* ((abs (or (car (org-x-dag->weekly-span))
+                   ;; TODO this should all be one command (get weekly span or
+                   ;; make a new one if not found)
+                   (->> (org-x-dag-date-to-week-start date)
+                        (org-x-dag-date-to-absolute))))
+          ((y m d) (org-x-dag-absolute-to-date abs))
           (path (org-x-dag->planning-file :weekly))
           (find-year (-partial #'org-x-dag-headlines-find-year y))
           (find-month (-partial #'org-x-dag-headlines-find-month m))
-          (find-day (-partial #'org-x-dag-headlines-find-day d))
+          (find-date (-partial #'org-x-dag-headlines-find-date abs))
           (build-year (-partial #'org-x-dag-build-year-headline y))
           (build-month (-partial #'org-x-dag-build-month-headline m))
-          (build-day (-partial #'org-x-dag-build-day-headline date)))
+          (build-day (-partial #'org-x-dag-build-week-headline y m d 3)))
     (org-x-dag-headline-set-nested path headlines
       `((,find-year ,build-year)
         (,find-month ,build-month)
-        (,find-day ,build-day)))))
+        (,find-date ,build-day)))))
 
 ;; TODO these functions need to take dates and not 'week's (whatever those are)
 ;; (defun org-x-dag-wkp-get (date)
@@ -3988,7 +4027,7 @@ FUTURE-LIMIT in a list."
   (org-x-dag-qtp-set-headlines date (org-x-dag-qtp-empty)))
 
 (defun org-x-dag--new-wkp (date)
-  (org-x-dag-wkp-set-headlines date (org-x-dag-wkp-empty)))
+  (org-x-dag-wkp-set-headlines date (org-x-dag-wkp-empty date)))
 
 (defun org-x-dag-new-qtp ()
   (interactive)
@@ -4463,9 +4502,9 @@ FUTURE-LIMIT in a list."
                       (list)))
                 (`(:quarterly :complete ,comptime)
                  (list (format-comptime "quarterly plan" comptime)))
-                (`(:weekly :active)
-                 "Active")
-                (`(:weekly :complete ,comptime)
+                (`(:weekly :leaf :active ,_)
+                 '("Active"))
+                (`(:weekly :leaf :complete ,comptime)
                  (list (format-comptime "weekly plan" comptime)))
                 (`(:daily :active (:sched ,sched))
                  (-let (((y m d H M) (org-ml-timestamp-get-start-time sched)))
