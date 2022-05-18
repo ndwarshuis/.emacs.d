@@ -222,7 +222,6 @@ Must be an integer from 0 - 6, with 0 = Sunday.")
 DATE-OFFSETS is a list of lists like (ABS OFFSET) where ABS is an
 absolute date and OFFSET is a positive integer representing a
 relative shift in days from ABS."
-  (print date-offsets)
   (cl-flet
       ((to-interval
         (acc date-offset)
@@ -1230,37 +1229,36 @@ deadline (eg via epoch time) or if it has a repeater."
           (org-x-dag-bs-error-kw "QTP" it-todo)))))))
 
 (defun org-x-dag-bs-wkp-leaf-inner (node-data ancestry child-bss)
-  (if child-bss (either :left "Weekly plan nodes cannot have children")
-    (org-x-dag-bs-with-closed node-data "weekly plan"
-      `(:leaf :complete ,it-comptime)
-      (either :right `(:leaf :complete ,it-comptime))
-      (cond
-       ((-some->> it-planning (org-ml-get-property :scheduled))
-        (either :left "WKPs cannot be scheduled"))
-       ((-some->> it-planning (org-ml-get-property :deadline))
-        (either :left "WKPs cannot be deadlined"))
-       ((equal it-todo org-x-kw-todo)
-        (either :right `(:leaf :active)))
-       (t
-        (org-x-dag-bs-error-kw "WKP" it-todo))))))
+  (either>>= ancestry
+    (if child-bss (either :left "Weekly plan nodes cannot have children")
+      (org-x-dag-bs-with-closed node-data "weekly plan"
+        `(:leaf :complete ,it-comptime)
+        (either :right `(:leaf :complete ,it-comptime))
+        (cond
+         ((-some->> it-planning (org-ml-get-property :scheduled))
+          (either :left "WKPs cannot be scheduled"))
+         ((-some->> it-planning (org-ml-get-property :deadline))
+          (either :left "WKPs cannot be deadlined"))
+         ((equal it-todo org-x-kw-todo)
+          (either :right `(:leaf :active ,it)))
+         (t
+          (org-x-dag-bs-error-kw "WKP" it-todo)))))))
 
 (defun org-x-dag-bs-wkp-branch-inner (node-data ancestry child-bss)
-  (org-x-dag-bs-with-closed node-data "weekly plan"
-    `(:branch :complete ,it-comptime)
-    (either :right `(:branch :complete ,it-comptime))
-    (let ((sched (-some->> it-planning (org-ml-get-property :scheduled))))
+  (either>>= ancestry
+    (org-x-dag-bs-with-closed node-data "weekly plan"
+      `(:branch :complete ,it-comptime)
+      (either :right `(:branch :complete ,it-comptime))
       (cond
-       ((or (not sched) (org-ml-time-is-long sched))
-        (either :left "WKP day nodes must be short scheduled"))
        ((-some->> it-planning (org-ml-get-property :deadline))
         (either :left "WKP day nodes cannot be deadlined"))
        ((equal it-todo org-x-kw-todo)
-        (either :right `(:branch :active)))
+        (either :right `(:branch :active ,it)))
        (t
         (org-x-dag-bs-error-kw "WKP day node" it-todo))))))
 
 (defun org-x-dag-bs-wkp-root-inner (node-data ancestry child-bss)
-  (either<$> ancestry
+  (either>>= ancestry
     (org-x-dag-bs-with-closed node-data "weekly plan"
       `(:root :complete ,it-comptime)
       ;; TODO need to check the week length and the scheduled children
@@ -1313,13 +1311,34 @@ deadline (eg via epoch time) or if it has a repeater."
    #'org-x-dag-bs-wkp-leaf-inner))
 
 (defun org-x-dag-bs-wkp-branch (tree ancestry)
-  (org-x-dag-bs-with-children-1
-   tree
-   ancestry
-   (lambda (_ _) nil)
-   #'org-x-dag-bs-wkp-leaf
-   #'org-x-dag-bs-wkp-branch-inner))
+  (-let ((ancestry
+          (either-from ancestry
+            (-const (either :left "Parent error"))
+            (lambda (date-offset)
+              (-let (((&plist :node-meta m) (car tree)))
+                (-if-let (sched (-some->> (plist-get m :planning)
+                                  (org-ml-get-property :scheduled)
+                                  (org-ml-timestamp-get-start-time)))
+                    (if (org-ml-time-is-long sched)
+                        (either :left "WKP branch node must be short scheduled")
+                      (-let (((&plist :date d :offset o) date-offset)
+                             (this-abs (org-x-dag-date-to-absolute sched)))
+                        (if (and (<= d this-abs) (< this-abs (+ d o)))
+                            (either :right this-abs)
+                          (either :left "WKP branch node must be scheduled"))))
+                  (either :left "WKP branch node must be scheduled")))))))
+    (org-x-dag-bs-with-children-1
+     tree
+     ancestry
+     (lambda (_ ancestry)
+       (if (either-is-left-p ancestry)
+           (either :left "Parent error")
+         ancestry))
+     #'org-x-dag-bs-wkp-leaf
+     #'org-x-dag-bs-wkp-branch-inner)))
 
+;; TODO there are likely at least 10 patterns here that can be abstracted
+;; out to make this cleaner
 (defun org-x-dag-bs-wkp-root (tree)
   (-let* (((&plist :node-meta m) (car tree))
           (datetime (->> (plist-get m :planning)
@@ -1341,16 +1360,7 @@ deadline (eg via epoch time) or if it has a repeater."
     (org-x-dag-bs-with-children-1
      tree
      ancestry
-     (lambda (node-meta ancestry)
-       (either>>= ancestry
-         (-if-let (sched (-some->> (plist-get node-meta :planning)
-                           (org-ml-get-property :scheduled)
-                           (org-ml-timestamp-get-start-time)))
-             (if (org-ml-time-is-long sched)
-                 (either :left "WKP branch node must be short scheduled")
-               ;; TODO test if this is in bounds
-               (either :right (org-x-dag-date-to-absolute sched)))
-           (either :left "WKP branch node must be scheduled"))))
+     (lambda (_ ancestry) ancestry)
      #'org-x-dag-bs-wkp-branch
      #'org-x-dag-bs-wkp-root-inner)))
 
@@ -1457,9 +1467,8 @@ deadline (eg via epoch time) or if it has a repeater."
   (either-from (org-x-dag-adjlist-id-bs adjlist id)
     (-const nil)
     (lambda (r)
-      (print r)
-      (-let (((_ _ (&plist :date d :offset o)) r))
-        (+ d o)))))
+      (pcase r
+        (`(:weekly ,(or :root :branch :leaf) :active ,d) d)))))
 
 (defun org-x-dag-get-children (adjlist id)
   (->> (plist-get (ht-get adjlist id) :children)
@@ -1605,13 +1614,14 @@ denoted by CUR-KEY with any errors that are found."
           (org-x-dag-ht-add-links id ht-e :planned e)
           (org-x-dag-ht-add-links id ht-l :planned l))))))
 
+;; TODO need to somehow puke when anything but a leaf node has a link on it
 (defun org-x-dag-ns-wkp (adjlist links ns)
   (cl-flet
       ((is-valid-leaf-p
         (id)
         (-when-let (bs (-> (org-x-dag-adjlist-id-bs adjlist id)
                            (either-from-right nil)))
-          (eq (nth bs 1) :leaf))))
+          (eq (nth 1 bs) :leaf))))
     (-let (((&alist :quarterly ht-q) ns))
       (org-x-dag-ns-with-valid ns adjlist :weekly links
         `((:quarterly ,(-partial #'org-x-dag-ns-is-leaf-p adjlist)))
@@ -1873,7 +1883,6 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
         (propagate h it )))))
 
 (defun org-x-dag-get-network-status (sel-date spans adjlist links)
-  (print spans)
   (cl-flet
       ((d-cur-p
         (link)
