@@ -2722,7 +2722,7 @@ FUTURE-LIMIT in a list."
       (`nil `(,datetime))
       (`(,value ,unit ,reptype)
        (->> (org-x-dag-repeater-get-next cur datetime value unit reptype)
-            (--unfold (unless (org-x-dag-datetime< future-limit it)
+            (--unfold (when (org-x-dag-datetime< it future-limit)
                         (cons it (org-x-dag-datetime-shift it value unit))))
             (cons datetime))))))
 
