@@ -1665,9 +1665,7 @@ denoted by CUR-KEY with any errors that are found."
                ;; TODO what about repeaters?
                (-when-let (sched (org-x-dag-adjlist-id-planning-datetime
                                   adjlist :scheduled id))
-                 (when (and ;;(org-x-dag-date<= week-start sched)
-                            ;;(org-x-dag-date<= sched week-end)
-                            (not (org-x-dag-adjlist-id-done-p adjlist id))
+                 (when (and (not (org-x-dag-adjlist-id-done-p adjlist id))
                             committed-ids)
                    (->> q-committed
                         (--filter (-intersection committed-ids (cdr it)))
