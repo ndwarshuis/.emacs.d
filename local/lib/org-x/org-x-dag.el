@@ -3099,12 +3099,15 @@ FUTURE-LIMIT in a list."
         ((map-ns
           (ns)
           (-let (((&plist :planned p :committed c :scheduled-actions s) ns))
-            (list (-intersection p wkp-ids) c s))))
+            (list :planned (-intersection p wkp-ids)
+                  :committed c
+                  :scheduled-actions s))))
       (org-x-dag-with-ids files
         (pcase (either-from-right (org-x-dag-id->bs it) nil)
-          (`(:quarterly :active ,dead)
-           (let* ((tags (org-x-dag-id->tags it))
-                  (date (org-x-dag-quarter-tags-to-date tags)))
+          (`(:quarterly :active ,p)
+           (-let* (((&plist :deadline dead) p)
+                   (tags (org-x-dag-id->tags it))
+                   (date (org-x-dag-quarter-tags-to-date tags)))
              (when (org-x-dag-datetime= q-date date)
                ;; TODO this network status thing should probably be a feature
                ;; in all planning nodes, since we are guaranteed to have a
@@ -4916,7 +4919,10 @@ In the order of display
               (-let* ((ns (get-text-property 1 'x-network-status line))
                       ((rank text)
                        (if (not ns) '(0 "No Network Status")
-                         (-let (((p s c) ns))
+                         (-let (((&plist :planned p
+                                         :scheduled-actions s
+                                         :committed c)
+                                 ns))
                            (cond
                             ((and s c)
                              '(5 "Committed | Scheduled"))
