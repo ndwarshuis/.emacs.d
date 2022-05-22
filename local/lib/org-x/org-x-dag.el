@@ -2559,13 +2559,13 @@ Return value is a list like (BUFFER NON-BUFFER)."
       (org-x-dag-date->qtp-ids)))
 
 (defun org-x-dag->current-wkp-ids ()
-  (let ((span (org-x-dag->weekly-span)))
+  (-when-let (span (org-x-dag->weekly-span))
     (cl-flet
         ((in-span
           (id)
-          (-when-let (bs (either-from-right (org-x-dag-id->bs id) id))
-            (-let (((_ _ (&plist :date d :offset o)) bs))
-              (interval-contains-p (+ d o) span)))))
+          (pcase (either-from-right (org-x-dag-id->bs id) id)
+            (`(:weekly :leaf :active ,abs)
+              (interval-contains-p abs span)))))
       (->> (org-x-dag->wkp-ids)
            (-filter #'in-span)))))
 
@@ -3123,7 +3123,7 @@ FUTURE-LIMIT in a list."
 ;; and not doing these convoluted date checks (which won't work in all cases
 ;; anyways because they assume the week start will never change)
 (defun org-x-dag-itemize-wkp (files)
-  (let ((span (org-x-dag->weekly-span)))
+  (-when-let (span (org-x-dag->weekly-span))
     (org-x-dag-with-ids files
       (pcase (either-from-right (org-x-dag-id->bs it) nil)
         (`(:weekly :leaf :active ,abs)
