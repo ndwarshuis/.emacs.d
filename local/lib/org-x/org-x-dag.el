@@ -232,7 +232,7 @@ relative shift in days from ABS."
                 acc)
             `((,abs . ,offset) ,@acc)))))
     (->> (-reduce-from #'to-interval nil date-offsets)
-         (--map `(,(car it) ,(+ 1 (car it) (cdr it)))))))
+         (--map `(,(car it) ,(+ (car it) (cdr it)))))))
 
 ;; date <-> quarter
 
