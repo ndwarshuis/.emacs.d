@@ -906,9 +906,8 @@ deadline (eg via epoch time) or if it has a repeater."
         (`(:si-complete ,_) t)
         (_ nil)))))
 
-(defun org-x-dag-bs-action-subiter-todo-fold (child-bss type-name active-key
-                                                        default)
-  (declare (indent 1))
+(defun org-x-dag-bs-action-subiter-todo-fold (child-bss default trans-fun)
+  (declare (indent 2))
   (org-x-dag-bs-action-rankfold-children child-bss default
     (lambda (acc next)
       (pcase `(,acc ,next)
@@ -942,14 +941,7 @@ deadline (eg via epoch time) or if it has a repeater."
       (pcase next
         (`(:si-active ,_) t)
         (_ nil)))
-    (lambda (acc)
-      (pcase acc
-        (`(:si-complete ,_)
-         (->> type-name
-              (org-x-dag-left "Active %s must have at least one active child")))
-        (`(:si-active ,ts-data)
-         (either :right `(,active-key ,ts-data)))
-        (e (error "Invalid pattern: %s" e))))))
+    trans-fun))
 
 (defun org-x-dag-node-is-iterator-p (node)
   (org-x-dag-node-data-is-iterator-p (plist-get node :node-meta)))
@@ -972,8 +964,15 @@ deadline (eg via epoch time) or if it has a repeater."
         (either :left "Sub-iterator deadline must not start after parent"))
        ((equal it-todo org-x-kw-todo)
         (org-x-dag-bs-action-subiter-todo-fold child-bss
-          "sub-iterator" :si-active
-          `(:si-active (:sched ,sched :dead ,dead))))
+            `(:si-active (:sched ,sched :dead ,dead))
+          (lambda (acc)
+            (pcase acc
+              (`(:si-complete ,_)
+               (->> type-name
+                    (org-x-dag-left "Active sub-iterator must have at least one active child")))
+              (`(:si-active ,ts-data)
+               (either :right `(:si-active ,ts-data)))
+              (e (error "Invalid pattern: %s" e))))))
        (t
         (org-x-dag-bs-error-kw "Sub-iterator" it-todo))))))
 
@@ -987,9 +986,13 @@ deadline (eg via epoch time) or if it has a repeater."
       (either :left "Iterators cannot be scheduled or deadlined"))
      ;; TODO also check for timeshift and archive props
      ((equal it-todo org-x-kw-todo)
-      (org-x-dag-bs-action-subiter-todo-fold child-bss
-        "iterator" :iter-active
-        '(:iter-empty)))
+      (org-x-dag-bs-action-subiter-todo-fold child-bss '(:iter-empty)
+        (lambda (acc)
+          (pcase acc
+            (`(:si-complete ,_) (either :right '(:iter-empty)))
+            (`(:si-active ,ts-data)
+             (either :right `(:iter-active ,ts-data)))
+            (e (error "Invalid pattern: %s" e))))))
      (t
       (org-x-dag-bs-error-kw "Iterator" it-todo)))))
 
