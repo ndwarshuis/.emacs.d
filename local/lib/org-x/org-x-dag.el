@@ -3286,19 +3286,26 @@ FUTURE-LIMIT in a list."
               (if todayp datetimes
                 (--drop-while (org-x-dag-date< it sel-date) datetimes)))))
          (expand-datetimes
-          (id donep which dt-fun)
+          (id donep which dt-fun post-fun)
           (-when-let (pts (-some->> (org-x-dag-id->planning-timestamp which id)
                             (org-x-dag-partition-timestamp)))
             (-when-let (ds (get-datetimes donep dt-fun pts))
               (-let ((tags (org-x-dag-id->tags id))
                      ((&plist :pos) pts))
-                (--map (list :pos pos :datetime it :tags tags :id id) ds)))))
+                (->> (-map post-fun ds)
+                     (--map (list :pos pos :datetime it :tags tags :id id)))))))
          (scheduled-datetimes
           (id donep)
-          (expand-datetimes id donep :scheduled #'org-x-dag-get-scheduled-at))
+          (expand-datetimes id donep :scheduled
+                            #'org-x-dag-get-scheduled-at
+                            #'identity))
          (deadlined-datetimes
           (id donep)
-          (expand-datetimes id donep :deadline #'org-x-dag-get-deadlines-at))
+          (expand-datetimes id donep :deadline
+                            #'org-x-dag-get-deadlines-at
+                            (lambda (datetime)
+                              (if (org-x-dag-date= datetime sel-date) datetime
+                                (car (org-x-dag-datetime-split datetime))))))
          (add-sched
           (acc id donep)
           (-let (((acc-d acc-s) acc)
