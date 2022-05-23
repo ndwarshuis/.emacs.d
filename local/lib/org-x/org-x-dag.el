@@ -2699,7 +2699,6 @@ encountered will be returned."
            (unless (car it)
              (let* ((next (org-x-dag-datetime-shift (cdr it) shift shifttype))
                     (futurep (org-x-dag-datetime< sel-datetime next)))
-                    ;; (futurep (org-x-dag-date< sel-datetime next)))
                `(,next . (,futurep . ,next)))))
           (-last-item)))
     ('restart
@@ -2722,10 +2721,13 @@ FUTURE-LIMIT in a list."
     (pcase rep
       (`nil `(,datetime))
       (`(,value ,unit ,reptype)
-       (->> (org-x-dag-repeater-get-next cur datetime value unit reptype)
-            (--unfold (when (org-x-dag-datetime< it future-limit)
-                        (cons it (org-x-dag-datetime-shift it value unit))))
-            (cons datetime))))))
+       (let* ((next (org-x-dag-repeater-get-next cur datetime value unit reptype))
+              (reps
+               (--unfold (when (org-x-dag-datetime< it future-limit)
+                           (cons it (org-x-dag-datetime-shift it value unit)))
+                         next)))
+         (if (org-x-dag-datetime= next datetime) reps
+           (cons datetime reps)))))))
 
 (defun org-x-dag-get-scheduled-at (sel-date pts)
   (-let* (((&plist :datetime d :repeater r) pts)
