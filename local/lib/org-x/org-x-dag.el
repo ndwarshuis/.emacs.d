@@ -2717,7 +2717,7 @@ If REP is nil, return a singleton list just containing DATETIME.
 If REP is non-nil, return DATETIME and all repeaters up until
 FUTURE-LIMIT in a list."
   ;; ASSUME pts and future-limit are both long or short timestamps
-  (unless (org-x-dag-datetime< future-limit datetime)
+  (when (org-x-dag-datetime< datetime future-limit)
     (pcase rep
       (`nil `(,datetime))
       (`(,value ,unit ,reptype)
@@ -2732,11 +2732,12 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-get-scheduled-at (sel-date pts)
   (-let* (((&plist :datetime d :repeater r) pts)
           (islongp (org-ml-time-is-long d))
+          (sel-date+ (org-x-dag-datetime-shift sel-date 1 'submonth))
           ((future-limit cur)
            (if islongp
-               `((,@sel-date 23 59)
+               `((,@sel-date+ 0 0)
                  ,(org-x-dag-current-datetime))
-             `(,sel-date ,(org-x-dag-current-date)))))
+             `(,sel-date+ ,(org-x-dag-current-date)))))
     (org-x-dag-unfold-timestamp cur d r future-limit)))
 
 (defun org-x-dag-get-deadlines-at (sel-date pts)
@@ -2751,7 +2752,9 @@ FUTURE-LIMIT in a list."
                `(,(org-x-dag-date-at-current-time sel-date)
                  ,(org-x-dag-current-datetime))
              `(,sel-date ,(org-x-dag-current-date))))
-          (future-limit (org-x-dag-datetime-shift sel-datetime warn-shift warn-shifttype)))
+          (future-limit (org-x-dag-datetime-shift sel-datetime
+                                                  (1+ warn-shift)
+                                                  warn-shifttype)))
     (org-x-dag-unfold-timestamp cur d r future-limit)))
 
 (defun org-x-dag-id->marker (id &optional point)
