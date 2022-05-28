@@ -62,6 +62,12 @@
 (defun org-x-dag-time-is-archivable-p (epochtime)
   (< (* 60 60 24 org-x-archive-delay) (- (float-time) epochtime)))
 
+;; org ml wrappers
+
+(defun org-x-dag-timestamp-to-epoch (ts)
+  (->> (org-ml-timestamp-get-start-time ts)
+       (org-ml-time-to-unixtime)))
+
 ;; calendar interface
 
 (defun org-x-dag-gregorian-to-date (greg)
@@ -3023,16 +3029,31 @@ FUTURE-LIMIT in a list."
                    (list))))))))))
 
 (defun org-x-dag-itemize-iterators (files)
-  (org-x-dag-with-unmasked-action-ids files
-    (pcase it-local
-      (`(:sp-iter . ,status-data)
-       (let ((status (car status-data)))
-         (when (memq status '(:iter-empty :iter-active))
-           (let ((tags (org-x-dag-id->tags it)))
-             (-> (org-x-dag-format-tag-node tags it)
-                 (org-add-props nil
-                     'x-status status)
-                 (list)))))))))
+  (cl-flet
+      ((get-status
+        (data)
+        (pcase data
+          (`(:iter-empty) :empty)
+          (`(:iter-active ,data)
+           (-let* (((&plist :dead d :sched s) data)
+                   (d* (-some->> d (org-x-dag-timestamp-to-epoch)))
+                   (s* (-some->> s (org-x-dag-timestamp-to-epoch))))
+             (-if-let (epoch (if (and d* s*) (min d* s*) (or s* d*)))
+                 (if (< (+ (float-time) org-x-iterator-active-future-offset)
+                        epoch)
+                     :active
+                   :refill)
+               :unknown)))
+          (`(:iter-complete ,_) :complete))))
+    (org-x-dag-with-unmasked-action-ids files
+      (pcase it-local
+        (`(:sp-iter . ,status-data)
+         (let ((status (get-status status-data))
+               (tags (org-x-dag-id->tags it)))
+           (-> (org-x-dag-format-tag-node tags it)
+               (org-add-props nil
+                   'x-status status)
+               (list))))))))
 
 (defun org-x-dag-itemize-incubated (files)
   (org-x-dag-with-unmasked-action-ids files
@@ -5041,8 +5062,11 @@ review phase)"
             (lambda (line)
               (let ((s (get-text-property 1 'x-status line)))
                 (pcase s
-                  (:iter-empty "1. Empty")
-                  (:iter-active "2. Active")))))))))))
+                  (:unknown "0. Unknown")
+                  (:complete "1. Refill")
+                  (:empty "2. Empty")
+                  (:refill "3. Refill")
+                  (:active "4. Active")))))))))))
 
 (defun org-x-dag-agenda-errors ()
   "Show the critical errors agenda view."
