@@ -974,8 +974,7 @@ deadline (eg via epoch time) or if it has a repeater."
           (lambda (acc)
             (pcase acc
               (`(:si-complete ,_)
-               (->> type-name
-                    (org-x-dag-left "Active sub-iterator must have at least one active child")))
+               (org-x-dag-left "Active sub-iterator must have at least one active child"))
               (`(:si-active ,ts-data)
                (either :right `(:si-active ,ts-data)))
               (e (error "Invalid pattern: %s" e))))))
