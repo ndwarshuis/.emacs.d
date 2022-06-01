@@ -3296,32 +3296,41 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-itemize-agenda (files sel-date)
   (let ((todayp (org-x-dag-date= (org-x-dag-current-date) sel-date)))
     (cl-flet*
-        ((get-datetimes
-          (donep dt-fun pts)
+        ((past-p
+          (datetime)
+          (org-x-dag-date< datetime sel-date))
+         (get-datetimes
+          (donep keep-most-recent-p dt-fun pts)
           (if donep
               (-let (((&plist :datetime) pts))
                 (when (org-x-dag-date= datetime sel-date)
                   `(,datetime)))
             (-when-let (datetimes (funcall dt-fun sel-date pts))
-              (if todayp datetimes
-                (--drop-while (org-x-dag-date< it sel-date) datetimes)))))
+              (cond
+               (todayp
+                datetimes)
+               (keep-most-recent-p
+                (-let (((past rest) (-split-with #'past-p datetimes)))
+                  (if past (cons (-last-item past) rest) rest)))
+               (t
+                (-drop-while #'past-p datetimes))))))
          (expand-datetimes
-          (id donep which dt-fun post-fun)
+          (id donep keep-past-p which dt-fun post-fun)
           (-when-let (pts (-some->> (org-x-dag-id->planning-timestamp which id)
                             (org-x-dag-partition-timestamp)))
-            (-when-let (ds (get-datetimes donep dt-fun pts))
+            (-when-let (ds (get-datetimes donep keep-past-p dt-fun pts))
               (-let ((tags (org-x-dag-id->tags id))
                      ((&plist :pos) pts))
                 (->> (-map post-fun ds)
                      (--map (list :pos pos :datetime it :tags tags :id id)))))))
          (scheduled-datetimes
           (id donep)
-          (expand-datetimes id donep :scheduled
+          (expand-datetimes id donep nil :scheduled
                             #'org-x-dag-get-scheduled-at
                             #'identity))
          (deadlined-datetimes
           (id donep)
-          (expand-datetimes id donep :deadline
+          (expand-datetimes id donep t :deadline
                             #'org-x-dag-get-deadlines-at
                             (lambda (datetime)
                               (if (org-x-dag-date= datetime sel-date) datetime
