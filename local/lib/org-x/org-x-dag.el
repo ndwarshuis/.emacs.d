@@ -1221,7 +1221,7 @@ deadline (eg via epoch time) or if it has a repeater."
           (date-abs (org-x-dag-date-to-absolute date)))
     (cl-flet
         ((mk-right
-          (dead date)
+          (dead)
           (either :right `(:active (:deadline ,dead :date ,date-abs)))))
       (org-x-dag-bs-with-closed node-data "quarterly plan"
         `(:complete (,@it-comptime :date ,date-abs))
@@ -1238,7 +1238,7 @@ deadline (eg via epoch time) or if it has a repeater."
                                   (org-x-dag-datetime-split)
                                   (car))))
                 (if (org-x-dag-datetime< date dead-dt)
-                    (mk-right dead date-abs)
+                    (mk-right dead)
                   (->> "QTP deadlines must be due after the quarter starts"
                        (either :left))))
             (mk-right nil date-abs)))
@@ -1261,7 +1261,7 @@ deadline (eg via epoch time) or if it has a repeater."
          (t
           (org-x-dag-bs-error-kw "WKP" it-todo)))))))
 
-(defun org-x-dag-bs-wkp-branch-inner (node-data ancestry child-bss)
+(defun org-x-dag-bs-wkp-branch-inner (node-data ancestry _)
   (either>>= ancestry
     (org-x-dag-bs-with-closed node-data "weekly plan"
       `(:branch :complete ,it-comptime)
@@ -1274,7 +1274,7 @@ deadline (eg via epoch time) or if it has a repeater."
        (t
         (org-x-dag-bs-error-kw "WKP day node" it-todo))))))
 
-(defun org-x-dag-bs-wkp-root-inner (node-data ancestry child-bss)
+(defun org-x-dag-bs-wkp-root-inner (node-data ancestry _)
   (either>>= ancestry
     (org-x-dag-bs-with-closed node-data "weekly plan"
       `(:root :complete ,it-comptime)
@@ -1647,7 +1647,7 @@ denoted by CUR-KEY with any errors that are found."
             (->> (if (is-valid-leaf-p id)
                      (either :right `(:committed ,q))
                    (-> "WKP links can only originate from leaves"
-                       (org-x-dag--ns-err)))
+                       (org-x-dag--ns-err (list id))))
                  (ht-set this-h id))
             (org-x-dag-ht-add-links id ht-q :planned q)))))))
 
@@ -3864,7 +3864,7 @@ FUTURE-LIMIT in a list."
 
 (defun org-x-dag-wkp-get-headline-inner (date-abs)
   (org-x-with-file (org-x-dag->planning-file :weekly)
-    (-let (((m d y) (calendar-gregorian-from-absolute date-abs)))
+    (-let (((m _ y) (calendar-gregorian-from-absolute date-abs)))
       (->> (org-ml-parse-subtrees 'all)
            (org-x-dag-headlines-find-year y)
            (org-ml-headline-get-subheadlines)
