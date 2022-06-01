@@ -178,9 +178,17 @@
 
 ;; date <-> week
 
-;; (defun org-x-dag-date-to-day-of-week (date)
-;;   (->> (org-x-dag-date-to-gregorian date)
-;;        (calendar-day-of-week)))
+(defvar org-x-dag-weekday-start 1
+  "Index of day to be considered start of week.
+Must be an integer from 0 - 6, with 0 = Sunday.")
+
+(defun org-x-dag-abs-to-day-of-week (abs)
+  (-> (- abs org-x-dag-weekday-start)
+      (mod 7)))
+
+(defun org-x-dag-date-to-day-of-week (date)
+  (-> (org-x-dag-date-to-absolute date)
+      (org-x-dag-abs-to-day-of-week)))
 
 (defun org-x-dag-date-to-week-number (date)
   (-let* (((y m d) date)
@@ -204,10 +212,6 @@
     (->> (* (1- weeknum) 7)
          (+ start-abs start-diff)
          (org-x-dag-absolute-to-date))))
-
-(defvar org-x-dag-weekday-start 1
-  "Index of day to be considered start of week.
-Must be an integer from 0 - 6, with 0 = Sunday.")
 
 (defun org-x-dag-date-to-week-start (date)
   ""
@@ -282,6 +286,11 @@ relative shift in days from ABS."
     (4 . "Thursday")
     (5 . "Friday")
     (6 . "Saturday")))
+
+(defun org-x-dag-day-of-week-to-tag (n)
+  (-> (+ n org-x-dag-weekday-start)
+      (mod 7)
+      (alist-get org-x-dag-weekly-tags)))
 
 (defun org-x-dag--parse-date-tag (prefix tag)
   (let ((re (format "%s\\([0-9]+\\)" prefix)))
@@ -3156,8 +3165,7 @@ FUTURE-LIMIT in a list."
     (org-x-dag-with-ids files
       (pcase (either-from-right (org-x-dag-id->bs it) nil)
         (`(:weekly :leaf :active ,abs)
-         (let ((day (->> (calendar-gregorian-from-absolute abs)
-                         (calendar-day-of-week))))
+         (let ((day (org-x-dag-abs-to-day-of-week abs)))
            (when (interval-contains-p abs span)
              (let ((ns (-some-> (org-x-dag-id->ns it)
                          (either-from (-const nil) #'identity)))
@@ -4992,8 +5000,7 @@ In the order of display
             (lambda (line)
               (-let* ((ns (get-text-property 1 'x-network-status line))
                       (day (get-text-property 1 'x-day line))
-                      ;; TODO not sure if this will work anymore
-                      (day-name (alist-get day org-x-dag-weekly-tags))
+                      (day-name (org-x-dag-day-of-week-to-tag day))
                       ((rank text)
                        (if (not ns) '(0 "No Network Status")
                          (-let (((&plist :planned p :committed c) ns))
