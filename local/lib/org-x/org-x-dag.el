@@ -1241,7 +1241,7 @@ deadline (eg via epoch time) or if it has a repeater."
                     (mk-right dead)
                   (->> "QTP deadlines must be due after the quarter starts"
                        (either :left))))
-            (mk-right nil date-abs)))
+            (mk-right nil)))
          (t
           (org-x-dag-bs-error-kw "QTP" it-todo)))))))
 
