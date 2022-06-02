@@ -830,7 +830,7 @@ deadline (eg via epoch time) or if it has a repeater."
                              `(:sp-proj :proj-wait)
                              `(:sp-proj :proj-held)
                              `(:sp-proj :proj-stuck)
-                             `(:sp-iter :iter-active)
+                             `(:sp-iter :iter-active ,_)
                              `(:sp-iter :iter-empty))
                         (:sp-task :task-active ,d))
                       (is-next d))
