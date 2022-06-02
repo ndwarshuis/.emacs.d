@@ -668,28 +668,39 @@ used for optimization."
     (lambda (child-bs)
       (funcall stop-fun (plist-get child-bs :local)))))
 
-;; [Status a] -> b -> (a -> a -> Status Bool) -> (a -> Bool) -> (a -> Status b)
-;; -> Status b
-(defun org-x-dag-bs-rankfold-children (bss default rank-fun stop-fun trans-fun)
+;; [Status a] -> b -> (a -> a -> Status Bool) -> (a -> Bool) -> (a -> Maybe c)
+;; -> (a -> [c] -> Status b) -> Status b
+(defun org-x-dag-bs-rankfold-children (bss default rank-fun stop-fun acc-fun trans-fun)
   (declare (indent 2))
   (let ((err (either :left "Child error")))
     (cl-labels
-        ((fold-rank
+        ((cons-maybe
+          (x xs)
+          (if x (cons x xs) xs))
+         (fold-rank
           (acc xs)
           (if (not xs) (either :right acc)
             (-let (((x . rest) xs))
               (pcase x
                 (`(:right ,r)
-                 (either>>= (funcall rank-fun acc r)
-                   (if (not it) (fold-rank acc rest)
-                     (if (funcall stop-fun r) x (fold-rank r rest)))))
+                 (-let (((cur as) acc))
+                   (either>>= (funcall rank-fun cur r)
+                     (let ((as* (cons-maybe (funcall acc-fun it) as)))
+                       (if (not it) (fold-rank `(,cur ,as*) rest)
+                         (if (funcall stop-fun r)
+                             (either :right `(,r ,as*))
+                           (fold-rank `(,r ,as*) rest)))))))
                 (_ err))))))
       (if (not bss) (either :right default)
         (pcase (car bss)
           (`(:right ,r)
-           (if (funcall stop-fun r) (funcall trans-fun r)
-             (either>>= (fold-rank r (cdr bss))
-               (funcall trans-fun it))))
+           (if (funcall stop-fun r)
+               (->> (funcall acc-fun r)
+                    (list)
+                    (funcall trans-fun r))
+             (either>>= (fold-rank (list r nil) (cdr bss))
+               (-let (((cur as) it))
+                 (funcall trans-fun cur as)))))
           (_ err))))))
 
 (defun org-x-dag-bs-action-rankfold-children (bss default rank-fun stop-fun
@@ -699,7 +710,9 @@ used for optimization."
     (org-x-dag-bs-rankfold-children bss default
       (-on rank-fun #'get-local)
       (-compose stop-fun #'get-local)
-      (-compose trans-fun #'get-local))))
+      (-const nil)
+      (lambda (x as)
+        (funcall trans-fun (get-local x) as)))))
 
 (defmacro org-x-dag-left (fmt &rest args)
   `(either :left (format ,fmt ,@args)))
@@ -875,7 +888,7 @@ deadline (eg via epoch time) or if it has a repeater."
                 (`(:sp-task :task-active ,d) (is-next d))
                 (_ nil)))
 
-            (lambda (acc)
+            (lambda (acc _)
               (pcase acc
                 ((or `(:sp-proj :proj-complete ,_)
                      `(:sp-task :task-complete ,_)
@@ -980,7 +993,7 @@ deadline (eg via epoch time) or if it has a repeater."
        ((equal it-todo org-x-kw-todo)
         (org-x-dag-bs-action-subiter-todo-fold child-bss
             `(:si-active (:sched ,sched :dead ,dead))
-          (lambda (acc)
+          (lambda (acc _)
             (pcase acc
               (`(:si-complete ,_)
                (org-x-dag-left "Active sub-iterator must have at least one active child"))
@@ -1001,7 +1014,7 @@ deadline (eg via epoch time) or if it has a repeater."
      ;; TODO also check for timeshift and archive props
      ((equal it-todo org-x-kw-todo)
       (org-x-dag-bs-action-subiter-todo-fold child-bss '(:iter-empty)
-        (lambda (acc)
+        (lambda (acc _)
           (pcase acc
             (`(:si-complete ,_) (either :right '(:iter-empty)))
             (`(:si-active ,ts-data)
