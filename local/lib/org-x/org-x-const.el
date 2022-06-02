@@ -196,6 +196,10 @@ org tag and a long name respectively for the category.")
 ;; all follow the nomenclature `org-x-prop-PROPNAME' (key) or
 ;; `org-x-prop-PROPNAME-VALNAME' (value)
 
+(defconst org-x-prop-week-len "X-WEEK-LEN"
+  "The length of a week in the weekly plan.
+Should be an integer greater than 1.")
+
 (defconst org-x-prop-parent-type "PARENT_TYPE"
   "Property denoting iterator/periodical headline.")
 

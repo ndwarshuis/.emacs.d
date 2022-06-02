@@ -62,6 +62,12 @@
 (defun org-x-dag-time-is-archivable-p (epochtime)
   (< (* 60 60 24 org-x-archive-delay) (- (float-time) epochtime)))
 
+;; org ml wrappers
+
+(defun org-x-dag-timestamp-to-epoch (ts)
+  (->> (org-ml-timestamp-get-start-time ts)
+       (org-ml-time-to-unixtime)))
+
 ;; calendar interface
 
 (defun org-x-dag-gregorian-to-date (greg)
@@ -172,9 +178,17 @@
 
 ;; date <-> week
 
-;; (defun org-x-dag-date-to-day-of-week (date)
-;;   (->> (org-x-dag-date-to-gregorian date)
-;;        (calendar-day-of-week)))
+(defvar org-x-dag-weekday-start 1
+  "Index of day to be considered start of week.
+Must be an integer from 0 - 6, with 0 = Sunday.")
+
+(defun org-x-dag-abs-to-day-of-week (abs)
+  (-> (- abs org-x-dag-weekday-start)
+      (mod 7)))
+
+(defun org-x-dag-date-to-day-of-week (date)
+  (-> (org-x-dag-date-to-absolute date)
+      (org-x-dag-abs-to-day-of-week)))
 
 (defun org-x-dag-date-to-week-number (date)
   (-let* (((y m d) date)
@@ -198,10 +212,6 @@
     (->> (* (1- weeknum) 7)
          (+ start-abs start-diff)
          (org-x-dag-absolute-to-date))))
-
-(defvar org-x-dag-weekday-start 1
-  "Index of day to be considered start of week.
-Must be an integer from 0 - 6, with 0 = Sunday.")
 
 (defun org-x-dag-date-to-week-start (date)
   ""
@@ -232,7 +242,7 @@ relative shift in days from ABS."
                 acc)
             `((,abs . ,offset) ,@acc)))))
     (->> (-reduce-from #'to-interval nil date-offsets)
-         (--map `(,(car it) ,(+ 1 (car it) (cdr it)))))))
+         (--map `(,(car it) ,(+ (car it) (cdr it)))))))
 
 ;; date <-> quarter
 
@@ -276,6 +286,11 @@ relative shift in days from ABS."
     (4 . "Thursday")
     (5 . "Friday")
     (6 . "Saturday")))
+
+(defun org-x-dag-day-of-week-to-tag (n)
+  (-> (+ n org-x-dag-weekday-start)
+      (mod 7)
+      (alist-get org-x-dag-weekly-tags)))
 
 (defun org-x-dag--parse-date-tag (prefix tag)
   (let ((re (format "%s\\([0-9]+\\)" prefix)))
@@ -815,7 +830,7 @@ deadline (eg via epoch time) or if it has a repeater."
                              `(:sp-proj :proj-wait)
                              `(:sp-proj :proj-held)
                              `(:sp-proj :proj-stuck)
-                             `(:sp-iter :iter-active)
+                             `(:sp-iter :iter-active ,_)
                              `(:sp-iter :iter-empty))
                         (:sp-task :task-active ,d))
                       (is-next d))
@@ -906,9 +921,8 @@ deadline (eg via epoch time) or if it has a repeater."
         (`(:si-complete ,_) t)
         (_ nil)))))
 
-(defun org-x-dag-bs-action-subiter-todo-fold (child-bss type-name active-key
-                                                        default)
-  (declare (indent 1))
+(defun org-x-dag-bs-action-subiter-todo-fold (child-bss default trans-fun)
+  (declare (indent 2))
   (org-x-dag-bs-action-rankfold-children child-bss default
     (lambda (acc next)
       (pcase `(,acc ,next)
@@ -942,14 +956,7 @@ deadline (eg via epoch time) or if it has a repeater."
       (pcase next
         (`(:si-active ,_) t)
         (_ nil)))
-    (lambda (acc)
-      (pcase acc
-        (`(:si-complete ,_)
-         (->> type-name
-              (org-x-dag-left "Active %s must have at least one active child")))
-        (`(:si-active ,ts-data)
-         (either :right `(,active-key ,ts-data)))
-        (e (error "Invalid pattern: %s" e))))))
+    trans-fun))
 
 (defun org-x-dag-node-is-iterator-p (node)
   (org-x-dag-node-data-is-iterator-p (plist-get node :node-meta)))
@@ -972,8 +979,14 @@ deadline (eg via epoch time) or if it has a repeater."
         (either :left "Sub-iterator deadline must not start after parent"))
        ((equal it-todo org-x-kw-todo)
         (org-x-dag-bs-action-subiter-todo-fold child-bss
-          "sub-iterator" :si-active
-          `(:si-active (:sched ,sched :dead ,dead))))
+            `(:si-active (:sched ,sched :dead ,dead))
+          (lambda (acc)
+            (pcase acc
+              (`(:si-complete ,_)
+               (org-x-dag-left "Active sub-iterator must have at least one active child"))
+              (`(:si-active ,ts-data)
+               (either :right `(:si-active ,ts-data)))
+              (e (error "Invalid pattern: %s" e))))))
        (t
         (org-x-dag-bs-error-kw "Sub-iterator" it-todo))))))
 
@@ -987,9 +1000,13 @@ deadline (eg via epoch time) or if it has a repeater."
       (either :left "Iterators cannot be scheduled or deadlined"))
      ;; TODO also check for timeshift and archive props
      ((equal it-todo org-x-kw-todo)
-      (org-x-dag-bs-action-subiter-todo-fold child-bss
-        "iterator" :iter-active
-        '(:iter-empty)))
+      (org-x-dag-bs-action-subiter-todo-fold child-bss '(:iter-empty)
+        (lambda (acc)
+          (pcase acc
+            (`(:si-complete ,_) (either :right '(:iter-empty)))
+            (`(:si-active ,ts-data)
+             (either :right `(:iter-active ,ts-data)))
+            (e (error "Invalid pattern: %s" e))))))
      (t
       (org-x-dag-bs-error-kw "Iterator" it-todo)))))
 
@@ -1056,6 +1073,8 @@ deadline (eg via epoch time) or if it has a repeater."
   ;; TODO this is super inefficient, make a plist mapper function
   (-let* (((node . children) tree)
           ((&plist :id i :parents ps :node-meta m) node)
+          ;; TODO don't calculate this unless there are actually children
+          ;; that need to use it
           (new-ancestry (funcall ancestry-fun m ancestry))
           ((shallow rest) (->> children
                                (--map (funcall child-fun it new-ancestry))
@@ -1202,48 +1221,72 @@ deadline (eg via epoch time) or if it has a repeater."
           (date-abs (org-x-dag-date-to-absolute date)))
     (cl-flet
         ((mk-right
-          (dead date)
+          (dead)
           (either :right `(:active (:deadline ,dead :date ,date-abs)))))
       (org-x-dag-bs-with-closed node-data "quarterly plan"
         `(:complete (,@it-comptime :date ,date-abs))
         (either :right `(:complete (,@it-comptime :date ,date-abs)))
         (cond
-         ((-some->> it-planning (org-ml-get-properties :scheduled))
+         ((-some->> it-planning (org-ml-get-property :scheduled))
           (either :left "QTPs cannot be scheduled"))
          ((equal it-todo org-x-kw-todo)
           (-if-let (dead (-some->> it-planning
-                           (org-ml-get-properties :deadline)))
+                           (org-ml-get-property :deadline)))
               ;; ASSUME :parent-tags will contain the date tags as the level of
               ;; the plan will never exceed one
               (let ((dead-dt (->> (org-ml-timestamp-get-start-time dead)
                                   (org-x-dag-datetime-split)
                                   (car))))
                 (if (org-x-dag-datetime< date dead-dt)
-                    (mk-right dead date-abs)
+                    (mk-right dead)
                   (->> "QTP deadlines must be due after the quarter starts"
                        (either :left))))
             (mk-right nil date-abs)))
          (t
           (org-x-dag-bs-error-kw "QTP" it-todo)))))))
 
-(defun org-x-dag-bs-wkp-inner (node-data)
-  (-let* (((&plist :parent-tags (o d m y)) node-data)
-          (date-abs (->> (org-x-dag-tags-to-date y m d)
-                         (org-x-dag-date-to-absolute)))
-          (offset (org-x-dag-tag-to-offset o))
-          (pair `(:date ,date-abs :offset ,offset)))
+(defun org-x-dag-bs-wkp-leaf-inner (node-data ancestry child-bss)
+  (either>>= ancestry
+    (if child-bss (either :left "Weekly plan nodes cannot have children")
+      (org-x-dag-bs-with-closed node-data "weekly plan"
+        `(:leaf :complete ,it-comptime)
+        (either :right `(:leaf :complete ,it-comptime))
+        (cond
+         ((-some->> it-planning (org-ml-get-property :scheduled))
+          (either :left "WKPs cannot be scheduled"))
+         ((-some->> it-planning (org-ml-get-property :deadline))
+          (either :left "WKPs cannot be deadlined"))
+         ((equal it-todo org-x-kw-todo)
+          (either :right `(:leaf :active ,it)))
+         (t
+          (org-x-dag-bs-error-kw "WKP" it-todo)))))))
+
+(defun org-x-dag-bs-wkp-branch-inner (node-data ancestry _)
+  (either>>= ancestry
     (org-x-dag-bs-with-closed node-data "weekly plan"
-      `(:complete (,@it-comptime ,@pair))
-      (either :right `(:complete (,@it-comptime ,@pair)))
+      `(:branch :complete ,it-comptime)
+      (either :right `(:branch :complete ,it-comptime))
       (cond
-       ((-some->> it-planning (org-ml-get-properties :scheduled))
-        (either :left "WKPs cannot be scheduled"))
-       ((-some->> it-planning (org-ml-get-properties :deadline))
-        (either :left "WKPs cannot be deadlined"))
+       ((-some->> it-planning (org-ml-get-property :deadline))
+        (either :left "WKP day nodes cannot be deadlined"))
        ((equal it-todo org-x-kw-todo)
-        (either :right `(:active ,pair)))
+        (either :right `(:branch :active ,it)))
        (t
-        (org-x-dag-bs-error-kw "WKP" it-todo))))))
+        (org-x-dag-bs-error-kw "WKP day node" it-todo))))))
+
+(defun org-x-dag-bs-wkp-root-inner (node-data ancestry _)
+  (either>>= ancestry
+    (org-x-dag-bs-with-closed node-data "weekly plan"
+      `(:root :complete ,it-comptime)
+      ;; TODO need to check the week length and the scheduled children
+      (either :right `(:root :complete ,it-comptime))
+      (cond
+       ((-some->> it-planning (org-ml-get-property :deadline))
+        (either :left "WKP root nodes cannot be deadlined"))
+       ((equal it-todo org-x-kw-todo)
+        (either :right `(:root :active ,it)))
+       (t
+        (org-x-dag-bs-error-kw "WKP day node" it-todo))))))
 
 (defun org-x-dag-bs-dlp-inner (node-data)
   (org-x-dag-bs-with-closed node-data "daily metablock"
@@ -1276,8 +1319,70 @@ deadline (eg via epoch time) or if it has a repeater."
   (-let (((n ns) (org-x-dag-bs-with-treetop tree #'org-x-dag-bs-qtp-inner)))
     (org-x-dag-bs-prefix :quarterly `(,n ,@ns))))
 
+(defun org-x-dag-bs-wkp-leaf (tree ancestry)
+  (org-x-dag-bs-with-children-1
+   tree
+   ancestry
+   (lambda (_ _) nil)
+   #'org-x-dag-bs-wkp-leaf
+   #'org-x-dag-bs-wkp-leaf-inner))
+
+(defun org-x-dag-bs-wkp-branch (tree ancestry)
+  (-let ((ancestry
+          (either-from ancestry
+            (-const (either :left "Parent error"))
+            (lambda (date-offset)
+              (-let (((&plist :node-meta m) (car tree)))
+                (-if-let (sched (-some->> (plist-get m :planning)
+                                  (org-ml-get-property :scheduled)
+                                  (org-ml-timestamp-get-start-time)))
+                    (if (org-ml-time-is-long sched)
+                        (either :left "WKP branch node must be short scheduled")
+                      (-let (((&plist :date d :offset o) date-offset)
+                             (this-abs (org-x-dag-date-to-absolute sched)))
+                        (if (and (<= d this-abs) (< this-abs (+ d o)))
+                            (either :right this-abs)
+                          (either :left "WKP branch node must be scheduled"))))
+                  (either :left "WKP branch node must be scheduled")))))))
+    (org-x-dag-bs-with-children-1
+     tree
+     ancestry
+     (lambda (_ ancestry)
+       (if (either-is-left-p ancestry)
+           (either :left "Parent error")
+         ancestry))
+     #'org-x-dag-bs-wkp-leaf
+     #'org-x-dag-bs-wkp-branch-inner)))
+
+;; TODO there are likely at least 10 patterns here that can be abstracted
+;; out to make this cleaner
+(defun org-x-dag-bs-wkp-root (tree)
+  (-let* (((&plist :node-meta m) (car tree))
+          (datetime (->> (plist-get m :planning)
+                         (org-ml-get-property :scheduled)
+                         (org-ml-timestamp-get-start-time)))
+          (props (plist-get m :props))
+          ;; ASSUME anything that isn't actually a number will be converted to
+          ;; a zero and will fail the test below
+          (offset (->> (alist-get org-x-prop-week-len props nil nil #'equal)
+                       (string-to-number)))
+          (ancestry (cond
+                     ((or (not datetime) (org-ml-time-is-long datetime))
+                      (either :left "WKP root nodes must be short scheduled"))
+                     ((< offset 1)
+                      (either :left "WKP root week length must be an int >= 1"))
+                     (t
+                      (let ((date (org-x-dag-date-to-absolute datetime)))
+                        (either :right `(:date ,date :offset ,offset)))))))
+    (org-x-dag-bs-with-children-1
+     tree
+     ancestry
+     (lambda (_ ancestry) ancestry)
+     #'org-x-dag-bs-wkp-branch
+     #'org-x-dag-bs-wkp-root-inner)))
+
 (defun org-x-dag-bs-wkp (tree)
-  (-let (((n ns) (org-x-dag-bs-with-treetop tree #'org-x-dag-bs-wkp-inner)))
+  (-let (((n ns) (org-x-dag-bs-wkp-root tree)))
     (org-x-dag-bs-prefix :weekly `(,n ,@ns))))
 
 (defun org-x-dag-bs-dlp (tree)
@@ -1379,8 +1484,8 @@ deadline (eg via epoch time) or if it has a repeater."
   (either-from (org-x-dag-adjlist-id-bs adjlist id)
     (-const nil)
     (lambda (r)
-      (-let (((_ _ (&plist :date d :offset o)) r))
-        (+ d o)))))
+      (pcase r
+        (`(:weekly ,(or :root :branch :leaf) :active ,d) d)))))
 
 (defun org-x-dag-get-children (adjlist id)
   (->> (plist-get (ht-get adjlist id) :children)
@@ -1526,14 +1631,25 @@ denoted by CUR-KEY with any errors that are found."
           (org-x-dag-ht-add-links id ht-e :planned e)
           (org-x-dag-ht-add-links id ht-l :planned l))))))
 
+;; TODO need to somehow puke when anything but a leaf node has a link on it
 (defun org-x-dag-ns-wkp (adjlist links ns)
-  (-let (((&alist :quarterly ht-q) ns))
-    (org-x-dag-ns-with-valid ns adjlist :weekly links
-      `((:quarterly ,(-partial #'org-x-dag-ns-is-leaf-p adjlist)))
-      (lambda (id this-h res)
-        (-let (((&alist :quarterly q) res))
-          (ht-set this-h id (either :right `(:committed ,q)))
-          (org-x-dag-ht-add-links id ht-q :planned q))))))
+  (cl-flet
+      ((is-valid-leaf-p
+        (id)
+        (-when-let (bs (-> (org-x-dag-adjlist-id-bs adjlist id)
+                           (either-from-right nil)))
+          (eq (nth 1 bs) :leaf))))
+    (-let (((&alist :quarterly ht-q) ns))
+      (org-x-dag-ns-with-valid ns adjlist :weekly links
+        `((:quarterly ,(-partial #'org-x-dag-ns-is-leaf-p adjlist)))
+        (lambda (id this-h res)
+          (-let (((&alist :quarterly q) res))
+            (->> (if (is-valid-leaf-p id)
+                     (either :right `(:committed ,q))
+                   (-> "WKP links can only originate from leaves"
+                       (org-x-dag--ns-err (list id))))
+                 (ht-set this-h id))
+            (org-x-dag-ht-add-links id ht-q :planned q)))))))
 
 (defun org-x-dag-ns-action (adjlist links ns)
   (cl-flet
@@ -1563,9 +1679,7 @@ denoted by CUR-KEY with any errors that are found."
                ;; TODO what about repeaters?
                (-when-let (sched (org-x-dag-adjlist-id-planning-datetime
                                   adjlist :scheduled id))
-                 (when (and ;;(org-x-dag-date<= week-start sched)
-                            ;;(org-x-dag-date<= sched week-end)
-                            (not (org-x-dag-adjlist-id-done-p adjlist id))
+                 (when (and (not (org-x-dag-adjlist-id-done-p adjlist id))
                             committed-ids)
                    (->> q-committed
                         (--filter (-intersection committed-ids (cdr it)))
@@ -1831,7 +1945,7 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
             (q-cur-p (-partial #'cur-p #'org-x-dag-adjlist-id-qtp-abs qspan))
             (w-cur-p (-partial #'cur-p #'org-x-dag-adjlist-id-wkp-abs wspan))
             (cur-q (-filter q-cur-p q))
-            (cur-w (-filter w-cur-p w))
+            (cur-w (when wspan (-filter w-cur-p w)))
             (cur-d (-filter #'d-cur-p d)))
       ;; add all links to the network status object (ew side effects)
       (org-x-dag-ns-ltg adjlist l ns)
@@ -1948,7 +2062,8 @@ removed from, added to, or edited within the DAG respectively."
                         (:action (list org-x-prop-parent-type
                                        org-x-prop-time-shift
                                        org-x-prop-routine
-                                       "ARCHIVE")))
+                                       "ARCHIVE"))
+                        (:weekly (list org-x-prop-week-len)))
                       (append def-props)))
           (bs-fun (pcase group
                     (:action #'org-x-dag-bs-action)
@@ -2007,19 +2122,23 @@ removed from, added to, or edited within the DAG respectively."
 
 (defun org-x-dag-weekly-span (date)
   (cl-flet
-      ((bs2date-offset
-        (bs)
-        (-let (((_ _ (&plist :date d :offset o)) bs))
-          `(,d ,o))))
+      ((id-date-offset
+        (adjlist id)
+        (either-from (org-x-dag-adjlist-id-bs adjlist id)
+          (-const nil)
+          (lambda (r)
+            (pcase r
+              (`(:weekly :root :active ,p)
+               (-let (((&plist :date d :offset o) p))
+                 `(,d ,o))))))))
     (-let* (((&plist :dag d :file->ids f) org-x-dag)
             (adjlist (dag-get-adjacency-list d))
             (weekly-file (-> (plist-get org-x-dag-files :plan-files)
                              (plist-get :weekly)))
             (abs (org-x-dag-date-to-absolute date))
             (ints (->> (ht-get f weekly-file)
-                       (--map (org-x-dag-adjlist-id-bs adjlist it))
-                       (either-rights)
-                       (-map #'bs2date-offset)
+                       (--map (id-date-offset adjlist it))
+                       (-non-nil)
                        (org-x-dag-weekly-intervals)
                        (interval-sort))))
       (-when-let (overlaps (nth 0 (interval-overlaps ints)))
@@ -2455,13 +2574,13 @@ Return value is a list like (BUFFER NON-BUFFER)."
       (org-x-dag-date->qtp-ids)))
 
 (defun org-x-dag->current-wkp-ids ()
-  (let ((span (org-x-dag->weekly-span)))
+  (-when-let (span (org-x-dag->weekly-span))
     (cl-flet
         ((in-span
           (id)
-          (-when-let (bs (either-from-right (org-x-dag-id->bs id) id))
-            (-let (((_ _ (&plist :date d :offset o)) bs))
-              (interval-contains-p (+ d o) span)))))
+          (pcase (either-from-right (org-x-dag-id->bs id) id)
+            (`(:weekly :leaf :active ,abs)
+              (interval-contains-p abs span)))))
       (->> (org-x-dag->wkp-ids)
            (-filter #'in-span)))))
 
@@ -2594,7 +2713,6 @@ encountered will be returned."
            (unless (car it)
              (let* ((next (org-x-dag-datetime-shift (cdr it) shift shifttype))
                     (futurep (org-x-dag-datetime< sel-datetime next)))
-                    ;; (futurep (org-x-dag-date< sel-datetime next)))
                `(,next . (,futurep . ,next)))))
           (-last-item)))
     ('restart
@@ -2613,23 +2731,27 @@ If REP is nil, return a singleton list just containing DATETIME.
 If REP is non-nil, return DATETIME and all repeaters up until
 FUTURE-LIMIT in a list."
   ;; ASSUME pts and future-limit are both long or short timestamps
-  (unless (org-x-dag-datetime< future-limit datetime)
+  (when (org-x-dag-datetime< datetime future-limit)
     (pcase rep
       (`nil `(,datetime))
       (`(,value ,unit ,reptype)
-       (->> (org-x-dag-repeater-get-next cur datetime value unit reptype)
-            (--unfold (unless (org-x-dag-datetime< future-limit it)
-                        (cons it (org-x-dag-datetime-shift it value unit))))
-            (cons datetime))))))
+       (let* ((next (org-x-dag-repeater-get-next cur datetime value unit reptype))
+              (reps
+               (--unfold (when (org-x-dag-datetime< it future-limit)
+                           (cons it (org-x-dag-datetime-shift it value unit)))
+                         next)))
+         (if (org-x-dag-datetime= next datetime) reps
+           (cons datetime reps)))))))
 
 (defun org-x-dag-get-scheduled-at (sel-date pts)
   (-let* (((&plist :datetime d :repeater r) pts)
           (islongp (org-ml-time-is-long d))
+          (sel-date+ (org-x-dag-datetime-shift sel-date 1 'submonth))
           ((future-limit cur)
            (if islongp
-               `((,@sel-date 23 59)
+               `((,@sel-date+ 0 0)
                  ,(org-x-dag-current-datetime))
-             `(,sel-date ,(org-x-dag-current-date)))))
+             `(,sel-date+ ,(org-x-dag-current-date)))))
     (org-x-dag-unfold-timestamp cur d r future-limit)))
 
 (defun org-x-dag-get-deadlines-at (sel-date pts)
@@ -2644,7 +2766,9 @@ FUTURE-LIMIT in a list."
                `(,(org-x-dag-date-at-current-time sel-date)
                  ,(org-x-dag-current-datetime))
              `(,sel-date ,(org-x-dag-current-date))))
-          (future-limit (org-x-dag-datetime-shift sel-datetime warn-shift warn-shifttype)))
+          (future-limit (org-x-dag-datetime-shift sel-datetime
+                                                  (1+ warn-shift)
+                                                  warn-shifttype)))
     (org-x-dag-unfold-timestamp cur d r future-limit)))
 
 (defun org-x-dag-id->marker (id &optional point)
@@ -2913,16 +3037,31 @@ FUTURE-LIMIT in a list."
                    (list))))))))))
 
 (defun org-x-dag-itemize-iterators (files)
-  (org-x-dag-with-unmasked-action-ids files
-    (pcase it-local
-      (`(:sp-iter . ,status-data)
-       (let ((status (car status-data)))
-         (when (memq status '(:iter-empty :iter-active))
-           (let ((tags (org-x-dag-id->tags it)))
-             (-> (org-x-dag-format-tag-node tags it)
-                 (org-add-props nil
-                     'x-status status)
-                 (list)))))))))
+  (cl-flet
+      ((get-status
+        (data)
+        (pcase data
+          (`(:iter-empty) :empty)
+          (`(:iter-active ,data)
+           (-let* (((&plist :dead d :sched s) data)
+                   (d* (-some->> d (org-x-dag-timestamp-to-epoch)))
+                   (s* (-some->> s (org-x-dag-timestamp-to-epoch))))
+             (-if-let (epoch (if (and d* s*) (min d* s*) (or s* d*)))
+                 (if (< (+ (float-time) org-x-iterator-active-future-offset)
+                        epoch)
+                     :active
+                   :refill)
+               :unknown)))
+          (`(:iter-complete ,_) :complete))))
+    (org-x-dag-with-unmasked-action-ids files
+      (pcase it-local
+        (`(:sp-iter . ,status-data)
+         (let ((status (get-status status-data))
+               (tags (org-x-dag-id->tags it)))
+           (-> (org-x-dag-format-tag-node tags it)
+               (org-add-props nil
+                   'x-status status)
+               (list))))))))
 
 (defun org-x-dag-itemize-incubated (files)
   (org-x-dag-with-unmasked-action-ids files
@@ -2994,12 +3133,15 @@ FUTURE-LIMIT in a list."
         ((map-ns
           (ns)
           (-let (((&plist :planned p :committed c :scheduled-actions s) ns))
-            (list (-intersection p wkp-ids) c s))))
+            (list :planned (-intersection p wkp-ids)
+                  :committed c
+                  :scheduled-actions s))))
       (org-x-dag-with-ids files
         (pcase (either-from-right (org-x-dag-id->bs it) nil)
-          (`(:quarterly :active ,dead)
-           (let* ((tags (org-x-dag-id->tags it))
-                  (date (org-x-dag-quarter-tags-to-date tags)))
+          (`(:quarterly :active ,p)
+           (-let* (((&plist :deadline dead) p)
+                   (tags (org-x-dag-id->tags it))
+                   (date (org-x-dag-quarter-tags-to-date tags)))
              (when (org-x-dag-datetime= q-date date)
                ;; TODO this network status thing should probably be a feature
                ;; in all planning nodes, since we are guaranteed to have a
@@ -3019,14 +3161,11 @@ FUTURE-LIMIT in a list."
 ;; and not doing these convoluted date checks (which won't work in all cases
 ;; anyways because they assume the week start will never change)
 (defun org-x-dag-itemize-wkp (files)
-  (let ((span (org-x-dag->weekly-span)))
+  (-when-let (span (org-x-dag->weekly-span))
     (org-x-dag-with-ids files
       (pcase (either-from-right (org-x-dag-id->bs it) nil)
-        (`(:weekly :active ,p)
-         (-let* (((&plist :date d :offset o) p)
-                 (abs (+ d o))
-                 (day (->> (calendar-gregorian-from-absolute abs)
-                           (calendar-day-of-week))))
+        (`(:weekly :leaf :active ,abs)
+         (let ((day (org-x-dag-abs-to-day-of-week abs)))
            (when (interval-contains-p abs span)
              (let ((ns (-some-> (org-x-dag-id->ns it)
                          (either-from (-const nil) #'identity)))
@@ -3165,29 +3304,45 @@ FUTURE-LIMIT in a list."
 (defun org-x-dag-itemize-agenda (files sel-date)
   (let ((todayp (org-x-dag-date= (org-x-dag-current-date) sel-date)))
     (cl-flet*
-        ((get-datetimes
-          (donep dt-fun pts)
+        ((past-p
+          (datetime)
+          (org-x-dag-date< datetime sel-date))
+         (get-datetimes
+          (donep keep-most-recent-p dt-fun pts)
           (if donep
               (-let (((&plist :datetime) pts))
                 (when (org-x-dag-date= datetime sel-date)
                   `(,datetime)))
             (-when-let (datetimes (funcall dt-fun sel-date pts))
-              (if todayp datetimes
-                (--drop-while (org-x-dag-date< it sel-date) datetimes)))))
+              (cond
+               (todayp
+                datetimes)
+               (keep-most-recent-p
+                (-let (((past rest) (-split-with #'past-p datetimes)))
+                  (if past (cons (-last-item past) rest) rest)))
+               (t
+                (-drop-while #'past-p datetimes))))))
          (expand-datetimes
-          (id donep which dt-fun)
+          (id donep keep-past-p which dt-fun post-fun)
           (-when-let (pts (-some->> (org-x-dag-id->planning-timestamp which id)
                             (org-x-dag-partition-timestamp)))
-            (-when-let (ds (get-datetimes donep dt-fun pts))
+            (-when-let (ds (get-datetimes donep keep-past-p dt-fun pts))
               (-let ((tags (org-x-dag-id->tags id))
                      ((&plist :pos) pts))
-                (--map (list :pos pos :datetime it :tags tags :id id) ds)))))
+                (->> (-map post-fun ds)
+                     (--map (list :pos pos :datetime it :tags tags :id id)))))))
          (scheduled-datetimes
           (id donep)
-          (expand-datetimes id donep :scheduled #'org-x-dag-get-scheduled-at))
+          (expand-datetimes id donep nil :scheduled
+                            #'org-x-dag-get-scheduled-at
+                            #'identity))
          (deadlined-datetimes
           (id donep)
-          (expand-datetimes id donep :deadline #'org-x-dag-get-deadlines-at))
+          (expand-datetimes id donep t :deadline
+                            #'org-x-dag-get-deadlines-at
+                            (lambda (datetime)
+                              (if (org-x-dag-date= datetime sel-date) datetime
+                                (car (org-x-dag-datetime-split datetime))))))
          (add-sched
           (acc id donep)
           (-let (((acc-d acc-s) acc)
@@ -3390,6 +3545,19 @@ FUTURE-LIMIT in a list."
   (-> (org-x-dag-format-month-tag month)
       (org-x-dag-headlines-find-tag headlines)))
 
+(defun org-x-dag-headlines-find-date (date headlines)
+  (cl-flet
+      ((has-date-p
+        (date headline)
+        (-when-let (sched (-some->> (org-ml-headline-get-planning headline)
+                            (org-ml-get-property :scheduled)
+                            (org-ml-timestamp-get-start-time)
+                            (org-x-dag-datetime-split)
+                            (car)
+                            (org-x-dag-date-to-absolute)))
+          (= sched date))))
+    (--find (has-date-p date it) headlines)))
+
 (defun org-x-dag-headlines-find-day (day headlines)
   (-> (org-x-dag-format-day-tag day)
       (org-x-dag-headlines-find-tag headlines)))
@@ -3430,16 +3598,36 @@ FUTURE-LIMIT in a list."
         (tag (org-x-dag-format-month-tag month)))
     (org-x-dag-build-planning-headline title tag 2 nil subheadlines)))
 
+(defun org-x-dag-build-week-headline (y m d level subheadlines)
+  (let ((title (format "%d-%02d-%02d" y m d)))
+    (->> (apply #'org-ml-build-headline!
+                :title-text title
+                :level level
+                :todo-keyword org-x-kw-todo
+                :planning `(:scheduled (,y ,m ,d))
+                subheadlines)
+         (org-ml-headline-set-node-property org-x-prop-week-len "7")
+         (org-x-dag-headline-add-id))))
+
+(defun org-x-dag-build-day-of-week-headline (level date subheadlines)
+  (-let* (((y m d) date)
+          (daynum (->> (org-x-dag-date-to-gregorian date)
+                       (calendar-day-of-week)))
+          (title (elt calendar-day-name-array daynum)))
+    (->> (apply #'org-ml-build-headline!
+                :title-text title
+                :level level
+                :todo-keyword org-x-kw-todo
+                :planning `(:scheduled (,y ,m ,d))
+                subheadlines)
+         (org-x-dag-headline-add-id))))
+
 (defun org-x-dag-build-day-headline (date subheadlines)
   (-let* (((y m d) date)
           (title (format "%d-%02d-%02d" y m d))
           (tag (org-x-dag-format-day-tag d)))
     (org-x-dag-build-planning-headline title tag 3 nil subheadlines)))
 
-(defun org-x-dag-build-day-of-week-headline (daynum offset subheadlines)
-  (let ((title (elt calendar-day-name-array daynum))
-        (tag (org-x-dag-format-offset-tag offset)))
-    (org-x-dag-build-planning-headline title tag 3 nil subheadlines)))
 
 ;; headline ids
 
@@ -3482,11 +3670,15 @@ FUTURE-LIMIT in a list."
                                       :title-text (plist-get it :desc)
                                       :tags `(,(plist-get it :tag))))))
 
-(defun org-x-dag-wkp-empty ()
-  (->> (-iterate #'1+ 0 7)
-       (--annotate (mod (+ org-x-dag-weekday-start it) 7))
-       (--map (org-x-dag-build-day-of-week-headline (car it) (cdr it) nil))))
-
+(defun org-x-dag-wkp-empty (date)
+  (let ((abs (-if-let (span (org-x-dag-weekly-span date))
+                 (car span)
+               (->> (org-x-dag-date-to-week-start date)
+                    (org-x-dag-date-to-absolute)))))
+    (->> (-iterate #'1+ 0 7)
+         (--map (org-x-dag-absolute-to-date (+ abs it)))
+         (--map (org-x-dag-build-day-of-week-headline 4 it nil)))))
+  
 ;;; stateful buffer function
 
 ;; nested headline manipulation
@@ -3670,43 +3862,45 @@ FUTURE-LIMIT in a list."
 ;;            (org-x-dag-build-day-of-week-headline daynum hls))
 ;;          plan))
 
-(defun org-x-dag-wkp-get-headline-inner (y m d)
+(defun org-x-dag-wkp-get-headline-inner (date-abs)
   (org-x-with-file (org-x-dag->planning-file :weekly)
-    (->> (org-ml-parse-subtrees 'all)
-         (org-x-dag-headlines-find-year y)
-         (org-ml-headline-get-subheadlines)
-         (org-x-dag-headlines-find-month m)
-         (org-ml-headline-get-subheadlines)
-         (org-x-dag-headlines-find-day d))))
+    (-let (((m _ y) (calendar-gregorian-from-absolute date-abs)))
+      (->> (org-ml-parse-subtrees 'all)
+           (org-x-dag-headlines-find-year y)
+           (org-ml-headline-get-subheadlines)
+           (org-x-dag-headlines-find-month m)
+           (org-ml-headline-get-subheadlines)
+           (org-x-dag-headlines-find-date date-abs)))))
 
 (defun org-x-dag-wkp-get-week-headline (date)
-  (-let (((y m d) (->> (org-x-dag-weekly-span date)
-                       (car)
-                       (org-x-dag-absolute-to-date))))
-    (org-x-dag-wkp-get-headline-inner y m d)))
+  (-when-let (abs (car (org-x-dag-weekly-span date)))
+    (org-x-dag-wkp-get-headline-inner abs)))
 
 (defun org-x-dag-wkp-get-day-headline (date)
-  (-let ((abs (car (org-x-dag-weekly-span date)))
-         ((y m d) (org-x-dag-absolute-to-date abs))
-         (offset (- (org-x-dag-date-to-absolute date) abs)))
-    (->> (org-x-dag-wkp-get-headline-inner y m d)
-         (org-x-dag-headlines-find-offset o))))
+  (-when-let (abs (car (org-x-dag-weekly-span date)))
+    (let ((day-abs (org-x-dag-date-to-absolute date)))
+      (->> (org-x-dag-wkp-get-headline-inner abs)
+           (org-ml-headline-get-subheadlines)
+           (org-x-dag-headlines-find-date day-abs)))))
 
 (defun org-x-dag-wkp-set-headlines (date headlines)
-  (-let* (((y m d) (->> (org-x-dag->weekly-span)
-                        (car)
-                        (org-x-dag-absolute-to-date)))
+  (-let* ((abs (or (car (org-x-dag->weekly-span))
+                   ;; TODO this should all be one command (get weekly span or
+                   ;; make a new one if not found)
+                   (->> (org-x-dag-date-to-week-start date)
+                        (org-x-dag-date-to-absolute))))
+          ((y m d) (org-x-dag-absolute-to-date abs))
           (path (org-x-dag->planning-file :weekly))
           (find-year (-partial #'org-x-dag-headlines-find-year y))
           (find-month (-partial #'org-x-dag-headlines-find-month m))
-          (find-day (-partial #'org-x-dag-headlines-find-day d))
+          (find-date (-partial #'org-x-dag-headlines-find-date abs))
           (build-year (-partial #'org-x-dag-build-year-headline y))
           (build-month (-partial #'org-x-dag-build-month-headline m))
-          (build-day (-partial #'org-x-dag-build-day-headline date)))
+          (build-day (-partial #'org-x-dag-build-week-headline y m d 3)))
     (org-x-dag-headline-set-nested path headlines
       `((,find-year ,build-year)
         (,find-month ,build-month)
-        (,find-day ,build-day)))))
+        (,find-date ,build-day)))))
 
 ;; TODO these functions need to take dates and not 'week's (whatever those are)
 ;; (defun org-x-dag-wkp-get (date)
@@ -3886,7 +4080,7 @@ FUTURE-LIMIT in a list."
   (org-x-dag-qtp-set-headlines date (org-x-dag-qtp-empty)))
 
 (defun org-x-dag--new-wkp (date)
-  (org-x-dag-wkp-set-headlines date (org-x-dag-wkp-empty)))
+  (org-x-dag-wkp-set-headlines date (org-x-dag-wkp-empty date)))
 
 (defun org-x-dag-new-qtp ()
   (interactive)
@@ -4353,17 +4547,18 @@ FUTURE-LIMIT in a list."
                          (ancestry-status (plist-get a :canceled-parent-p)))
                    (list "Active" (format "Mask Status: %s" ancestry-status))))
 
-                (`(:quarterly :active ,dead)
-                 (->> (if dead (->> (org-ml-to-trimmed-string dead)
+                (`(:quarterly :active ,p)
+                 (-let (((&plist :deadline dl) p))
+                   (->> (if dl (->> (org-ml-to-trimmed-string dl)
                                     (format "deadline: %s"))
-                        "no deadline")
-                      (format "Active with %s")
-                      (list)))
+                          "no deadline")
+                        (format "Active with %s")
+                        (list))))
                 (`(:quarterly :complete ,comptime)
                  (list (format-comptime "quarterly plan" comptime)))
-                (`(:weekly :active)
-                 "Active")
-                (`(:weekly :complete ,comptime)
+                (`(:weekly :leaf :active ,_)
+                 '("Active"))
+                (`(:weekly :leaf :complete ,comptime)
                  (list (format-comptime "weekly plan" comptime)))
                 (`(:daily :active (:sched ,sched))
                  (-let (((y m d H M) (org-ml-timestamp-get-start-time sched)))
@@ -4773,7 +4968,10 @@ In the order of display
               (-let* ((ns (get-text-property 1 'x-network-status line))
                       ((rank text)
                        (if (not ns) '(0 "No Network Status")
-                         (-let (((p s c) ns))
+                         (-let (((&plist :planned p
+                                         :scheduled-actions s
+                                         :committed c)
+                                 ns))
                            (cond
                             ((and s c)
                              '(5 "Committed | Scheduled"))
@@ -4802,8 +5000,7 @@ In the order of display
             (lambda (line)
               (-let* ((ns (get-text-property 1 'x-network-status line))
                       (day (get-text-property 1 'x-day line))
-                      ;; TODO not sure if this will work anymore
-                      (day-name (alist-get day org-x-dag-weekly-tags))
+                      (day-name (org-x-dag-day-of-week-to-tag day))
                       ((rank text)
                        (if (not ns) '(0 "No Network Status")
                          (-let (((&plist :planned p :committed c) ns))
@@ -4880,8 +5077,11 @@ review phase)"
             (lambda (line)
               (let ((s (get-text-property 1 'x-status line)))
                 (pcase s
-                  (:iter-empty "1. Empty")
-                  (:iter-active "2. Active")))))))))))
+                  (:unknown "0. Unknown")
+                  (:complete "1. Refill")
+                  (:empty "2. Empty")
+                  (:refill "3. Refill")
+                  (:active "4. Active")))))))))))
 
 (defun org-x-dag-agenda-errors ()
   "Show the critical errors agenda view."

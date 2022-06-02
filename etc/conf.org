@@ -3762,12 +3762,7 @@ Initialize by running =nd/mu-init=.
                                "gmail"
                                "natedwarshuis@gmail.com"
                                "smtp.gmail.com"
-                               'delete)
-         (nd/make-mu4e-context "gatech"
-                               "gatech"
-                               "ndwarshuis3@gatech.edu"
-                               "smtp.office365.com"
-                               'sent)))
+                               'delete)))
   
   ;; enable visual line mode and spell checking
   (add-hook 'mu4e-compose-mode-hook 'turn-off-auto-fill)
@@ -3836,13 +3831,9 @@ Initialize by running =nd/mu-init=.
          (s-trim)))
 
   (defun nd/xoauth2-get-secrets (host user port)
-    (when
-        (or (and (string= host "smtp.office365.com")
-                 (string= user "ndwarshuis3@gatech.edu")
-                 (string= port "587"))
-            (and (string= host "smtp.gmail.com")
-                 (string= user "natedwarshuis@gmail.com")
-                 (string= port "587")))
+    (when (and (string= host "smtp.gmail.com")
+               (string= user "natedwarshuis@gmail.com")
+               (string= port "587"))
       (list :token-url (nd/lookup-oauth-secret "token_url" user)
             :client-id (nd/lookup-oauth-secret "client_id" user)
             :client-secret (nd/lookup-oauth-secret "client_secret" user)

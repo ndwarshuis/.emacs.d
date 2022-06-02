@@ -151,5 +151,9 @@ left/right slots."
         (!cons (cadr it) acc-left)))
     `(,(nreverse acc-left) ,(nreverse acc-right))))
 
+(defun either-maybe (fun either)
+  "Return nil if EITHER is left and apply FUN otherwise."
+  (either-from either (-const nil) fun))
+
 (provide 'either)
 ;;; either.el ends here
