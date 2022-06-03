@@ -668,16 +668,13 @@ used for optimization."
     (lambda (child-bs)
       (funcall stop-fun (plist-get child-bs :local)))))
 
-;; [Status a] -> b -> (a -> a -> Status Bool) -> (a -> Bool) -> (a -> Maybe c)
+;; [Status a] -> b -> (a -> a -> Status Bool) -> (a -> Bool) -> (a -> [c])
 ;; -> (a -> [c] -> Status b) -> Status b
 (defun org-x-dag-bs-rankfold-children (bss default rank-fun stop-fun acc-fun trans-fun)
   (declare (indent 2))
   (let ((err (either :left "Child error")))
     (cl-labels
-        ((cons-maybe
-          (x xs)
-          (if x (cons x xs) xs))
-         (fold-rank
+        ((fold-rank
           (acc xs)
           (if (not xs) (either :right acc)
             (-let (((x . rest) xs))
@@ -685,10 +682,17 @@ used for optimization."
                 (`(:right ,r)
                  (-let (((cur as) acc))
                    (either>>= (funcall rank-fun cur r)
-                     (let ((as* (cons-maybe (funcall acc-fun it) as)))
+                     (let ((as* (append (funcall acc-fun it) as)))
                        (if (not it) (fold-rank `(,cur ,as*) rest)
                          (if (funcall stop-fun r)
-                             (either :right `(,r ,as*))
+                             ;; if we encounter the stop condition, apply the
+                             ;; accumulator function to all remaining rights
+                             ;; and collect as we break the recursion loop
+                             (->> (either-rights rest)
+                                  (--mapcat (funcall acc-fun it))
+                                  (append as*)
+                                  (list r)
+                                  (either :right))
                            (fold-rank `(,r ,as*) rest)))))))
                 (_ err))))))
       (if (not bss) (either :right default)
@@ -704,13 +708,13 @@ used for optimization."
           (_ err))))))
 
 (defun org-x-dag-bs-action-rankfold-children (bss default rank-fun stop-fun
-                                                  trans-fun)
+                                                  acc-fun trans-fun)
   (cl-flet ((get-local (x) (plist-get x :local)))
     (declare (indent 2))
     (org-x-dag-bs-rankfold-children bss default
       (-on rank-fun #'get-local)
       (-compose stop-fun #'get-local)
-      (-const nil)
+      acc-fun
       (lambda (x as)
         (funcall trans-fun (get-local x) as)))))
 
@@ -795,6 +799,9 @@ deadline (eg via epoch time) or if it has a repeater."
       ((new-proj
         (status)
         (either :right `(:sp-proj ,status)))
+       (new-active-proj
+        (timestamps)
+        (either :right `(:sp-proj :proj-active (:child-scheds ,timestamps))))
        (is-next
         (task-data)
         (-let (((&plist :todo :sched) task-data))
@@ -839,7 +846,7 @@ deadline (eg via epoch time) or if it has a repeater."
                      (`((:sp-task :task-active ,a) (:sp-task :task-active ,b))
                       (and (not (is-next a)) (is-next b)))
 
-                     (`(,(or `(:sp-proj :proj-active)
+                     (`(,(or `(:sp-proj :proj-active ,_)
                              `(:sp-proj :proj-wait)
                              `(:sp-proj :proj-held)
                              `(:sp-proj :proj-stuck)
@@ -849,7 +856,7 @@ deadline (eg via epoch time) or if it has a repeater."
                       (is-next d))
 
                      (`((:sp-task :task-active ,d)
-                        ,(or `(:sp-proj :proj-active)
+                        ,(or `(:sp-proj :proj-active ,_)
                              `(:sp-proj :proj-wait)
                              `(:sp-proj :proj-held)
                              `(:sp-proj :proj-stuck)
@@ -858,8 +865,8 @@ deadline (eg via epoch time) or if it has a repeater."
                       (not (is-next d)))
 
                      (`((:sp-iter :iter-active ,_) ,_) nil)
-                     (`((:sp-proj :proj-active) ,_) nil)
-                     (`(,_ (:sp-proj :proj-active)) t)
+                     (`((:sp-proj :proj-active ,_) ,_) nil)
+                     (`(,_ (:sp-proj :proj-active ,_)) t)
                      (`(,_ (:sp-iter :iter-active ,_)) t)
 
                      (`((:sp-proj :proj-wait) ,_) nil)
@@ -888,23 +895,30 @@ deadline (eg via epoch time) or if it has a repeater."
                 (`(:sp-task :task-active ,d) (is-next d))
                 (_ nil)))
 
-            (lambda (acc _)
+            (lambda (next)
+              (pcase next
+                (`(:sp-iter :iter-active ,d) (plist-get d :child-scheds))
+                (`(:sp-task :task-active ,d) (list (plist-get d :sched)))
+                (`(:sp-proj :proj-active ,d) (plist-get d :child-scheds))
+                (_ nil)))
+
+            (lambda (acc cs)
               (pcase acc
                 ((or `(:sp-proj :proj-complete ,_)
                      `(:sp-task :task-complete ,_)
                      `(:sp-iter :iter-complete ,_))
                  (->> "Active projects must have at least one active child"
                       (either :left )))
+                (`(:sp-proj :proj-active ,_) (new-active-proj cs))
                 (`(:sp-proj ,s) (new-proj s))
-                (`(:sp-iter :iter-active ,_) (new-proj :proj-active))
+                (`(:sp-iter :iter-active ,_) (new-active-proj cs))
                 (`(:sp-iter :iter-empty) (new-proj :proj-stuck))
                 (`(:sp-task :task-active ,d)
                  (-let (((&plist :todo o :sched s) d))
                    (cond
-                    ((equal o org-x-kw-todo) (->> (if s :proj-active
-                                                    :proj-stuck)
-                                                  (new-proj)))
-                    ((equal o org-x-kw-next) (new-proj :proj-active))
+                    ((equal o org-x-kw-todo) (if s (new-active-proj cs)
+                                               (new-proj :proj-stuck)))
+                    ((equal o org-x-kw-next) (new-active-proj cs))
                     ((equal o org-x-kw-wait) (new-proj :proj-wait))
                     ((equal o org-x-kw-hold) (new-proj :proj-held))
                     (t (org-x-dag-bs-error-kw "Task action" o)))))
@@ -919,29 +933,145 @@ deadline (eg via epoch time) or if it has a repeater."
     (-when-let (p (alist-get org-x-prop-parent-type props nil nil #'equal))
       (equal p org-x-prop-parent-type-iterator))))
 
-;; TODO these next two could be made more efficient by cutting out the
-;; earlystop form and returning error in the rank form (the trans form is
-;; still needed in case there is only one child)
-(defun org-x-dag-bs-action-subiter-complete-fold (child-bss comptime type-name
-                                                            comp-key)
+(defun org-x-dag-bs-action-subiter-complete-fold (child-bss comptime type-name)
   (declare (indent 2))
-  (org-x-dag-bs-action-check-children child-bss
-      (org-x-dag-left "Completed %s cannot have active children" type-name)
-      (either :right `(,comp-key ,comptime))
-      `(,comp-key ,comptime)
-    (lambda (local)
-      (pcase local
-        (`(:si-complete ,_) t)
-        (_ nil)))))
+  (let ((ret `(,(if child-bss :si-proj :si-task) ,comptime)))
+    (org-x-dag-bs-action-check-children child-bss
+        (either :left "Completed sub-iterators cannot have active children")
+        (either :right ret)
+        ret
+      (lambda (local)
+        (pcase local
+          (`(:si-task :task-complete ,_) t)
+          (`(:si-proj :proj-complete ,_) t)
+          (_ nil))))))
 
 (defun org-x-dag-bs-action-subiter-todo-fold (child-bss default trans-fun)
   (declare (indent 2))
   (org-x-dag-bs-action-rankfold-children child-bss default
     (lambda (acc next)
       (pcase `(,acc ,next)
-        (`((:si-active ,a) (:si-active ,b))
+        ;; for active tasks, the furthest in the future is ranked the highest
+        (`((:si-task :task-active ,a) (:si-task :task-active ,b))
          (-let (((&plist :sched as :dead ad) a)
                 ((&plist :sched bs :dead bd) b))
+           (cond
+            ((or (xor as bs) (xor ad bd))
+             (->> "All sub-iters must have the same planning configuration"
+                  (either :left)))
+            ((and as bs (xor (org-ml-time-is-long as) (org-ml-time-is-long bs)))
+             (->> "Sub-iters must have scheduled timestamp with same length"
+                  (either :left)))
+            ((and ad bd (xor (org-ml-time-is-long ad) (org-ml-time-is-long bd)))
+             (->> "Sub-iters must have deadline timestamp with same length"
+                  (either :left)))
+            ;; ASSUME this won't fail since the datetimes are assumed to be the
+            ;; same length as per rules above
+            ((and ad bd)
+             (->> (org-x-dag-datetime< (org-ml-timestamp-get-start-time ad)
+                                       (org-ml-timestamp-get-start-time bd))
+                  (either :right)))
+            (t
+             (->> (org-x-dag-datetime< (org-ml-timestamp-get-start-time as)
+                                       (org-ml-timestamp-get-start-time bs))
+                  (either :right))))))
+        ((or `((:si-task . ,_) (:si-proj . ,_))
+             `((:si-proj . ,_) (:si-task . ,_)))
+         (either :left "Sub-iterators must have same project structure"))
+        (`(,(or `(:si-task :task-active ,_) `(:si-proj :proj-active ,_)) ,_)
+         (either :right nil))
+        (`(,_ ,(or `(:si-task :task-active ,_) `(:si-proj :proj-active ,_)))
+         (either :right t))
+        (`(,_ ,_) (either :right nil))))
+    (lambda (next)
+      (pcase next
+        ((or (:si-task :task-active ,_) `(:si-proj :proj-active ,_)) t)
+        (_ nil)))
+    (lambda (next)
+      (pcase next
+        (`(:si-proj :proj-active ,d) (plist-get d :child-scheds))
+        (`(:si-task :task-active ,d) (list (plist-get d :sched)))
+        (,_ nil)))
+    trans-fun))
+
+(defun org-x-dag-node-is-iterator-p (node)
+  (org-x-dag-node-data-is-iterator-p (plist-get node :node-meta)))
+
+(defun org-x-dag-bs-action-subiter-inner (node-data ancestry child-bss)
+  (cl-flet
+      ((new-active-proj
+        (d s cs)
+        (->> (list :dead d :child-scheds cs :leading-sched s)
+             (list :si-proj :proj-active)
+             (either :right))))
+    (org-x-dag-bs-action-with-closed node-data ancestry "sub-iterators"
+      (if child-bss
+          `(:si-proj :proj-complete ,it-comptime)
+        `(:si-task :task-complete ,it-comptime))
+
+      (let ((ret `(:si-proj :proj-complete ,comptime)))
+        (org-x-dag-bs-action-check-children child-bss
+            (either :left "Completed sub-iterators cannot have active children")
+            (either :right ret)
+            ret
+          (lambda (local)
+            (pcase local
+              (`(:si-task :task-complete ,_) t)
+              (`(:si-proj :proj-complete ,_) t)
+              (_ nil)))))
+
+      (-let (((sched dead) (-some->> it-planning
+                             (org-ml-get-properties '(:scheduled :deadline)))))
+        (cond
+         ((and sched child-bss)
+          (either :left "Project sub-iterators cannot be scheduled"))
+         ((and dead child-bss)
+          (either :left "Project sub-iterators cannot be deadlined"))
+         ((org-x-dag-node-data-is-iterator-p node-data)
+          (either :left "Iterators cannot be nested"))
+         ((org-x-dag-action-dead-after-parent-p ancestry dead)
+          (either :left "Sub-iterator deadline must not start after parent"))
+         ((equal it-todo org-x-kw-todo)
+          (org-x-dag-bs-action-subiter-todo-fold child-bss
+              `(:si-task :task-active (:sched ,sched :dead ,dead))
+            (lambda (acc cs)
+              (pcase acc
+                ((or (:si-proj :proj-complete ,_)
+                     (:si-task :task-complete ,_))
+                 (-> "Active sub-iterator must have at least one active child"
+                     (org-x-dag-left)))
+                (`(:si-proj :proj-active ,ts-data)
+                 (-let (((&plist :dead d :leading-sched s) ts-data))
+                   (new-active-proj d s cs)))
+                (`(:si-task :task-active ,ts-data)
+                 (-let (((&plist :dead d :sched s) ts-data))
+                   (new-active-proj d s cs)))
+                (e (error "Invalid pattern: %s" e))))))
+         (t
+          (org-x-dag-bs-error-kw "Sub-iterator" it-todo)))))))
+
+(defun org-x-dag-bs-action-subiter-complete-fold (child-bss comptime type-name
+                                                            child-key childless-key)
+  (declare (indent 2))
+  (let ((ret `(,(if child-bss child-key childless-key) ,comptime)))
+  (org-x-dag-bs-action-check-children child-bss
+      (org-x-dag-left "Completed %s cannot have active children" type-name)
+      (either :right ret)
+      ret
+    (lambda (local)
+      (pcase local
+        (`(:si-task :task-complete ,_) t)
+        (`(:si-proj :proj-complete ,_) t)
+        (_ nil))))))
+
+(defun org-x-dag-bs-action-iter-todo-fold (child-bss default trans-fun)
+  (declare (indent 2))
+  (org-x-dag-bs-action-rankfold-children child-bss default
+    (lambda (acc next)
+      (pcase `(,acc ,next)
+        (`((:si-active ,a) (:si-active ,b))
+         (-let (((&plist :scheds as :dead ad) a)
+                ((&plist :scheds bs :dead bd) b))
            (cond
             ((or (xor as bs) (xor ad bd))
              (->> "All sub-iters must have the same planning configuration"
@@ -971,57 +1101,37 @@ deadline (eg via epoch time) or if it has a repeater."
         (_ nil)))
     trans-fun))
 
-(defun org-x-dag-node-is-iterator-p (node)
-  (org-x-dag-node-data-is-iterator-p (plist-get node :node-meta)))
-
-(defun org-x-dag-bs-action-subiter-inner (node-data ancestry child-bss)
-  (org-x-dag-bs-action-with-closed node-data ancestry "sub-iterators"
-    `(:si-complete ,it-comptime)
-    (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
-      "sub-iterators" :si-complete)
-    (-let (((sched dead) (-some->> it-planning
-                           (org-ml-get-properties '(:scheduled :deadline)))))
+(defun org-x-dag-bs-action-iter-inner (node-data ancestry child-bss)
+  (cl-flet
+      ((new-active-iter
+        (d s cs)
+        (->> (list :dead d :child-scheds cs :leading-sched s)
+             (list :iter-active)
+             (either :right))))
+    (org-x-dag-bs-action-with-closed node-data ancestry "iterators"
+      `(:iter-complete ,it-comptime)
+      (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
+        "iterators" :iter-complete)
       (cond
-       ((and sched child-bss)
-        (either :left "Sub-iterators with children cannot be scheduled"))
-       ((and dead child-bss)
-        (either :left "Sub-iterators with children cannot be deadlined"))
-       ((org-x-dag-node-data-is-iterator-p node-data)
-        (either :left "Iterators cannot be nested"))
-       ((org-x-dag-action-dead-after-parent-p ancestry dead)
-        (either :left "Sub-iterator deadline must not start after parent"))
+       (it-planning
+        (either :left "Iterators cannot be scheduled or deadlined"))
+       ;; TODO also check for timeshift and archive props
        ((equal it-todo org-x-kw-todo)
-        (org-x-dag-bs-action-subiter-todo-fold child-bss
-            `(:si-active (:sched ,sched :dead ,dead))
-          (lambda (acc _)
+        (org-x-dag-bs-action-subiter-todo-fold child-bss '(:iter-empty)
+          (lambda (acc cs)
             (pcase acc
-              (`(:si-complete ,_)
-               (org-x-dag-left "Active sub-iterator must have at least one active child"))
-              (`(:si-active ,ts-data)
-               (either :right `(:si-active ,ts-data)))
+              ((or `(:si-task :task-complete ,_)
+                   `(:si-proj :proj-complete ,_))
+               (either :right '(:iter-empty)))
+              (`(:si-task :task-active ,ts-data)
+               (-let (((&plist :dead d :sched s) ts-data))
+                 (new-active-iter d s cs)))
+              (`(:si-proj :proj-active ,ts-data)
+               (-let (((&plist :dead d :leading-sched s) ts-data))
+                 (new-active-iter d s cs)))
               (e (error "Invalid pattern: %s" e))))))
        (t
-        (org-x-dag-bs-error-kw "Sub-iterator" it-todo))))))
-
-(defun org-x-dag-bs-action-iter-inner (node-data ancestry child-bss)
-  (org-x-dag-bs-action-with-closed node-data ancestry "iterators"
-    `(:iter-complete ,it-comptime)
-    (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
-      "iterators" :iter-complete)
-    (cond
-     (it-planning
-      (either :left "Iterators cannot be scheduled or deadlined"))
-     ;; TODO also check for timeshift and archive props
-     ((equal it-todo org-x-kw-todo)
-      (org-x-dag-bs-action-subiter-todo-fold child-bss '(:iter-empty)
-        (lambda (acc _)
-          (pcase acc
-            (`(:si-complete ,_) (either :right '(:iter-empty)))
-            (`(:si-active ,ts-data)
-             (either :right `(:iter-active ,ts-data)))
-            (e (error "Invalid pattern: %s" e))))))
-     (t
-      (org-x-dag-bs-error-kw "Iterator" it-todo)))))
+        (org-x-dag-bs-error-kw "Iterator" it-todo))))))
 
 (defun org-x-dag-bs-epg-inner (node ancestry child-bss)
   (let ((is-complete
