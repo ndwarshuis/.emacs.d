@@ -1528,9 +1528,24 @@ deadline (eg via epoch time) or if it has a repeater."
   (-some->> (org-x-dag-adjlist-id-hl-meta-prop adjlist :planning id)
     (org-ml-get-property which)))
 
-(defun org-x-dag-adjlist-id-planning-datetime (adjlist which id)
-  (-some->> (org-x-dag-adjlist-id-planning adjlist which id)
-    (org-ml-timestamp-get-start-time)))
+;; (defun org-x-dag-adjlist-id-planning-datetime (adjlist which id)
+;;   (-some->> (org-x-dag-adjlist-id-planning adjlist which id)
+;;     (org-ml-timestamp-get-start-time)))
+
+(defun org-x-dag-adjlist-id-all-sched (adjlist id)
+  (-when-let (bs (-> (org-x-dag-adjlist-id-bs adjlist id)
+                     (either-from-right nil)))
+    (pcase bs
+      (`(:sp-task :task-active ,d)
+       (-some-> (plist-get d :sched) (list)))
+      (`(:sp-subiter :si-task :task-active ,d)
+       (-some-> (plist-get d :sched) (list)))
+      (`(:sp-proj :proj-active ,d)
+       (plist-get d :child-scheds))
+      (`(:sp-subiter :si-proj :proj-active ,d)
+       (plist-get d :child-scheds))
+      (`(:sp-iter :iter-nonempty :nonempty-active ,d)
+       (plist-get d :child-scheds)))))
 
 (defun org-x-dag-adjlist-id-todo (adjlist id)
   (org-x-dag-adjlist-id-hl-meta-prop adjlist :todo id))
@@ -1744,8 +1759,8 @@ denoted by CUR-KEY with any errors that are found."
             (put-scheduled-action-maybe
              (lambda (id committed-ids)
                ;; TODO what about repeaters?
-               (-when-let (sched (org-x-dag-adjlist-id-planning-datetime
-                                  adjlist :scheduled id))
+               ;; TODO check these to see if they are in the planning period
+               (-when-let (scheds (org-x-dag-adjlist-id-all-sched adjlist id))
                  (when (and (not (org-x-dag-adjlist-id-done-p adjlist id))
                             committed-ids)
                    (->> q-committed
