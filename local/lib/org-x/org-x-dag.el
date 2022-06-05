@@ -3151,8 +3151,10 @@ FUTURE-LIMIT in a list."
     (-when-let (type (pcase it-local
                        (`(:sp-proj :proj-complete ,_) nil)
                        (`(:sp-task :task-complete ,_) nil)
-                       (`(:sp-iter :iter-complete ,_) nil)
-                       (`(:sp-subiter :si-complete ,_) nil)
+                       (`(:sp-iter :iter-empty :empty-complete ,_) nil)
+                       (`(:sp-iter :iter-nonempty :nonempty-complete ,_) nil)
+                       (`(:sp-subiter :si-proj :proj-complete ,_) nil)
+                       (`(:sp-subiter :si-task :task-complete ,_) nil)
                        (`(:sp-proj . ,_) :proj)
                        (`(:sp-task . ,_ ) :task)
                        (`(:sp-iter . ,_) :iter)
