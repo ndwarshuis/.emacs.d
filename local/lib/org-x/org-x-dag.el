@@ -2584,12 +2584,13 @@ Return value is a list like (BUFFER NON-BUFFER)."
   "Return t if ID has no buffer children."
   (not (org-x-dag-id->buffer-children id)))
 
-(defun org-x-dag-id->is-active-iterator-child-p (id)
-  (-> (org-x-dag-id->buffer-parent id)
-      (org-x-dag-id->bs)
-      (either-from-right nil)
-      (cadr)
-      (eq :iter-active)))
+(defun org-x-dag-id->is-active-toplevel-iterator-child-p (id)
+  (-when-let (parent (org-x-dag-id->buffer-parent id))
+    (-when-let (parent-bs (-> (org-x-dag-id->bs parent)
+                              (either-from-right nil)))
+      (pcase (plist-get (cdr parent-bs) :local)
+        (`(:sp-iter :iter-nonempty :nonempty-active ,_)
+         (org-x-dag-id->is-toplevel-p parent))))))
 
 (defun org-x-dag-id->has-node-property-p (prop value id)
   (->> (alist-get prop (org-x-dag-id->node-properties id) nil nil #'equal)
@@ -3299,25 +3300,33 @@ FUTURE-LIMIT in a list."
 
 (defun org-x-dag-itemize-archived (files)
   (org-x-dag-with-unmasked-action-ids files
-    (-let (((comptime type)
-            (pcase it-local
-              (`(:sp-proj :proj-complete ,c) `(,c :proj))
-              (`(:sp-task :task-complete ,c) `(,c :task))
-              (`(:sp-iter :iter-complete ,c) `(,c :iter))
-              (`(:sp-subiter :si-complete ,c) `(,c :subiter)))))
-      (when (and comptime
-                 (or (and (memq type '(:proj :task))
-                          (org-x-dag-id->is-toplevel-p it))
-                     (eq type :iter)
-                     (and (eq type :subiter)
-                          (org-x-dag-id->is-active-iterator-child-p it))))
-        (-let ((epoch (plist-get comptime :epoch)))
-          (when (org-x-dag-time-is-archivable-p epoch)
-            (let ((tags (org-x-dag-id->tags it)))
-              (-> (org-x-dag-format-tag-node tags it)
-                  (org-add-props nil
-                      'x-type type)
-                  (list)))))))))
+    (-when-let (r (pcase it-local
+                    (`(:sp-proj :proj-complete ,c)
+                     (when (org-x-dag-id->is-toplevel-p it)
+                       `(,c :proj)))
+                    (`(:sp-task :task-complete ,c)
+                     (when (org-x-dag-id->is-toplevel-p it)
+                       `(,c :task)))
+                    (`(:sp-iter :iter-empty :empty-complete ,c)
+                     (when (org-x-dag-id->is-toplevel-p it)
+                       `(,c :iter-empty)))
+                    (`(:sp-iter :iter-nonempty :nonempty-complete ,c)
+                     (when (org-x-dag-id->is-toplevel-p it)
+                       `(,c :iter-nonempty)))
+                    (`(:sp-subiter :si-proj :proj-complete ,c)
+                     (when (org-x-dag-id->is-active-toplevel-iterator-child-p it)
+                       `(,c :subiter-proj)))
+                    (`(:sp-subiter :si-task :task-complete ,c)
+                     (when (org-x-dag-id->is-active-toplevel-iterator-child-p it)
+                       `(,c :subiter-task)))))
+      (-let* (((comptime type) r)
+              (epoch (plist-get comptime :epoch)))
+        (when (org-x-dag-time-is-archivable-p epoch)
+          (let ((tags (org-x-dag-id->tags it)))
+            (-> (org-x-dag-format-tag-node tags it)
+                (org-add-props nil
+                    'x-type type)
+                (list))))))))
 
 (defun org-x-dag-itemize-errors (files)
   (cl-flet
@@ -5204,8 +5213,10 @@ review phase)"
               (cl-case (get-text-property 1 'x-type line)
                 (:proj "Toplevel Projects")
                 (:task "Standalone Tasks")
-                (:iter "Closed Iterators")
-                (:subiter "Toplevel Subiterators"))))))))))
+                (:iter-empty "Closed Empty Iterators")
+                (:iter-nonempty "Closed Active Iterators")
+                (:subiter-proj "Toplevel Subiterator Projects")
+                (:subiter-task "Toplevel Subiterator Tasks"))))))))))
 
 ;; ;; TODO the tags in the far column are redundant
 ;; (defun org-x-dag-agenda-quarterly-plan ()
