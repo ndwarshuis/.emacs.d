@@ -3123,9 +3123,10 @@ FUTURE-LIMIT in a list."
       ((get-status
         (data)
         (pcase data
-          (`(:iter-empty) :empty)
-          (`(:iter-active ,data)
-           (-let* (((&plist :dead d :sched s) data)
+          (`(:iter-empty :empty-complete ,_) :complete)
+          (`(:iter-empty :empty-active ,_) :empty)
+          (`(:iter-nonempty :nonempty-active ,data)
+           (-let* (((&plist :dead d :leading-sched s) data)
                    (d* (-some->> d (org-x-dag-timestamp-to-epoch)))
                    (s* (-some->> s (org-x-dag-timestamp-to-epoch))))
              (-if-let (epoch (if (and d* s*) (min d* s*) (or s* d*)))
@@ -3134,7 +3135,7 @@ FUTURE-LIMIT in a list."
                      :active
                    :refill)
                :unknown)))
-          (`(:iter-complete ,_) :complete))))
+          (`(:iter-nonempty :nonempty-complete ,_) :complete))))
     (org-x-dag-with-unmasked-action-ids files
       (pcase it-local
         (`(:sp-iter . ,status-data)
@@ -5169,7 +5170,7 @@ review phase)"
               (let ((s (get-text-property 1 'x-status line)))
                 (pcase s
                   (:unknown "0. Unknown")
-                  (:complete "1. Refill")
+                  (:complete "1. Complete")
                   (:empty "2. Empty")
                   (:refill "3. Refill")
                   (:active "4. Active")))))))))))
