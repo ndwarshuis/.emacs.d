@@ -3431,8 +3431,8 @@ FUTURE-LIMIT in a list."
                             #'org-x-dag-get-scheduled-at
                             #'identity))
          (deadlined-datetimes
-          (id donep)
-          (expand-datetimes id donep t :deadline
+          (id)
+          (expand-datetimes id nil t :deadline
                             #'org-x-dag-get-deadlines-at
                             (lambda (datetime)
                               (if (org-x-dag-date= datetime sel-date) datetime
@@ -3443,14 +3443,14 @@ FUTURE-LIMIT in a list."
                  (ss (scheduled-datetimes id donep)))
             `(,acc-d (,@ss ,@acc-s))))
          (add-dead
-          (acc id donep)
+          (acc id)
           (-let (((acc-d acc-s) acc)
-                 (ds (deadlined-datetimes id donep)))
+                 (ds (deadlined-datetimes id)))
             `((,@ds ,@acc-d) ,acc-s)))
          (add-dead-sched
           (acc id donep)
           (-let (((acc-d acc-s) acc)
-                 (ds (deadlined-datetimes id donep))
+                 (ds (deadlined-datetimes id))
                  (ss (scheduled-datetimes id donep)))
             `((,@ds ,@acc-d) (,@ss ,@acc-s))))
          (format-id
@@ -3470,18 +3470,17 @@ FUTURE-LIMIT in a list."
                        (plist-get a :held-parent-p))
                    acc
                  (pcase l
-                   (`(:sp-proj ,(or :proj-active
-                                    :proj-wait
-                                    :proj-held
-                                    :proj-stuck))
-                    (add-dead acc id nil))
-                   (`(:sp-task :task-active ,_)
+                   ((or `(:sp-proj :proj-active ,_)
+                        `(:sp-subiter :si-proj :proj-active ,_)
+                        `(:sp-proj ,(or :proj-wait
+                                        :proj-held
+                                        :proj-stuck)))
+                    (add-dead acc id))
+                   ((or `(:sp-task :task-active ,_)
+                        `(:sp-subiter :si-task :task-active ,_))
                     (add-dead-sched acc id nil))
-                   (`(:sp-task :task-complete ,_)
-                    (add-dead-sched acc id t))
-                   (`(:sp-subiter :si-active ,_)
-                    (add-dead-sched acc id nil))
-                   (`(:sp-subiter :si-complete ,_)
+                   ((or `(:sp-task :task-complete ,_)
+                        `(:sp-subiter :si-task :task-complete ,_))
                     (add-dead-sched acc id t))
                    (_ acc)))))
             (_ acc)))
