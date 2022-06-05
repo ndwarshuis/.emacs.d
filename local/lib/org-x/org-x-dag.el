@@ -3431,8 +3431,8 @@ FUTURE-LIMIT in a list."
                             #'org-x-dag-get-scheduled-at
                             #'identity))
          (deadlined-datetimes
-          (id)
-          (expand-datetimes id nil t :deadline
+          (id donep)
+          (expand-datetimes id donep t :deadline
                             #'org-x-dag-get-deadlines-at
                             (lambda (datetime)
                               (if (org-x-dag-date= datetime sel-date) datetime
@@ -3445,12 +3445,12 @@ FUTURE-LIMIT in a list."
          (add-dead
           (acc id)
           (-let (((acc-d acc-s) acc)
-                 (ds (deadlined-datetimes id)))
+                 (ds (deadlined-datetimes id nil)))
             `((,@ds ,@acc-d) ,acc-s)))
          (add-dead-sched
           (acc id donep)
           (-let (((acc-d acc-s) acc)
-                 (ds (deadlined-datetimes id))
+                 (ds (deadlined-datetimes id donep))
                  (ss (scheduled-datetimes id donep)))
             `((,@ds ,@acc-d) (,@ss ,@acc-s))))
          (format-id
