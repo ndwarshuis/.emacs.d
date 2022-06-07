@@ -590,10 +590,10 @@ used for optimization."
         ;; its parent is a node or none of its parents are nodes
         (cond
          ((and this-todo
-               (setq this-pblock (org-x-dag-property-block next-pos)
-                     pbeg (nth 1 this-pblock)
-                     pend (nth 2 this-pblock)
-                     this-id (org-x-dag-get-local-property pbeg pend id-prop)))
+               (when (setq this-pblock (org-x-dag-property-block next-pos))
+                 (setq pbeg (nth 1 this-pblock)
+                       pend (nth 2 this-pblock)
+                       this-id (org-x-dag-get-local-property pbeg pend id-prop))))
           (setq bury-level nil
                 this-buffer-parent (nth 2 (car node-stack))
                 this-links (or (org-x-dag-get-parent-links (nth 3 this-pblock)
