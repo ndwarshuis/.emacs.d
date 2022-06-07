@@ -682,7 +682,7 @@ used for optimization."
                 (`(:right ,r)
                  (-let (((cur as) acc))
                    (either>>= (funcall rank-fun cur r)
-                     (let ((as* (append (funcall acc-fun it) as)))
+                     (let ((as* (append (funcall acc-fun r) as)))
                        (if (not it) (fold-rank `(,cur ,as*) rest)
                          (if (funcall stop-fun r)
                              ;; if we encounter the stop condition, apply the
@@ -700,7 +700,6 @@ used for optimization."
           (`(:right ,r)
            (if (funcall stop-fun r)
                (->> (funcall acc-fun r)
-                    (list)
                     (funcall trans-fun r))
              (either>>= (fold-rank (list r nil) (cdr bss))
                (-let (((cur as) it))
@@ -714,7 +713,7 @@ used for optimization."
     (org-x-dag-bs-rankfold-children bss default
       (-on rank-fun #'get-local)
       (-compose stop-fun #'get-local)
-      acc-fun
+      (-compose acc-fun #'get-local)
       (lambda (x as)
         (funcall trans-fun (get-local x) as)))))
 
@@ -898,7 +897,7 @@ deadline (eg via epoch time) or if it has a repeater."
             (lambda (next)
               (pcase next
                 (`(:sp-iter :iter-active ,d) (plist-get d :child-scheds))
-                (`(:sp-task :task-active ,d) (list (plist-get d :sched)))
+                (`(:sp-task :task-active ,d) (-some-> (plist-get d :sched) (list)))
                 (`(:sp-proj :proj-active ,d) (plist-get d :child-scheds))
                 (_ nil)))
 
