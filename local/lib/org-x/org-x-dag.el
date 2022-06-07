@@ -907,7 +907,7 @@ deadline (eg via epoch time) or if it has a repeater."
                      `(:sp-task :task-complete ,_)
                      `(:sp-iter :iter-complete ,_))
                  (->> "Active projects must have at least one active child"
-                      (either :left )))
+                      (either :left)))
                 (`(:sp-proj :proj-active ,_) (new-active-proj cs))
                 (`(:sp-proj ,s) (new-proj s))
                 (`(:sp-iter :iter-active ,_) (new-active-proj cs))
@@ -1481,7 +1481,7 @@ deadline (eg via epoch time) or if it has a repeater."
 
 (defun org-x-dag-plist-map (plist key fun)
   (declare (indent 2))
-  (plist-put plist key (funcall fun (plist-get plist key))))
+  (plist-put (-copy plist) key (funcall fun (plist-get plist key))))
 
 (defun org-x-dag-plist-cons (plist key x)
   (declare (indent 2))
@@ -1502,8 +1502,7 @@ deadline (eg via epoch time) or if it has a repeater."
   (let (r)
     (--each targets
       (->> (if (setq r (ht-get htbl it))
-               (either<$> r
-                 (org-x-dag-plist-cons it key id))
+               (either<$> r (org-x-dag-plist-cons it key id))
              (either :right `(,key (,id))))
            (ht-set htbl it)))))
 
@@ -1534,7 +1533,7 @@ deadline (eg via epoch time) or if it has a repeater."
 (defun org-x-dag-adjlist-id-all-sched (adjlist id)
   (-when-let (bs (-> (org-x-dag-adjlist-id-bs adjlist id)
                      (either-from-right nil)))
-    (pcase bs
+    (pcase (plist-get (cdr bs) :local)
       (`(:sp-task :task-active ,d)
        (-some-> (plist-get d :sched) (list)))
       (`(:sp-subiter :si-task :task-active ,d)
@@ -1900,8 +1899,8 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
     (lambda (h id)
       (org-x-dag-ht-get-maybe h id s-key))
     (lambda (plist to-set)
-      (->> (org-x-dag-plist-map (-copy plist) s-key
-             (lambda (x) (append x to-set)))
+      (->> (org-x-dag-plist-map plist s-key
+             (lambda (x) (append x (-copy to-set))))
            (either :right)))
     (lambda (to-set)
       (list s-key (-copy to-set)))))
@@ -1932,7 +1931,7 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
               (either :right plist)))))
         (either :right plist))
     (lambda (to-set)
-      `(:deadline ,to-set))))
+      `(:deadline ,(-copy to-set)))))
 
 (defun org-x-dag-ht-propagate-action-down (adjlist ns)
   (org-x-dag-ht-map-down adjlist :action ns
@@ -1945,14 +1944,14 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
     (lambda (plist to-set)
       ;; copy is needed here for some reason, otherwise other parts of the
       ;; hash table are affected
-      (-let* (((committed survivalp) to-set)
+      (-let* (((committed survivalp) (-copy to-set))
               (new (-> (-copy plist)
                        (plist-put :survivalp survivalp)
                        (org-x-dag-plist-map :committed
                            (lambda (x) (append x committed))))))
         (either :right new)))
     (lambda (to-set)
-      (-let (((committed survivalp) to-set))
+      (-let (((committed survivalp) (-copy to-set)))
         `(:committed ,committed :survivalp ,survivalp)))))
 
 (defun org-x-dag-ht-propagate-up (adjlist h-key s-key ns)
@@ -1976,7 +1975,7 @@ DEF-FUN and the output from GET-FUN (type :: a -> NS)."
           rs*)))
     (let ((h (alist-get h-key ns)))
       (--each (ht-keys h)
-        (propagate h it )))))
+        (propagate h it)))))
 
 (defun org-x-dag-get-network-status (sel-date spans adjlist links)
   (cl-flet
