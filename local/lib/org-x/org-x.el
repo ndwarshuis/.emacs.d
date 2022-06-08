@@ -1965,7 +1965,7 @@ and slow."
                  (org-ml-to-string)
                  (org-ml-build-node-property org-x-prop-created))))
     (org-ml-update-this-headline*
-      (org-ml-headline-map-node-properties* (cons np it) it))))
+      (org-ml-headline-map-node-properties* (-snoc it np) it))))
 
 (defun org-x-set-expired-time (&optional arg)
   "Set the expired time of the current headline.
