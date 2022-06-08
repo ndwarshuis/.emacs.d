@@ -1,0 +1,15 @@
+* TODO be good at something
+:PROPERTIES:
+:ID:       d6e92244-b1a0-4161-83bc-5a1f0af5541d
+:CREATED:  [2022-06-07 Tue 22:36]
+:END:
+* TODO don't be a dick
+:PROPERTIES:
+:ID:       06592f95-9cf5-4d7e-8546-da7796d76813
+:CREATED:  [2022-06-07 Tue 22:36]
+:END:
+** TODO say nice things
+:PROPERTIES:
+:ID:       adc08873-b9fa-423d-950d-db645db05fe5
+:CREATED:  [2022-06-07 Tue 22:36]
+:END:

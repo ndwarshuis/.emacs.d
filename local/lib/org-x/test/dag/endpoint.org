@@ -1,0 +1,18 @@
+* TODO this endpoint goal has a parent
+:PROPERTIES:
+:ID:       c2289aeb-f1f4-4e26-8878-f64157d3f724
+:CREATED:  [2022-06-07 Tue 22:37]
+:END:
+:X_PARENT_LINKS:
+- LTG :: [[id:d6e92244-b1a0-4161-83bc-5a1f0af5541d][/be good at something]]
+:END:
+** TODO this is a child goal
+:PROPERTIES:
+:ID:       c90f3351-cee6-426f-98ab-d5e9518983ac
+:CREATED:  [2022-06-07 Tue 22:38]
+:END:
+* TODO this one doesn't
+:PROPERTIES:
+:ID:       48322fb9-27c1-455b-a514-d8a4b4da5c2e
+:CREATED:  [2022-06-07 Tue 22:38]
+:END:

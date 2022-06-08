@@ -1,0 +1,51 @@
+* TODO this is a project
+:PROPERTIES:
+:ID:       a98df83f-bc98-4767-b2bc-f1054dbf89f9
+:CREATED:  [2022-06-07 Tue 22:41]
+:END:
+** TODO this is a project task
+:PROPERTIES:
+:ID:       2db32ed8-0a1f-488c-8e41-dd3549ac8b1b
+:CREATED:  [2022-06-07 Tue 22:41]
+:END:
+* TODO this is an iterator
+:PROPERTIES:
+:ID:       2711e9b9-f765-415d-930f-b7ff16b3140b
+:CREATED:  [2022-06-07 Tue 22:41]
+:PARENT_TYPE: iterator
+:ARCHIVE: archive.org_archive::* something
+:TIME_SHIFT: +1w
+:END:
+** TODO repeated thing
+SCHEDULED: <2022-06-07 Tue>
+:PROPERTIES:
+:ID:       b02619f6-b9da-4d78-acdd-409a4c5d747b
+:CREATED:  [2022-06-07 Tue 22:41]
+:END:
+** TODO repeated thing
+SCHEDULED: <2022-06-14 Tue>
+:PROPERTIES:
+:ID:       d1576921-41b6-4ca9-b775-8f4997983bc4
+:CREATED:  [2022-06-07 Tue 22:43]
+:END:
+** TODO repeated thing
+SCHEDULED: <2022-06-21 Tue>
+:PROPERTIES:
+:ID:       a3653d7d-fd29-422e-83ac-06df2594c747
+:CREATED:  [2022-06-07 Tue 22:43]
+:END:
+* TODO this is a standalone task
+:PROPERTIES:
+:ID:       cda28b1a-2b7d-48ea-b1df-e006be799c2f
+:CREATED:  [2022-06-07 Tue 22:43]
+:END:
+* header with a nice tag                                           :nice_tag:
+:PROPERTIES:
+:ID:       c5d3083b-7079-4f76-b8f8-0d994879d8f7
+:CREATED:  [2022-06-07 Tue 22:43]
+:END:
+** TODO task with nice tag
+:PROPERTIES:
+:ID:       3de25d74-b90e-4c77-9f7f-8190187e7ed0
+:CREATED:  [2022-06-07 Tue 22:43]
+:END:

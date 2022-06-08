@@ -1,0 +1,49 @@
+* 2022 :Y22:
+** Quarter 2                                                            :Q2:
+*** environmental                                                      :_env:
+**** TODO something good for the environment
+:PROPERTIES:
+:ID:       aa3e549c-b309-40a2-a687-6d9791653a18
+:CREATED:  [2022-06-07 Tue 22:48]
+:END:
+*** financial                                                          :_fin:
+*** intellectual                                                       :_int:
+*** metaphysical                                                       :_met:
+*** physical                                                           :_phy:
+**** TODO something physically pleasing
+:PROPERTIES:
+:ID:       d6d4dbd9-4d8c-4a1c-81a4-a26776b9627b
+:CREATED:  [2022-06-07 Tue 22:48]
+:END:
+*** professional                                                       :_pro:
+*** recreational                                                       :_rec:
+*** social                                                             :_soc:
+** Quarter 3                                                            :Q3:
+*** environmental                                                      :_env:
+*** financial                                                          :_fin:
+**** TODO make it raaaaaaaain
+:PROPERTIES:
+:ID:       a1a68f4f-1749-425b-afdc-ef79bbe10417
+:CREATED:  [2022-06-07 Tue 22:49]
+:END:
+*** intellectual                                                       :_int:
+**** TODO something that tickles my brain
+:PROPERTIES:
+:ID:       63259156-ce5d-442a-b6e4-fd4053239db5
+:CREATED:  [2022-06-07 Tue 22:48]
+:END:
+*** metaphysical                                                       :_met:
+*** physical                                                           :_phy:
+*** professional                                                       :_pro:
+**** TODO be a wall street bro
+:PROPERTIES:
+:ID:       9e63d6aa-f217-422b-a996-d9612c972855
+:CREATED:  [2022-06-07 Tue 22:49]
+:END:
+*** recreational                                                       :_rec:
+*** social                                                             :_soc:
+**** TODO get a life
+:PROPERTIES:
+:ID:       e9c2474f-1c27-4ba4-b46e-5d4e40d560b8
+:CREATED:  [2022-06-07 Tue 22:49]
+:END:

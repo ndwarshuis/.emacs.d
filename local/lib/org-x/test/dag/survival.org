@@ -1,0 +1,15 @@
+* TODO don't die of hunger
+:PROPERTIES:
+:ID:       4e7a934a-62ec-4ed5-ab84-e9e7e745b495
+:CREATED:  [2022-06-07 Tue 22:39]
+:END:
+* TODO don't get nuked
+:PROPERTIES:
+:ID:       26bbf72f-51cf-40ba-a7dd-ca689bcd1627
+:CREATED:  [2022-06-07 Tue 22:40]
+:END:
+** TODO make a bunker
+:PROPERTIES:
+:ID:       e16514a0-626c-476f-b647-1eaf6580c57a
+:CREATED:  [2022-06-07 Tue 22:40]
+:END:

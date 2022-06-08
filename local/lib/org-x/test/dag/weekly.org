@@ -1,0 +1,63 @@
+* 2022                                                                  :Y22:
+** June                                                                 :M06:
+*** TODO 2022-06-06
+SCHEDULED: <2022-06-06 Mon>
+:PROPERTIES:
+:ID:       76534d4a-e516-495c-b083-5b053c44af1d
+:X-WEEK-LEN: 7
+:END:
+**** TODO Monday
+SCHEDULED: <2022-06-06 Mon>
+:PROPERTIES:
+:ID:       6b53ee41-b467-4bfb-a580-6218a3c78068
+:END:
+***** TODO be social
+:PROPERTIES:
+:ID:       f02504bd-45f8-4da6-936e-1b15e043f3d4
+:CREATED:  [2022-06-07 Tue 22:50]
+:END:
+**** TODO Tuesday
+SCHEDULED: <2022-06-07 Tue>
+:PROPERTIES:
+:ID:       93955806-3b04-4ee5-8be5-fb8a9117c6b7
+:END:
+**** TODO Wednesday
+SCHEDULED: <2022-06-08 Wed>
+:PROPERTIES:
+:ID:       8b0de76b-fff9-4890-9e85-8f4ccabf4f12
+:END:
+***** TODO learn about bitcoin
+:PROPERTIES:
+:ID:       ed1406ad-1231-46de-b026-8067411133dc
+:CREATED:  [2022-06-07 Tue 22:51]
+:END:
+**** TODO Thursday
+SCHEDULED: <2022-06-09 Thu>
+:PROPERTIES:
+:ID:       f977dca9-c8e6-47d0-a9cd-eba8194fcb96
+:END:
+**** TODO Friday
+SCHEDULED: <2022-06-10 Fri>
+:PROPERTIES:
+:ID:       1d926eef-94c9-4b57-8cb0-225a308711e9
+:END:
+***** TODO learn to gamble
+:PROPERTIES:
+:ID:       ab077745-4041-458f-90ec-02aaecb2729d
+:CREATED:  [2022-06-07 Tue 22:51]
+:END:
+**** TODO Saturday
+SCHEDULED: <2022-06-11 Sat>
+:PROPERTIES:
+:ID:       24659f4b-1e0d-4022-a4cc-359a7bb15592
+:END:
+***** TODO build nuclear bunker
+:PROPERTIES:
+:ID:       bfe5d3c1-3b7d-46f9-9c60-8a2bdec08d6d
+:CREATED:  [2022-06-07 Tue 22:51]
+:END:
+**** TODO Sunday
+SCHEDULED: <2022-06-12 Sun>
+:PROPERTIES:
+:ID:       541245c4-e51d-48ae-ab51-e29325d5c9fe
+:END:

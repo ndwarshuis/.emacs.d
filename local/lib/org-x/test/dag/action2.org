@@ -1,0 +1,10 @@
+* TODO this is a project all by itself with one goal
+:PROPERTIES:
+:ID:       49436f7a-629b-4686-b681-c70c7a116ce7
+:CREATED:  [2022-06-07 Tue 22:45]
+:END:
+** TODO project task
+:PROPERTIES:
+:ID:       2f507e50-78ba-4f81-83ce-988358b98200
+:CREATED:  [2022-06-07 Tue 22:45]
+:END:

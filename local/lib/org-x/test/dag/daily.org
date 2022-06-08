@@ -1,0 +1,10 @@
+
+* 2022                                                                  :Y22:
+** June                                                                 :M06:
+*** 2022-06-07                                                          :D07:
+**** TODO buy boatload of cement for bunker
+SCHEDULED: <2022-06-07 Tue>
+:PROPERTIES:
+:ID:       25ffaad9-d996-48b7-a387-10aa1d46fba8
+:CREATED:  [2022-06-07 Tue 22:52]
+:END:
