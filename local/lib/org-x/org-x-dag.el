@@ -1227,7 +1227,8 @@ deadline (eg via epoch time) or if it has a repeater."
             (-let (((&plist :ancestry a :local l) it))
               (list :ancestry a :local (cons :sp-subiter l)))))))
     (-let (((p (ps is)) (->> (list :canceled-parent-p nil
-                                   :held-parent-p nil)
+                                   :held-parent-p nil
+                                   :parent-deadline nil)
                              (org-x-dag-bs-action-project node-tree))))
       (->> `(,p ,@ps ,@(-map #'lift-subiter is))
            (org-x-dag-bs-prefix :action)))))
