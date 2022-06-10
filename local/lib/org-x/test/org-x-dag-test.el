@@ -51,53 +51,186 @@
       (lambda ()
         `(nil . ,(format "Expected %s to be a left, got a right" a-expr))))))
 
-(buttercup-define-matcher :to-have-same-as-plist (a b)
+(buttercup-define-matcher :to-be-right-with (a x)
   (cl-destructuring-bind
-      ((a-expr . a) (b-expr . b))
-      (mapcar #'buttercup--expr-and-value (list a b))
-    (let* ((a* (-partition 2 a))
-           (b* (-partition 2 b))
-           (a-diff (->> (-difference a* b*) (--map (format "%S" it)) (s-join ", ")))
-           (b-diff (->> (-difference b* a*) (--map (format "%S" it)) (s-join ", "))))
-      (cond
-       ((and a-diff b-diff)
-        (cons nil (format "Expected %s to have pairs '%s' and not to have pairs '%s'"
-                          a-expr b-diff a-diff)))
-       (a-diff
-        (cons nil (format "Expected %s not to have pairs '%s'" a-expr a-diff)))
-       (b-diff
-        (cons nil (format "Expected %s to have pairs '%s'" a-expr b-diff)))
-       (t
-        (cons t (format "Expected %s not to have same items as '%s'"
-                        a-expr b-expr)))))))
+      ((a-expr . a) (x-expr . x))
+      (mapcar #'buttercup--expr-and-value (list a x))
+    (either-from a
+      (lambda ()
+        `(nil . ,(format "Expected %s to be a right, got a left" a-expr)))
+      (lambda (r)
+        (if (equal r x)
+            `(t . ,(format "Expected %s right with %s" a-expr x))
+          `(nil . ,(format "Expected %s right with %s, but got right with %s"
+                           a-expr x r)))))))
 
-;; (defun bs-error (id left)
-;;   (let ((bs (org-x-dag-id->bs id)))
-;;     (expect (either-is-left-p bs))
-;;     (expect (either-from-left bs nil) :to-equal left)))
+(defun split-plists (a b)
+  (let* ((a* (-partition 2 a))
+         (b* (-partition 2 b))
+         (a- (-difference a* b*))
+         (b- (-difference b* a*)))
+    `(,(-flatten-n 1 a-) ,(-flatten-n 1 b-))))
 
-;; (defun bs-action-equal (id ancestry local)
-;;   (let ((bs (org-x-dag-id-bs id)))
-;;     (expect (either-is-right-p bs))
-;;     (from-either (org-x-dag-id-bs id)
-;;   (expect (org-x-dag-id-bs id) :to-equal bs))
+(defun plist-diff-msg (expr a b)
+  (-let (((a-diff b-diff) (split-plists a b)))
+    (cond
+     ((and a-diff b-diff)
+      (format "Expected %s to have pairs '%s' and not to have pairs '%s'"
+              expr b-diff a-diff))
+     (a-diff
+      (format "Expected %s not to have pairs '%s'" expr a-diff))
+     (b-diff
+      (format "Expected %s to have pairs '%s'" expr b-diff)))))
+
+(defun status-diff-msg (expr type subtype data to-test)
+  (-let* (((type* . rest) to-test)
+          ((subtype* last) (-split-at (length subtype) rest))
+          (data* (car last)))
+    (cond
+     ((not (eq type* type))
+      (format "Expected %s to have type '%s' but instead had type '%s'"
+              expr type type*))
+     ((and subtype (not (equal subtype* subtype)))
+      (format "Expected %s to have subtype '%s' but instead had subtype '%s'"
+              expr subtype subtype*))
+     (t
+      (plist-diff-msg expr data data*)))))
+
+(defun ancestry-diff-msg (expr ancestry inner-fun to-test)
+  (declare (indent 3))
+  (-let* (((&plist :ancestry A :local L) to-test))
+    (or (plist-diff-msg expr A ancestry)
+        (funcall inner-fun L))))
+
+(defun buffer-status-diff-msg (expr type inner-fun to-test)
+  (declare (indent 3))
+  (-let (((type* . rest) to-test))
+    (if (eq type type*) (funcall inner-fun rest)
+      (format "Expected buffer-status %s to be type '%s' but instead was type '%s'"
+              expr type type*))))
+
+(defun right-diff-msg (expr inner-fun to-test)
+  (declare (indent 2))
+  (either-from to-test
+    (lambda ()
+      (format "Expected %s to be a right, got a left" expr))
+    inner-fun))
+
+(buttercup-define-matcher :id-to-be-action (to-test canceled held deadline
+                                                    type subtype data)
+  (cl-destructuring-bind
+      ((test-expr . test) (_ . c) (_ . h) (_ . e) (_ . y) (_ . s) (_ . d))
+      (->> (list to-test canceled held deadline type subtype data)
+           (-map #'buttercup--expr-and-value))
+    (let* ((ancestry (list :canceled-parent-p c
+                           :held-parent-p h
+                           :parent-deadline e))
+           (f (->> (-partial #'status-diff-msg test-expr y s d)
+                   (-partial #'ancestry-diff-msg test-expr ancestry)
+                   (-partial #'buffer-status-diff-msg test-expr :action)
+                   (-partial #'right-diff-msg test-expr))))
+      (-if-let (m (funcall f (org-x-dag-id->bs test)))
+        (cons nil m)
+      (cons t (format "Expected '%s' not to be the indicated action" test-expr))))))
+
+;; (buttercup-define-matcher :to-have-same-as-plist (a b)
+;;   (cl-destructuring-bind
+;;       ((a-expr . a) (b-expr . b))
+;;       (mapcar #'buttercup--expr-and-value (list a b))
+;;     (let* ((a* (-partition 2 a))
+;;            (b* (-partition 2 b))
+;;            (a-diff (->> (-difference a* b*) (--map (format "%S" it)) (s-join ", ")))
+;;            (b-diff (->> (-difference b* a*) (--map (format "%S" it)) (s-join ", "))))
+;;       (cond
+;;        ((and a-diff b-diff)
+;;         (cons nil (format "Expected %s to have pairs '%s' and not to have pairs '%s'"
+;;                           a-expr b-diff a-diff)))
+;;        (a-diff
+;;         (cons nil (format "Expected %s not to have pairs '%s'" a-expr a-diff)))
+;;        (b-diff
+;;         (cons nil (format "Expected %s to have pairs '%s'" a-expr b-diff)))
+;;        (t
+;;         (cons t (format "Expected %s not to have same items as '%s'"
+;;                         a-expr b-expr)))))))
+
+(defmacro bs-ltg-active (id)
+  (declare (indent 1))
+  `(expect (org-x-dag-id->bs ,id) :to-be-right-with '(:lifetime :active)))
 
 (describe "Sync DAG"
-  ;; TODO this won't actually fail if there is an error
+  (before-all
+    (setup))
+
   (it "Sync completes without error"
-    (setup)
-    (org-x-dag-sync t))
+    (expect (org-x-dag-sync t) :not :to-throw))
 
-  (it "One random hash is present in the dag"
-    (expect (org-x-dag-id->title "06592f95-9cf5-4d7e-8546-da7796d76813")
-            :to-equal
-            "don't be a dick"))
+  (describe "Action buffer statuses"
+    (describe "Projects"
+      (it "Active"
+        (expect "a98df83f-bc98-4767-b2bc-f1054dbf89f9" :id-to-be-action
+                nil nil nil :sp-proj '(:proj-active) '(:child-scheds nil)))
 
-  (it "test my own macros"
-    (expect (either :left "blabla") :to-be-left-with "blabla"))
+      ;; TODO these tests are broken because I don't have a robust way
+      ;; to compare the equality of org elements here (likely will need to
+      ;; steal something from the org-ml code, and then tell the plist
+      ;; checker which equality tests to use)
+      ;; (it "Active (scheduled)"
+      ;;   (let ((sched (org-ml-from-string 'timestamp "<2022-06-10 Fri>")))
+      ;;     (expect "3788c7bc-390e-4caf-af8e-06831ff3276b" :id-to-be-action
+      ;;             nil nil nil :sp-proj '(:proj-active)
+      ;;             `(:child-scheds (,sched)))))
 
-  (it "test my own macros"
-    (expect '(:a 1) :to-have-same-as-plist '(:b 1))))
+      (it "Wait"
+        (expect "26586b4d-7fc7-4a9f-b86f-e3c26a83a507" :id-to-be-action
+                nil nil nil :sp-proj '(:proj-wait) nil))
+
+      (it "Held (toplevel)"
+        (expect "d5065c21-b717-41fe-8232-22afbd6b2243" :id-to-be-action
+                nil nil nil :sp-proj '(:proj-held) nil))
+
+      (it "Held (subtask)"
+        (expect "a771dc18-0c5f-4196-903d-ada3c8a9d817" :id-to-be-action
+                nil nil nil :sp-proj '(:proj-held) nil))
+
+      (it "Stuck"
+        (expect "c93fe96f-7130-4433-a960-98c07a3b21f4" :id-to-be-action
+                nil nil nil :sp-proj '(:proj-stuck) nil))
+
+      (it "Completed"
+        (expect "87682ef6-cd4c-41a7-8f0d-6ac41e572b05" :id-to-be-action
+                nil nil nil :sp-proj '(:proj-complete)
+                '(:canceledp nil :epoch 1654902600)))
+      
+      (it "Canceled"
+        (expect "eca77dea-4a40-4697-a69d-d1ec798fe9ba" :id-to-be-action
+                nil nil nil :sp-proj '(:proj-complete)
+                '(:canceledp t :epoch 1654902780))))
+
+    (describe "Tasks"
+      (it "Active"
+        (expect "2db32ed8-0a1f-488c-8e41-dd3549ac8b1b" :id-to-be-action
+                nil nil nil :sp-task '(:task-active)
+                '(:todo "NEXT" :sched nil :dead nil)))
+
+      (it "Waiting"
+        (expect "cf58280a-ac7c-4951-a3de-a3f79f92f2b0" :id-to-be-action
+                nil nil nil :sp-task '(:task-active)
+                '(:todo "WAIT" :sched nil :dead nil)))
+
+      (it "Held"
+        (expect "4f743d31-2df4-4e32-85de-cedae0cffeb2" :id-to-be-action
+                nil nil nil :sp-task '(:task-active)
+                '(:todo "HOLD" :sched nil :dead nil)))
+
+      (it "Completed"
+        (expect "61866e72-7153-44d1-ae0f-af527fe5f9f4" :id-to-be-action
+                nil nil nil :sp-task '(:task-complete)
+                '(:canceledp nil :epoch 1654903560)))
+
+      (it "Canceled"
+        (expect "322af50a-f431-4940-8caf-cc5acdf5a555" :id-to-be-action
+                nil nil nil :sp-task '(:task-complete)
+                '(:canceledp t :epoch 1654903560))))))
 
 (provide 'org-x-dag-test)
 ;;; org-x-dag-test.el ends here

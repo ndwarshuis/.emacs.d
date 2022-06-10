@@ -1,12 +1,92 @@
-* TODO this is a project
+* TODO this is an active project
 :PROPERTIES:
 :ID:       a98df83f-bc98-4767-b2bc-f1054dbf89f9
 :CREATED:  [2022-06-07 Tue 22:41]
 :END:
-** TODO this is a project task
+** NEXT this is a project task
 :PROPERTIES:
 :ID:       2db32ed8-0a1f-488c-8e41-dd3549ac8b1b
 :CREATED:  [2022-06-07 Tue 22:41]
+:END:
+* TODO this is an active project (scheduled)
+:PROPERTIES:
+:ID:       3788c7bc-390e-4caf-af8e-06831ff3276b
+:CREATED:  [2022-06-10 Fri 19:29]
+:END:
+** TODO this is a scheduled task
+SCHEDULED: <2022-06-10 Fri>
+:PROPERTIES:
+:ID:       19a7d558-e087-47ec-b686-feee29d352a1
+:CREATED:  [2022-06-10 Fri 19:29]
+:END:
+* TODO this is a waiting project
+:PROPERTIES:
+:ID:       26586b4d-7fc7-4a9f-b86f-e3c26a83a507
+:CREATED:  [2022-06-10 Fri 19:18]
+:END:
+** WAIT this is a waiting subtask
+:PROPERTIES:
+:ID:       cf58280a-ac7c-4951-a3de-a3f79f92f2b0
+:CREATED:  [2022-06-10 Fri 19:18]
+:END:
+* HOLD this is a held project
+:PROPERTIES:
+:ID:       d5065c21-b717-41fe-8232-22afbd6b2243
+:CREATED:  [2022-06-10 Fri 19:14]
+:END:
+** TODO this is a subtask masked by a hold
+:PROPERTIES:
+:ID:       ee9c6ec9-7626-40f5-9f06-3c91bc1338ed
+:CREATED:  [2022-06-10 Fri 19:14]
+:END:
+* TODO this is a project held by a subtask
+:PROPERTIES:
+:ID:       a771dc18-0c5f-4196-903d-ada3c8a9d817
+:CREATED:  [2022-06-10 Fri 19:15]
+:END:
+** HOLD this is a held subtask
+:PROPERTIES:
+:ID:       4f743d31-2df4-4e32-85de-cedae0cffeb2
+:CREATED:  [2022-06-10 Fri 19:15]
+:END:
+* TODO this is a stuck project
+:PROPERTIES:
+:CREATED:  [2022-06-07 Tue 22:41]
+:ID:       c93fe96f-7130-4433-a960-98c07a3b21f4
+:END:
+** TODO this is a subtask
+:PROPERTIES:
+:ID:       2def43a3-e814-4793-adc7-38ddbbf30411
+:CREATED:  [2022-06-10 Fri 19:08]
+:END:
+* DONE this is a completed project
+CLOSED: [2022-06-10 Fri 19:10]
+:PROPERTIES:
+:ID:       87682ef6-cd4c-41a7-8f0d-6ac41e572b05
+:CREATED:  [2022-06-10 Fri 19:10]
+:END:
+** DONE this is a completed subtask
+CLOSED: [2022-06-10 Fri 19:26]
+:PROPERTIES:
+:ID:       61866e72-7153-44d1-ae0f-af527fe5f9f4
+:CREATED:  [2022-06-10 Fri 19:10]
+:END:
+** CANC this is a cancelled task
+CLOSED: [2022-06-10 Fri 19:26]
+:PROPERTIES:
+:ID:       322af50a-f431-4940-8caf-cc5acdf5a555
+:CREATED:  [2022-06-10 Fri 19:25]
+:END:
+* CANC this is a cancelled project
+CLOSED: [2022-06-10 Fri 19:13]
+:PROPERTIES:
+:ID:       eca77dea-4a40-4697-a69d-d1ec798fe9ba
+:CREATED:  [2022-06-10 Fri 19:13]
+:END:
+** TODO this is a subtask masked by a cancel
+:PROPERTIES:
+:ID:       a834a585-acd1-44e9-8e62-17793146d6ab
+:CREATED:  [2022-06-10 Fri 19:13]
 :END:
 * TODO this is an iterator
 :PROPERTIES:
