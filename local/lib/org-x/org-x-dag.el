@@ -193,7 +193,8 @@
 ;; date <-> epoch
 
 (defun org-x-dag-datetime-to-epoch (date)
-  (float-time (encode-time `(0 ,@(reverse date) nil -1 nil))))
+  (-let (((y m d H M) date))
+    (float-time (encode-time (list 0 (or M 0) (or H 0) d m y nil -1 nil)))))
 
 (defun org-x-dag-date-to-epoch (date)
   (float-time (encode-time `(0 0 0 ,@(reverse date) nil -1 nil))))
@@ -1092,7 +1093,7 @@ deadline (eg via epoch time) or if it has a repeater."
           (_ nil)))
       (lambda (next)
         (pcase next
-          (`(:si-proj :proj-active ,d) (plist-get d :child-sched-dts))
+          (`(:si-proj :proj-active ,d) (plist-get d :child-scheds))
           (`(:si-task :task-active ,d) (-some-> (plist-get d :sched) (list)))
           (_ nil)))
       (lambda (acc cs)

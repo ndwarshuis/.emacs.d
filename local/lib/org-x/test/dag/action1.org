@@ -1,94 +1,96 @@
-* TODO this is an active project
+* projects
+** TODO this is an active project
 :PROPERTIES:
 :ID:       a98df83f-bc98-4767-b2bc-f1054dbf89f9
 :CREATED:  [2022-06-07 Tue 22:41]
 :END:
-** NEXT this is a project task
+*** NEXT this is a project task
 :PROPERTIES:
 :ID:       2db32ed8-0a1f-488c-8e41-dd3549ac8b1b
 :CREATED:  [2022-06-07 Tue 22:41]
 :END:
-* TODO this is an active project (scheduled)
+** TODO this is an active project (scheduled)
 :PROPERTIES:
 :ID:       3788c7bc-390e-4caf-af8e-06831ff3276b
 :CREATED:  [2022-06-10 Fri 19:29]
 :END:
-** TODO this is a scheduled task
+*** TODO this is a scheduled task
 SCHEDULED: <2022-06-10 Fri>
 :PROPERTIES:
 :ID:       19a7d558-e087-47ec-b686-feee29d352a1
 :CREATED:  [2022-06-10 Fri 19:29]
 :END:
-* TODO this is a waiting project
+** TODO this is a waiting project
 :PROPERTIES:
 :ID:       26586b4d-7fc7-4a9f-b86f-e3c26a83a507
 :CREATED:  [2022-06-10 Fri 19:18]
 :END:
-** WAIT this is a waiting subtask
+*** WAIT this is a waiting subtask
 :PROPERTIES:
 :ID:       cf58280a-ac7c-4951-a3de-a3f79f92f2b0
 :CREATED:  [2022-06-10 Fri 19:18]
 :END:
-* HOLD this is a held project
+** HOLD this is a held project
 :PROPERTIES:
 :ID:       d5065c21-b717-41fe-8232-22afbd6b2243
 :CREATED:  [2022-06-10 Fri 19:14]
 :END:
-** TODO this is a subtask masked by a hold
+*** TODO this is a subtask masked by a hold
 :PROPERTIES:
 :ID:       ee9c6ec9-7626-40f5-9f06-3c91bc1338ed
 :CREATED:  [2022-06-10 Fri 19:14]
 :END:
-* TODO this is a project held by a subtask
+** TODO this is a project held by a subtask
 :PROPERTIES:
 :ID:       a771dc18-0c5f-4196-903d-ada3c8a9d817
 :CREATED:  [2022-06-10 Fri 19:15]
 :END:
-** HOLD this is a held subtask
+*** HOLD this is a held subtask
 :PROPERTIES:
 :ID:       4f743d31-2df4-4e32-85de-cedae0cffeb2
 :CREATED:  [2022-06-10 Fri 19:15]
 :END:
-* TODO this is a stuck project
+** TODO this is a stuck project
 :PROPERTIES:
 :CREATED:  [2022-06-07 Tue 22:41]
 :ID:       c93fe96f-7130-4433-a960-98c07a3b21f4
 :END:
-** TODO this is a subtask
+*** TODO this is a subtask
 :PROPERTIES:
 :ID:       2def43a3-e814-4793-adc7-38ddbbf30411
 :CREATED:  [2022-06-10 Fri 19:08]
 :END:
-* DONE this is a completed project
+** DONE this is a completed project
 CLOSED: [2022-06-10 Fri 19:10]
 :PROPERTIES:
 :ID:       87682ef6-cd4c-41a7-8f0d-6ac41e572b05
 :CREATED:  [2022-06-10 Fri 19:10]
 :END:
-** DONE this is a completed subtask
+*** DONE this is a completed subtask
 CLOSED: [2022-06-10 Fri 19:26]
 :PROPERTIES:
 :ID:       61866e72-7153-44d1-ae0f-af527fe5f9f4
 :CREATED:  [2022-06-10 Fri 19:10]
 :END:
-** CANC this is a cancelled task
+*** CANC this is a cancelled task
 CLOSED: [2022-06-10 Fri 19:26]
 :PROPERTIES:
 :ID:       322af50a-f431-4940-8caf-cc5acdf5a555
 :CREATED:  [2022-06-10 Fri 19:25]
 :END:
-* CANC this is a cancelled project
+** CANC this is a cancelled project
 CLOSED: [2022-06-10 Fri 19:13]
 :PROPERTIES:
 :ID:       eca77dea-4a40-4697-a69d-d1ec798fe9ba
 :CREATED:  [2022-06-10 Fri 19:13]
 :END:
-** TODO this is a subtask masked by a cancel
+*** TODO this is a subtask masked by a cancel
 :PROPERTIES:
 :ID:       a834a585-acd1-44e9-8e62-17793146d6ab
 :CREATED:  [2022-06-10 Fri 19:13]
 :END:
-* TODO this is an iterator
+* iterators
+** TODO this is an iterator
 :PROPERTIES:
 :ID:       2711e9b9-f765-415d-930f-b7ff16b3140b
 :CREATED:  [2022-06-07 Tue 22:41]
@@ -96,36 +98,112 @@ CLOSED: [2022-06-10 Fri 19:13]
 :ARCHIVE: archive.org_archive::* something
 :TIME_SHIFT: +1w
 :END:
-** TODO repeated thing
+*** TODO repeated thing
 SCHEDULED: <2022-06-07 Tue>
 :PROPERTIES:
 :ID:       b02619f6-b9da-4d78-acdd-409a4c5d747b
 :CREATED:  [2022-06-07 Tue 22:41]
 :END:
-** TODO repeated thing
+*** TODO repeated thing
 SCHEDULED: <2022-06-14 Tue>
 :PROPERTIES:
 :ID:       d1576921-41b6-4ca9-b775-8f4997983bc4
 :CREATED:  [2022-06-07 Tue 22:43]
 :END:
-** TODO repeated thing
+*** TODO repeated thing
 SCHEDULED: <2022-06-21 Tue>
 :PROPERTIES:
 :ID:       a3653d7d-fd29-422e-83ac-06df2594c747
 :CREATED:  [2022-06-07 Tue 22:43]
 :END:
-* TODO this is a standalone task
+** TODO this is an empty iterator
+:PROPERTIES:
+:ID:       15cfb339-358a-49ce-8cb3-9bcfb1c5a126
+:CREATED:  [2022-06-12 Sun 16:40]
+:PARENT_TYPE: iterator
+:ARCHIVE: archive.org_archive::* something
+:TIME_SHIFT: +1w
+:END:
+** DONE this is a complete iterator
+CLOSED: [2022-06-10 Fri 19:13]
+:PROPERTIES:
+:ID:       f2002c13-5ddd-46ec-9895-67182d89dd19
+:CREATED:  [2022-06-12 Sun 16:44]
+:PARENT_TYPE: iterator
+:ARCHIVE: archive.org_archive::* something
+:TIME_SHIFT: +1w
+:END:
+*** DONE subiter 1
+CLOSED: [2022-06-10 Fri 19:13]
+:PROPERTIES:
+:ID:       fa290644-ba9a-42ac-a25a-a0cca5704d44
+:CREATED:  [2022-06-12 Sun 16:44]
+:END:
+*** DONE subiter 2
+CLOSED: [2022-06-12 Sun 16:44]
+:PROPERTIES:
+:ID:       4ec18d87-dda9-43a6-b5e3-4a633160cfec
+:CREATED:  [2022-06-12 Sun 16:44]
+:END:
+*** DONE subiter 3
+CLOSED: [2022-06-12 Sun 16:44]
+:PROPERTIES:
+:ID:       30dfcebe-33e8-4190-9460-9bb439cb75e1
+:CREATED:  [2022-06-12 Sun 16:44]
+:END:
+** DONE this is a complete empty iterator
+CLOSED: [2022-06-10 Fri 19:13]
+:PROPERTIES:
+:ID:       6ac25533-ba98-4cce-b8a3-9dcf2ada5d77
+:CREATED:  [2022-06-12 Sun 17:01]
+:PARENT_TYPE: iterator
+:ARCHIVE: archive.org_archive::* something
+:TIME_SHIFT: +1w
+:END:
+** TODO iterator with projects
+:PROPERTIES:
+:ID:       6b33c33b-2ce8-405d-b2bb-917305dfa840
+:CREATED:  [2022-06-12 Sun 17:10]
+:PARENT_TYPE: iterator
+:ARCHIVE: archive.org_archive::* something
+:TIME_SHIFT: +1w
+:END:
+*** TODO subiter project
+:PROPERTIES:
+:ID:       ed5ff869-2d98-457e-8718-ebb0ca9c1e72
+:CREATED:  [2022-06-12 Sun 17:10]
+:END:
+**** TODO subsubiter task
+SCHEDULED: <2022-06-12 Sun>
+:PROPERTIES:
+:ID:       b49556a8-0ec3-487d-84bd-78bd29c9eaef
+:CREATED:  [2022-06-12 Sun 17:10]
+:END:
+**** TODO subsubiter task
+SCHEDULED: <2022-06-14 Tue>
+:PROPERTIES:
+:ID:       f6c2b3ff-66d6-418e-90ec-0d0643bd16ea
+:CREATED:  [2022-06-12 Sun 17:10]
+:END:
+* tasks
+** TODO this is a standalone task
 :PROPERTIES:
 :ID:       cda28b1a-2b7d-48ea-b1df-e006be799c2f
 :CREATED:  [2022-06-07 Tue 22:43]
 :END:
-* header with a nice tag                                           :nice_tag:
+* metadata tests
+** header with a nice tag                                         :nice_tag:
 :PROPERTIES:
 :ID:       c5d3083b-7079-4f76-b8f8-0d994879d8f7
 :CREATED:  [2022-06-07 Tue 22:43]
 :END:
-** TODO task with nice tag
+*** TODO task with nice parent tag
 :PROPERTIES:
 :ID:       3de25d74-b90e-4c77-9f7f-8190187e7ed0
 :CREATED:  [2022-06-07 Tue 22:43]
+:END:
+** TODO task with a random local tag                            :random_tag:
+:PROPERTIES:
+:ID:       e4876e82-c8c8-4ff8-ad23-f78e3904b927
+:CREATED:  [2022-06-12 Sun 16:34]
 :END:

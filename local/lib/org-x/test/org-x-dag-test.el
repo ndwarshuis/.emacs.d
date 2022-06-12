@@ -19,17 +19,17 @@
 
 ;; run tests with this (in the org-x directory above this one):
 
-;; emacs -batch -l ../../../init.el -l test/org-x-dag-test.el -f buttercup-run
+;; emacs -batch -l init.el -l local/lib/org-x/test/org-x-dag-test.el -f buttercup-run
 
 ;;; Code:
 
 (require 's)
-(require 'either)
 (require 'dash)
+(require 'either)
 (require 'org-x)
 
 (defun setup ()
-  (setq org-directory "test/dag"
+  (setq org-directory (nd/expand-lib-directory "org-x/test/dag")
         org-x-action-files (list "action1.org" "action2.org")
         org-x-endpoint-goal-file "endpoint.org"
         org-x-lifetime-goal-file "lifetime.org"
@@ -256,7 +256,7 @@
                 nil nil nil :sp-proj '(:proj-complete)
                 '(:canceledp t :epoch 1654902780))))
 
-    (describe "Tasks"
+    (describe "Project Tasks"
       (it "Active"
         (expect "2db32ed8-0a1f-488c-8e41-dd3549ac8b1b" :id-to-be-action
                 nil nil nil :sp-task '(:task-active)
@@ -282,6 +282,12 @@
                 nil nil nil :sp-task '(:task-complete)
                 '(:canceledp t :epoch 1654903560))))
 
+    (describe "Standalone Tasks"
+      (it "Active"
+        (expect "cda28b1a-2b7d-48ea-b1df-e006be799c2f" :id-to-be-action
+                nil nil nil :sp-task '(:task-active)
+                '(:sched nil :dead nil :todo "TODO"))))
+
     (describe "Iterators"
       (it "Active non-empty"
         (let ((s0 (partition-timestamp "<2022-06-07 Tue>"))
@@ -291,7 +297,60 @@
                   nil nil nil :sp-iter '(:iter-nonempty :nonempty-active)
                   (list :child-scheds `(,s0 ,s1 ,s2)
                         :leading-sched-dt (plist-get s2 :datetime)
-                        :dead nil)))))))
+                        :dead nil))))
+
+      (it "Active non-empty (with project)"
+        (let ((s0 (partition-timestamp "<2022-06-12 Tue>"))
+              (s1 (partition-timestamp "<2022-06-14 Tue>")))
+          (expect "6b33c33b-2ce8-405d-b2bb-917305dfa840" :id-to-be-action
+                  nil nil nil :sp-iter '(:iter-nonempty :nonempty-active)
+                  (list :child-scheds `(,s0 ,s1)
+                        :leading-sched-dt (plist-get s1 :datetime)
+                        :dead nil))))
+
+      (it "Active empty"
+        (expect "15cfb339-358a-49ce-8cb3-9bcfb1c5a126" :id-to-be-action
+                nil nil nil :sp-iter '(:iter-empty :empty-active) nil))
+
+      (it "Complete non-empty"
+        (expect "f2002c13-5ddd-46ec-9895-67182d89dd19" :id-to-be-action
+                nil nil nil :sp-iter '(:iter-nonempty :nonempty-complete)
+                '(:canceledp nil :epoch 1654902780)))
+
+      (it "Active empty"
+        (expect "6ac25533-ba98-4cce-b8a3-9dcf2ada5d77" :id-to-be-action
+                nil nil nil :sp-iter '(:iter-empty :empty-complete)
+                '(:canceledp nil :epoch 1654902780))))
+
+    (describe "Sub-iterators"
+      (it "Active task"
+        (let ((s (partition-timestamp "<2022-06-07 Tue>")))
+          (expect "b02619f6-b9da-4d78-acdd-409a4c5d747b" :id-to-be-action
+                  nil nil nil :sp-subiter '(:si-task :task-active)
+                  (list :sched s :dead nil))))
+
+      (it "Complete task"
+        (expect "fa290644-ba9a-42ac-a25a-a0cca5704d44" :id-to-be-action
+                nil nil nil :sp-subiter '(:si-task :task-complete)
+                '(:canceledp nil :epoch 1654902780)))
+
+      (it "Active project"
+        (let ((s0 (partition-timestamp "<2022-06-12 Sun>"))
+              (s1 (partition-timestamp "<2022-06-14 Sun>")))
+          (expect "ed5ff869-2d98-457e-8718-ebb0ca9c1e72" :id-to-be-action
+                  nil nil nil :sp-subiter '(:si-proj :proj-active)
+                  (list :dead nil
+                        :child-scheds `(,s0 ,s1)
+                        :leading-sched-dt (plist-get s1 :datetime)))))))
+
+  (describe "Metadata Tests"
+    (it "parent tag"
+      (expect (org-x-dag-id->tags "3de25d74-b90e-4c77-9f7f-8190187e7ed0")
+              :to-equal '("nice_tag")))
+
+    (it "local tag"
+      (expect (org-x-dag-id->local-tags "e4876e82-c8c8-4ff8-ad23-f78e3904b927")
+              :to-equal '("random_tag")))))
 
 (provide 'org-x-dag-test)
 ;;; org-x-dag-test.el ends here
