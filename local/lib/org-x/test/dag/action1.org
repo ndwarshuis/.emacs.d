@@ -89,6 +89,20 @@ CLOSED: [2022-06-10 Fri 19:13]
 :ID:       a834a585-acd1-44e9-8e62-17793146d6ab
 :CREATED:  [2022-06-10 Fri 19:13]
 :END:
+** TODO this is a deadlined project
+DEADLINE: <2022-06-12 Sun>
+:PROPERTIES:
+:ID:       51798071-f860-48fb-b3d8-e526ce270290
+:CREATED:  [2022-06-12 Sun 18:09]
+:END:
+*** NEXT subtask
+:PROPERTIES:
+:ID:       fc1f3dda-a4b7-4b0d-b37c-fa67e112023a
+:CREATED:  [2022-06-12 Sun 18:10]
+:END:
+:LOGGING:
+- State "NEXT"       from "TODO"       [2022-06-12 Sun 18:10]
+:END:
 * iterators
 ** TODO this is an iterator
 :PROPERTIES:

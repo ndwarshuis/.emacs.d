@@ -851,7 +851,7 @@ deadline (eg via epoch time) or if it has a repeater."
             (< parent-epoch this-epoch))))))
 
 (defun org-x-dag-bs-action-project-inner (node-data ancestry child-bss)
-  (cl-flet
+  (cl-flet*
       ((new-proj
         (status)
         (either :right `(:sp-proj ,status)))
@@ -861,45 +861,39 @@ deadline (eg via epoch time) or if it has a repeater."
        (is-next
         (task-data)
         (-let (((&plist :todo :sched) task-data))
-          (or sched (equal todo org-x-kw-next)))))
-    ;; rankings
-    ;; *-active > proj-wait > proj-held > (proj-stuck == iter-empty) > *-complete
-    (org-x-dag-bs-action-with-closed node-data ancestry "projects"
-      (if child-bss
-          `(:sp-proj :proj-complete ,it-comptime)
-        `(:sp-task :task-complete ,it-comptime))
-
-      (org-x-dag-bs-action-check-children child-bss
-          (either :left "Completed projects cannot have active children")
-          (either :right `(:sp-proj :proj-complete ,it-comptime))
-          `(:sp-task :task-complete ,it-comptime)
-        (lambda (local)
-          (pcase local
-            (`(:sp-proj :proj-complete ,_) t)
-            (`(:sp-iter :iter-complete ,_) t)
-            (`(:sp-task :task-complete ,_) t)
-            (_ nil))))
-
-      (-let* (((sched dead) (-some->> it-planning
-                              (org-ml-get-properties '(:scheduled :deadline))))
-              (sp (-some-> sched (org-x-dag-partition-timestamp)))
-              (dp (-some-> dead (org-x-dag-partition-timestamp)))
-              (task-default (->> (list :todo it-todo :sched sp :dead dp)
-                                 (list :sp-task :task-active))))
+          (or sched (equal todo org-x-kw-next))))
+       (check-sched
+        (planning)
+        (if-let (sched (-some->> planning (org-ml-get-property :scheduled)))
+            (if child-bss (either :left "Projects cannot be scheduled")
+              (let ((sp (org-x-dag-partition-timestamp sched)))
+                (if (< 0 (plist-get sp :length))
+                    (->> "Tasks cannot have ranged scheduled timestamps"
+                         (either :left))
+                  (either :right sp))))
+          (either :right nil)))
+       (check-dead
+        (planning)
+        (if-let (dead (-some->> planning (org-ml-get-property :deadline)))
+            (let ((dp (org-x-dag-partition-timestamp dead)))
+              (cond
+               ((< 0 (plist-get dp :length))
+                (either :left "Actions cannot have ranged deadlines"))
+               ((and child-bss (plist-get dp :repeater))
+                (either :left "Projects cannot have repeated deadlines"))
+               ((org-x-dag-action-dead-after-parent-p ancestry dead)
+                (either :left "Action deadline cannot end after parent deadline"))
+               (t
+                (either :right dp))))
+          (either :right nil)))
+       (check-todo
+        (todo task-default)
         (cond
-         ((and child-bss (equal it-todo org-x-kw-hold))
-          (new-proj :proj-held))
-         ((and child-bss sp)
-          (either :left "Projects cannot be scheduled"))
-         ((and sp (< 0 (plist-get sp :length)))
-          (either :left "Projects cannot have ranged scheduled timestamps"))
-         ((and dp (< 0 (plist-get dp :length)))
-          (either :left "Projects cannot have ranged deadline timestamps"))
          ((and child-bss (plist-get node-data :effort))
           (either :left "Projects cannot have effort"))
-         ((org-x-dag-action-dead-after-parent-p ancestry dead)
-          (either :left "Action deadline cannot end after parent deadline"))
-         ((equal it-todo org-x-kw-todo)
+         ((and child-bss (equal todo org-x-kw-hold))
+          (new-proj :proj-held))
+         ((equal todo org-x-kw-todo)
           (org-x-dag-bs-action-rankfold-children child-bss task-default
             (lambda (acc next)
               (->> (pcase `(,acc ,next)
@@ -943,8 +937,8 @@ deadline (eg via epoch time) or if it has a repeater."
                      (`(,_ (:sp-task :task-active ,_)) t)
 
                      ;; any pair that makes it this far is completed in both,
-                     ;; which means neither takes precedence, which means choose
-                     ;; the left one
+                     ;; which means neither takes precedence, which means
+                     ;; choose the left one
                      (`(,_ ,_) nil))
                    (either :right)))
 
@@ -984,9 +978,36 @@ deadline (eg via epoch time) or if it has a repeater."
                     (t (org-x-dag-bs-error-kw "Task action" o)))))
                 (e (error "Pattern fail: %s" e))))))
          (child-bss
-          (org-x-dag-bs-error-kw "Project action" it-todo))
+          (org-x-dag-bs-error-kw "Project action" todo))
          (t
-          (either :right task-default)))))))
+          (either :right task-default)))))
+                    
+    ;; rankings
+    ;; *-active > proj-wait > proj-held > (proj-stuck == iter-empty) > *-complete
+    (org-x-dag-bs-action-with-closed node-data ancestry "projects"
+      (if child-bss
+          `(:sp-proj :proj-complete ,it-comptime)
+        `(:sp-task :task-complete ,it-comptime))
+
+      (org-x-dag-bs-action-check-children child-bss
+          (either :left "Completed projects cannot have active children")
+          (either :right `(:sp-proj :proj-complete ,it-comptime))
+          `(:sp-task :task-complete ,it-comptime)
+        (lambda (local)
+          (pcase local
+            (`(:sp-proj :proj-complete ,_) t)
+            (`(:sp-iter :iter-complete ,_) t)
+            (`(:sp-task :task-complete ,_) t)
+            (_ nil))))
+
+      (either-as>>= sp (check-sched it-planning)
+        (either-as>>= dp (check-dead it-planning)
+          ;; TODO it seems a bit odd that the only reason I need sp and dp here
+          ;; is to seed the sub-project task form; idk why this is weird but it
+          ;; smells like something could be optimized somewhere
+          (->> (list :todo it-todo :sched sp :dead dp)
+               (list :sp-task :task-active)
+               (check-todo it-todo)))))))
 
 (defun org-x-dag-node-data-is-iterator-p (node-data)
   (-let (((&plist :props) node-data))
@@ -1053,6 +1074,7 @@ deadline (eg via epoch time) or if it has a repeater."
         (ts-data child-scheds)
         (->> (list :dead (plist-get ts-data :dead)
                    :child-scheds child-scheds
+                   ;; TODO this can be an epoch and not a datetime
                    :leading-sched-dt (-> (org-x-dag-pts-max child-scheds)
                                          (plist-get :datetime)))
              (funcall new-active-fun))))

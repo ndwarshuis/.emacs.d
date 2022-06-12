@@ -46,6 +46,11 @@
   (->> (org-ml-from-string 'timestamp s)
        (org-ml-timestamp-get-start-time)))
 
+(defun timestamp-to-epoch (s)
+  (->> (org-ml-from-string 'timestamp s)
+       (org-ml-timestamp-get-start-time)
+       (org-ml-time-to-unixtime)))
+
 (buttercup-define-matcher :to-be-left-with (a x)
   (cl-destructuring-bind
       ((a-expr . a) (x-expr . x))
@@ -112,6 +117,14 @@
     (and (eq (org-ml-get-type a) (org-ml-get-type b))
          (plists-equal-p (get-useful-props a) (get-useful-props b)))))
 
+(defun pts-equal-p (a b)
+  (-let (((&plist :datetime da :repeater ra :warning wa :length la) a)
+         ((&plist :datetime db :repeater rb :warning wb :length lb) b))
+    (and (equal da db)
+         (equal ra rb)
+         (equal wa wb)
+         (equal la lb))))
+
 (defun plist-diff-msg (eq-funs expr a b)
   (-let (((a-diff b-diff common-diffs) (split-plists eq-funs a b)))
     (cond
@@ -173,12 +186,9 @@
     (let* ((ancestry (list :canceled-parent-p c
                            :held-parent-p h
                            :parent-deadline e))
-           (ancestry-eq-funs (list :parent-deadline #'element-equal-p))
+           (ancestry-eq-funs nil)
            (local-eq-funs (list :sched #'element-equal-p
-                                ;; TODO this is wrong
-                                :child-scheds (lambda (a b)
-                                                (seq-set-equal-p
-                                                 a b #'element-equal-p))))
+                                :child-scheds #'pts-equal-p))
            (f (->> (-partial #'status-diff-msg local-eq-funs test-expr y s d)
                    (-partial #'ancestry-diff-msg ancestry-eq-funs test-expr ancestry)
                    (-partial #'buffer-status-diff-msg test-expr :action)
@@ -280,7 +290,13 @@
       (it "Canceled"
         (expect "322af50a-f431-4940-8caf-cc5acdf5a555" :id-to-be-action
                 nil nil nil :sp-task '(:task-complete)
-                '(:canceledp t :epoch 1654903560))))
+                '(:canceledp t :epoch 1654903560)))
+
+      (it "Deadlined"
+        (let ((d (timestamp-to-epoch "<2022-06-12 Sun>")))
+          (expect "fc1f3dda-a4b7-4b0d-b37c-fa67e112023a" :id-to-be-action
+                  nil nil d :sp-task '(:task-active)
+                  '(:todo "NEXT" :sched nil :dead nil)))))
 
     (describe "Standalone Tasks"
       (it "Active"

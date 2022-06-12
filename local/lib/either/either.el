@@ -36,15 +36,19 @@ left/right slot."
 
 ;; monad-y things
 
-(defmacro either>>= (either form)
-  "Bind EITHER to FORM where the right slot is bound to 'it'."
-  (declare (indent 1))
+(defmacro either-as>>= (sym either form)
+  "Bind EITHER to FORM where the right slot is bound to SYM."
+  (declare (indent 2))
   (let ((e (make-symbol "--either")))
     `(let ((,e ,either))
        (pcase ,e
          (`(:left ,_) ,e)
-         (`(:right ,it) ,form)
+         (`(:right ,,sym) ,form)
          (e (error "Learn to use monads, dummy; this isn't one: %s" e))))))
+
+(defmacro either>>= (either form)
+  "Bind EITHER to FORM where the right slot is bound to 'it'."
+  `(either-as>>= it ,either ,form))
 
 (defun either-foldM (fun init xs)
   "Mondically apply FUN to XS (a list).
