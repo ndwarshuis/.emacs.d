@@ -881,15 +881,19 @@ deadline (eg via epoch time) or if it has a repeater."
 
       (-let* (((sched dead) (-some->> it-planning
                               (org-ml-get-properties '(:scheduled :deadline))))
-              (task-default (->> (list :todo it-todo
-                                       :sched sched
-                                       :dead dead)
+              (sp (-some-> sched (org-x-dag-partition-timestamp)))
+              (dp (-some-> dead (org-x-dag-partition-timestamp)))
+              (task-default (->> (list :todo it-todo :sched sp :dead dp)
                                  (list :sp-task :task-active))))
         (cond
          ((and child-bss (equal it-todo org-x-kw-hold))
           (new-proj :proj-held))
-         ((and child-bss sched)
+         ((and child-bss sp)
           (either :left "Projects cannot be scheduled"))
+         ((and sp (< 0 (plist-get sp :length)))
+          (either :left "Projects cannot have ranged scheduled timestamps"))
+         ((and dp (< 0 (plist-get dp :length)))
+          (either :left "Projects cannot have ranged deadline timestamps"))
          ((and child-bss (plist-get node-data :effort))
           (either :left "Projects cannot have effort"))
          ((org-x-dag-action-dead-after-parent-p ancestry dead)
@@ -1026,7 +1030,7 @@ deadline (eg via epoch time) or if it has a repeater."
           (org-x-dag-with-datetimes
            a b
            (lambda (a b)
-             (either :right (org-x-dag-datetime-compare a b)))
+             (either :right (org-x-dag-pts-compare a b)))
            (-const (either :left 'length))))))
        (comp2right
         (sched? comp)
@@ -1047,8 +1051,9 @@ deadline (eg via epoch time) or if it has a repeater."
        (new-active
         (ts-data child-scheds)
         (->> (list :dead (plist-get ts-data :dead)
-                   :child-sched-dts child-scheds
-                   :leading-sched-dt (org-x-dag-datetime-max child-scheds))
+                   :child-scheds child-scheds
+                   :leading-sched-dt (-> (org-x-dag-pts-max child-scheds)
+                                         (plist-get :datetime)))
              (funcall new-active-fun))))
     (org-x-dag-bs-action-rankfold-children child-bss default
       (lambda (acc next)
@@ -1087,7 +1092,7 @@ deadline (eg via epoch time) or if it has a repeater."
           (_ nil)))
       (lambda (next)
         (pcase next
-          (`(:si-proj :proj-active ,d) (plist-get d :child-scheds))
+          (`(:si-proj :proj-active ,d) (plist-get d :child-sched-dts))
           (`(:si-task :task-active ,d) (-some-> (plist-get d :sched) (list)))
           (_ nil)))
       (lambda (acc cs)
@@ -1137,8 +1142,7 @@ deadline (eg via epoch time) or if it has a repeater."
         (either :left "Deadlined sub-iterators cannot be ranged"))
        ((member it-todo (list org-x-kw-todo org-x-kw-wait))
         (org-x-dag-bs-action-subiter-todo-fold child-bss
-            (->> (list :sched (plist-get sp :datetime)
-                       :dead (plist-get dp :datetime))
+            (->> (list :sched sp :dead dp)
                  (list :si-task :task-active))
           (->> "Active sub-iterator must have at least one active child"
                (either :left))
@@ -3210,7 +3214,7 @@ FUTURE-LIMIT in a list."
           (`(:iter-empty :empty-complete ,_) :complete)
           (`(:iter-empty :empty-active ,_) :empty)
           (`(:iter-nonempty :nonempty-active ,data)
-           (-let* (((&plist :dead d :leading-sched s) data)
+           (-let* (((&plist :dead d :leading-sched-dt s) data)
                    (d* (-some->> d (org-x-dag-datetime-to-epoch)))
                    (s* (-some->> s (org-x-dag-datetime-to-epoch))))
              (-if-let (epoch (if (and d* s*) (min d* s*) (or s* d*)))
