@@ -38,6 +38,10 @@
         org-x-weekly-plan-file "weekly.org"
         org-x-quarterly-plan-file "quarterly.org"))
 
+(defun partition-timestamp (s)
+  (->> (org-ml-from-string 'timestamp s)
+       (org-x-dag-partition-timestamp)))
+
 (buttercup-define-matcher :to-be-left-with (a x)
   (cl-destructuring-bind
       ((a-expr . a) (x-expr . x))
@@ -64,25 +68,65 @@
           `(nil . ,(format "Expected %s right with %s, but got right with %s"
                            a-expr x r)))))))
 
-(defun split-plists (a b)
-  (let* ((a* (-partition 2 a))
-         (b* (-partition 2 b))
-         (a- (-difference a* b*))
-         (b- (-difference b* a*)))
-    `(,(-flatten-n 1 a-) ,(-flatten-n 1 b-))))
+(defun split-plists (eq-funs a b)
+  (cl-flet
+      ((get-keys
+        (x)
+        (->> (-partition 2 x)
+             (-map #'car)))
+       (key-eq
+        (k)
+        (let ((av (plist-get a k))
+              (bv (plist-get b k))
+              (f (or (plist-get eq-funs k) #'equal)))
+          (funcall f av bv))))
+    (let* ((a* (get-keys a))
+           (b* (get-keys b))
+           (a- (-difference a* b*))
+           (b- (-difference b* a*))
+           (common (->> (-intersection a* b*)
+                        (--reduce-from (if (key-eq it) acc
+                                         (cons (list it
+                                                     (plist-get a it)
+                                                     (plist-get b it))
+                                               acc))
+                                       nil))))
+      `(,a- ,b- ,common))))
 
-(defun plist-diff-msg (expr a b)
-  (-let (((a-diff b-diff) (split-plists a b)))
+(defun plists-equal-p (a b)
+  (equal (split-plists nil a b) '(nil nil nil)))
+
+(defun element-equal-p (a b)
+  ;; NOTE this does not compare children of elements/objects
+  (cl-flet
+      ((get-useful-props
+        (node)
+        (->> (org-ml-get-all-properties node)
+             (-partition 2)
+             (--remove (memq (car it) '(:parent :begin :end :contents-begin :contents-end)))
+             (-flatten-n 1))))
+    (and (eq (org-ml-get-type a) (org-ml-get-type b))
+         (plists-equal-p (get-useful-props a) (get-useful-props b)))))
+
+(defun plist-diff-msg (eq-funs expr a b)
+  (-let (((a-diff b-diff common-diffs) (split-plists eq-funs a b)))
     (cond
      ((and a-diff b-diff)
-      (format "Expected %s to have pairs '%s' and not to have pairs '%s'"
+      (format "Expected %s to have keys '%s' and not to have keys '%s'"
               expr b-diff a-diff))
      (a-diff
-      (format "Expected %s not to have pairs '%s'" expr a-diff))
+      (format "Expected %s not to have keys '%s'" expr a-diff))
      (b-diff
-      (format "Expected %s to have pairs '%s'" expr b-diff)))))
+      (format "Expected %s to have keys '%s'" expr b-diff))
+     (common-diffs
+      (-let (((as bs)
+              (->> common-diffs
+                   (--map `((,(car it) ,(nth 1 it)) (,(car it) ,(nth 2 it))))
+                   (apply #'-zip-lists))))
+        (format "Expected %s to have key/value pairs '%s' but instead had '%s'"
+                expr as bs))))))
 
-(defun status-diff-msg (expr type subtype data to-test)
+(defun status-diff-msg (eq-funs expr type subtype data to-test)
   (-let* (((type* . rest) to-test)
           ((subtype* last) (-split-at (length subtype) rest))
           (data* (car last)))
@@ -94,12 +138,12 @@
       (format "Expected %s to have subtype '%s' but instead had subtype '%s'"
               expr subtype subtype*))
      (t
-      (plist-diff-msg expr data data*)))))
+      (plist-diff-msg eq-funs expr data data*)))))
 
-(defun ancestry-diff-msg (expr ancestry inner-fun to-test)
+(defun ancestry-diff-msg (eq-funs expr ancestry inner-fun to-test)
   (declare (indent 3))
   (-let* (((&plist :ancestry A :local L) to-test))
-    (or (plist-diff-msg expr A ancestry)
+    (or (plist-diff-msg eq-funs expr A ancestry)
         (funcall inner-fun L))))
 
 (defun buffer-status-diff-msg (expr type inner-fun to-test)
@@ -125,8 +169,14 @@
     (let* ((ancestry (list :canceled-parent-p c
                            :held-parent-p h
                            :parent-deadline e))
-           (f (->> (-partial #'status-diff-msg test-expr y s d)
-                   (-partial #'ancestry-diff-msg test-expr ancestry)
+           (ancestry-eq-funs (list :parent-deadline #'element-equal-p))
+           (local-eq-funs (list :sched #'element-equal-p
+                                ;; TODO this is wrong
+                                :child-scheds (lambda (a b)
+                                                (seq-set-equal-p
+                                                 a b #'element-equal-p))))
+           (f (->> (-partial #'status-diff-msg local-eq-funs test-expr y s d)
+                   (-partial #'ancestry-diff-msg ancestry-eq-funs test-expr ancestry)
                    (-partial #'buffer-status-diff-msg test-expr :action)
                    (-partial #'right-diff-msg test-expr))))
       (-if-let (m (funcall f (org-x-dag-id->bs test)))
@@ -170,15 +220,11 @@
         (expect "a98df83f-bc98-4767-b2bc-f1054dbf89f9" :id-to-be-action
                 nil nil nil :sp-proj '(:proj-active) '(:child-scheds nil)))
 
-      ;; TODO these tests are broken because I don't have a robust way
-      ;; to compare the equality of org elements here (likely will need to
-      ;; steal something from the org-ml code, and then tell the plist
-      ;; checker which equality tests to use)
-      ;; (it "Active (scheduled)"
-      ;;   (let ((sched (org-ml-from-string 'timestamp "<2022-06-10 Fri>")))
-      ;;     (expect "3788c7bc-390e-4caf-af8e-06831ff3276b" :id-to-be-action
-      ;;             nil nil nil :sp-proj '(:proj-active)
-      ;;             `(:child-scheds (,sched)))))
+      (it "Active (scheduled)"
+        (let ((sched (org-ml-from-string 'timestamp "<2022-06-10 Fri>")))
+          (expect "3788c7bc-390e-4caf-af8e-06831ff3276b" :id-to-be-action
+                  nil nil nil :sp-proj '(:proj-active)
+                  `(:child-scheds (,sched)))))
 
       (it "Wait"
         (expect "26586b4d-7fc7-4a9f-b86f-e3c26a83a507" :id-to-be-action
@@ -230,7 +276,18 @@
       (it "Canceled"
         (expect "322af50a-f431-4940-8caf-cc5acdf5a555" :id-to-be-action
                 nil nil nil :sp-task '(:task-complete)
-                '(:canceledp t :epoch 1654903560))))))
+                '(:canceledp t :epoch 1654903560))))
+
+    (describe "Iterators"
+      (it "Active non-empty"
+        (let ((s0 (partition-timestamp "<2022-06-07 Tue>"))
+              (s1 (partition-timestamp "<2022-06-14 Tue>"))
+              (s2 (partition-timestamp "<2022-06-21 Tue>")))
+          (expect "2711e9b9-f765-415d-930f-b7ff16b3140b" :id-to-be-action
+                  nil nil nil :sp-iter '(:iter-nonempty :nonempty-active)
+                  (list :child-scheds `(,s0 ,s1 ,s2)
+                        :leading-sched (plist-get s2 :datetime)
+                        :dead nil)))))))
 
 (provide 'org-x-dag-test)
 ;;; org-x-dag-test.el ends here

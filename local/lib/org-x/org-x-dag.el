@@ -88,14 +88,21 @@
 
 ;; datetime operations
 
-(defmacro org-x-dag-with-times (datetime0 datetime1 form)
+(defun org-x-dag-datetimes-same-length-p (datetime0 datetime1)
   ;; ASSUME all digits in this comparison are on the calendar/clock (eg day 32
   ;; does not 'rollover' to day 1 on the next month)
+  (not (xor (org-ml-time-is-long datetime0) (org-ml-time-is-long datetime1))))
+
+;; Maybe a -> Maybe a -> (a -> a -> b) -> b -> Maybe b
+(defun org-x-dag-with-datetimes (a b fun alt)
+  (when (and a b)
+    (if (org-x-dag-datetimes-same-length-p a b)
+        (funcall fun a b)
+      (funcall alt))))
+
+(defmacro org-x-dag-with-times (datetime0 datetime1 form)
   (declare (indent 2))
-  `(if (or (and (org-ml-time-is-long ,datetime0)
-                (org-ml-time-is-long ,datetime1))
-           (not (or (org-ml-time-is-long ,datetime0)
-                    (org-ml-time-is-long ,datetime1))))
+  `(if (org-x-dag-datetimes-same-length-p datetime0 datetime1)
        ,form
      (error "Datetimes are invalid lengths: %S and %S" ,datetime0 ,datetime1)))
 
@@ -126,6 +133,12 @@
          (--drop-while (= (car it) (cdr it)))
          (not))))
 
+(defun org-x-dag-datetime-compare (a b)
+  (cond
+   ((org-x-dag-datetime= a b) 'eq)
+   ((org-x-dag-datetime< a b) 'gt)
+   (t 'lt)))
+
 (defun org-x-dag-date< (datetime0 datetime1)
   (org-x-dag-datetime< (org-x-dag-datetime-to-date datetime0)
                        (org-x-dag-datetime-to-date datetime1)))
@@ -140,6 +153,12 @@
 (defun org-x-dag-date= (datetime0 datetime1)
   (org-x-dag-datetime= (org-x-dag-datetime-to-date datetime0)
                        (org-x-dag-datetime-to-date datetime1)))
+
+(defun org-x-dag-datetime-max (datetimes)
+  (-max-by #'org-x-dag-datetime< datetimes))
+
+(defun org-x-dag-date-max (datetimes)
+  (-max-by #'org-x-dag-date< datetimes))
 
 (defun org-x-dag-datetime-shift (datetime shift unit)
   (cl-flet*
@@ -172,6 +191,9 @@
     (_ (error "Invalid date format(s): %S or %S" date0 date1))))
 
 ;; date <-> epoch
+
+(defun org-x-dag-datetime-to-epoch (date)
+  (float-time (encode-time `(0 ,@(reverse date) nil -1 nil))))
 
 (defun org-x-dag-date-to-epoch (date)
   (float-time (encode-time `(0 0 0 ,@(reverse date) nil -1 nil))))
@@ -374,6 +396,36 @@ relative shift in days from ABS."
 ;;     (list (org-x-dag-format-year-tag y)
 ;;           (org-x-dag-format-month-tag m)
 ;;           (org-x-dag-format-day-tag d))))
+
+;; timestamps <-> datetime
+
+(defun org-x-dag-partition-timestamp (ts)
+  (list :datetime (org-ml-timestamp-get-start-time ts)
+        :length (org-ml-timestamp-get-range ts)
+        :pos (org-ml-get-property :begin ts)
+        :repeater (org-ml-timestamp-extract-modulus 'repeater ts)
+        :warning (org-ml-timestamp-extract-modulus 'warning ts)))
+
+(defun org-x--dag-pts-compare (fun a b)
+  (funcall (-on fun (lambda (ts) (plist-get ts :datetime))) a b))
+
+(defun org-x-dag-pts-compare (a b)
+  (org-x--dag-pts-compare #'org-x-dag-datetime-compare a b))
+
+(defun org-x-dag-pts= (a b)
+  (org-x--dag-pts-compare #'org-x-dag-datetime= a b))
+
+(defun org-x-dag-pts< (a b)
+  (org-x--dag-pts-compare #'org-x-dag-datetime< a b))
+
+(defun org-x-dag-pts> (a b)
+  (org-x--dag-pts-compare #'org-x-dag-datetime> a b))
+
+(defun org-x-dag-pts-max (ps)
+  (-max-by #'org-x-dag-pts> ps))
+
+(defun org-x-dag-pts-is-long-p (pts)
+  (org-ml-time-is-long (plist-get pts :datetime)))
 
 ;; allocation
 
@@ -699,7 +751,8 @@ used for optimization."
         (pcase (car bss)
           (`(:right ,r)
            (if (funcall stop-fun r)
-               (->> (funcall acc-fun r)
+               (->> (either-rights bss)
+                    (--mapcat (funcall acc-fun it))
                     (funcall trans-fun r))
              (either>>= (fold-rank (list r nil) (cdr bss))
                (-let (((cur as) it))
@@ -708,8 +761,11 @@ used for optimization."
 
 (defun org-x-dag-bs-action-rankfold-children (bss default rank-fun stop-fun
                                                   acc-fun trans-fun)
-  (cl-flet ((get-local (x) (plist-get x :local)))
-    (declare (indent 2))
+  (declare (indent 2))
+  (cl-flet
+      ((get-local
+        (x)
+        (plist-get x :local)))
     (org-x-dag-bs-rankfold-children bss default
       (-on rank-fun #'get-local)
       (-compose stop-fun #'get-local)
@@ -947,51 +1003,87 @@ deadline (eg via epoch time) or if it has a repeater."
 
 (defun org-x-dag-bs-action-subiter-todo-fold (child-bss default trans-fun)
   (declare (indent 2))
-  (org-x-dag-bs-action-rankfold-children child-bss default
-    (lambda (acc next)
-      (pcase `(,acc ,next)
-        ;; for active tasks, the furthest in the future is ranked the highest
-        (`((:si-task :task-active ,a) (:si-task :task-active ,b))
-         (-let (((&plist :sched as :dead ad) a)
-                ((&plist :sched bs :dead bd) b))
-           (cond
-            ((or (xor as bs) (xor ad bd))
-             (->> "All sub-iters must have the same planning configuration"
-                  (either :left)))
-            ((and as bs (xor (org-ml-time-is-long as) (org-ml-time-is-long bs)))
-             (->> "Sub-iters must have scheduled timestamp with same length"
-                  (either :left)))
-            ((and ad bd (xor (org-ml-time-is-long ad) (org-ml-time-is-long bd)))
-             (->> "Sub-iters must have deadline timestamp with same length"
-                  (either :left)))
-            ;; ASSUME this won't fail since the datetimes are assumed to be the
-            ;; same length as per rules above
-            ((and ad bd)
-             (->> (org-x-dag-datetime< (org-ml-timestamp-get-start-time ad)
-                                       (org-ml-timestamp-get-start-time bd))
-                  (either :right)))
-            (t
-             (->> (org-x-dag-datetime< (org-ml-timestamp-get-start-time as)
-                                       (org-ml-timestamp-get-start-time bs))
-                  (either :right))))))
-        ((or `((:si-task . ,_) (:si-proj . ,_))
-             `((:si-proj . ,_) (:si-task . ,_)))
-         (either :left "Sub-iterators must have same project structure"))
-        (`(,(or `(:si-task :task-active ,_) `(:si-proj :proj-active ,_)) ,_)
-         (either :right nil))
-        (`(,_ ,(or `(:si-task :task-active ,_) `(:si-proj :proj-active ,_)))
-         (either :right t))
-        (`(,_ ,_) (either :right nil))))
-    (lambda (next)
-      (pcase next
-        ((or `(:si-task :task-active ,_) `(:si-proj :proj-active ,_)) t)
-        (_ nil)))
-    (lambda (next)
-      (pcase next
-        (`(:si-proj :proj-active ,d) (plist-get d :child-scheds))
-        (`(:si-task :task-active ,d) (list (plist-get d :sched)))
-        (_ nil)))
-    trans-fun))
+  (cl-flet*
+      ((fmt-left
+        (sched? wrong)
+        (let ((what (if sched? "scheduled" "deadlined")))
+          (org-x-dag-left "Sub-iter %s timestamps %s" what wrong)))
+       (fmt-left-both
+        (wrong)
+        (org-x-dag-left "Sub-iter scheduled/deadlined timestamps %s" wrong))
+       (fmt-left-2
+        (sched-wrong dead-wrong)
+        (org-x-dag-left
+         "Sub-iter scheduled timestamps %s and deadlined timestamps %s"
+         sched-wrong dead-wrong))
+       (compare
+        (a b)
+        (cond
+         ((not (or a b)) (either :left nil))
+         ((xor a b) (either :left 'presence))
+         (t
+          (org-x-dag-with-datetimes
+           a b
+           (lambda (a b)
+             (either :right (org-x-dag-pts-compare a b)))
+           (-const (either :left 'length))))))
+       (comp2right
+        (sched? comp)
+        (if (eq comp 'eq) (fmt-left sched? "should be different")
+          (either :right (eq comp 'gt))))
+       (left2err
+        (sym)
+        (pcase sym
+          (`presence "should be on all or none")
+          (`length "must have same length")))
+       (sym-left
+        (sched? sym)
+        (fmt-left sched? (left2err sym)))
+       (sym-left-2
+        (sched-sym dead-sym)
+        (if (eq sched-sym dead-sym) (fmt-left-both (left2err sched-sym))
+          (fmt-left-2 (left2err sched-sym) (left2err dead-sym)))))
+    (org-x-dag-bs-action-rankfold-children child-bss default
+      (lambda (acc next)
+        (pcase `(,acc ,next)
+          ;; for active tasks, the furthest in the future is ranked the highest
+          (`((:si-task :task-active ,a) (:si-task :task-active ,b))
+           (-let (((&plist :sched as :dead ad) a)
+                  ((&plist :sched bs :dead bd) b))
+             (pcase `(,(compare as bs) ,(compare ad bd))
+               (`((:left ,s) (:right ,d)) (if s (sym-left t s) (comp2right nil d)))
+               (`((:right ,s) (:left ,d)) (if d (sym-left nil d) (comp2right t s)))
+               (`((:right ,s) (:right ,d))
+                (pcase `(,s ,d)
+                  (`(gt gt) (either :right t))
+                  (`(lt lt) (either :right nil))
+                  ((or `(gt lt) `(lt gt)) (fmt-left-both "should not cross"))
+                  (`(eq eq) (fmt-left-both "should be different"))
+                  (`(eq ,_) (fmt-left t "should be different"))
+                  (`(,_ eq) (fmt-left nil "should be different"))))
+               (`((:left ,s) (:left ,d))
+                (cond
+                 ((and s d) (sym-left-2 s d))
+                 (s (sym-left t s))
+                 (d (sym-left nil d)))))))
+          ((or `((:si-task . ,_) (:si-proj . ,_))
+               `((:si-proj . ,_) (:si-task . ,_)))
+           (either :left "Sub-iterators must have same project structure"))
+          (`(,(or `(:si-task :task-active ,_) `(:si-proj :proj-active ,_)) ,_)
+           (either :right nil))
+          (`(,_ ,(or `(:si-task :task-active ,_) `(:si-proj :proj-active ,_)))
+           (either :right t))
+          (`(,_ ,_) (either :right nil))))
+      (lambda (next)
+        (pcase next
+          ((or `(:si-task :task-active ,_) `(:si-proj :proj-active ,_)) t)
+          (_ nil)))
+      (lambda (next)
+        (pcase next
+          (`(:si-proj :proj-active ,d) (plist-get d :child-scheds))
+          (`(:si-task :task-active ,d) (-some-> (plist-get d :sched) (list)))
+          (_ nil)))
+      trans-fun)))
 
 (defun org-x-dag-node-is-iterator-p (node)
   (org-x-dag-node-data-is-iterator-p (plist-get node :node-meta)))
@@ -1013,20 +1105,30 @@ deadline (eg via epoch time) or if it has a repeater."
         (lambda (c) `(:si-proj :proj-complete ,c))
         (lambda (c) `(:si-task :task-complete ,c)))
 
-      (-let (((sched dead) (-some->> it-planning
-                             (org-ml-get-properties '(:scheduled :deadline)))))
+      (-let* (((sched dead) (-some->> it-planning
+                              (org-ml-get-properties '(:scheduled :deadline))))
+              (sp (-some-> sched (org-x-dag-partition-timestamp)))
+              (dp (-some-> dead (org-x-dag-partition-timestamp))))
         (cond
-         ((and sched child-bss)
+         ((and sp child-bss)
           (either :left "Project sub-iterators cannot be scheduled"))
-         ((and dead child-bss)
+         ((and dp child-bss)
           (either :left "Project sub-iterators cannot be deadlined"))
          ((org-x-dag-node-data-is-iterator-p node-data)
           (either :left "Iterators cannot be nested"))
          ((org-x-dag-action-dead-after-parent-p ancestry dead)
           (either :left "Sub-iterator deadline must not start after parent"))
-         ((equal it-todo org-x-kw-todo)
+         ((and sp (plist-get sp :repeater))
+          (either :left "Scheduled sub-iterators cannot repeat"))
+         ((and dp (plist-get dp :repeater))
+          (either :left "Deadlined sub-iterators cannot repeat"))
+         ((and sp (< 0 (plist-get sp :length)))
+          (either :left "Scheduled sub-iterators cannot be ranged"))
+         ((and dp (< 0 (plist-get dp :length)))
+          (either :left "Deadlined sub-iterators cannot be ranged"))
+         ((member it-todo (list org-x-kw-todo org-x-kw-wait))
           (org-x-dag-bs-action-subiter-todo-fold child-bss
-              `(:si-task :task-active (:sched ,sched :dead ,dead))
+              `(:si-task :task-active (:sched ,sp :dead ,dp))
             (lambda (acc cs)
               (pcase acc
                 ((or `(:si-proj :proj-complete ,_)
@@ -1037,7 +1139,8 @@ deadline (eg via epoch time) or if it has a repeater."
                  (-let (((&plist :dead d :leading-sched s) ts-data))
                    (new-active-proj d s cs)))
                 (`(:si-task :task-active ,ts-data)
-                 (-let (((&plist :dead d :sched s) ts-data))
+                 (-let (((&plist :dead d) ts-data)
+                        ((&plist :datetime s) (org-x-dag-pts-max cs)))
                    (new-active-proj d s cs)))
                 (e (error "Invalid pattern: %s" e))))))
          (t
@@ -1067,7 +1170,8 @@ deadline (eg via epoch time) or if it has a repeater."
                    `(:si-proj :proj-complete ,_))
                (either :right '(:iter-nonempty :nonempty-complete)))
               (`(:si-task :task-active ,ts-data)
-               (-let (((&plist :dead d :sched s) ts-data))
+               (-let* (((&plist :dead d) ts-data)
+                       ((&plist :datetime s) (org-x-dag-pts-max cs)))
                  (new-active-iter d s cs)))
               (`(:si-proj :proj-active ,ts-data)
                (-let (((&plist :dead d :leading-sched s) ts-data))
@@ -2775,12 +2879,6 @@ encountered will be returned."
               (u (convert-unit unit)))
           `(,v ,u ,type))))))
 
-(defun org-x-dag-partition-timestamp (ts)
-  (list :datetime (org-ml-timestamp-get-start-time ts)
-        :pos (org-ml-get-property :begin ts)
-        :repeater (org-ml-timestamp-extract-modulus 'repeater ts)
-        :warning (org-ml-timestamp-extract-modulus 'warning ts)))
-
 (defun org-x-dag-repeater-get-next (sel-datetime datetime shift shifttype reptype)
   "Return the next timestamp repeater of DATETIME."
   (pcase reptype
@@ -3127,8 +3225,8 @@ FUTURE-LIMIT in a list."
           (`(:iter-empty :empty-active ,_) :empty)
           (`(:iter-nonempty :nonempty-active ,data)
            (-let* (((&plist :dead d :leading-sched s) data)
-                   (d* (-some->> d (org-x-dag-timestamp-to-epoch)))
-                   (s* (-some->> s (org-x-dag-timestamp-to-epoch))))
+                   (d* (-some->> d (org-x-dag-datetime-to-epoch)))
+                   (s* (-some->> s (org-x-dag-datetime-to-epoch))))
              (-if-let (epoch (if (and d* s*) (min d* s*) (or s* d*)))
                  (if (< (+ (float-time) org-x-iterator-active-future-offset)
                         epoch)
