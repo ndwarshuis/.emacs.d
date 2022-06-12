@@ -42,6 +42,10 @@
   (->> (org-ml-from-string 'timestamp s)
        (org-x-dag-partition-timestamp)))
 
+(defun timestamp-to-datetime (s)
+  (->> (org-ml-from-string 'timestamp s)
+       (org-ml-timestamp-get-start-time)))
+
 (buttercup-define-matcher :to-be-left-with (a x)
   (cl-destructuring-bind
       ((a-expr . a) (x-expr . x))
@@ -280,13 +284,13 @@
 
     (describe "Iterators"
       (it "Active non-empty"
-        (let ((s0 (partition-timestamp "<2022-06-07 Tue>"))
-              (s1 (partition-timestamp "<2022-06-14 Tue>"))
-              (s2 (partition-timestamp "<2022-06-21 Tue>")))
+        (let ((s0 (timestamp-to-datetime "<2022-06-07 Tue>"))
+              (s1 (timestamp-to-datetime "<2022-06-14 Tue>"))
+              (s2 (timestamp-to-datetime "<2022-06-21 Tue>")))
           (expect "2711e9b9-f765-415d-930f-b7ff16b3140b" :id-to-be-action
                   nil nil nil :sp-iter '(:iter-nonempty :nonempty-active)
-                  (list :child-scheds `(,s0 ,s1 ,s2)
-                        :leading-sched (plist-get s2 :datetime)
+                  (list :child-sched-dts `(,s0 ,s1 ,s2)
+                        :leading-sched-dt s2
                         :dead nil)))))))
 
 (provide 'org-x-dag-test)

@@ -155,7 +155,7 @@
                        (org-x-dag-datetime-to-date datetime1)))
 
 (defun org-x-dag-datetime-max (datetimes)
-  (-max-by #'org-x-dag-datetime< datetimes))
+  (-max-by #'org-x-dag-datetime> datetimes))
 
 (defun org-x-dag-date-max (datetimes)
   (-max-by #'org-x-dag-date< datetimes))
@@ -1001,7 +1001,8 @@ deadline (eg via epoch time) or if it has a repeater."
         ((or `(:si-task :task-complete ,_) `(:si-proj :proj-complete ,_)) t)
         (_ nil)))))
 
-(defun org-x-dag-bs-action-subiter-todo-fold (child-bss default trans-fun)
+(defun org-x-dag-bs-action-subiter-todo-fold
+    (child-bss default complete-default new-active-fun)
   (declare (indent 2))
   (cl-flet*
       ((fmt-left
@@ -1025,7 +1026,7 @@ deadline (eg via epoch time) or if it has a repeater."
           (org-x-dag-with-datetimes
            a b
            (lambda (a b)
-             (either :right (org-x-dag-pts-compare a b)))
+             (either :right (org-x-dag-datetime-compare a b)))
            (-const (either :left 'length))))))
        (comp2right
         (sched? comp)
@@ -1042,7 +1043,13 @@ deadline (eg via epoch time) or if it has a repeater."
        (sym-left-2
         (sched-sym dead-sym)
         (if (eq sched-sym dead-sym) (fmt-left-both (left2err sched-sym))
-          (fmt-left-2 (left2err sched-sym) (left2err dead-sym)))))
+          (fmt-left-2 (left2err sched-sym) (left2err dead-sym))))
+       (new-active
+        (ts-data child-scheds)
+        (->> (list :dead (plist-get ts-data :dead)
+                   :child-sched-dts child-scheds
+                   :leading-sched-dt (org-x-dag-datetime-max child-scheds))
+             (funcall new-active-fun))))
     (org-x-dag-bs-action-rankfold-children child-bss default
       (lambda (acc next)
         (pcase `(,acc ,next)
@@ -1083,102 +1090,81 @@ deadline (eg via epoch time) or if it has a repeater."
           (`(:si-proj :proj-active ,d) (plist-get d :child-scheds))
           (`(:si-task :task-active ,d) (-some-> (plist-get d :sched) (list)))
           (_ nil)))
-      trans-fun)))
+      (lambda (acc cs)
+        (pcase acc
+          ((or `(:si-task :task-complete ,_) `(:si-proj :proj-complete ,_))
+           complete-default)
+          (`(:si-proj :proj-active ,ts-data)
+           (new-active ts-data cs))
+          (`(:si-task :task-active ,ts-data)
+           (new-active ts-data cs))
+          (e (error "Invalid pattern: %s" e)))))))
 
 (defun org-x-dag-node-is-iterator-p (node)
   (org-x-dag-node-data-is-iterator-p (plist-get node :node-meta)))
 
 (defun org-x-dag-bs-action-subiter-inner (node-data ancestry child-bss)
-  (cl-flet
-      ((new-active-proj
-        (d s cs)
-        (->> (list :dead d :child-scheds cs :leading-sched s)
-             (list :si-proj :proj-active)
-             (either :right))))
-    (org-x-dag-bs-action-with-closed node-data ancestry "sub-iterators"
-      (if child-bss
-          `(:si-proj :proj-complete ,it-comptime)
-        `(:si-task :task-complete ,it-comptime))
+  (org-x-dag-bs-action-with-closed node-data ancestry "sub-iterators"
+    (if child-bss
+        `(:si-proj :proj-complete ,it-comptime)
+      `(:si-task :task-complete ,it-comptime))
 
-      (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
-                                                 "sub-iterators"
-        (lambda (c) `(:si-proj :proj-complete ,c))
-        (lambda (c) `(:si-task :task-complete ,c)))
+    (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime
+                                               "sub-iterators"
+      (lambda (c) `(:si-proj :proj-complete ,c))
+      (lambda (c) `(:si-task :task-complete ,c)))
 
-      (-let* (((sched dead) (-some->> it-planning
-                              (org-ml-get-properties '(:scheduled :deadline))))
-              (sp (-some-> sched (org-x-dag-partition-timestamp)))
-              (dp (-some-> dead (org-x-dag-partition-timestamp))))
-        (cond
-         ((and sp child-bss)
-          (either :left "Project sub-iterators cannot be scheduled"))
-         ((and dp child-bss)
-          (either :left "Project sub-iterators cannot be deadlined"))
-         ((org-x-dag-node-data-is-iterator-p node-data)
-          (either :left "Iterators cannot be nested"))
-         ((org-x-dag-action-dead-after-parent-p ancestry dead)
-          (either :left "Sub-iterator deadline must not start after parent"))
-         ((and sp (plist-get sp :repeater))
-          (either :left "Scheduled sub-iterators cannot repeat"))
-         ((and dp (plist-get dp :repeater))
-          (either :left "Deadlined sub-iterators cannot repeat"))
-         ((and sp (< 0 (plist-get sp :length)))
-          (either :left "Scheduled sub-iterators cannot be ranged"))
-         ((and dp (< 0 (plist-get dp :length)))
-          (either :left "Deadlined sub-iterators cannot be ranged"))
-         ((member it-todo (list org-x-kw-todo org-x-kw-wait))
-          (org-x-dag-bs-action-subiter-todo-fold child-bss
-              `(:si-task :task-active (:sched ,sp :dead ,dp))
-            (lambda (acc cs)
-              (pcase acc
-                ((or `(:si-proj :proj-complete ,_)
-                     `(:si-task :task-complete ,_))
-                 (-> "Active sub-iterator must have at least one active child"
-                     (org-x-dag-left)))
-                (`(:si-proj :proj-active ,ts-data)
-                 (-let (((&plist :dead d :leading-sched s) ts-data))
-                   (new-active-proj d s cs)))
-                (`(:si-task :task-active ,ts-data)
-                 (-let (((&plist :dead d) ts-data)
-                        ((&plist :datetime s) (org-x-dag-pts-max cs)))
-                   (new-active-proj d s cs)))
-                (e (error "Invalid pattern: %s" e))))))
-         (t
-          (org-x-dag-bs-error-kw "Sub-iterator" it-todo)))))))
+    (-let* (((sched dead) (-some->> it-planning
+                            (org-ml-get-properties '(:scheduled :deadline))))
+            (sp (-some-> sched (org-x-dag-partition-timestamp)))
+            (dp (-some-> dead (org-x-dag-partition-timestamp))))
+      (cond
+       ((and sp child-bss)
+        (either :left "Project sub-iterators cannot be scheduled"))
+       ((and dp child-bss)
+        (either :left "Project sub-iterators cannot be deadlined"))
+       ((org-x-dag-node-data-is-iterator-p node-data)
+        (either :left "Iterators cannot be nested"))
+       ((org-x-dag-action-dead-after-parent-p ancestry dead)
+        (either :left "Sub-iterator deadline must not start after parent"))
+       ((and sp (plist-get sp :repeater))
+        (either :left "Scheduled sub-iterators cannot repeat"))
+       ((and dp (plist-get dp :repeater))
+        (either :left "Deadlined sub-iterators cannot repeat"))
+       ((and sp (< 0 (plist-get sp :length)))
+        (either :left "Scheduled sub-iterators cannot be ranged"))
+       ((and dp (< 0 (plist-get dp :length)))
+        (either :left "Deadlined sub-iterators cannot be ranged"))
+       ((member it-todo (list org-x-kw-todo org-x-kw-wait))
+        (org-x-dag-bs-action-subiter-todo-fold child-bss
+            (->> (list :sched (plist-get sp :datetime)
+                       :dead (plist-get dp :datetime))
+                 (list :si-task :task-active))
+          (->> "Active sub-iterator must have at least one active child"
+               (either :left))
+          (lambda (data)
+            (either :right `(:si-proj :proj-active ,data)))))
+       (t
+        (org-x-dag-bs-error-kw "Sub-iterator" it-todo))))))
 
 (defun org-x-dag-bs-action-iter-inner (node-data ancestry child-bss)
-  (cl-flet
-      ((new-active-iter
-        (d s cs)
-        (->> (list :dead d :child-scheds cs :leading-sched s)
-             (list :iter-nonempty :nonempty-active)
-             (either :right))))
-    (org-x-dag-bs-action-with-closed node-data ancestry "iterators"
-      `(:iter-empty :empty-complete ,it-comptime)
-      (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime "iterators"
-        (lambda (c) `(:iter-nonempty :nonempty-complete ,c))
-        (lambda (c) `(:iter-empty :empty-complete ,c)))
-      (cond
-       (it-planning
-        (either :left "Iterators cannot be scheduled or deadlined"))
-       ;; TODO also check for timeshift and archive props
-       ((equal it-todo org-x-kw-todo)
-        (org-x-dag-bs-action-subiter-todo-fold child-bss '(:iter-empty :empty-active)
-          (lambda (acc cs)
-            (pcase acc
-              ((or `(:si-task :task-complete ,_)
-                   `(:si-proj :proj-complete ,_))
-               (either :right '(:iter-nonempty :nonempty-complete)))
-              (`(:si-task :task-active ,ts-data)
-               (-let* (((&plist :dead d) ts-data)
-                       ((&plist :datetime s) (org-x-dag-pts-max cs)))
-                 (new-active-iter d s cs)))
-              (`(:si-proj :proj-active ,ts-data)
-               (-let (((&plist :dead d :leading-sched s) ts-data))
-                 (new-active-iter d s cs)))
-              (e (error "Invalid pattern: %s" e))))))
-       (t
-        (org-x-dag-bs-error-kw "Iterator" it-todo))))))
+  (org-x-dag-bs-action-with-closed node-data ancestry "iterators"
+    `(:iter-empty :empty-complete ,it-comptime)
+    (org-x-dag-bs-action-subiter-complete-fold child-bss it-comptime "iterators"
+      (lambda (c) `(:iter-nonempty :nonempty-complete ,c))
+      (lambda (c) `(:iter-empty :empty-complete ,c)))
+    (cond
+     (it-planning
+      (either :left "Iterators cannot be scheduled or deadlined"))
+     ;; TODO also check for timeshift and archive props
+     ((equal it-todo org-x-kw-todo)
+      (org-x-dag-bs-action-subiter-todo-fold child-bss
+          '(:iter-empty :empty-active)
+        (either :right '(:iter-nonempty :nonempty-complete))
+        (lambda (data)
+          (either :right `(:iter-nonempty :nonempty-active ,data)))))
+     (t
+      (org-x-dag-bs-error-kw "Iterator" it-todo)))))
 
 (defun org-x-dag-bs-epg-inner (node ancestry child-bss)
   (let ((is-complete
