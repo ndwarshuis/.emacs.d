@@ -7,9 +7,9 @@ This is my personal emacs config. It is quite massive. Please use the table of c
   - [[#config-structure][config structure]]
   - [[#continuous-integration][continuous integration]]
 - [[#library][library]]
-  - [[#system-dependencies][system dependencies]]
   - [[#external][external]]
   - [[#internal][internal]]
+  - [[#system-dependencies][system dependencies]]
   - [[#macros][macros]]
   - [[#functions][functions]]
   - [[#interactive][interactive]]
@@ -102,60 +102,6 @@ In the root of this directory is a =.github= folder with some simple tests to en
 The danger with only having emacs on my daily driver is that I could silently introduce a dependency on some system library, and this may or may not be present when I unpack this config on a different machine. For now, the CI pipeline simply tests whether or not this config will initialize and build correctly on a "bare" system, and also tests if I can pull a list of dependencies using my somewhat hacky [[#system-dependencies][API]] so they can be installed via the package manager.
 * library
 This is code that is used generally throughout the emacs config
-** system dependencies
-:PROPERTIES:
-:ID:       2dc12a82-cb0c-40f1-ab5a-46d2800e9e53
-:END:
-#+begin_src emacs-lisp
-(defvar nd/required-exes '()
-  "Running list of executables required to run various configuations.")
-
-(defun nd/require-bin (bin-or-path &optional pkg-type pkg-name)
-  "Indicate that a binary executable is required.
-BIN-OR-PATH is a string indicating the executable name or path to
-the executable. PKG-TYPE indicates how BIN-ON-PATH must be
-installed (see `nd/required-exes' for available types). PKG-NAME
-indicates the package name to install which provides BIN-OR-PATH,
-which defaults to BIN-OR-PATH if not given."
-  (let* ((pt (or pkg-type :pacman))
-         (name (f-base bin-or-path))
-         (pn (or pkg-name name))
-         (new (list name
-                    :full-path (executable-find bin-or-path)
-                    :pkg-type pt
-                    :pkg-name pn)))
-    (setq nd/required-exes (cons new nd/required-exes))))
-
-(defmacro nd/if-bin (bin then &rest else)
-  "Execute THEN if BIN exists, otherwise do ELSE."
-  (declare (indent 1))
-  (if-let (x (alist-get bin nd/required-exes nil nil #'equal))
-      `(if ,(plist-get x :full-path) ,then ,@else)
-    (message "WARNING: executable '%s' must be required" bin)))
-
-(defmacro nd/when-bin (bin &rest body)
-  "Execute BODY if the program BIN exists."
-  (declare (indent 1))
-  `(nd/if-bin ,bin (progn ,@body)
-     (message "Executable %s not found. Skipping." ,bin)))
-
-(defun nd/verify-required-packages ()
-  "Verify `nd/required-exes'.
-All binaries should be specified once."
-  (->> (-map #'car nd/required-exes)
-       (-uniq)
-       (length)
-       (equal (length nd/required-exes))))
-
-(defun nd/get-dependencies (keys)
-  "Return list of all dependencies.
-KEYS is a list of keywords that indicate the :pkg-type of
-dependencies to return."
-  (->> nd/required-exes
-       (--filter (memq (plist-get (cdr it) :pkg-type) keys))
-       (--map (plist-get it :pkg-name))
-       (-uniq)))
-#+end_src
 ** external
 Some useful external libraries that I use all over the place
 *** string manipulation
@@ -208,6 +154,147 @@ Define a path to internal libraries (either things I am developing or external =
 (defun nd/expand-lib-directory (path)
   (f-join user-emacs-directory nd/lib-directory path))
 #+END_SRC
+** system dependencies
+:PROPERTIES:
+:ID:       2dc12a82-cb0c-40f1-ab5a-46d2800e9e53
+:END:
+*** Definitions
+#+begin_src emacs-lisp
+;; dependency declaration
+
+(defvar nd/required-exes nil
+  "Running list of executables required to run various configuations.")
+
+(defconst nd/valid-package-types '(:pacman :aur :gem :local))
+
+(defun nd/require-bin (bin-or-path &optional pkg-type pkg-name)
+  "Indicate that a binary executable is required.
+BIN-OR-PATH is a string indicating the executable name or path to
+the executable. PKG-TYPE indicates how BIN-ON-PATH must be
+installed (see `nd/required-exes' for available types). PKG-NAME
+indicates the package name to install which provides BIN-OR-PATH,
+which defaults to BIN-OR-PATH if not given."
+  (let* ((pt (or pkg-type :pacman))
+         (name (f-base bin-or-path))
+         (pn (or pkg-name name))
+         (new (list :full-path (executable-find bin-or-path)
+                    :pkg-type pt
+                    :pkg-name pn)))
+    (cond
+     ((not (memq pt nd/valid-package-types))
+      (warn "Invalid dependency type: %s" pt))
+     ((ht-get nd/required-exes name)
+      (warn "Dependency already required: %s" name))
+     (t
+      (ht-set nd/required-exes name new)))))
+
+(defmacro nd/if-bin (bin then &rest else)
+  "Execute THEN if BIN exists, otherwise do ELSE."
+  (declare (indent 1))
+  (if-let (x (ht-get nd/required-exes bin))
+      `(if ,(plist-get x :full-path) ,then ,@else)
+    (warn "executable '%s' must be required" bin)))
+
+(defmacro nd/when-bin (bin &rest body)
+  "Execute BODY if the program BIN exists."
+  (declare (indent 1))
+  `(nd/if-bin ,bin (progn ,@body)
+     (message "Executable %s not found. Skipping." ,bin)))
+
+(defun nd/get-dependencies (keys)
+  "Return list of all dependencies.
+KEYS is a list of keywords that indicate the :pkg-type of
+dependencies to return."
+  (->> (ht-values nd/required-exes)
+       (--filter (memq (plist-get it :pkg-type) keys))
+       (--map (plist-get it :pkg-name))
+       (-uniq)))
+
+;; pacman-specific introspection
+
+(defvar nd/aur-helper nil
+  "The aur helper command installed on this system.")
+
+(defun nd/find-aur-helper ()
+  "Return the current aur helper installed (or nil if none)."
+  ;; add more as needed
+  (let ((helpers (list "yay")))
+    (-first #'executable-find helpers)))
+
+(defun nd/pacman-dependencies (uninstalled?)
+  "Return pacman and aur dependencies.
+If UNINSTALLED? is non-nil, return only the packages that are not
+installed but required by this config."
+  (let ((ps (nd/get-dependencies '(:pacman)))
+        (as (nd/get-dependencies '(:aur))))
+    (if (not uninstalled?) `(,ps ,as)
+      (let ((is (->> (shell-command-to-string "pacman -Qq")
+                     (s-split "\n"))))
+        (list (--remove (member it is) ps)
+              (--remove (member it is) as))))))
+
+(defun nd/shell-test (cmd &rest args)
+  "Return t if CMD with ARGS succeeds."
+  (= 0 (apply #'call-process cmd nil nil nil args)))
+
+(defun nd/pacman-pkg-exists (pkg)
+  "Return t if PKG exists in the pacman repositories."
+  (nd/shell-test "pacman" "-Ss" (format "^%s$" pkg)))
+
+(defun nd/aur-pkg-exists (pkg)
+  "Return t if PKG exists in the aur repositories."
+  ;; add more commands as needed
+  (cond
+   ((equal nd/aur-helper "yay")
+    (let ((out (->> (format "yay -Ssaq %s" pkg)
+                    (shell-command-to-string)
+                    (s-split "\n"))))
+      (and (member pkg out) t)))
+   (t
+    (warn "No aur helper found"))))
+
+(defun nd/invalid-pacman-pkgs ()
+  "Return pacman and aur packages that don't exist."
+  (-let* (((pacman aur) (nd/pacman-dependencies t))
+          (ps (-remove #'nd/pacman-pkg-exists pacman))
+          (as (-remove #'nd/aur-pkg-exists aur)))
+    (list ps as)))
+
+(defun nd/warn-invalid-pacman-deps ()
+  "Warn user of any invalid pacman/aur packages in this config."
+  (-let (((pacman aur) (nd/invalid-pacman-pkgs)))
+    (--each pacman
+      (message "Pacman package does not exist in any configured repo: %s" it))
+    (--each aur
+      (message "Pacman package does not exist in AUR repo: %s" it))))
+
+(defun nd/install-arch-dependencies ()
+  "Install all missing pacman/aur dependencies."
+  (cl-flet
+      ((try-install
+        (what cmd args pkgs)
+        (if (not pkgs) (message "No %s packages to install" what)
+          (let ((res (if (apply #'nd/shell-test cmd (append args pkgs))
+                         "Installed"
+                       "Failed to install")))
+            (message "%s %s packages: %s" res what (s-join ", " pkgs))))))
+    (-let (((pacman aur) (nd/pacman-dependencies t)))
+      (try-install "official" "pacman" '("-S") pacman)
+      (if nd/aur-helper
+          (let ((aur-args (list "--needed" "--noconfirm" "--norebuild"
+                                "--removemake" "-S")))
+            (try-install "unofficial" nd/aur-helper aur-args aur))
+        (message "No aur helper found")))
+    nil))
+#+end_src
+*** Setup
+#+begin_src emacs-lisp
+;; zero this out so reload won't complain about things already present
+(setq nd/required-exes (ht-create #'equal)
+      nd/aur-helper (nd/find-aur-helper))
+
+(nd/warn-invalid-pacman-deps)
+#+end_src
 ** macros
 :PROPERTIES:
 :ID:       c83dc04a-754a-4ae4-b7da-cad984a7cb18
@@ -936,7 +1023,7 @@ Also, this seems to have no relation to the =anaconda.el= package for python.
       (f-canonical))
   "Path to conda (which really means mamba) installation.")
 
-(nd/require-bin (f-join nd/conda-home "bin" "conda"))
+(nd/require-bin (f-join nd/conda-home "bin" "conda") :local)
 
 (nd/when-bin "conda"
   (use-package conda
@@ -1074,7 +1161,7 @@ Anaconda is much lighter and easier than elpy. Also use ipython instead of the b
 
 (nd/require-bin "ipython")
 (nd/require-bin "flake8")
-(nd/require-bin "pylint")
+(nd/require-bin "python-pylint")
 
 (use-package python
   :after flycheck
