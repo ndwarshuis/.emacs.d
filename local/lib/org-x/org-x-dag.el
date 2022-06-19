@@ -428,6 +428,10 @@ relative shift in days from ABS."
 (defun org-x-dag-pts-is-long-p (pts)
   (org-ml-time-is-long (plist-get pts :datetime)))
 
+(defun org-x-dag-pts-to-epoch (pts)
+  (->> (plist-get pts :datetime)
+       (org-x-dag-datetime-to-epoch)))
+
 ;; allocation
 
 (pcase-defmacro regexp (capture regexp)
@@ -3238,7 +3242,7 @@ FUTURE-LIMIT in a list."
           (`(:iter-empty :empty-active ,_) :empty)
           (`(:iter-nonempty :nonempty-active ,data)
            (-let* (((&plist :dead d :leading-sched-dt s) data)
-                   (d* (-some->> d (org-x-dag-datetime-to-epoch)))
+                   (d* (-some->> d (org-x-dag-pts-to-epoch)))
                    (s* (-some->> s (org-x-dag-datetime-to-epoch))))
              (-if-let (epoch (if (and d* s*) (min d* s*) (or s* d*)))
                  (if (< (+ (float-time) org-x-iterator-active-future-offset)
