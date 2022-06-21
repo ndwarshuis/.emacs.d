@@ -281,6 +281,7 @@ installed but required by this config."
     (-let (((pacman aur) (nd/pacman-dependencies t)))
       (try-install "official" "pacman" '("-S") pacman)
       (if nd/aur-helper
+          ;; TODO add MAKEFLAGS=j8 to this to make it faster?
           (let ((aur-args (list "--needed" "--noconfirm" "--norebuild"
                                 "--removemake" "-S")))
             (try-install "unofficial" nd/aur-helper aur-args aur))
@@ -4122,6 +4123,10 @@ I like being evil, which means I think vim is a good editor and emacs is a good 
         evil-want-keybinding nil
         evil-undo-system 'undo-redo)
   :config
+  ;; I'm actually not a fan of this since the parens never seem to light up fast
+  ;; enough when I'm zipping through code to not make me dizzy. Also I don't
+  ;; really need it when I have rainbow parentheses anyways
+  (setq show-paren-mode nil)
   (evil-mode 1))
 #+END_SRC
 *** search
