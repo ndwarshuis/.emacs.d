@@ -2,17 +2,18 @@
 
 ## Install all dependencies for emacs to run at full capacity
 
-if emacs -batch -l "init.el"; then
-    IFS=' ' read -r -a emacs_pkgs \
-        < <(emacs -batch -l "init.el" --eval \
-            '(print (format "pkgs: %s" (s-join " " (nd/get-dependencies (list :pacman :aur)))))' \
-        2>/dev/null | \
-        sed -n -e 's/"pkgs: \(.*\)"/\1/p')
-    echo "Emacs requires the following system pkgs: ${emacs_pkgs[*]}"
-else
-    echo "Could not get list of emacs dependencies."
-    emacs_pkgs=()
+EMACS_PKG=emacs-nativecomp
+
+if ! command -v emacs > /dev/null; then
+    if sudo pacman -S "$EMACS_PKG"; then
+        echo "Could not install emacs. Exiting"
+        exit 1
+    fi
 fi
 
-MAKEFLAGS="-j$(nproc)" \
-    yay --needed --noconfirm --norebuild --removemake -S "${emacs_pkgs[@]}"
+if command -v yay > /dev/null; then
+    emacs -batch -l init.el -f nd/install-arch-dependencies
+else
+    echo "Yay not installed. Exiting"
+    exit 1
+fi
