@@ -3807,7 +3807,9 @@ Initialize by running =nd/mu-init=.
 
         ;; sub some fancy chars that don't have valid codes
         mu4e-headers-trashed-mark '("T" . "Ω")
-        mu4e-headers-unread-mark '("T" . "✉")
+        mu4e-headers-unread-mark '("U" . "✉")
+        mu4e-headers-personal-mark '("P" . "Ρ")
+        mu4e-headers-list-mark '("L" . "Λ")
         mu4e-headers-attach-mark '("a" . "ɑ")
         mu4e-headers-thread-root-prefix '("* " . "● ")
         mu4e-headers-threaded-label '("T" . "Ψ")
