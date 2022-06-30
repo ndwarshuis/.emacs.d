@@ -1888,6 +1888,13 @@ Used for making fancy flowchart with dot.
   :straight t
   :hook ((graphviz-dot-mode . company-mode)))
 #+end_src
+*** ledger
+#+begin_src emacs-lisp
+(use-package ledger-mode
+  :straight t
+  :mode
+  (("\\.journal\\'" . ledger-mode)))
+#+end_src
 ** testing
 *** buttercup
 :PROPERTIES:
