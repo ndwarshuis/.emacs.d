@@ -93,6 +93,7 @@
   ;; does not 'rollover' to day 1 on the next month)
   (not (xor (org-ml-time-is-long datetime0) (org-ml-time-is-long datetime1))))
 
+;; TODO some of this is redundant because I'm checking the length twice
 ;; Maybe a -> Maybe a -> (a -> a -> b) -> b -> Maybe b
 (defun org-x-dag-with-datetimes (a b fun alt)
   (when (and a b)
@@ -1370,6 +1371,7 @@ deadline (eg via epoch time) or if it has a repeater."
     (org-x-dag-bs-prefix :endpoint `(,n ,@ns))))
 
 (defun org-x-dag-bs-toplevel-goal-inner (type-name node-data child-bss)
+  ;; TODO allow these to be canceled
   (org-x-dag-bs-check-created node-data
     (-let (((&plist :planning :todo) node-data))
       (cond
@@ -3310,16 +3312,17 @@ FUTURE-LIMIT in a list."
       (org-x-dag-with-ids files
         (pcase (either-from-right (org-x-dag-id->bs it) nil)
           (`(:lifetime . ,bs)
-           (-let (((&plist :ancestry a :local l) bs))
-             (when (and (not (plist-get a :canceled-parent-p)) (eq l :active))
-               (-when-let (ns (org-x-dag-id->ns it))
-                 (-let (((&plist :planned p :fulfilled f)
-                         (either-from-right ns nil)))
-                   (mk-item it :lifetime p f nil))))))
+           (when (equal bs '(:active))
+           ;; (-let (((&plist :ancestry a :local l) bs))
+           ;;   (when (and (not (plist-get a :canceled-parent-p)) (eq l :active))
+             (-when-let (ns (org-x-dag-id->ns it))
+               (-let (((&plist :planned p :fulfilled f)
+                       (either-from-right ns nil)))
+                 (mk-item it :lifetime p f nil)))))
           ;; TODO need to grab deadlines from the network status (when done)
           (`(:endpoint . ,bs)
            (-let (((&plist :ancestry a :local l) bs))
-             (when (and (not (plist-get a :canceled-parent-p)) (eq l :active))
+             (when (and (not (plist-get a :canceled-parent-p)) (equal l '(:active)))
                (-when-let (ns (org-x-dag-id->ns it))
                  (-let (((&plist :planned p :fulfilled f :committed c)
                          (either-from-right ns nil)))
@@ -5123,7 +5126,7 @@ In the order of display
                       (if is-proj "Deadlined Projects" "Deadlined Tasks")))
                     (format (if is-planned "%s (Planned)" "%s")))))))
       (org-x-dag-agenda-call-inner "Timeblock" 'agenda "" files
-        `((org-agenda-sorting-strategy '(time-up category-keep))
+        `((org-agenda-sorting-strategy '(time-up deadline-up category-keep))
           (org-super-agenda-groups
            '((:auto-map ,conflict-fun :order 4)
              ,(routine-form "Morning Routine"
