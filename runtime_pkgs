@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Print a list of all pacman packages required to run this emacs configuration
+
+this_dir=$(dirname "$0")
+
+emacs -batch \
+      -l "$this_dir/init.el" \
+      -f nd/dump-arch-dependencies \
+      2> /dev/null | \
+    sed 's/"//'

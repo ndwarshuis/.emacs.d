@@ -221,7 +221,7 @@ dependencies to return."
   (let ((helpers (list "yay")))
     (-first #'executable-find helpers)))
 
-(defun nd/pacman-dependencies (uninstalled?)
+(defun nd/pacman-dependencies (&optional uninstalled?)
   "Return pacman and aur dependencies.
 If UNINSTALLED? is non-nil, return only the packages that are not
 installed but required by this config."
@@ -287,6 +287,10 @@ installed but required by this config."
             (try-install "unofficial" nd/aur-helper aur-args aur))
         (message "No aur helper found")))
     nil))
+
+(defun nd/dump-arch-dependencies ()
+  (-let (((pacman aur) (nd/pacman-dependencies nil)))
+    (print (s-join "\n" (append pacman aur)))))
 #+end_src
 *** Setup
 #+begin_src emacs-lisp

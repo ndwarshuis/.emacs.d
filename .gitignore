@@ -3,7 +3,7 @@
 !README.org
 !init.el
 !straight-boot.el
-!install_deps
+!runtime_pkgs
 
 # track versions of installed packages
 !straight
