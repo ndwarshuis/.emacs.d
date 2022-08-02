@@ -1640,9 +1640,18 @@ R-markdown is enabled via polymode, which allows multiple modes in one buffer (t
 :ID:       995cd47c-e0af-43a8-bd7c-a46ae1fae258
 :END:
 #+BEGIN_SRC emacs-lisp
+(use-package highlight-indentation
+  :straight t
+  :config
+  (set-face-attribute 'highlight-indentation-face nil :background "gray20")
+  (set-face-attribute 'highlight-indentation-current-column-face
+                      nil :background "dark slate blue"))
+
 (use-package yaml-mode
   :straight t
-  :hook ((yaml-mode . fci-mode)))
+  :hook ((yaml-mode . fci-mode)
+         (yaml-mode . highlight-indentation-mode)
+         (yaml-mode . highlight-indentation-current-column-mode)))
 #+END_SRC
 *** csv files
 :PROPERTIES:
