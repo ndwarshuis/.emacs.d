@@ -1649,9 +1649,7 @@ R-markdown is enabled via polymode, which allows multiple modes in one buffer (t
 
 (use-package yaml-mode
   :straight t
-  :hook ((yaml-mode . fci-mode)
-         (yaml-mode . highlight-indentation-mode)
-         (yaml-mode . highlight-indentation-current-column-mode)))
+  :hook ((yaml-mode . fci-mode)))
 #+END_SRC
 *** csv files
 :PROPERTIES:
@@ -4897,6 +4895,9 @@ The function keys are nice because they are almost (not always) free in every mo
   "convenient mode toggles"
   ("v" visual-line-mode)
   ("h" global-hl-line-mode)
+  ("r" rainbow-mode)
+  ("h" highlight-indentation-mode)
+  ("H" highlight-indentation-current-column-mode)
   ("r" rainbow-mode)
   ("n" display-line-numbers-mode))
 
