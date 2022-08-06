@@ -1354,6 +1354,13 @@ Other helper functions that make haskell even more fun.
         (haskell-process-load-or-reload))
     (haskell-process-load-or-reload)))
 #+END_SRC
+*** Dhall
+Dhall is a functional/typed configuration language (bout time).
+#+begin_src emacs-lisp
+(use-package dhall-mode
+  :straight t
+  :mode "\\.dhall\\'")
+#+end_src
 *** Lua
 :PROPERTIES:
 :ID:       31252e83-5cc2-4048-b5c2-70c10d1e271f
