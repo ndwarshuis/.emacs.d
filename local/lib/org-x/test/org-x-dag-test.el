@@ -177,6 +177,19 @@
       (format "Expected %s to be a right, got a left" expr))
     inner-fun))
 
+;; TODO this will eventually have canceled as part of it
+(buttercup-define-matcher :id-to-be-tlg (to-test type status)
+  (cl-destructuring-bind
+      ((test-expr . test) (_ . y) (_ . s))
+      (->> (list to-test type status)
+           (-map #'buttercup--expr-and-value))
+    (let ((f (->> (-partial #'status-diff-msg nil test-expr s nil nil)
+                  (-partial #'buffer-status-diff-msg test-expr y)
+                  (-partial #'right-diff-msg test-expr))))
+      (-if-let (m (funcall f (org-x-dag-id->bs test)))
+        (cons nil m)
+      (cons t (format "Expected '%s' not to be the indicated action" test-expr))))))
+
 (buttercup-define-matcher :id-to-be-action (to-test canceled held deadline
                                                     type subtype data)
   (cl-destructuring-bind
@@ -227,6 +240,24 @@
 
   (it "Sync completes without error"
     (expect (org-x-dag-sync t) :not :to-throw))
+
+  (describe "Lifetime buffer statuses"
+    (it "Active (toplevel)"
+      (expect "d6e92244-b1a0-4161-83bc-5a1f0af5541d" :id-to-be-tlg
+              :lifetime :active))
+
+    (it "Active (nested)"
+      (expect "adc08873-b9fa-423d-950d-db645db05fe5" :id-to-be-tlg
+              :lifetime :active)))
+
+  (describe "Survival buffer statuses"
+    (it "Active (toplevel)"
+      (expect "4e7a934a-62ec-4ed5-ab84-e9e7e745b495" :id-to-be-tlg
+              :survival :active))
+
+    (it "Active (nested)"
+      (expect "e16514a0-626c-476f-b647-1eaf6580c57a" :id-to-be-tlg
+              :survival :active)))
 
   (describe "Action buffer statuses"
     (describe "Projects"
