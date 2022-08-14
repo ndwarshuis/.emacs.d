@@ -11,10 +11,14 @@ SCHEDULED: <2022-06-06 Mon>
 :PROPERTIES:
 :ID:       6b53ee41-b467-4bfb-a580-6218a3c78068
 :END:
-***** TODO be social
+***** DONE be social
+CLOSED: [2022-08-07 Sun 23:28]
 :PROPERTIES:
 :ID:       f02504bd-45f8-4da6-936e-1b15e043f3d4
 :CREATED:  [2022-06-07 Tue 22:50]
+:END:
+:LOGGING:
+- State "DONE"       from "TODO"       [2022-08-07 Sun 23:28]
 :END:
 **** TODO Tuesday
 SCHEDULED: <2022-06-07 Tue>
@@ -41,10 +45,14 @@ SCHEDULED: <2022-06-10 Fri>
 :PROPERTIES:
 :ID:       1d926eef-94c9-4b57-8cb0-225a308711e9
 :END:
-***** TODO learn to gamble
+***** CANC learn to gamble
+CLOSED: [2022-08-07 Sun 23:28]
 :PROPERTIES:
 :ID:       ab077745-4041-458f-90ec-02aaecb2729d
 :CREATED:  [2022-06-07 Tue 22:51]
+:END:
+:LOGGING:
+- State "CANC"       from "TODO"       [2022-08-07 Sun 23:28]
 :END:
 **** TODO Saturday
 SCHEDULED: <2022-06-11 Sat>

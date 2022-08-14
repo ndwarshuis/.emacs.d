@@ -210,6 +210,34 @@
         (cons nil m)
       (cons t (format "Expected '%s' not to be the indicated action" test-expr))))))
 
+(buttercup-define-matcher :id-to-be-qtp (to-test status deadline date)
+  (cl-destructuring-bind
+      ((test-expr . test) (_ . s) (_ . d) (_ . D))
+      (->> (list to-test status deadline date)
+           (-map #'buttercup--expr-and-value))
+    (let* ((local-eq-funs (list :deadline #'element-equal-p :date #'eq))
+           (abs-date (org-x-dag-date-to-absolute D))
+           (data (list :deadline d :date abs-date))
+           (f (->> (-partial #'status-diff-msg local-eq-funs test-expr s nil data)
+                   (-partial #'buffer-status-diff-msg test-expr :quarterly)
+                   (-partial #'right-diff-msg test-expr))))
+      (-if-let (m (funcall f (org-x-dag-id->bs test)))
+        (cons nil m)
+      (cons t (format "Expected '%s' not to be the indicated action" test-expr))))))
+
+;; (buttercup-define-matcher :id-to-be-wkp (to-test status subtype date)
+;;   (cl-destructuring-bind
+;;       ((test-expr . test) (_ . s) (_ . y) (_ . d))
+;;       (->> (list to-test status subtype date)
+;;            (-map #'buttercup--expr-and-value))
+;;     (let* ((abs-date (org-x-dag-date-to-absolute d))
+;;            (f (->> (-partial #'status-diff-msg nil test-expr y `(,s) abs-date)
+;;                    (-partial #'buffer-status-diff-msg test-expr :weekly)
+;;                    (-partial #'right-diff-msg test-expr))))
+;;       (-if-let (m (funcall f (org-x-dag-id->bs test)))
+;;         (cons nil m)
+;;       (cons t (format "Expected '%s' not to be the indicated action" test-expr))))))
+
 ;; (buttercup-define-matcher :to-have-same-as-plist (a b)
 ;;   (cl-destructuring-bind
 ;;       ((a-expr . a) (b-expr . b))
@@ -389,6 +417,17 @@
                   (list :dead nil
                         :child-scheds `(,s0 ,s1)
                         :leading-sched-dt (plist-get s1 :datetime)))))))
+
+  ;; TODO add deadline to this (but in absolute form)
+  (describe "Quarterly buffer statuses"
+    (it "Active"
+      (expect "aa3e549c-b309-40a2-a687-6d9791653a18" :id-to-be-qtp
+              :active nil '(2022 4 1))))
+
+  ;; (describe "Weekly buffer statuses"
+  ;;   (it "Active (leaf)"
+  ;;     (expect "ed1406ad-1231-46de-b026-8067411133dc" :id-to-be-wkp
+  ;;             :active :leaf '(2022 6 6))))
 
   (describe "Metadata Tests"
     (it "parent tag"
