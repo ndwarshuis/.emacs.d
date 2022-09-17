@@ -1621,6 +1621,7 @@ Make font sizes smaller and less intrusive for headers
 
 (add-hook 'markdown-mode-hook
           (lambda ()
+            (setq-local markdown-hide-markup t)
             (let ((heading-height 1.15))
               (set-face-attribute 'markdown-header-face-1 nil :weight 'bold :height heading-height)
               (set-face-attribute 'markdown-header-face-2 nil :weight 'semi-bold :height heading-height)
