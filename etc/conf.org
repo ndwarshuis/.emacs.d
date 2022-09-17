@@ -2234,6 +2234,15 @@ Some common functions that I use often that don't seem to exist
           (org-up-heading-safe)))
     (message "Not on a headline")))
 #+end_src
+*** emphasis
+:PROPERTIES:
+:ID:       79057ff5-1592-4bfb-8c5b-82d037d00439
+:CREATED:  [2022-09-17 Sat 19:02]
+:END:
+Make text more compact by hiding format characters
+#+begin_src emacs-lisp
+(setq org-hide-emphasis-markers t)
+#+end_src
 ** calfw
 :PROPERTIES:
 :ID:       57d3105c-eab1-4784-ab27-cf63e6c56b05
